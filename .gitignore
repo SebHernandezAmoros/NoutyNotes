@@ -18,6 +18,15 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Archivos de asistentes de IA (no forman parte del producto)
+AGENTS.md
+CLAUDE.md
+.claude/
+.cursorrules
+.cursor/
+.windsurfrules
+.aider*
+
 # Artefactos locales de herramientas
 /artifacts/
 
