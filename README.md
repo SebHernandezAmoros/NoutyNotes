@@ -10,17 +10,18 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 
 ## Estado actual
 
-La fase 0B, base técnica, está completada. El siguiente paso es implementar el dominio y sus reglas, antes de añadir edición o persistencia.
+Las fases 0B (base técnica) y 1 (dominio) están completadas. El dominio define y valida workspaces, boards, tarjetas, tipos y campos, relaciones, layouts, plantillas y referencias a assets, pero todavía no está conectado a la interfaz. El siguiente paso es el motor de grilla.
 
 | Disponible | Pendiente |
 | --- | --- |
-| App Expo con navegación mediante Expo Router | Espacios, tableros y tarjetas |
+| App Expo con navegación mediante Expo Router | Crear y abrir espacios desde la interfaz |
 | Inicio responsive para escritorio y móvil | Editor Markdown y gestión de imágenes |
-| Temas claro, oscuro y del sistema | Grilla, relaciones y plantillas |
-| TypeScript estricto, lint y pruebas automatizadas | Guardado, apertura e importación/exportación |
-| Export web, bundle Android y proyecto nativo generado | Ejecución Android verificada y arranque web sin conexión |
+| Temas claro, oscuro y del sistema | Motor de grilla, casos de uso de relaciones e instanciación de plantillas |
+| Modelo de dominio puro con reglas e invariantes probadas | Formato de archivos, guardado, apertura e importación/exportación |
+| TypeScript estricto, lint y pruebas automatizadas | Ejecución Android verificada y arranque web sin conexión |
+| Export web, bundle Android y proyecto nativo generado | |
 
-La preferencia de tema dura la sesión actual. Los botones de crear, abrir y usar plantillas aparecen desactivados. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/); todavía no hay un APK validado. Está pendiente corregir una diferencia visual: el export puede mostrar una sola columna en escritorio en lugar de las dos del desarrollo local.
+La preferencia de tema dura la sesión actual. Los botones de crear, abrir y usar plantillas aparecen desactivados. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/); todavía no hay un APK validado. La diferencia de distribución del export (una columna en escritorio) está corregida y cubierta por pruebas locales; la demo pública se actualizará cuando se publique el cambio.
 
 ## Tecnologías
 
@@ -77,23 +78,23 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 | `pnpm check` | Lint, TypeScript y pruebas unitarias |
 | `pnpm lint` | ESLint sin avisos permitidos |
 | `pnpm typecheck` | Tipos de paquetes, pruebas y aplicación |
-| `pnpm test` | Pruebas unitarias de selección de tema y contraste |
-| `pnpm test:smoke` | Inicio web, temas y acciones desactivadas en escritorio y móvil |
+| `pnpm test` | Pruebas unitarias del dominio, fronteras del núcleo, temas, contraste y breakpoint |
+| `pnpm test:smoke` | Inicio web en escritorio y móvil: distribución, título, recarga, redimensionado, límite de 800 px, temas, acciones desactivadas, teclado, foco visible y tamaño táctil |
 | `pnpm build:web` | Export estático en `apps/noutynotes/dist/` |
 | `pnpm build:android:bundle` | JavaScript y assets en `apps/noutynotes/dist/android/`; no produce un APK |
 | `pnpm android:prepare` | Proyecto nativo generado en `apps/noutynotes/android/` |
 
 Ejecutar el bundle Android después del export web, porque este último regenera `dist/`. Las capturas y trazas de Playwright se guardan en `artifacts/playwright/`.
 
-Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho de la ventana a 390 px. El contenido debe seguir siendo legible, sin desplazamiento horizontal, y las tres acciones futuras deben permanecer desactivadas.
+Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho de la ventana a 390 px. Desde 800 px de ancho, la introducción y el panel de acciones aparecen en dos columnas; por debajo, en una. El contenido debe seguir siendo legible, sin desplazamiento horizontal, y las tres acciones futuras deben permanecer desactivadas.
 
-**Validación local registrada el 23 de septiembre de 2026:** instalación con lockfile congelado, lint y tipos correctos; 5 pruebas unitarias y 2 pruebas web correctas; export web, bundle Android y generación nativa correctos. Estos resultados no equivalen a ejecución nativa Android.
+**Validación local registrada el 23 de septiembre de 2026:** instalación con lockfile congelado, lint y tipos correctos; 188 pruebas unitarias; 8 pruebas web correctas en desarrollo y 8 en el export de Pages, incluida la accesibilidad básica (2 casos se omiten a propósito en el perfil móvil); export web, bundle Android y export de Pages correctos. Estos resultados no equivalen a ejecución nativa Android.
 
 El [workflow de GitHub Actions](.github/workflows/ci.yml) está preparado para ejecutar las comprobaciones en pushes y pull requests. Su ejecución remota todavía no se ha verificado.
 
 ## GitHub Pages
 
-La configuración para publicar esta demo inicial está en [Deploy GitHub Pages](.github/workflows/pages.yml). El usuario confirmó la carga de la demo mediante una captura el 23 de septiembre de 2026 en `https://SebHernandezAmoros.github.io/NoutyNotes/`. La equivalencia visual con el desarrollo local sigue pendiente de corrección y validación.
+La configuración para publicar esta demo inicial está en [Deploy GitHub Pages](.github/workflows/pages.yml). El usuario confirmó la carga de la demo mediante una captura el 23 de septiembre de 2026 en `https://SebHernandezAmoros.github.io/NoutyNotes/`. Esa versión muestra una sola columna en escritorio. La causa se reprodujo y corrigió localmente: el HTML estático se genera sin conocer el ancho de la ventana y la hidratación conservaba sus estilos compactos. La pantalla ahora usa una medida compatible con la hidratación. Las pruebas locales comparan desarrollo y export con el mismo viewport y tema. El sitio público cambiará al publicar esta corrección.
 
 El workflow instala con pnpm, ejecuta lint/tipos/tests, exporta con la ruta base `/NoutyNotes` y comprueba el resultado en escritorio y móvil antes de publicarlo. Los pushes a `main` publican automáticamente; los pull requests hacia `main` solo construyen y validan. También puede iniciarse manualmente desde Actions en `main`.
 
@@ -114,7 +115,7 @@ pnpm test:pages
 pnpm preview:pages
 ```
 
-Para las pruebas se necesita Chromium instalado con `pnpm exec playwright install chromium`. La vista previa abre un servidor en `http://127.0.0.1:8082/NoutyNotes/`; detenerlo con `Ctrl+C`. `test:pages` inicia y cierra su propio servidor, por lo que el puerto 8082 debe estar libre. Las capturas quedan en `artifacts/playwright-pages/`.
+Para las pruebas se necesita Chromium instalado con `pnpm exec playwright install chromium`. `test:pages` ejecuta las mismas comprobaciones que `test:smoke` y solo arranca el servidor estático; no necesita Metro ni el puerto 8081. Antes de cargar JavaScript, el HTML estático muestra la versión compacta de una columna; la versión de escritorio aparece al hidratar, sin interacción. La vista previa abre un servidor en `http://127.0.0.1:8082/NoutyNotes/`; detenerlo con `Ctrl+C`. `test:pages` inicia y cierra su propio servidor, por lo que el puerto 8082 debe estar libre. Las capturas quedan en `artifacts/playwright-pages/`.
 
 `build:pages` genera `apps/noutynotes/dist/pages/` y aplica la ruta base solo a ese proceso. El desarrollo local y el export web normal mantienen la ruta raíz. Ejecutar `build:pages` después de `build:web`, que regenera `dist/`. Si cambia el nombre del repositorio o se configura un dominio propio, ajustar la ruta en `apps/noutynotes/app.config.ts` y la vista previa correspondiente.
 
@@ -124,22 +125,22 @@ Esta demo muestra el inicio y los temas; no incorpora guardado ni funcionamiento
 
 ```text
 apps/noutynotes/        App Expo, rutas y pantalla inicial
-packages/domain/       Reserva para entidades y reglas puras
+packages/domain/       Entidades, identificadores, invariantes y validación pura
 packages/application/  Reserva para casos de uso y puertos
 packages/storage/      Reserva para adaptadores de persistencia
-packages/ui/           Tokens y proveedor de temas compartidos
-tests/                 Smoke web y carpetas para futuras pruebas
+packages/ui/           Tokens, temas y medida de ventana compartidos
+tests/                 Smoke web y contratos entre módulos
 assets/readme/         Capturas propias para esta documentación
 ```
 
-La app y el paquete UI están activos. Las capas de dominio, aplicación y almacenamiento tienen su ubicación preparada; sus funcionalidades todavía no están implementadas. El dominio se mantendrá independiente de React, Expo y filesystem. Los casos de uso dependerán de puertos que implementarán los adaptadores de almacenamiento.
+La app, el paquete UI y el dominio están activos. El dominio no depende de React, Expo, filesystem, red ni almacenamiento, y no genera identificadores ni fechas. Las tarjetas pertenecen al workspace; los boards las muestran por referencia, así que una tarjeta puede aparecer en varios. Las posiciones se guardan aparte, en unidades de grilla, y las relaciones no dependen de ellas. Las plantillas son solo datos. Ver [el README del dominio](packages/domain/README.md). Aplicación y almacenamiento tienen su ubicación preparada; los casos de uso dependerán de puertos que implementarán los adaptadores.
 
 ## Plan de trabajo
 
 | Etapa | Alcance | Estado |
 | --- | --- | --- |
 | A — Fundaciones | Estructura, herramientas, inicio y temas | Completada |
-| B — Núcleo | Dominio, grilla, relaciones y plantillas | Siguiente; comienza por dominio |
+| B — Núcleo | Dominio, grilla, relaciones y plantillas | En curso: dominio completado; siguiente, grilla |
 | C — Persistencia y prototipo | Serialización, almacenamiento en memoria y edición básica | Pendiente |
 | D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Pendiente |
 | E — Experiencia y calidad | Plantillas en UI, móvil, regresión y rendimiento | Pendiente |

@@ -1,7 +1,7 @@
-import { useTheme } from '@noutynotes/ui';
+import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
 import type { ThemePreference } from '@noutynotes/ui';
 import { useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const themeOptions: { value: ThemePreference; label: string }[] = [
@@ -19,8 +19,7 @@ const workspaceActions = [
 export function HomeScreen() {
   const { theme, preference, setPreference } = useTheme();
   const colors = theme.colors;
-  const { width } = useWindowDimensions();
-  const compact = width < 800;
+  const compact = resolveLayoutMode(useWindowWidth()) === 'compact';
   const [focusedTheme, setFocusedTheme] = useState<ThemePreference | null>(null);
 
   return (
@@ -67,7 +66,7 @@ export function HomeScreen() {
         </View>
 
         <View style={[styles.main, { flexDirection: compact ? 'column' : 'row', gap: compact ? 36 : 56 }]}>
-          <View style={styles.introduction}>
+          <View testID="home-introduction" style={styles.introduction}>
             <View style={[styles.label, { backgroundColor: colors.accent, borderColor: colors.border }]}>
               <Text style={[styles.eyebrow, { color: colors.accentText }]}>MENOS RUIDO. MÁS IDEAS.</Text>
             </View>
@@ -87,7 +86,7 @@ export function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.workspaceSection}>
+          <View testID="home-workspace" style={styles.workspaceSection}>
             <View style={[styles.folderTab, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[styles.eyebrow, { color: colors.textPrimary }]}>001 / TU ESPACIO</Text>
             </View>

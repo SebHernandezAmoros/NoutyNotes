@@ -1,9 +1,11 @@
 # Pruebas compartidas
 
-`smoke/` contiene la comprobación Playwright del inicio en escritorio y móvil. `fixtures/`, `contracts/`, `integration/` y `e2e/` permanecen reservados para las fases siguientes.
+`smoke/` contiene la comprobación Playwright del inicio en escritorio y móvil. `contracts/` comprueba reglas que cruzan módulos; por ahora, que el dominio solo importa módulos propios y no usa reloj, aleatoriedad, plataforma ni I/O. `fixtures/`, `integration/` y `e2e/` quedan reservados para las fases siguientes.
 
-Los tests unitarios viven junto a la lógica correspondiente, empezando por `packages/ui/src/theme.test.ts`. Desde la raíz: `pnpm test` y `pnpm test:smoke`. Chromium se instala una vez con `pnpm exec playwright install chromium`.
+Las pruebas unitarias están junto a la lógica correspondiente, en `packages/domain/src/**` y `packages/ui/src/**`. Desde la raíz: `pnpm test` y `pnpm test:smoke`. Chromium se instala una vez con `pnpm exec playwright install chromium`.
+
+El smoke mide la geometría desde la carga inicial, antes de pulsar botones o redimensionar. Comprueba la posición relativa de la introducción y del panel de acciones, su reparto del ancho, el margen de página y el tamaño del título. Lo repite tras cambiar de tema, recargar y redimensionar en ambos sentidos. En escritorio también comprueba el límite de 799/800 px y el HTML servido sin JavaScript, que es compacto a propósito. En ambos perfiles verifica la accesibilidad básica: orden de tabulación, activación con Enter y Espacio, foco visible y controles de al menos 44 px. Las aserciones reintentan hasta cumplirse; no hay esperas fijas.
 
 Capturas y trazas se escriben en `artifacts/playwright/`. Ver los [comandos de validación](../README.md#validar). La estrategia detallada de trabajo se mantiene localmente en `Docs/testing.md`, fuera del repositorio.
 
-Para comprobar la versión estática bajo `/NoutyNotes/`: `pnpm build:pages` y `pnpm test:pages`. Reutiliza las mismas pruebas contra un servidor local de archivos exportados; las capturas quedan en `artifacts/playwright-pages/`. El puerto 8082 debe estar libre. Ver [GitHub Pages](../README.md#github-pages).
+Para comprobar la versión estática bajo `/NoutyNotes/`: `pnpm build:pages` y `pnpm test:pages`. Se ejecutan las mismas pruebas contra un servidor local de archivos exportados, sin arrancar Metro, así que desarrollo y export deben cumplir las mismas expectativas con el mismo viewport y tema. Las capturas quedan en `artifacts/playwright-pages/`. El puerto 8082 debe estar libre. Ver [GitHub Pages](../README.md#github-pages).

@@ -46,4 +46,13 @@ describe.each(['light', 'dark'] as const)('legibilidad del tema %s', (mode) => {
       expect((Math.max(...values) + 0.05) / (Math.min(...values) + 0.05)).toBeGreaterThanOrEqual(4.5);
     }
   });
+
+  it('el indicador de foco contrasta al menos 3:1 con su estado sin foco y con el fondo', () => {
+    // El foco cambia el borde de `surface` a `selection`; el borde limita con el fondo de la página.
+    const colors = themeColors[mode];
+    for (const neighbour of [colors.surface, colors.background]) {
+      const values = [luminance(colors.selection), luminance(neighbour)];
+      expect((Math.max(...values) + 0.05) / (Math.min(...values) + 0.05)).toBeGreaterThanOrEqual(3);
+    }
+  });
 });
