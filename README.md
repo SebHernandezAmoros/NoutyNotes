@@ -20,7 +20,7 @@ La fase 0B, base técnica, está completada. El siguiente paso es implementar el
 | TypeScript estricto, lint y pruebas automatizadas | Guardado, apertura e importación/exportación |
 | Export web, bundle Android y proyecto nativo generado | Ejecución Android verificada y arranque web sin conexión |
 
-La preferencia de tema dura la sesión actual. Los botones de crear, abrir y usar plantillas aparecen desactivados. Todavía no hay una demo pública ni un APK validado.
+La preferencia de tema dura la sesión actual. Los botones de crear, abrir y usar plantillas aparecen desactivados. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/); todavía no hay un APK validado. Está pendiente corregir una diferencia visual: el export puede mostrar una sola columna en escritorio en lugar de las dos del desarrollo local.
 
 ## Tecnologías
 
@@ -93,7 +93,7 @@ El [workflow de GitHub Actions](.github/workflows/ci.yml) está preparado para e
 
 ## GitHub Pages
 
-La configuración para publicar esta demo inicial está preparada en [Deploy GitHub Pages](.github/workflows/pages.yml). La URL esperada después de activar Pages y completar el despliegue es `https://SebHernandezAmoros.github.io/NoutyNotes/`. La publicación remota todavía está pendiente de verificación.
+La configuración para publicar esta demo inicial está en [Deploy GitHub Pages](.github/workflows/pages.yml). El usuario confirmó la carga de la demo mediante una captura el 23 de septiembre de 2026 en `https://SebHernandezAmoros.github.io/NoutyNotes/`. La equivalencia visual con el desarrollo local sigue pendiente de corrección y validación.
 
 El workflow instala con pnpm, ejecuta lint/tipos/tests, exporta con la ruta base `/NoutyNotes` y comprueba el resultado en escritorio y móvil antes de publicarlo. Los pushes a `main` publican automáticamente; los pull requests hacia `main` solo construyen y validan. También puede iniciarse manualmente desde Actions en `main`.
 
