@@ -91,6 +91,35 @@ Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho
 
 El [workflow de GitHub Actions](.github/workflows/ci.yml) está preparado para ejecutar las comprobaciones en pushes y pull requests. Su ejecución remota todavía no se ha verificado.
 
+## GitHub Pages
+
+La configuración para publicar esta demo inicial está preparada en [Deploy GitHub Pages](.github/workflows/pages.yml). La URL esperada después de activar Pages y completar el despliegue es `https://SebHernandezAmoros.github.io/NoutyNotes/`. La publicación remota todavía está pendiente de verificación.
+
+El workflow instala con pnpm, ejecuta lint/tipos/tests, exporta con la ruta base `/NoutyNotes` y comprueba el resultado en escritorio y móvil antes de publicarlo. Los pushes a `main` publican automáticamente; los pull requests hacia `main` solo construyen y validan. También puede iniciarse manualmente desde Actions en `main`.
+
+### Activar la publicación
+
+1. Subir estos archivos a la rama `main` del repositorio.
+2. En GitHub, abrir **Settings → Pages → Build and deployment → Source** y seleccionar **GitHub Actions**.
+3. Abrir **Actions → Deploy GitHub Pages → Run workflow**, seleccionar `main` y ejecutar. Si el primer push falló porque Pages aún no estaba habilitado, repetir el workflow después de activarlo.
+4. Esperar a que terminen correctamente los trabajos `build` y `deploy`, y abrir la URL del despliegue.
+
+No se necesita una rama `gh-pages`, publicar `Docs/` ni añadir un token personal. Se utiliza el token del workflow con permisos de Pages y se sube únicamente `apps/noutynotes/dist/pages/`.
+
+### Comprobar el export antes de subir
+
+```sh
+pnpm build:pages
+pnpm test:pages
+pnpm preview:pages
+```
+
+Para las pruebas se necesita Chromium instalado con `pnpm exec playwright install chromium`. La vista previa abre un servidor en `http://127.0.0.1:8082/NoutyNotes/`; detenerlo con `Ctrl+C`. `test:pages` inicia y cierra su propio servidor, por lo que el puerto 8082 debe estar libre. Las capturas quedan en `artifacts/playwright-pages/`.
+
+`build:pages` genera `apps/noutynotes/dist/pages/` y aplica la ruta base solo a ese proceso. El desarrollo local y el export web normal mantienen la ruta raíz. Ejecutar `build:pages` después de `build:web`, que regenera `dist/`. Si cambia el nombre del repositorio o se configura un dominio propio, ajustar la ruta en `apps/noutynotes/app.config.ts` y la vista previa correspondiente.
+
+Esta demo muestra el inicio y los temas; no incorpora guardado ni funcionamiento offline. Configuración basada en las guías de [Expo](https://docs.expo.dev/guides/publishing-websites/#github-pages) y [GitHub Actions para Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+
 ## Arquitectura
 
 ```text

@@ -4,6 +4,7 @@
     "../../tsconfig.base.json"
   ],
   "include": [
+    "app.config.ts",
     "src/**/*.ts",
     "src/**/*.tsx"
   ],
