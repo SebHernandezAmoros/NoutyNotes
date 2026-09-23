@@ -1,0 +1,32 @@
+{
+  "name": "noutynotes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.17.0",
+  "engines": { "node": ">=24.11.0 <25" },
+  "scripts": {
+    "start": "pnpm --filter @noutynotes/app start",
+    "web": "pnpm --filter @noutynotes/app web",
+    "android": "pnpm --filter @noutynotes/app android",
+    "android:prepare": "pnpm --filter @noutynotes/app android:prepare",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit && pnpm --filter @noutynotes/app typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "playwright test",
+    "build:web": "pnpm --filter @noutynotes/app build:web",
+    "build:android:bundle": "pnpm --filter @noutynotes/app build:android:bundle",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "~19.2.2",
+    "eslint": "^9.39.1",
+    "eslint-config-expo": "~57.0.2",
+    "typescript": "~6.0.3",
+    "vitest": "5.0.1"
+  }
+}

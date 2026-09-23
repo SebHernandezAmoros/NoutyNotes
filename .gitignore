@@ -1,0 +1,28 @@
+# Contexto privado y referencias locales
+/Docs/
+/docs/
+
+# Dependencias y resultados de desarrollo
+node_modules/
+.pnpm-store/
+.expo/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+
+# Configuración local y credenciales
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+
+# Artefactos locales de herramientas
+/artifacts/
+
+# Proyectos nativos generados por Expo
+/apps/noutynotes/android/
+/apps/noutynotes/ios/
+/playwright-report/
+/test-results/
