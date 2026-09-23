@@ -13,7 +13,7 @@ Paquete `@noutynotes/domain`: modelo y reglas puras de NoutyNotes. No tiene depe
 | `src/boards/` | Board como vista ordenada de tarjetas |
 | `src/cards/` | Tarjeta, tipos basados en primitivas, definiciones y valores de campo |
 | `src/relations/` | Relación dirigida y tipos de relación |
-| `src/layouts/` | Layout por board, colocaciones en unidades de grilla y modo de visualización |
+| `src/layouts/` | Layout por board, colocaciones en unidades de grilla y modo de visualización; motor de grilla (`grid.ts`, `operations.ts`, `projection.ts`) |
 | `src/templates/` | Manifiesto y validación mínima de plantillas como datos |
 | `src/assets/` | Referencias a assets relativas a la raíz del workspace |
 
@@ -33,6 +33,18 @@ Las pruebas `*.test.ts` están junto a cada módulo. `src/__fixtures__/` contien
 
 `validateWorkspace` comprueba las referencias de todo el workspace. `validateCard`, `validateBoard`, `validateLayout`, `validateRelation` y `validateCardType` comprueban las reglas locales de cada entidad.
 
+## Motor de grilla
+
+Recibe un `BoardLayout` y una `GridConfig` y devuelve un resultado nuevo o incidencias. No dibuja, no interpreta gestos y no consulta el ancho de pantalla.
+
+- **Configuración:** `DESKTOP_GRID` (12 columnas), `TABLET_GRID` (6) y `MOBILE_GRID` (1). `rows` es opcional; sin él, el board crece hacia abajo.
+- **Huella:** `rect` guarda el tamaño expandido. Una tarjeta ocupa `w×h` expandida, `w×1` colapsada y `1×1` minimizada. Límites y colisiones se evalúan sobre la huella; tocarse por un borde no es colisión.
+- **Operaciones:** `snapUnit`, `snapPoint` y `snapSize` redondean con empates hacia +∞. `moveCard`, `resizeCard` y `setDisplay` devuelven error en lugar de ajustar en silencio. `findFreeSpace` y `compactLayout` siguen el orden de lectura `(y, x, cardId)`.
+- **Restaurar:** al expandir o descontraer, `setDisplay` falla si no hay sitio, o busca el primer hueco con `{ ifOccupied: 'relocate' }`.
+- **Proyección:** `projectLayout(layout, from, to)` deriva la vista para otra cantidad de columnas (por ejemplo, móvil de una columna) sin modificar el layout canónico.
+
+Todas las operaciones validan antes el layout de entrada, no lo mutan y producen el mismo resultado con los mismos datos. Los componentes del `rect` son enteros seguros y sus sumas deben ser representables en cualquier modo. Ninguna salida exitosa tiene geometría inválida. La búsqueda y la proyección recorren solo filas candidatas (bordes inferiores de las huellas), así que su coste no depende de la altura. Las entradas nulas o mal formadas devuelven incidencias en lugar de excepciones.
+
 ## Fuera de alcance
 
-Aún no incluye el motor de grilla (límites de columnas, colisiones, snap, compactación ni vista móvil), los casos de uso de relaciones (autoenlaces, duplicados y borrado) ni la instanciación de plantillas. Tampoco define el formato de archivos, parsers ni persistencia. Esas partes llegan en las fases 2 a 5; estos contratos no fijan todavía cómo se guardan los archivos.
+Aún no incluye el empuje de tarjetas al expandir, las formas alternativas del nodo minimizado, los casos de uso de relaciones (autoenlaces, duplicados y borrado) ni la instanciación de plantillas. Tampoco define el formato de archivos, parsers ni persistencia. Esas partes llegan en las fases 2 a 5; estos contratos no fijan todavía cómo se guardan los archivos.

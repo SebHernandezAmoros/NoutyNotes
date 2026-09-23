@@ -31,8 +31,9 @@ export interface BoardLayout {
   readonly placements: readonly CardPlacement[];
 }
 
+// Enteros seguros: valores mayores no se pueden sumar ni comparar de forma exacta (ADR 0004).
 function isNonNegativeInteger(value: unknown): boolean {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function collectRectIssues(rect: unknown, path: string, issues: DomainIssue[]): void {

@@ -18,6 +18,15 @@ export { isCalendarDate } from './cards/field-values';
 export type { FieldValue } from './cards/field-values';
 export { cardDisplayModes, validateLayout } from './layouts/layout';
 export type { BoardLayout, CardDisplayMode, CardPlacement, GridRect } from './layouts/layout';
+export {
+  DESKTOP_GRID, MAX_GRID_COLUMNS, MOBILE_GRID, TABLET_GRID,
+  cellsOverlap, compareReadingOrder, footprint, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout,
+} from './layouts/grid';
+export type { GridCell, GridConfig, GridPoint, GridSize } from './layouts/grid';
+export { compactLayout, findFreeSpace, moveCard, resizeCard, setDisplay } from './layouts/operations';
+export type { FindFreeSpaceOptions, SetDisplayOptions } from './layouts/operations';
+export { projectLayout } from './layouts/projection';
+export type { ProjectedItem, ProjectedLayout } from './layouts/projection';
 export { validateRelation } from './relations/relation';
 export type { Relation, RelationTypeDefinition } from './relations/relation';
 export { validateTemplate } from './templates/template';

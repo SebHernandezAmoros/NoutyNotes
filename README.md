@@ -10,14 +10,14 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 
 ## Estado actual
 
-Las fases 0B (base técnica) y 1 (dominio) están completadas. El dominio define y valida workspaces, boards, tarjetas, tipos y campos, relaciones, layouts, plantillas y referencias a assets, pero todavía no está conectado a la interfaz. El siguiente paso es el motor de grilla.
+Las fases 0B (base técnica), 1 (dominio) y 2 (motor de grilla) están completadas. El dominio define y valida workspaces, boards, tarjetas, tipos y campos, relaciones, layouts, plantillas y referencias a assets. El motor de grilla mueve, redimensiona, compacta, minimiza y deriva la vista móvil de forma determinista. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas. El siguiente paso son las relaciones.
 
 | Disponible | Pendiente |
 | --- | --- |
 | App Expo con navegación mediante Expo Router | Crear y abrir espacios desde la interfaz |
 | Inicio responsive para escritorio y móvil | Editor Markdown y gestión de imágenes |
-| Temas claro, oscuro y del sistema | Motor de grilla, casos de uso de relaciones e instanciación de plantillas |
-| Modelo de dominio puro con reglas e invariantes probadas | Formato de archivos, guardado, apertura e importación/exportación |
+| Temas claro, oscuro y del sistema | Editor visual del board, casos de uso de relaciones e instanciación de plantillas |
+| Modelo de dominio puro y motor de grilla con reglas e invariantes probadas | Formato de archivos, guardado, apertura e importación/exportación |
 | TypeScript estricto, lint y pruebas automatizadas | Ejecución Android verificada y arranque web sin conexión |
 | Export web, bundle Android y proyecto nativo generado | |
 
@@ -78,7 +78,7 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 | `pnpm check` | Lint, TypeScript y pruebas unitarias |
 | `pnpm lint` | ESLint sin avisos permitidos |
 | `pnpm typecheck` | Tipos de paquetes, pruebas y aplicación |
-| `pnpm test` | Pruebas unitarias del dominio, fronteras del núcleo, temas, contraste y breakpoint |
+| `pnpm test` | Pruebas unitarias del dominio y del motor de grilla, integración con el workspace, fronteras del núcleo, temas, contraste y breakpoint |
 | `pnpm test:smoke` | Inicio web en escritorio y móvil: distribución, título, recarga, redimensionado, límite de 800 px, temas, acciones desactivadas, teclado, foco visible y tamaño táctil |
 | `pnpm build:web` | Export estático en `apps/noutynotes/dist/` |
 | `pnpm build:android:bundle` | JavaScript y assets en `apps/noutynotes/dist/android/`; no produce un APK |
@@ -88,7 +88,7 @@ Ejecutar el bundle Android después del export web, porque este último regenera
 
 Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho de la ventana a 390 px. Desde 800 px de ancho, la introducción y el panel de acciones aparecen en dos columnas; por debajo, en una. El contenido debe seguir siendo legible, sin desplazamiento horizontal, y las tres acciones futuras deben permanecer desactivadas.
 
-**Validación local registrada el 23 de septiembre de 2026:** instalación con lockfile congelado, lint y tipos correctos; 188 pruebas unitarias; 8 pruebas web correctas en desarrollo y 8 en el export de Pages, incluida la accesibilidad básica (2 casos se omiten a propósito en el perfil móvil); export web, bundle Android y export de Pages correctos. Estos resultados no equivalen a ejecución nativa Android.
+**Validación local registrada el 23 de septiembre de 2026:** instalación con lockfile congelado, lint y tipos correctos; 301 pruebas unitarias y de integración; 8 pruebas web correctas en desarrollo y 8 en el export de Pages, incluida la accesibilidad básica (2 casos se omiten a propósito en el perfil móvil); export web, bundle Android y export de Pages correctos. Estos resultados no equivalen a ejecución nativa Android.
 
 El [workflow de GitHub Actions](.github/workflows/ci.yml) está preparado para ejecutar las comprobaciones en pushes y pull requests. Su ejecución remota todavía no se ha verificado.
 
@@ -125,7 +125,7 @@ Esta demo muestra el inicio y los temas; no incorpora guardado ni funcionamiento
 
 ```text
 apps/noutynotes/        App Expo, rutas y pantalla inicial
-packages/domain/       Entidades, identificadores, invariantes y validación pura
+packages/domain/       Entidades, invariantes, validación y motor de grilla puros
 packages/application/  Reserva para casos de uso y puertos
 packages/storage/      Reserva para adaptadores de persistencia
 packages/ui/           Tokens, temas y medida de ventana compartidos
@@ -140,7 +140,7 @@ La app, el paquete UI y el dominio están activos. El dominio no depende de Reac
 | Etapa | Alcance | Estado |
 | --- | --- | --- |
 | A — Fundaciones | Estructura, herramientas, inicio y temas | Completada |
-| B — Núcleo | Dominio, grilla, relaciones y plantillas | En curso: dominio completado; siguiente, grilla |
+| B — Núcleo | Dominio, grilla, relaciones y plantillas | En curso: dominio y grilla completados; siguiente, relaciones |
 | C — Persistencia y prototipo | Serialización, almacenamiento en memoria y edición básica | Pendiente |
 | D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Pendiente |
 | E — Experiencia y calidad | Plantillas en UI, móvil, regresión y rendimiento | Pendiente |

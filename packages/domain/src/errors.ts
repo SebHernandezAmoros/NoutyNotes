@@ -11,6 +11,10 @@ export type DomainIssueCode =
   | 'missing-required-field'
   | 'invalid-field-value'
   | 'invalid-layout'
+  | 'invalid-grid-config'
+  | 'out-of-bounds'
+  | 'grid-collision'
+  | 'no-free-space'
   | 'invalid-asset-ref'
   | 'unknown-property'
   | 'executable-content';
@@ -42,6 +46,11 @@ export function issue(code: DomainIssueCode, path: string, message: string): Dom
 
 export function resultOf<T>(value: T, issues: readonly DomainIssue[]): ValidationResult<T> {
   return issues.length === 0 ? { ok: true, value } : { ok: false, issues };
+}
+
+/** Resultado fallido sin valor asociado: evita inventar un valor para la rama de error. */
+export function failure<T>(issues: readonly DomainIssue[]): ValidationResult<T> {
+  return { ok: false, issues };
 }
 
 /** Devuelve el valor validado o lanza un `DomainError` con todas las incidencias. */
