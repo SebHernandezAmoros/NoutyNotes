@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "template": { "id": "storyboard", "name": "Film Storyboard", "version": "1.0.0", "description": "Planos, cámara y diálogo." },
+  "readme": "# Storyboard\nOrdena los planos y conecta la secuencia narrativa.\n",
+  "assets": ["assets/storyboard.svg"],
+  "preview": "assets/storyboard.svg",
+  "cardTypes": [{ "id": "shot", "label": "Plano", "base": "image", "fields": [
+    { "key": "frame", "kind": "asset", "required": true },
+    { "key": "camera", "kind": "text", "required": true },
+    { "key": "dialogue", "kind": "markdown" },
+    { "key": "duration", "kind": "number" }
+  ] }],
+  "relationTypes": [{ "id": "next", "label": "Siguiente plano" }],
+  "boards": [{ "id": "sequence", "title": "Secuencia inicial", "cardIds": ["arrival", "discovery"] }],
+  "cards": [
+    { "id": "arrival", "typeId": "shot", "title": "Llegada", "fields": { "frame": "assets/storyboard.svg", "camera": "Plano general", "dialogue": "Llegamos al jardín.", "duration": 5 } },
+    { "id": "discovery", "typeId": "shot", "title": "Descubrimiento", "content": "**Detalle** de la primera semilla.", "fields": { "frame": "assets/storyboard.svg", "camera": "Primer plano", "dialogue": "Mira esto.", "duration": 3 } }
+  ],
+  "relations": [{ "id": "arrival-next-discovery", "typeId": "next", "from": "arrival", "to": "discovery" }],
+  "layouts": [{ "boardId": "sequence", "placements": [
+    { "cardId": "arrival", "rect": { "x": 0, "y": 0, "w": 6, "h": 4 }, "display": "expanded" },
+    { "cardId": "discovery", "rect": { "x": 6, "y": 0, "w": 6, "h": 4 }, "display": "expanded" }
+  ] }]
+}

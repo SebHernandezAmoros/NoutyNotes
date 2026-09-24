@@ -10,14 +10,14 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 
 ## Estado actual
 
-Las fases 0B (base técnica), 1 (dominio), 2 (motor de grilla) y 3 (relaciones) están implementadas. El dominio define y valida workspaces, boards, tarjetas, tipos y campos, relaciones, layouts, plantillas y referencias a assets. La grilla mueve, redimensiona, compacta, minimiza y deriva la vista móvil. El motor de relaciones crea y elimina conexiones, consulta entradas, salidas y vecinos, y permite borrar tarjetas con una política explícita para sus conexiones. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas. El siguiente paso es la instanciación de plantillas.
+Las fases 0B (base técnica) y 1–4 (dominio, grilla, relaciones y plantillas) están implementadas. El núcleo valida datos, transforma layouts, gestiona relaciones y crea workspaces desde plantillas GDD, Storyboard y Research. Las plantillas se importan/exportan como JSON en memoria y se duplican remapeando IDs y referencias. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas ni un selector de plantillas. El siguiente paso es el formato de archivos Markdown/YAML.
 
 | Disponible | Pendiente |
 | --- | --- |
 | App Expo con navegación mediante Expo Router | Crear y abrir espacios desde la interfaz |
 | Inicio responsive para escritorio y móvil | Editor Markdown y gestión de imágenes |
-| Temas claro, oscuro y del sistema | Editor visual del board e instanciación de plantillas |
-| Dominio puro y motores de grilla y relaciones con invariantes probadas | Formato de archivos, guardado, apertura e importación/exportación |
+| Temas claro, oscuro y del sistema | Editor visual del board y selector de plantillas |
+| Dominio, grilla, relaciones y plantillas declarativas probadas | Formato de archivos, guardado, apertura e importación/exportación de carpetas/ZIP |
 | TypeScript estricto, lint y pruebas automatizadas | Ejecución Android verificada y arranque web sin conexión |
 | Export web, bundle Android y proyecto nativo generado | |
 
@@ -140,7 +140,7 @@ La app, el paquete UI y el dominio están activos. El dominio no depende de Reac
 | Etapa | Alcance | Estado |
 | --- | --- | --- |
 | A — Fundaciones | Estructura, herramientas, inicio y temas | Completada |
-| B — Núcleo | Dominio, grilla, relaciones y plantillas | En curso: dominio y grilla completados; siguiente, relaciones |
+| B — Núcleo | Dominio, grilla, relaciones y plantillas | Completada; siguiente: serialización |
 | C — Persistencia y prototipo | Serialización, almacenamiento en memoria y edición básica | Pendiente |
 | D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Pendiente |
 | E — Experiencia y calidad | Plantillas en UI, móvil, regresión y rendimiento | Pendiente |

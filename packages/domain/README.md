@@ -12,9 +12,9 @@ Paquete `@noutynotes/domain`: modelo y reglas puras de NoutyNotes. No tiene depe
 | `src/workspace/` | Workspace, metadata y validación de referencias entre colecciones |
 | `src/boards/` | Board como vista ordenada de tarjetas |
 | `src/cards/` | Tarjeta, tipos basados en primitivas, definiciones y valores de campo |
-| `src/relations/` | Relación dirigida y tipos de relación |
+| `src/relations/` | Relación dirigida, validación, creación, eliminación y consultas |
 | `src/layouts/` | Layout por board, colocaciones en unidades de grilla y modo de visualización; motor de grilla (`grid.ts`, `operations.ts`, `projection.ts`) |
-| `src/templates/` | Manifiesto y validación mínima de plantillas como datos |
+| `src/templates/` | Plantillas completas, validación, remapeo, instanciación y JSON en memoria |
 | `src/assets/` | Referencias a assets relativas a la raíz del workspace |
 
 Las pruebas `*.test.ts` están junto a cada módulo. `src/__fixtures__/` contiene datos de prueba que el paquete no exporta.
@@ -45,6 +45,27 @@ Recibe un `BoardLayout` y una `GridConfig` y devuelve un resultado nuevo o incid
 
 Todas las operaciones validan antes el layout de entrada, no lo mutan y producen el mismo resultado con los mismos datos. Los componentes del `rect` son enteros seguros y sus sumas deben ser representables en cualquier modo. Ninguna salida exitosa tiene geometría inválida. La búsqueda y la proyección recorren solo filas candidatas (bordes inferiores de las huellas), así que su coste no depende de la altura. Las entradas nulas o mal formadas devuelven incidencias en lugar de excepciones.
 
+## Relaciones y borrado
+
+`createRelation`, `deleteRelation`, `getIncomingRelations`, `getOutgoingRelations` y `getRelatedCards` operan sobre el workspace validado. Se rechazan autoenlaces y duplicados del mismo tipo/sentido. `deleteCard` restringe por defecto el borrado si hay conexiones; `{ relations: 'cascade' }` elimina vínculos incidentes y apariciones de la tarjeta en todos los boards/layouts, sin borrar assets.
+
+## Template Lab
+
+`validateTemplate` admite tarjetas, relaciones, layouts, catálogo de assets, README y preview, además del contrato mínimo de tipos y boards. Comprueba referencias y grilla inicial de 12 columnas. Plantillas mínimas existentes siguen siendo válidas; las colecciones opcionales se interpretan como vacías al instanciar.
+
+- `importTemplate(objectOrJson)` valida datos y devuelve una copia independiente.
+- `exportTemplate(template)` devuelve JSON determinista, con claves ordenadas y arrays en su orden original.
+- `instantiateTemplate(template, { workspaceId, name, namespace })` devuelve `{ workspace, assets, readme?, preview? }`.
+- `duplicateTemplate(template, { manifest, namespace })` devuelve una plantilla independiente; el manifiesto debe tener otro ID.
+
+Namespace remapea explícitamente IDs a `namespace-id` y todas sus referencias estructurales. No cambia claves/valores de campos, Markdown ni rutas de assets; IDs mayores de 64 caracteres se rechazan sin truncar. `assets` es un catálogo para materialización posterior, no archivos copiados. Las operaciones no usan reloj ni aleatoriedad.
+
+El formato es declarativo, con claves cerradas y protección contra contenido ejecutable, ciclos, getters y estructuras no representables; profundidad máxima 64. Se mantiene validación propia del dominio, sin Zod ni dependencias nuevas. Los fixtures completos viven en `tests/fixtures/templates/` y la integración comprueba los SVG locales.
+
+```sh
+pnpm exec vitest run packages/domain/src/templates tests/integration/templates-workspace.test.ts
+```
+
 ## Fuera de alcance
 
-Aún no incluye el empuje de tarjetas al expandir, las formas alternativas del nodo minimizado, los casos de uso de relaciones (autoenlaces, duplicados y borrado) ni la instanciación de plantillas. Tampoco define el formato de archivos, parsers ni persistencia. Esas partes llegan en las fases 2 a 5; estos contratos no fijan todavía cómo se guardan los archivos.
+Aún no incluye empuje de tarjetas al expandir, formas alternativas del nodo minimizado, UI de edición o plantillas, formato de archivos Markdown/YAML, ZIP ni persistencia. El intercambio JSON de plantillas no define todavía cómo se guardan los archivos del workspace ni copia bytes de assets.

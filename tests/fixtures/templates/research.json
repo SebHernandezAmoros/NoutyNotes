@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "template": { "id": "research", "name": "Research Board", "version": "1.0.0", "description": "Fuentes, hallazgos y evidencias." },
+  "readme": "# Research\nRegistra fuentes y enlázalas con los hallazgos que respaldan.\n",
+  "assets": ["assets/research.svg"],
+  "preview": "assets/research.svg",
+  "cardTypes": [
+    { "id": "source", "label": "Fuente", "base": "link", "fields": [
+      { "key": "url", "kind": "url", "required": true },
+      { "key": "accessed", "kind": "date" }
+    ] },
+    { "id": "finding", "label": "Hallazgo", "base": "note", "fields": [
+      { "key": "summary", "kind": "markdown", "required": true },
+      { "key": "confidence", "kind": "select", "options": ["low", "medium", "high"] },
+      { "key": "reviewed", "kind": "boolean" }
+    ] }
+  ],
+  "relationTypes": [{ "id": "supports", "label": "Respalda" }],
+  "boards": [{ "id": "evidence", "title": "Evidencia", "cardIds": ["reference", "observation"] }],
+  "cards": [
+    { "id": "reference", "typeId": "source", "title": "Fuente de ejemplo", "fields": { "url": "https://example.com/research", "accessed": "2026-09-24" } },
+    { "id": "observation", "typeId": "finding", "title": "Hallazgo por revisar", "content": "La referencia se conserva como texto, sin descargarla.", "fields": { "summary": "Una hipótesis inicial.", "confidence": "low", "reviewed": false }, "assetRefs": ["assets/research.svg"] }
+  ],
+  "relations": [{ "id": "reference-supports-observation", "typeId": "supports", "from": "reference", "to": "observation" }],
+  "layouts": [{ "boardId": "evidence", "placements": [
+    { "cardId": "reference", "rect": { "x": 0, "y": 0, "w": 4, "h": 3 }, "display": "expanded" },
+    { "cardId": "observation", "rect": { "x": 4, "y": 0, "w": 8, "h": 3 }, "display": "expanded" }
+  ] }]
+}

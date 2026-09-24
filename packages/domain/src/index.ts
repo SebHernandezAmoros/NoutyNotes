@@ -34,5 +34,8 @@ export type { Relation, RelationTypeDefinition } from './relations/relation';
 export { createRelation, deleteRelation, getIncomingRelations, getOutgoingRelations, getRelatedCards } from './relations/operations';
 export { validateTemplate } from './templates/template';
 export type { Template, TemplateBoard, TemplateManifest } from './templates/template';
+export { instantiateTemplate, duplicateTemplate } from './templates/operations';
+export type { InstantiateTemplateOptions, DuplicateTemplateOptions, TemplateInstance } from './templates/operations';
+export { importTemplate, exportTemplate } from './templates/exchange';
 export { validateWorkspace } from './workspace/workspace';
 export type { Workspace, WorkspaceMetadata } from './workspace/workspace';
