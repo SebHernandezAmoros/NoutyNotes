@@ -1,6 +1,6 @@
 import { checkOptionalText, checkRequiredText, isRecord, issue, resultOf } from '../errors';
 import type { DomainIssue, ValidationResult } from '../errors';
-import { checkId } from '../ids';
+import { checkId, isValidId } from '../ids';
 import type { CardId, RelationId, RelationTypeId } from '../ids';
 
 export interface RelationTypeDefinition {
@@ -29,7 +29,7 @@ export function collectRelationTypeIssues(type: unknown, path: string, issues: D
   checkRequiredText(type.label, `${path}.label`, issues);
 }
 
-/** Forma de la relación. Autoenlaces y duplicados semánticos se deciden en fase 3. */
+/** Forma de la relación y prohibición de autoenlaces (ADR 0005). */
 export function collectRelationIssues(relation: unknown, path: string, issues: DomainIssue[]): void {
   if (!isRecord(relation)) {
     issues.push(issue('invalid-value', path, 'Debe ser un objeto.'));
@@ -40,6 +40,20 @@ export function collectRelationIssues(relation: unknown, path: string, issues: D
   checkId(relation.from, `${path}.from`, issues);
   checkId(relation.to, `${path}.to`, issues);
   checkOptionalText(relation.label, `${path}.label`, issues);
+  if (isValidId(relation.from) && relation.from === relation.to) {
+    issues.push(issue('self-relation', `${path}.to`, 'Una relación debe conectar dos tarjetas distintas.'));
+  }
+}
+
+/** Unicidad semántica, independiente de ID y etiqueta; conserva el orden de diagnóstico. */
+export function collectDuplicateRelationIssues(relations: readonly unknown[], path: string, issues: DomainIssue[]): void {
+  const seen = new Set<string>();
+  relations.forEach((relation, index) => {
+    if (!isRecord(relation) || !isValidId(relation.from) || !isValidId(relation.to) || !isValidId(relation.typeId)) return;
+    const key = JSON.stringify([relation.from, relation.to, relation.typeId]);
+    if (seen.has(key)) issues.push(issue('duplicate-relation', `${path}[${index}]`, 'Ya existe una relación del mismo tipo y sentido entre estas tarjetas.'));
+    seen.add(key);
+  });
 }
 
 export function validateRelation(relation: Relation): ValidationResult<Relation> {

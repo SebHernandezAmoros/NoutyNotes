@@ -10,7 +10,7 @@ import { checkId, checkUniqueIds, isValidId } from '../ids';
 import type { WorkspaceId } from '../ids';
 import { collectLayoutIssues } from '../layouts/layout';
 import type { BoardLayout } from '../layouts/layout';
-import { collectRelationIssues, collectRelationTypeIssues } from '../relations/relation';
+import { collectDuplicateRelationIssues, collectRelationIssues, collectRelationTypeIssues } from '../relations/relation';
 import type { Relation, RelationTypeDefinition } from '../relations/relation';
 import { checkSchemaVersion } from '../schema-version';
 
@@ -160,5 +160,6 @@ export function validateWorkspace(workspace: Workspace): ValidationResult<Worksp
     checkReference(relation.to, cardIndex, `relations[${i}].to`, 'la tarjeta', issues);
   });
 
+  collectDuplicateRelationIssues(relations, 'relations', issues);
   return resultOf(workspace, issues);
 }

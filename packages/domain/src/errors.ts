@@ -2,6 +2,9 @@
 export type DomainIssueCode =
   | 'invalid-id'
   | 'duplicate-id'
+  | 'duplicate-relation'
+  | 'self-relation'
+  | 'card-has-relations'
   | 'invalid-value'
   | 'unsupported-schema-version'
   | 'missing-reference'

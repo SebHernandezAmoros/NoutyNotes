@@ -10,14 +10,14 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 
 ## Estado actual
 
-Las fases 0B (base técnica), 1 (dominio) y 2 (motor de grilla) están completadas. El dominio define y valida workspaces, boards, tarjetas, tipos y campos, relaciones, layouts, plantillas y referencias a assets. El motor de grilla mueve, redimensiona, compacta, minimiza y deriva la vista móvil de forma determinista. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas. El siguiente paso son las relaciones.
+Las fases 0B (base técnica), 1 (dominio), 2 (motor de grilla) y 3 (relaciones) están implementadas. El dominio define y valida workspaces, boards, tarjetas, tipos y campos, relaciones, layouts, plantillas y referencias a assets. La grilla mueve, redimensiona, compacta, minimiza y deriva la vista móvil. El motor de relaciones crea y elimina conexiones, consulta entradas, salidas y vecinos, y permite borrar tarjetas con una política explícita para sus conexiones. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas. El siguiente paso es la instanciación de plantillas.
 
 | Disponible | Pendiente |
 | --- | --- |
 | App Expo con navegación mediante Expo Router | Crear y abrir espacios desde la interfaz |
 | Inicio responsive para escritorio y móvil | Editor Markdown y gestión de imágenes |
-| Temas claro, oscuro y del sistema | Editor visual del board, casos de uso de relaciones e instanciación de plantillas |
-| Modelo de dominio puro y motor de grilla con reglas e invariantes probadas | Formato de archivos, guardado, apertura e importación/exportación |
+| Temas claro, oscuro y del sistema | Editor visual del board e instanciación de plantillas |
+| Dominio puro y motores de grilla y relaciones con invariantes probadas | Formato de archivos, guardado, apertura e importación/exportación |
 | TypeScript estricto, lint y pruebas automatizadas | Ejecución Android verificada y arranque web sin conexión |
 | Export web, bundle Android y proyecto nativo generado | |
 
@@ -78,7 +78,7 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 | `pnpm check` | Lint, TypeScript y pruebas unitarias |
 | `pnpm lint` | ESLint sin avisos permitidos |
 | `pnpm typecheck` | Tipos de paquetes, pruebas y aplicación |
-| `pnpm test` | Pruebas unitarias del dominio y del motor de grilla, integración con el workspace, fronteras del núcleo, temas, contraste y breakpoint |
+| `pnpm test` | Pruebas unitarias del dominio, grilla y relaciones, integración con el workspace, fronteras del núcleo, temas, contraste y breakpoint |
 | `pnpm test:smoke` | Inicio web en escritorio y móvil: distribución, título, recarga, redimensionado, límite de 800 px, temas, acciones desactivadas, teclado, foco visible y tamaño táctil |
 | `pnpm build:web` | Export estático en `apps/noutynotes/dist/` |
 | `pnpm build:android:bundle` | JavaScript y assets en `apps/noutynotes/dist/android/`; no produce un APK |
