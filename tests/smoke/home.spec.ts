@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
+import { activeLabel, borderColor, hasHorizontalOverflow, rgb, trackProblems } from './support';
 
 type Arrangement = 'columns' | 'stacked' | 'overlapping';
 
@@ -53,26 +54,14 @@ async function expectArrangement(page: Page, mode: 'columns' | 'stacked') {
   } else {
     expect(intro.width).toBeGreaterThan(viewport.width - 2 * 20 - 2);
   }
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-  expect(overflow).toBe(false);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
 }
 
 function modeFor(width: number): 'columns' | 'stacked' {
   return width >= atBreakpoint.width ? 'columns' : 'stacked';
 }
 
-function trackProblems(page: Page) {
-  const runtimeErrors: string[] = [];
-  const failedResources: string[] = [];
-  page.on('pageerror', (error) => runtimeErrors.push(error.message));
-  page.on('response', (response) => {
-    if (response.status() >= 400) failedResources.push(`${response.status()} ${response.url()}`);
-  });
-  page.on('requestfailed', (request) => failedResources.push(request.url()));
-  return { runtimeErrors, failedResources };
-}
-
-test('inicio responsive, temas y acciones aún no disponibles', async ({ page }, testInfo) => {
+test('inicio responsive, temas, crear activo y acciones reservadas', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   const initialWidth = page.viewportSize()?.width ?? 0;
   await page.emulateMedia({ colorScheme: 'light' });
@@ -82,7 +71,8 @@ test('inicio responsive, temas y acciones aún no disponibles', async ({ page },
   await expectArrangement(page, modeFor(initialWidth));
   await page.screenshot({ path: testInfo.outputPath('home-initial.png'), fullPage: true });
 
-  await expect(page.getByRole('button', { name: 'Crear un espacio', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Crear un espacio', exact: true })).toBeEnabled();
+  await expect(page.getByTestId('memory-notice')).toContainText('se pierden al recargar o cerrar la pestaña');
   await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Usar una plantilla', exact: true })).toBeDisabled();
 
@@ -171,14 +161,6 @@ test('el HTML estático sin JavaScript usa la distribución compacta legible', a
   await context.close();
 });
 
-function rgb(hex: string): string {
-  const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-const borderColor = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).borderTopColor);
-const activeLabel = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? null);
-
 test('accesibilidad básica: teclado, activación, foco visible y controles táctiles', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
@@ -186,6 +168,9 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   const dark = page.getByRole('button', { name: 'Tema oscuro', exact: true });
   const system = page.getByRole('button', { name: 'Tema sistema', exact: true });
   const actions = ['Crear un espacio', 'Abrir una carpeta', 'Usar una plantilla'];
+  const reserved = ['Abrir una carpeta', 'Usar una plantilla'];
+  const nameField = page.getByLabel('Nombre del nuevo espacio');
+  const create = page.getByRole('button', { name: 'Crear un espacio', exact: true });
   const screen = page.getByTestId('home-screen');
   await expect(page.getByRole('heading', { name: /Dale un lugar/ })).toBeVisible();
 
@@ -200,7 +185,7 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
 
-  // Orden de tabulación: los tres temas; las acciones desactivadas no reciben foco.
+  // Orden de tabulación: los tres temas, el nombre y «Crear»; las acciones reservadas no reciben foco.
   const unfocused = await borderColor(system);
   await page.keyboard.press('Tab');
   await expect(light).toBeFocused();
@@ -223,9 +208,19 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   await expect(system).toBeFocused();
   await expect.poll(() => borderColor(dark)).toBe(rgb(themeColors.dark.surface));
   await page.keyboard.press('Tab');
-  expect(actions).not.toContain(await activeLabel(page));
+  await expect(nameField).toBeFocused();
+  await expect.poll(() => borderColor(nameField)).toBe(rgb(themeColors.dark.selection));
+  await page.keyboard.press('Tab');
+  await expect(create).toBeFocused();
+  await expect.poll(() => borderColor(create)).toBe(rgb(themeColors.dark.selection));
+  await page.keyboard.press('Tab');
+  expect(reserved).not.toContain(await activeLabel(page));
 
   // Activación con Espacio, volviendo atrás con Shift+Tab.
+  await page.keyboard.press('Shift+Tab');
+  await expect(create).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(nameField).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(system).toBeFocused();
   await page.keyboard.press('Shift+Tab');
@@ -235,4 +230,27 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   await expect(light).toHaveAttribute('aria-pressed', 'true');
   await expect(dark).toHaveAttribute('aria-pressed', 'false');
   await expect(screen).toHaveCSS('background-color', rgb(themeColors.light.background));
+});
+
+test('antes de cargar JavaScript el nombre no admite escritura que luego se perdería', async ({ page }) => {
+  // Retiene el bundle para reproducir de forma determinista la ventana previa al render del cliente,
+  // que reemplaza (desarrollo) o hidrata (export) el HTML estático.
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(/\.(bundle|js)(\?|$)/, async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./', { waitUntil: 'commit' });
+  const field = page.getByLabel('Nombre del nuevo espacio');
+  await expect(field).toBeVisible();
+  await expect(field).not.toBeEditable();
+
+  release();
+  await field.fill('Primera idea');
+  await expect(page.getByRole('heading', { name: /Dale un lugar/ })).toBeVisible();
+  await expect(field).toHaveValue('Primera idea');
+  await page.getByRole('button', { name: 'Crear un espacio', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Primera idea', exact: true })).toBeVisible();
 });

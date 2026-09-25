@@ -2,6 +2,8 @@ import { ThemeProvider, useTheme } from '@noutynotes/ui';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
+import { WorkspaceSessionProvider } from '../session/WorkspaceSession';
+
 function AppNavigation() {
   const { theme } = useTheme();
 
@@ -14,9 +16,12 @@ function AppNavigation() {
 }
 
 export default function RootLayout() {
+  // El almacenamiento en memoria vive por encima del tema y de la navegación (ADR 0009).
   return (
-    <ThemeProvider>
-      <AppNavigation />
-    </ThemeProvider>
+    <WorkspaceSessionProvider>
+      <ThemeProvider>
+        <AppNavigation />
+      </ThemeProvider>
+    </WorkspaceSessionProvider>
   );
 }

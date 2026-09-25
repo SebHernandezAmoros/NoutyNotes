@@ -4,25 +4,25 @@
 
 NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imágenes, tarjetas y relaciones sobre una grilla. Su objetivo es funcionar con archivos locales y compartir un mismo núcleo entre web y Android.
 
-> **En desarrollo inicial.** Actualmente funciona la pantalla de bienvenida y el cambio de tema. Crear espacios, abrir carpetas, editar notas y usar plantillas todavía no están disponibles.
+> **En desarrollo inicial.** Hay un prototipo navegable: crear espacios, añadir notas e imágenes de ejemplo, editar su texto, moverlas, redimensionarlas y conectarlas. **Todo vive en memoria y se pierde al recargar o cerrar la pestaña.** Abrir carpetas y usar plantillas todavía no están disponibles.
 
 ![Pantalla inicial de NoutyNotes en tema claro](assets/readme/home-light.png)
 
 ## Estado actual
 
-Las fases 0B (base técnica), 1–4 (dominio, grilla, relaciones y plantillas) y 5 (formato de archivos) están implementadas. El núcleo valida datos, transforma layouts, gestiona relaciones y crea workspaces desde plantillas GDD, Storyboard y Research. Las plantillas se importan/exportan como JSON en memoria y se duplican remapeando IDs y referencias. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas ni un selector de plantillas. Los workspaces y plantillas ya se convierten en archivos Markdown/YAML en memoria y se leen de vuelta sin pérdida (`@noutynotes/storage`). Un puerto de almacenamiento (`@noutynotes/application`) y su adaptador en memoria (`MemoryStorage`) permiten crear, guardar, abrir, listar, renombrar y borrar workspaces con esos archivos. Una suite contractual lo comprueba y la comprobarán también los futuros adaptadores. Todavía no se guardan en disco ni en una carpeta, y la interfaz no usa estas piezas: el siguiente paso es el prototipo de interfaz.
+Las fases 0B (base técnica), 1–4 (dominio, grilla, relaciones y plantillas) y 5 (formato de archivos) están implementadas. El núcleo valida datos, transforma layouts, gestiona relaciones y crea workspaces desde plantillas GDD, Storyboard y Research. Las plantillas se importan/exportan como JSON en memoria y se duplican remapeando IDs y referencias. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas ni un selector de plantillas. Los workspaces y plantillas ya se convierten en archivos Markdown/YAML en memoria y se leen de vuelta sin pérdida (`@noutynotes/storage`). Un puerto de almacenamiento (`@noutynotes/application`) y su adaptador en memoria (`MemoryStorage`) permiten crear, guardar, abrir, listar, renombrar y borrar workspaces con esos archivos. Una suite contractual lo comprueba y la comprobarán también los futuros adaptadores. Desde la fase 7 la interfaz usa estas piezas en un prototipo sobre `MemoryStorage`. Todavía no se guardan en disco ni en una carpeta: el siguiente paso son las carpetas web.
 
 | Disponible | Pendiente |
 | --- | --- |
-| App Expo con navegación mediante Expo Router | Crear y abrir espacios desde la interfaz |
-| Inicio responsive para escritorio y móvil | Editor Markdown y gestión de imágenes |
-| Temas claro, oscuro y del sistema | Editor visual del board y selector de plantillas |
+| App Expo con navegación mediante Expo Router | Guardar y abrir espacios en carpetas |
+| Prototipo: crear espacios, tarjetas, texto, mover, redimensionar y conectar (solo en memoria) | Vista previa de Markdown e imágenes reales |
+| Inicio y tablero responsive; temas claro, oscuro y del sistema | Arrastre y gestos, selector de plantillas |
 | Dominio, grilla, relaciones y plantillas declarativas probadas | Guardado, apertura e importación/exportación de carpetas/ZIP |
 | Formato de archivos v1 Markdown/YAML y almacenamiento en memoria con contrato | Carpetas web, ZIP y almacenamiento Android |
 | TypeScript estricto, lint y pruebas automatizadas | Ejecución Android verificada y arranque web sin conexión |
 | Export web, bundle Android y proyecto nativo generado | |
 
-La preferencia de tema dura la sesión actual. Los botones de crear, abrir y usar plantillas aparecen desactivados. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/); todavía no hay un APK validado. La diferencia de distribución del export (una columna en escritorio) está corregida y cubierta por pruebas locales; la demo pública se actualizará cuando se publique el cambio.
+La preferencia de tema y los espacios creados duran la sesión actual. «Abrir una carpeta» y «Usar una plantilla» aparecen desactivados. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/); todavía no hay un APK validado. La diferencia de distribución del export (una columna en escritorio) está corregida y cubierta por pruebas locales; la demo pública se actualizará cuando se publique el cambio.
 
 ## Tecnologías
 
@@ -80,16 +80,16 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 | `pnpm lint` | ESLint sin avisos permitidos |
 | `pnpm typecheck` | Tipos de paquetes, pruebas y aplicación |
 | `pnpm test` | Pruebas unitarias del dominio, grilla, relaciones, plantillas y formato de archivos; integración con fixtures; fronteras del núcleo y de storage; temas, contraste y breakpoint |
-| `pnpm test:smoke` | Inicio web en escritorio y móvil: distribución, título, recarga, redimensionado, límite de 800 px, temas, acciones desactivadas, teclado, foco visible y tamaño táctil |
+| `pnpm test:smoke` | Web en escritorio y móvil: inicio (distribución, recarga, redimensionado, límite de 800 px, temas, teclado, foco y tamaño táctil) y prototipo (crear, editar, mover, redimensionar, conectar, reabrir, pérdida al recargar, tablero responsive y accesibilidad) |
 | `pnpm build:web` | Export estático en `apps/noutynotes/dist/` |
 | `pnpm build:android:bundle` | JavaScript y assets en `apps/noutynotes/dist/android/`; no produce un APK |
 | `pnpm android:prepare` | Proyecto nativo generado en `apps/noutynotes/android/` |
 
 Ejecutar el bundle Android después del export web, porque este último regenera `dist/`. Las capturas y trazas de Playwright se guardan en `artifacts/playwright/`.
 
-Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho de la ventana a 390 px. Desde 800 px de ancho, la introducción y el panel de acciones aparecen en dos columnas; por debajo, en una. El contenido debe seguir siendo legible, sin desplazamiento horizontal, y las tres acciones futuras deben permanecer desactivadas.
+Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho de la ventana a 390 px. Desde 800 px de ancho, la introducción y el panel de acciones aparecen en dos columnas; por debajo, en una. El contenido debe seguir siendo legible, sin desplazamiento horizontal. Para el prototipo: crear un espacio, añadir dos notas y una imagen, seleccionar una tarjeta, editar su texto y guardarlo, pulsar ← para ver el error de límites y → tras bajarla para ver la colisión, conectarla con otra, volver a «Mis espacios» y reabrirla. Al recargar, el espacio debe desaparecer con un aviso. «Abrir una carpeta» y «Usar una plantilla» deben seguir desactivados.
 
-**Validación local registrada el 24 de septiembre de 2026:** instalación con lockfile congelado, lint y tipos correctos; 729 pruebas unitarias, de integración y de contrato; 8 pruebas web correctas en desarrollo y 8 en el export de Pages, incluida la accesibilidad básica (2 casos se omiten a propósito en el perfil móvil); export de Pages correcto. El export web normal y el bundle Android se verificaron por última vez en fases anteriores, sin cambios de app desde entonces. Estos resultados no equivalen a ejecución nativa Android.
+**Validación local registrada el 24 de septiembre de 2026 (fase 7):** lint y tipos correctos; 783 pruebas unitarias, de integración y de contrato; 19 pruebas web correctas en desarrollo y 19 en el export de Pages (3 casos se omiten a propósito en el perfil móvil), con capturas idénticas entre ambos; export de Pages, export web y bundle Android correctos. Estos resultados no equivalen a ejecución nativa Android.
 
 El [workflow de GitHub Actions](.github/workflows/ci.yml) está preparado para ejecutar las comprobaciones en pushes y pull requests. Su ejecución remota todavía no se ha verificado.
 
@@ -134,7 +134,7 @@ tests/                 Smoke web, contratos, integración y fixtures del formato
 assets/readme/         Capturas propias para esta documentación
 ```
 
-Están activos la app, el paquete UI, el dominio y `@noutynotes/storage` (formato de archivos Markdown/YAML en memoria); la app todavía no usa el dominio ni storage. El dominio no depende de React, Expo, filesystem, red ni almacenamiento, y no genera identificadores ni fechas. Las tarjetas pertenecen al workspace; los boards las muestran por referencia, así que una tarjeta puede aparecer en varios. Las posiciones se guardan aparte, en unidades de grilla, y las relaciones no dependen de ellas. Las plantillas son solo datos. Ver [el README del dominio](packages/domain/README.md). Storage depende solo del API público del dominio, de `yaml` y de `zod`; el dominio no depende de storage. `@noutynotes/application` define el puerto `WorkspaceStorage` y los casos de uso, y solo depende del dominio; `MemoryStorage` implementa ese puerto desde storage. Ver [application](packages/application/README.md).
+Están activos la app, el paquete UI, el dominio y `@noutynotes/storage` (formato de archivos Markdown/YAML en memoria); la app usa application y el dominio, y solo su raíz de composición crea `MemoryStorage`. El dominio no depende de React, Expo, filesystem, red ni almacenamiento, y no genera identificadores ni fechas. Las tarjetas pertenecen al workspace; los boards las muestran por referencia, así que una tarjeta puede aparecer en varios. Las posiciones se guardan aparte, en unidades de grilla, y las relaciones no dependen de ellas. Las plantillas son solo datos. Ver [el README del dominio](packages/domain/README.md). Storage depende solo del API público del dominio, de `yaml` y de `zod`; el dominio no depende de storage. `@noutynotes/application` define el puerto `WorkspaceStorage` y los casos de uso, y solo depende del dominio; `MemoryStorage` implementa ese puerto desde storage. Ver [application](packages/application/README.md).
 
 ## Plan de trabajo
 
@@ -142,7 +142,7 @@ Están activos la app, el paquete UI, el dominio y `@noutynotes/storage` (format
 | --- | --- | --- |
 | A — Fundaciones | Estructura, herramientas, inicio y temas | Completada |
 | B — Núcleo | Dominio, grilla, relaciones y plantillas | Completada |
-| C — Persistencia y prototipo | Serialización, almacenamiento en memoria y edición básica | En curso: serialización y almacenamiento en memoria completados; siguiente, prototipo de interfaz |
+| C — Persistencia y prototipo | Serialización, almacenamiento en memoria y edición básica | Completada: serialización, almacenamiento en memoria y prototipo de interfaz |
 | D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Pendiente |
 | E — Experiencia y calidad | Plantillas en UI, móvil, regresión y rendimiento | Pendiente |
 | F — Publicación y v1 | Demo, documentación completa y release | Pendiente |

@@ -71,3 +71,5 @@ pnpm exec vitest run packages/domain/src/templates tests/integration/templates-w
 ## Fuera de alcance
 
 Aún no incluye empuje de tarjetas al expandir, formas alternativas del nodo minimizado, UI de edición o plantillas, formato de archivos Markdown/YAML, ZIP ni persistencia. El intercambio JSON de plantillas no define todavía cómo se guardan los archivos del workspace ni copia bytes de assets.
+
+Fase 7: `addCard(workspace, card, { boardId, size, config })` agrega una tarjeta aportada por el llamador al final del board y en el primer hueco libre de su layout. `updateCard(workspace, cardId, { title?, content? })` edita solo el título (en blanco lo elimina) y el Markdown (literal).

@@ -35,6 +35,15 @@ importers:
 
   apps/noutynotes:
     dependencies:
+      '@noutynotes/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@noutynotes/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@noutynotes/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       '@noutynotes/ui':
         specifier: workspace:*
         version: link:../../packages/ui

@@ -21,4 +21,11 @@ Todas devuelven `Promise<WorkspaceStorageResult<T>>` y nunca rechazan por datos 
 - `createWorkspaceFromTemplate(storage, template, { workspaceId, name, namespace })`: instancia una plantilla y la guarda.
 - `modifyWorkspace(storage, id, transform)`: abre, aplica una transformación pura del dominio (mover, borrar, relacionar…) y guarda. Si falla o cambia el ID, no se guarda nada.
 
+### Prototipo de interfaz (fase 7)
+
+- `createEmptyWorkspaceNamed(storage, name)`: deriva un ID legible y libre del nombre.
+- `addCardToBoard(storage, id, { kind: 'note' | 'image', title? })`: añade la tarjeta al primer board (lo crea si falta) en el primer hueco libre y devuelve su ID. Crea bajo demanda los tipos `nota` o `imagen`.
+- `editCardContent`, `moveCardOnBoard`, `resizeCardOnBoard` (grilla canónica `CANONICAL_GRID`), `connectCards` (tipo `relacionada`, que se crea si falta) y `disconnectCards`.
+- `ids.ts`: `nextSequentialId` y `workspaceIdFromName`, deterministas y sin reloj ni aleatoriedad. El dominio nunca genera IDs.
+
 El adaptador disponible es `MemoryStorage` (`@noutynotes/storage`). Todo adaptador debe pasar la suite `tests/contracts/workspace-storage-contract.ts`.

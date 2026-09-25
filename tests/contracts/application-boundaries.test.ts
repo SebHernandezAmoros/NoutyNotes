@@ -14,7 +14,7 @@ const imports = (source: string): string[] => [...source.matchAll(/(?:from|impor
 
 describe('fronteras de application', () => {
   it('existen el puerto y los casos de uso', () => {
-    expect(files.map(({ path }) => path).sort()).toEqual(['index.ts', 'workspace-storage.ts', 'workspace-use-cases.ts']);
+    expect(files.map(({ path }) => path).sort()).toEqual(['ids.ts', 'index.ts', 'workspace-editing.ts', 'workspace-storage.ts', 'workspace-use-cases.ts']);
   });
 
   it('solo depende del API público del dominio: nunca de storage, UI ni plataforma', () => {
