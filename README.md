@@ -89,7 +89,7 @@ Ejecutar el bundle Android después del export web, porque este último regenera
 
 Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho de la ventana a 390 px. Desde 800 px de ancho, la introducción y el panel de acciones aparecen en dos columnas; por debajo, en una. El contenido debe seguir siendo legible, sin desplazamiento horizontal, y las tres acciones futuras deben permanecer desactivadas.
 
-**Validación local registrada el 25 de septiembre de 2026:** instalación con lockfile congelado, lint y tipos correctos; 729 pruebas unitarias, de integración y de contrato; 8 pruebas web correctas en desarrollo y 8 en el export de Pages, incluida la accesibilidad básica (2 casos se omiten a propósito en el perfil móvil); export de Pages correcto. El export web normal y el bundle Android se verificaron por última vez en fases anteriores, sin cambios de app desde entonces. Estos resultados no equivalen a ejecución nativa Android.
+**Validación local registrada el 24 de septiembre de 2026:** instalación con lockfile congelado, lint y tipos correctos; 729 pruebas unitarias, de integración y de contrato; 8 pruebas web correctas en desarrollo y 8 en el export de Pages, incluida la accesibilidad básica (2 casos se omiten a propósito en el perfil móvil); export de Pages correcto. El export web normal y el bundle Android se verificaron por última vez en fases anteriores, sin cambios de app desde entonces. Estos resultados no equivalen a ejecución nativa Android.
 
 El [workflow de GitHub Actions](.github/workflows/ci.yml) está preparado para ejecutar las comprobaciones en pushes y pull requests. Su ejecución remota todavía no se ha verificado.
 

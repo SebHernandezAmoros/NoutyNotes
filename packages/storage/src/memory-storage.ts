@@ -1,4 +1,4 @@
-import { storageFailure } from '@noutynotes/application';
+import { invalidWorkspaceIdFailure, storageFailure } from '@noutynotes/application';
 import type { WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from '@noutynotes/application';
 import { isValidId } from '@noutynotes/domain';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
@@ -20,7 +20,8 @@ function succeed<T>(value: T): WorkspaceStorageResult<T> {
 }
 
 function invalidId<T>(value: unknown, path: string): WorkspaceStorageResult<T> | null {
-  return isValidId(value) ? null : storageFailure('invalid-workspace-id', path, `"${String(value)}" no es un ID de workspace válido.`);
+  // La descripción del valor no ejecuta conversiones controladas por él (cierre de fase 6).
+  return isValidId(value) ? null : invalidWorkspaceIdFailure(value, path);
 }
 
 /**

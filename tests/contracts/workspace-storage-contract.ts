@@ -208,6 +208,33 @@ export function workspaceStorageContract(adapter: string, factory: WorkspaceStor
       });
     });
 
+    describe('IDs hostiles: incidencias sin ejecutar conversiones del valor (cierre de fase 6)', () => {
+      const hostileIds = (): [string, unknown, () => boolean][] => {
+        let converted = false;
+        const mark = (): never => { converted = true; throw new Error('conversión ejecutada'); };
+        return [
+          ['objeto sin prototipo', Object.create(null), () => false],
+          ['objeto cuyo toString lanza', { toString: mark, valueOf: mark }, () => converted],
+          ['objeto con Symbol.toPrimitive que lanza', { [Symbol.toPrimitive]: mark }, () => converted],
+          ['símbolo', Symbol('id'), () => false],
+        ];
+      };
+
+      it.each(hostileIds().map(([name]) => name))('open, delete y rename con %s resuelven invalid-workspace-id sin cambios', async (name) => {
+        const [, hostile, wasConverted] = hostileIds().find(([candidate]) => candidate === name) as [string, unknown, () => boolean];
+        const storage = await factory();
+        valueOf(await storage.create(sampleWorkspace('demo')));
+        const before = await snapshot(storage);
+        const value = hostile as WorkspaceId;
+        await expect(storage.open(value)).resolves.toMatchObject({ ok: false, issues: [{ code: 'invalid-workspace-id', path: 'id' }] });
+        await expect(storage.delete(value)).resolves.toMatchObject({ ok: false, issues: [{ code: 'invalid-workspace-id', path: 'id' }] });
+        await expect(storage.rename(value, id('nuevo'))).resolves.toMatchObject({ ok: false, issues: [{ code: 'invalid-workspace-id', path: 'from' }] });
+        await expect(storage.rename(id('demo'), value)).resolves.toMatchObject({ ok: false, issues: [{ code: 'invalid-workspace-id', path: 'to' }] });
+        expect(wasConverted()).toBe(false);
+        expect(await snapshot(storage)).toEqual(before);
+      });
+    });
+
     it('flujo completo: crear, modificar, guardar, reabrir, listar, renombrar y borrar', async () => {
       const storage = await factory();
       valueOf(await storage.create(sampleWorkspace('project', 'Proyecto')));

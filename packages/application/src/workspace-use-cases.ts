@@ -1,7 +1,7 @@
 import { CURRENT_SCHEMA_VERSION, instantiateTemplate, isValidId, validateWorkspace } from '@noutynotes/domain';
 import type { Template, ValidationResult, Workspace, WorkspaceId } from '@noutynotes/domain';
 
-import { storageFailure } from './workspace-storage';
+import { invalidWorkspaceIdFailure, storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from './workspace-storage';
 
 export interface CreateEmptyWorkspaceInput {
@@ -26,7 +26,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 export async function createEmptyWorkspace(storage: WorkspaceStorage, input: CreateEmptyWorkspaceInput): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
   if (!isObject(input)) return storageFailure('invalid-workspace', 'input', 'Debe indicar ID y nombre.');
   const id: unknown = Object.getOwnPropertyDescriptor(input, 'id')?.value;
-  if (!isValidId(id)) return storageFailure('invalid-workspace-id', 'id', `"${String(id)}" no es un ID de workspace válido.`);
+  if (!isValidId(id)) return invalidWorkspaceIdFailure(id, 'id');
   const name: unknown = Object.getOwnPropertyDescriptor(input, 'name')?.value;
   // Tipo comprobado por validateWorkspace a continuación; los descriptores evitan ejecutar getters.
   const workspace = {

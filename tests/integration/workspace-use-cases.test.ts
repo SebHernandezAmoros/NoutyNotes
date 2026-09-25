@@ -58,6 +58,20 @@ describe('crear un workspace vacío', () => {
   });
 });
 
+describe('crear un workspace vacío con IDs hostiles (cierre de fase 6)', () => {
+  it.each<[string, () => unknown]>([
+    ['objeto sin prototipo', () => Object.create(null)],
+    ['objeto cuyo toString lanza', () => ({ toString: () => { throw new Error('conversión ejecutada'); } })],
+    ['objeto con Symbol.toPrimitive que lanza', () => ({ [Symbol.toPrimitive]: () => { throw new Error('conversión ejecutada'); } })],
+    ['símbolo', () => Symbol('id')],
+  ])('con %s resuelve invalid-workspace-id sin guardar nada', async (_case, hostile) => {
+    const storage = new MemoryStorage();
+    const result = createEmptyWorkspace(storage, { id: hostile() as WorkspaceId, name: 'X' });
+    await expect(result).resolves.toMatchObject({ ok: false, issues: [{ code: 'invalid-workspace-id', path: 'id' }] });
+    expect(ok(await storage.list())).toEqual([]);
+  });
+});
+
 describe.each(['gdd', 'storyboard', 'research'])('crear desde la plantilla %s', (name) => {
   it('guarda la instancia y la reabre igual', async () => {
     const storage = new MemoryStorage();

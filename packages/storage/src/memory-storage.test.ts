@@ -45,6 +45,30 @@ describe('MemoryStorage con paquetes v1', () => {
     expect(problems(unsafe(storage.exportPackage(id('Mal ID'))))).toEqual(['invalid-workspace-id@id']);
   });
 
+  it.each<[string, () => unknown]>([
+    ['objeto sin prototipo', () => Object.create(null)],
+    ['objeto cuyo toString lanza', () => ({ toString: () => { throw new Error('conversión ejecutada'); } })],
+    ['símbolo', () => Symbol('id')],
+  ])('exportPackage con %s devuelve invalid-workspace-id sin lanzar (cierre de fase 6)', (_case, hostile) => {
+    const storage = valueOf(MemoryStorage.fromPackages({ demo: edited() }));
+    expect(() => storage.exportPackage(hostile() as WorkspaceId)).not.toThrow();
+    expect(problems(unsafe(storage.exportPackage(hostile() as WorkspaceId)))).toEqual(['invalid-workspace-id@id']);
+    expect(ok(storage.exportPackage(id('demo')))).toEqual(edited());
+  });
+
+  it('los mensajes de ID inválido citan textos y describen el resto solo por su tipo', async () => {
+    const storage = new MemoryStorage();
+    const message = async (value: unknown): Promise<string | undefined> => {
+      const result = await storage.open(value as WorkspaceId);
+      return result.ok ? undefined : result.issues[0]?.message;
+    };
+    expect(await message('Mal ID')).toBe('"Mal ID" no es un ID de workspace válido.');
+    expect(await message(Object.create(null))).toBe('un valor de tipo object no es un ID de workspace válido.');
+    expect(await message(['a'])).toBe('una lista no es un ID de workspace válido.');
+    expect(await message(null)).toBe('null no es un ID de workspace válido.');
+    expect(await message(Symbol('x'))).toBe('un valor de tipo symbol no es un ID de workspace válido.');
+  });
+
   it('guardar sin cambios conserva el paquete byte a byte, comentarios y extras incluidos', async () => {
     const storage = valueOf(MemoryStorage.fromPackages({ demo: edited() }));
     ok(await storage.save(validWorkspace()));

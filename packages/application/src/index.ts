@@ -1,4 +1,4 @@
-export { storageFailure } from './workspace-storage';
+export { describeUntrustedValue, invalidWorkspaceIdFailure, storageFailure } from './workspace-storage';
 export type {
   WorkspaceStorage, WorkspaceStorageErrorCode, WorkspaceStorageIssue, WorkspaceStorageResult, WorkspaceSummary,
 } from './workspace-storage';

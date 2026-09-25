@@ -44,6 +44,23 @@ export interface WorkspaceStorage {
   delete(id: WorkspaceId): Promise<WorkspaceStorageResult<null>>;
 }
 
+/**
+ * Descripción segura de un valor no validado para mensajes de error. No ejecuta toString,
+ * valueOf, Symbol.toPrimitive ni getters: los textos se citan con JSON.stringify (que no llama a
+ * métodos de un string) y el resto se describe solo por su tipo.
+ */
+export function describeUntrustedValue(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'una lista';
+  return `un valor de tipo ${typeof value}`;
+}
+
+/** Incidencia `invalid-workspace-id` para un argumento que no es un ID válido. */
+export function invalidWorkspaceIdFailure<T>(value: unknown, path: string): WorkspaceStorageResult<T> {
+  return storageFailure('invalid-workspace-id', path, `${describeUntrustedValue(value)} no es un ID de workspace válido.`);
+}
+
 export function storageFailure<T>(
   code: WorkspaceStorageErrorCode,
   path: string,
