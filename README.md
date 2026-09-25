@@ -1,4 +1,4 @@
-﻿# NoutyNotes
+# NoutyNotes
 
 **Un lugar para tus ideas.**
 
@@ -14,7 +14,7 @@ Las fases 0B–7 están implementadas y la fase 8, carpetas web, está en curso.
 
 | Disponible | Pendiente |
 | --- | --- |
-| App Expo con navegación mediante Expo Router | Validación final del selector con carpeta real |
+| App Expo con navegación mediante Expo Router | Validación final de nota y recarga en carpeta real |
 | Prototipo: crear espacios, tarjetas, texto, mover, redimensionar y conectar | Vista previa de Markdown e imágenes reales |
 | Inicio y tablero responsive; temas claro, oscuro y del sistema | Arrastre y gestos, selector de plantillas |
 | Dominio, grilla, relaciones y plantillas declarativas probadas | Importación/exportación ZIP |
@@ -90,9 +90,9 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 
 Ejecutar el bundle Android después del export web, porque este último regenera `dist/`. Las capturas y trazas de Playwright se guardan en `artifacts/playwright/`.
 
-Para revisar la fase 8 en Chromium sobre `localhost`, crear una carpeta vacía de prueba y abrirla con «Abrir una carpeta». Crear un espacio, añadir una nota, editar su título y esperar el aviso de guardado. Verificar que aparecieron archivos `.nouty/workspace.yaml`, `.nouty/layout.yaml`, `.nouty/relations.yaml` y `cards/tarjeta-1.md` bajo un subdirectorio. Recargar: hay que volver a seleccionar la misma carpeta y reabrir el espacio; el título debe seguir allí. Editar de nuevo y cerrar inmediatamente el editor o volver al inicio: al reabrir, el texto debe persistir. Cambiar el manifiesto fuera de la app mientras el espacio está abierto y probar otra edición: debe mostrarse el conflicto, conservarse el cambio externo y mantenerse el borrador en el editor. Probar la cancelación del selector y el ancho de 390 px. Usar solo una carpeta desechable: **el selector del sistema y sus permisos en una carpeta visible siguen sin validación manual**, por lo que la fase 8 permanece en curso.
+Para revisar la fase 8 en Chromium sobre `localhost`, crear una carpeta vacía de prueba y abrirla con «Abrir una carpeta». Crear un espacio, añadir una nota, editar su título y esperar el aviso de guardado. Verificar que aparecieron archivos `.nouty/workspace.yaml`, `.nouty/layout.yaml`, `.nouty/relations.yaml` y `cards/tarjeta-1.md` bajo un subdirectorio. Recargar: hay que volver a seleccionar la misma carpeta y reabrir el espacio; el título debe seguir allí. Editar de nuevo y cerrar inmediatamente el editor o volver al inicio: al reabrir, el texto debe persistir. Cambiar el manifiesto fuera de la app mientras el espacio está abierto y probar otra edición: debe mostrarse el conflicto, conservarse el cambio externo y mantenerse el borrador en el editor. Probar la cancelación del selector y el ancho de 390 px. Usar solo una carpeta desechable: **el selector, el permiso y los YAML iniciales ya se confirmaron en una carpeta visible. La nota y la recarga se verificaron con una prueba automática que simula el API de carpetas del navegador sobre archivos reales del disco, sin selector, permisos ni handles de Chrome; falta confirmarlas a mano**, por lo que la fase 8 permanece en curso.
 
-**Verificación local adicional del 24 de septiembre de 2026 (fase 8):** `pnpm check` pasó con 820 pruebas en 42 archivos. `test:smoke` y `test:pages` terminaron con salida 0, 33 pruebas correctas y 3 omisiones previstas cada uno; 34 capturas coincidieron entre desarrollo y Pages. Una regresión posterior de conflicto con borrador pasó en escritorio y móvil en ambos entornos. Los builds de Pages, web y bundle Android fueron correctos. Origin Private File System comprobó archivos con handles nativos de Chromium, pero no reemplaza la validación del selector físico. Detalle en `Docs/testing.md` (documentación local).
+**Verificación local adicional del 24 de septiembre de 2026 (fase 8):** `pnpm check` pasó con 820 pruebas en 42 archivos. `test:smoke` y `test:pages` terminaron con salida 0, 33 pruebas correctas y 3 omisiones previstas cada uno; 34 capturas coincidieron entre desarrollo y Pages. Una regresión posterior de conflicto con borrador pasó en escritorio y móvil en ambos entornos. Los builds de Pages, web y bundle Android fueron correctos. Origin Private File System comprobó archivos con handles nativos de Chromium; después, el usuario confirmó el selector físico, el permiso y los YAML iniciales mediante capturas. Detalle en `Docs/testing.md` (documentación local).
 
 **Validación local registrada el 24 de septiembre de 2026 (fase 7):** lint y tipos correctos; 783 pruebas unitarias, de integración y de contrato; 19 pruebas web correctas en desarrollo y 19 en el export de Pages (3 casos se omiten a propósito en el perfil móvil), con capturas idénticas entre ambos; export de Pages, export web y bundle Android correctos. Estos resultados no equivalen a ejecución nativa Android.
 
