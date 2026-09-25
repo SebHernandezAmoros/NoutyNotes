@@ -61,7 +61,7 @@ function modeFor(width: number): 'columns' | 'stacked' {
   return width >= atBreakpoint.width ? 'columns' : 'stacked';
 }
 
-test('inicio responsive, temas, crear activo y acciones reservadas', async ({ page }, testInfo) => {
+test('inicio responsive, temas, crear activo y acciones reservadas', async ({ page, browserName }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   const initialWidth = page.viewportSize()?.width ?? 0;
   await page.emulateMedia({ colorScheme: 'light' });
@@ -73,7 +73,17 @@ test('inicio responsive, temas, crear activo y acciones reservadas', async ({ pa
 
   await expect(page.getByRole('button', { name: 'Crear un espacio', exact: true })).toBeEnabled();
   await expect(page.getByTestId('memory-notice')).toContainText('se pierden al recargar o cerrar la pestaña');
-  await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeEnabled();
+  // «Abrir una carpeta» depende de File System Access: Chromium debe ofrecerla; sin la API (Firefox,
+  // Safari, móviles) queda desactivada con la alternativa ZIP (ADR 0011).
+  const folderApi = await page.evaluate(() => typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function');
+  if (browserName === 'chromium') expect(folderApi).toBe(true);
+  if (folderApi) {
+    await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeEnabled();
+  } else {
+    await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeDisabled();
+    await expect(page.getByTestId('open-folder')).toContainText('Usa «Importar un ZIP»');
+    await expect(page.getByRole('button', { name: 'Importar un ZIP', exact: true })).toBeEnabled();
+  }
   await expect(page.getByRole('button', { name: 'Usar una plantilla', exact: true })).toBeDisabled();
 
   const screen = page.getByTestId('home-screen');
@@ -131,7 +141,7 @@ test('la distribución sigue al viewport al recargar y al redimensionar en ambos
 });
 
 test('límite responsive: 799 px en una columna y 800 px en dos', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'El límite se comprueba una vez con viewport de escritorio.');
+  test.skip(!testInfo.project.name.endsWith('desktop'), 'El límite se comprueba una vez con viewport de escritorio.');
   await page.emulateMedia({ colorScheme: 'light' });
 
   await page.setViewportSize(belowBreakpoint);
@@ -151,7 +161,7 @@ test('límite responsive: 799 px en una columna y 800 px en dos', async ({ page 
 });
 
 test('el HTML estático sin JavaScript usa la distribución compacta legible', async ({ browser, baseURL }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'El HTML servido no depende del dispositivo emulado.');
+  test.skip(!testInfo.project.name.endsWith('desktop'), 'El HTML servido no depende del dispositivo emulado.');
   // Documenta el estado previo a la hidratación: el servidor no conoce el viewport.
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: desktop, colorScheme: 'light' });
   const page = await context.newPage();
@@ -161,7 +171,7 @@ test('el HTML estático sin JavaScript usa la distribución compacta legible', a
   await context.close();
 });
 
-test('accesibilidad básica: teclado, activación, foco visible y controles táctiles', async ({ page }, testInfo) => {
+test('accesibilidad básica: teclado, activación, foco visible y controles táctiles', async ({ page, browserName }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   const light = page.getByRole('button', { name: 'Tema claro', exact: true });
@@ -187,6 +197,22 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
 
   // Orden de tabulación: los tres temas, el nombre y «Crear»; las acciones reservadas no reciben foco.
   const unfocused = await borderColor(system);
+  if (browserName === 'firefox') {
+    // Firefox hace enfocable con el teclado el contenedor desplazable de la página (el ScrollView), para
+    // poder desplazarlo con las teclas. Se comprueba que es ese contenedor, que su foco es visible y que
+    // el siguiente Tab sigue el mismo orden que en Chromium.
+    await page.keyboard.press('Tab');
+    const scroller = await page.evaluate(() => {
+      const element = document.activeElement as HTMLElement;
+      const style = getComputedStyle(element);
+      return {
+        scrollable: /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight,
+        containsThemes: Boolean(element.querySelector('[aria-label="Tema claro"]')),
+        focusVisible: element.matches(':focus-visible') && style.outlineStyle !== 'none',
+      };
+    });
+    expect(scroller).toEqual({ scrollable: true, containsThemes: true, focusVisible: true });
+  }
   await page.keyboard.press('Tab');
   await expect(light).toBeFocused();
   await page.keyboard.press('Tab');

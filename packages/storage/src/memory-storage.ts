@@ -80,6 +80,22 @@ export class MemoryStorage implements WorkspaceStorage {
     return succeed(Object.fromEntries(Object.entries(stored.files)));
   }
 
+  /**
+   * Incorpora un paquete v1 ya leído (por ejemplo, de un ZIP) conservando sus bytes, comentarios y
+   * extras de texto. Nunca sobrescribe: un ID existente es `workspace-already-exists`. No forma parte del puerto.
+   */
+  importPackage(files: TextFiles): WorkspaceStorageResult<WorkspaceSummary> {
+    const copied = validateTextFiles(files);
+    if (!copied.ok) return storageFailure('invalid-workspace', 'files', 'El paquete no es un conjunto de archivos válido.', copied.issues);
+    const parsed = parseWorkspace(copied.value);
+    if (!parsed.ok) return storageFailure('invalid-workspace', 'files', 'El paquete no es un workspace v1 válido.', parsed.issues);
+    const id = parsed.value.id;
+    if (this.#packages.has(id)) return storageFailure('workspace-already-exists', 'files', `Ya existe el workspace "${id}".`);
+    const stored: StoredPackage = { files: copied.value, name: parsed.value.metadata.name };
+    this.#packages.set(id, stored);
+    return succeed(this.#summary(id, stored));
+  }
+
   /** Valida y serializa; solo después se leen campos del workspace recibido. */
   #serialize(workspace: Workspace, previous?: TextFiles): WorkspaceStorageResult<StoredPackage> {
     const serialized = serializeWorkspace(workspace, previous);

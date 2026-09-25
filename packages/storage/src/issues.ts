@@ -11,7 +11,8 @@ export type StorageIssueCode =
   | 'missing-file'
   | 'unexpected-file'
   | 'identity-mismatch'
-  | 'invalid-link';
+  | 'invalid-link'
+  | 'invalid-archive';
 
 export interface StorageIssue {
   readonly code: StorageIssueCode | DomainIssueCode;

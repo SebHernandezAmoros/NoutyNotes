@@ -231,7 +231,7 @@ test('tablero responsive al redimensionar en ambos sentidos y en tablet', async 
 });
 
 test('límite del tablero: 799 px en una columna y 800 px en grilla', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'El límite se comprueba una vez con viewport de escritorio.');
+  test.skip(!testInfo.project.name.endsWith('desktop'), 'El límite se comprueba una vez con viewport de escritorio.');
   await page.emulateMedia({ colorScheme: 'light' });
   await page.setViewportSize(below);
   await page.goto('./');

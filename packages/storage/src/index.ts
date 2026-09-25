@@ -8,3 +8,7 @@ export { TEMPLATE_FILE, TEMPLATE_README, parseTemplate, serializeTemplate } from
 export { MemoryStorage } from './memory-storage';
 export { FolderStorage } from './folder-storage';
 export type { FolderPort, WorkspaceDirectory } from './folder-storage';
+export { ARCHIVE_LIMITS, readWorkspaceArchive, writeWorkspaceArchive } from './workspace-archive';
+export type { ArchiveLimits, BinaryAssets, WorkspaceArchive } from './workspace-archive';
+export { ArchiveStorage } from './archive-storage';
+export type { ArchiveExport, ArchiveImport, ExportConfirmation } from './archive-storage';

@@ -33,7 +33,7 @@ module.exports = defineConfig([
       'no-restricted-imports': ['error', {
         patterns: [{
           group: ['react', 'react/*', 'react-native', 'react-native-*', 'expo', 'expo-*', 'node:*', 'fs', 'path', '@noutynotes/ui', '**/ui/**', '**/apps/**', '**/domain/src/**'],
-          message: 'Storage solo depende del API público de @noutynotes/domain, yaml y zod; los adaptadores de plataforma llegan en fases posteriores.',
+          message: 'Storage solo depende del API público de @noutynotes/domain y application, yaml, zod y fflate (ZIP); los adaptadores de plataforma llegan en fases posteriores.',
         }],
       }],
       'no-restricted-globals': ['error', 'window', 'document', 'localStorage', 'fetch', 'indexedDB'],

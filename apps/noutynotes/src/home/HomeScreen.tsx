@@ -20,7 +20,7 @@ const themeOptions: { value: ThemePreference; label: string }[] = [
 
 // El selector de plantillas llegará en una fase posterior.
 const reservedActions = [
-  { number: '03', title: 'Usar una plantilla', description: 'Un pequeño punto de partida.', symbol: '▦' },
+  { number: '04', title: 'Usar una plantilla', description: 'Un pequeño punto de partida.', symbol: '▦' },
 ];
 
 const untitledWorkspace = 'Espacio sin título';
@@ -68,8 +68,29 @@ export function HomeScreen() {
   };
 
   const openFolder = async () => {
+    // Abrir una carpeta cambia el almacenamiento de la sesión: los espacios del navegador sin exportar
+    // dejarían de estar disponibles, así que nunca se descartan sin confirmación (ADR 0011).
+    const pending = session.unexported.length;
+    if (pending > 0 && Platform.OS === 'web') {
+      const confirmed = window.confirm(`Tienes ${pending === 1 ? '1 espacio' : `${pending} espacios`} del navegador sin exportar. Si abres una carpeta, dejarán de estar disponibles en esta sesión. ¿Abrir la carpeta de todos modos?`);
+      if (!confirmed) {
+        setCreateError('No se abrió la carpeta. Exporta antes como ZIP los espacios marcados «SIN EXPORTAR».');
+        return;
+      }
+    }
     const result = await session.connectFolder();
     setCreateError(result.ok ? null : result.message);
+  };
+
+  const importZip = async () => {
+    const outcome = await session.importArchive();
+    if (outcome === null) return;
+    if (!outcome.ok) {
+      setCreateError(outcome.message);
+      return;
+    }
+    setCreateError(null);
+    router.push({ pathname: '/workspace', params: { id: outcome.value.summary.id, notice: outcome.message } });
   };
 
   const actionFocus = (key: string) => ({
@@ -203,11 +224,31 @@ export function HomeScreen() {
                   <View style={styles.actionText}>
                     <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{session.mode === 'folder' ? 'Cambiar carpeta' : 'Abrir una carpeta'}</Text>
                     <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
-                      {session.folderSupported ? 'Elige una carpeta local para abrir y guardar espacios.' : 'Disponible en navegadores compatibles con carpetas locales.'}
+                      {session.folderSupported ? 'Elige una carpeta local para abrir y guardar espacios.' : 'Este navegador no permite abrir carpetas locales. Usa «Importar un ZIP».'}
                     </Text>
                   </View>
                   <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↗</Text>
                 </Pressable>
+                {Platform.OS === 'web' && session.mode === 'memory' ? (
+                  <Pressable
+                    testID="import-zip"
+                    disabled={!session.archiveSupported}
+                    accessibilityRole="button"
+                    accessibilityLabel="Importar un ZIP"
+                    accessibilityHint="Elige un archivo .zip exportado desde NoutyNotes"
+                    accessibilityState={{ disabled: !session.archiveSupported }}
+                    onPress={() => void importZip()}
+                    {...actionFocus('zip')}
+                    style={[styles.action, actionBorder('zip')]}
+                  >
+                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>03</Text>
+                    <View style={styles.actionText}>
+                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>Importar un ZIP</Text>
+                      <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>Abre un espacio exportado. Funciona en cualquier navegador.</Text>
+                    </View>
+                    <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>⤓</Text>
+                  </Pressable>
+                ) : null}
                 {reservedActions.map((action) => (
                   <Pressable
                     key={action.number}
@@ -231,7 +272,7 @@ export function HomeScreen() {
                 <Text style={[styles.comingSoonText, { color: colors.textPrimary }]}>
                   {session.mode === 'folder'
                     ? 'CARPETA LOCAL · Los cambios se guardan en la carpeta elegida. Al recargar, vuelve a seleccionarla para reconectar. Los espacios de memoria no se mezclan.'
-                    : `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Elige una carpeta compatible para guardar en archivos. Las plantillas llegarán después.`}
+                    : `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Exporta cada espacio como ZIP para conservarlo e impórtalo después, en cualquier navegador; o elige una carpeta compatible. Las plantillas llegarán después.`}
                 </Text>
               </View>
               <View testID="session-workspaces" style={styles.sessionList}>
@@ -244,11 +285,15 @@ export function HomeScreen() {
                       key={workspace.id}
                       accessibilityRole="button"
                       accessibilityLabel={`Abrir ${workspace.name}`}
+                      {...(session.unexported.includes(workspace.id) ? { accessibilityHint: 'Tiene cambios sin exportar a ZIP' } : {})}
                       onPress={() => openWorkspace(workspace.id)}
                       {...actionFocus(`open:${workspace.id}`)}
                       style={[styles.sessionItem, actionBorder(`open:${workspace.id}`)]}
                     >
-                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{workspace.name}</Text>
+                      <Text style={[styles.actionTitle, styles.sessionName, { color: colors.textPrimary }]}>{workspace.name}</Text>
+                      {session.unexported.includes(workspace.id) ? (
+                        <Text testID={`unexported-${workspace.id}`} style={[styles.unexported, { color: colors.noteText, backgroundColor: colors.note }]}>SIN EXPORTAR</Text>
+                      ) : null}
                       <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>→</Text>
                     </Pressable>
                   ))
@@ -304,6 +349,8 @@ const styles = StyleSheet.create({
   action: { borderWidth: 2, paddingVertical: 18, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', gap: 12 },
   actionBadge: { width: 36, height: 36, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   sessionList: { marginTop: 24, gap: 8 },
+  sessionName: { flex: 1, minWidth: 0 },
+  unexported: { fontFamily: mono, fontSize: 11, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 3 },
   sessionItem: { minHeight: 48, borderWidth: 2, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   actionNumber: { fontFamily: mono, fontSize: 11 },
   actionText: { flex: 1 },

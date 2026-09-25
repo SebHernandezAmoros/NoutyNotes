@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkspaceStorageIssue } from '@noutynotes/application';
 
-import { describeFailure } from './messages';
+import { describeFailure, describeImport, describeImportFailure } from './messages';
 
 const transform = (code: string, path = 'x'): WorkspaceStorageIssue[] =>
   [{ code: 'invalid-workspace', path: 'transform', message: 'm', details: [{ code, path, message: 'original' }] }];
@@ -32,5 +32,26 @@ describe('mensajes visibles de error (fase 7)', () => {
     expect(describeFailure(transform('unknown-property', 'changes.x'))).toBe('original');
     expect(describeFailure([{ code: 'invalid-stored-data', path: 'id', message: 'sin detalle' }])).toContain('recuperación pendiente');
     expect(describeFailure([])).toBe('No se pudo completar la acción.');
+  });
+});
+
+describe('mensajes del fallback ZIP (fase 9)', () => {
+  const importIssue = (code: string, path: string, message: string): WorkspaceStorageIssue[] =>
+    [{ code: 'invalid-workspace', path: 'archivo', message: 'm', details: [{ code, path, message }] }];
+
+  it('explica una importación fallida con el motivo y la ruta, y aclara que nada cambió', () => {
+    expect(describeImportFailure(importIssue('invalid-path', '../fuera.md', 'No admite segmentos "." ni "..".')))
+      .toBe('No se importó el ZIP y no cambió nada. ../fuera.md: No admite segmentos "." ni "..".');
+    expect(describeImportFailure(importIssue('invalid-archive', 'archivo', 'No es un archivo ZIP o está incompleto.')))
+      .toBe('No se importó el ZIP y no cambió nada. No es un archivo ZIP o está incompleto.');
+    expect(describeImportFailure(importIssue('limit-exceeded', 'archivo', 'El ZIP supera 33554432 bytes.')))
+      .toBe('No se importó el ZIP y no cambió nada. El ZIP supera 33554432 bytes.');
+    expect(describeImportFailure([])).toBe('No se importó el ZIP y no cambió nada.');
+  });
+
+  it('informa de una importación correcta y de una copia con otro ID', () => {
+    expect(describeImport({ summary: { id: 'demo', name: 'Demo' } })).toBe('ZIP importado: «Demo».');
+    expect(describeImport({ summary: { id: 'demo-2', name: 'Demo' }, renamedFrom: 'demo' }))
+      .toBe('Ya existía un espacio con el ID «demo»: el ZIP se importó como copia con el ID «demo-2». No se sobrescribió nada.');
   });
 });

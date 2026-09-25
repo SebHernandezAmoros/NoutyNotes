@@ -28,4 +28,4 @@ Todas devuelven `Promise<WorkspaceStorageResult<T>>` y nunca rechazan por datos 
 - `editCardContent`, `moveCardOnBoard`, `resizeCardOnBoard` (grilla canónica `CANONICAL_GRID`), `connectCards` (tipo `relacionada`, que se crea si falta) y `disconnectCards`.
 - `ids.ts`: `nextSequentialId` y `workspaceIdFromName`, deterministas y sin reloj ni aleatoriedad. El dominio nunca genera IDs.
 
-El adaptador disponible es `MemoryStorage` (`@noutynotes/storage`). Todo adaptador debe pasar la suite `tests/contracts/workspace-storage-contract.ts`.
+Los adaptadores disponibles están en `@noutynotes/storage`: `MemoryStorage`, `FolderStorage` (carpetas web) y `ArchiveStorage` (espacios del navegador con ZIP). Todo adaptador debe pasar la suite `tests/contracts/workspace-storage-contract.ts`.

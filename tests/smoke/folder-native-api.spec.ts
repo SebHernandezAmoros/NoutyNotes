@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-test('los handles reales de Chromium guardan y reabren un workspace v1', async ({ page }) => {
+test('los handles reales de Chromium guardan y reabren un workspace v1', async ({ page, browserName }) => {
+  // Firefox no ofrece showDirectoryPicker y sus handles OPFS no tienen queryPermission: la app desactiva
+  // allí la carpeta, así que inyectar el selector no representa un navegador real (auditoría de fase 9).
+  test.skip(browserName !== 'chromium', 'Requiere File System Access con permisos (Chromium).');
   // Sustituye solo el diálogo del sistema: lectura, escritura y directorios son handles nativos.
   await page.addInitScript({ content: `window.showDirectoryPicker = async () => await navigator.storage.getDirectory();` });
   await page.goto('./');

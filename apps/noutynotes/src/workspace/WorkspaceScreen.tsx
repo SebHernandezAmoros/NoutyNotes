@@ -22,14 +22,19 @@ const additions: readonly { kind: PrototypeCardKind; label: string; success: str
 ];
 
 export function WorkspaceScreen() {
-  const { mode: storageMode } = useWorkspaceSession();
+  const session = useWorkspaceSession();
+  const storageMode = session.mode;
   const { theme } = useTheme();
   const colors = theme.colors;
   const width = useWindowWidth();
   const mode = resolveLayoutMode(width);
   const compact = mode === 'compact';
   const sideInspector = width !== null && width >= SIDE_INSPECTOR_MIN_WIDTH;
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; notice?: string }>();
+  // Aviso de una importación ZIP recién hecha (por ejemplo, copia con otro ID).
+  const [archiveMessage, setArchiveMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(
+    typeof params.notice === 'string' && params.notice !== '' ? { tone: 'success', text: params.notice } : null,
+  );
   const { view, feedback, saving, run } = useWorkspaceEditor(typeof params.id === 'string' ? params.id : undefined);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
   const scroll = useRef<ScrollView>(null);
@@ -71,6 +76,33 @@ export function WorkspaceScreen() {
   };
 
   const workspace = view.kind === 'ready' ? view.workspace : null;
+  const showArchive = Platform.OS === 'web' && storageMode === 'memory';
+  const unexported = workspace ? session.unexported.includes(workspace.id) : false;
+  // Descarga iniciada y aún sin confirmar por el usuario: su revisión y nombre de archivo.
+  const [awaiting, setAwaiting] = useState<{ fileName: string; revision: number } | null>(null);
+  const exportZip = () => {
+    if (!workspace) return;
+    const outcome = session.exportArchive(workspace.id);
+    setAwaiting(outcome.ok ? outcome.value : null);
+    setArchiveMessage({ tone: outcome.ok ? 'success' : 'error', text: outcome.message });
+  };
+  const confirmSaved = () => {
+    if (!workspace || !awaiting) return;
+    const outcome = session.confirmExported(workspace.id, awaiting.revision);
+    setAwaiting(null);
+    if (!outcome.ok) {
+      setArchiveMessage({ tone: 'error', text: outcome.message });
+      return;
+    }
+    setArchiveMessage({
+      tone: 'success',
+      text: outcome.value === 'confirmed' ? `Confirmado: el estado exportado en «${awaiting.fileName}» está guardado.` : outcome.message,
+    });
+  };
+  const notSaved = () => {
+    setAwaiting(null);
+    setArchiveMessage({ tone: 'success', text: 'Sigue sin exportar. Vuelve a exportar cuando quieras.' });
+  };
   const board = workspace?.boards[0];
   const layout = board ? workspace?.layouts.find((candidate) => candidate.boardId === board.id) : undefined;
   const selected = workspace?.cards.find((card) => card.id === selectedId);
@@ -136,6 +168,46 @@ export function WorkspaceScreen() {
               ))}
             </View>
 
+            {showArchive ? (
+              <View testID="export-bar" style={[styles.exportBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={styles.exportRow}>
+                  <Text testID="export-status" accessibilityLiveRegion="polite" style={[styles.exportStatus, { color: colors.textPrimary }]}>
+                    {unexported ? 'CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.' : 'SIN CAMBIOS PENDIENTES DE EXPORTAR'}
+                  </Text>
+                  <ActionButton
+                    label="Exportar ZIP"
+                    accessibilityLabel="Exportar este espacio como ZIP"
+                    tone={unexported ? 'primary' : 'default'}
+                    onPress={exportZip}
+                  />
+                </View>
+                {archiveMessage ? (
+                  <Text
+                    testID="archive-message"
+                    {...(archiveMessage.tone === 'error' ? { accessibilityRole: 'alert' as const } : { accessibilityLiveRegion: 'polite' as const })}
+                    style={[styles.body, { color: colors.textPrimary }]}
+                  >
+                    {archiveMessage.text}
+                  </Text>
+                ) : null}
+                {awaiting && unexported ? (
+                  <View testID="export-confirmation" style={styles.exportRow}>
+                    <ActionButton
+                      label="Ya lo guardé"
+                      accessibilityLabel={`Confirmar que guardé ${awaiting.fileName}`}
+                      tone="primary"
+                      onPress={confirmSaved}
+                    />
+                    <ActionButton
+                      label="No se guardó"
+                      accessibilityLabel={`El ZIP ${awaiting.fileName} no se guardó`}
+                      onPress={notSaved}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             <Text
               testID="workspace-feedback"
               accessibilityLiveRegion="polite"
@@ -187,6 +259,9 @@ const styles = StyleSheet.create({
   body: { fontSize: 15, lineHeight: 22 },
   missing: { borderWidth: 2, padding: 20, gap: 12 },
   toolbar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  exportBar: { borderWidth: 2, padding: 12, gap: 10 },
+  exportRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  exportStatus: { flex: 1, minWidth: 200, fontFamily: mono, fontSize: 12, fontWeight: '700', lineHeight: 18 },
   feedback: { fontSize: 14, lineHeight: 20, padding: 12, borderWidth: 1 },
   content: { gap: 20 },
   contentRow: { flexDirection: 'row', alignItems: 'flex-start' },

@@ -1,8 +1,8 @@
 # Persistencia
 
-Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. Sobre ellos, `MemoryStorage` implementa el puerto `WorkspaceStorage` de `@noutynotes/application` (fase 6). Los adaptadores de navegador y Android llegarán en fases posteriores.
+Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. Sobre ellos, `MemoryStorage` implementa el puerto `WorkspaceStorage` de `@noutynotes/application` (fase 6). `FolderStorage` (carpetas web, fase 8) y `ArchiveStorage` (espacios del navegador con ZIP, fase 9, aceptación manual pendiente) implementan el mismo puerto; el adaptador Android llegará en la fase 10.
 
-Depende del API público de `@noutynotes/domain`, de `yaml` (YAML real) y de `zod` (sobres y frontmatter con claves cerradas). Las invariantes semánticas las sigue validando el dominio.
+Depende del API público de `@noutynotes/domain` y `@noutynotes/application`, de `yaml` (YAML real), de `zod` (sobres y frontmatter con claves cerradas) y de `fflate` (inflado y deflado ZIP). Las invariantes semánticas las sigue validando el dominio.
 
 ## API
 
@@ -44,3 +44,13 @@ README.md, assets/**    extras admitidos, conservados sin interpretar
 - **Límites:** 10 000 archivos, 2 000 000 de caracteres por texto y profundidad de datos 64.
 
 Las reglas completas están en el ADR 0007 del proyecto. Pruebas: `pnpm exec vitest run packages/storage tests/integration/workspace-files.test.ts tests/integration/template-files.test.ts tests/contracts/storage-boundaries.test.ts`.
+
+## ZIP de workspace (fase 9)
+
+- **`readWorkspaceArchive(bytes, limits?)`:** lee un ZIP no confiable y devuelve `{ workspace, files, assets }`, o incidencias `invalid-archive`, `invalid-path`, `path-collision`, `limit-exceeded` o `unexpected-file` más las del formato. No usa filesystem ni red.
+- **`writeWorkspaceArchive(files, assets)`:** produce un ZIP determinista.
+- **`ArchiveStorage`:** implementa `WorkspaceStorage`; añade `importArchive`, `exportArchive` (bytes y revisión, sin confirmar nada), `confirmExported(id, revisión)`, `unexportedIds` y `subscribe`.
+- **Límites:** ZIP de 32 MiB, 10 000 entradas, 16 MiB por entrada y 64 MiB en total.
+- **Dependencia:** `fflate` 0.8.3.
+
+Reglas en el ADR 0011 del proyecto.

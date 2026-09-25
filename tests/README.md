@@ -11,3 +11,11 @@ Capturas y trazas se escriben en `artifacts/playwright/`. Ver los [comandos de v
 Para comprobar la versión estática bajo `/NoutyNotes/`: `pnpm build:pages` y `pnpm test:pages`. Se ejecutan las mismas pruebas contra un servidor local de archivos exportados, sin arrancar Metro, así que desarrollo y export deben cumplir las mismas expectativas con el mismo viewport y tema. Las capturas quedan en `artifacts/playwright-pages/`. El puerto 8082 debe estar libre. Ver [GitHub Pages](../README.md#github-pages).
 
 `smoke/folder-disk.spec.ts` recorre la carpeta web sobre archivos reales del disco: reemplaza `showDirectoryPicker` y crea objetos propios de directorio, archivo, permiso y escritura que llaman a `node:fs` mediante `window.__disk`, confinados a su carpeta `notes`. Hay regresiones de rutas hostiles y de sus bordes: `""` es la raíz, «/» se rechaza y `...txt` es un nombre válido. No ejercita el selector, los permisos ni los handles nativos de Chrome; `folder-native-api.spec.ts` (OPFS) sí usa handles nativos. Sus archivos quedan en la carpeta de salida de Playwright.
+
+Fase 9:
+- `smoke/zip.spec.ts` recorre el fallback ZIP con `showDirectoryPicker` retirado;
+- `smoke/offline.spec.ts` comprueba el arranque sin conexión y solo se ejecuta contra el export de Pages;
+- los ZIP de entrada se construyen con `packages/storage/src/__fixtures__/zip.ts`, un constructor independiente del lector;
+- `integration/workspace-archive.test.ts` y `contracts/archive-storage.contract.test.ts` cubren `ArchiveStorage`.
+
+Auditoría de fase 9: `pnpm test:firefox` (`playwright.firefox.config.ts`) ejecuta `smoke/` contra el export en Firefox. `repro/firefox-beforeunload-reload.mjs` es una reproducción mínima manual, fuera de las suites, del comportamiento de Firefox bajo Playwright tras cancelar un `beforeunload`.

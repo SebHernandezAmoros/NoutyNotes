@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:smoke": "playwright test",
     "test:pages": "playwright test --config playwright.pages.config.ts",
+    "test:firefox": "playwright test --config playwright.firefox.config.ts",
     "build:pages": "node scripts/build-pages.mjs",
     "preview:pages": "node scripts/preview-pages.mjs",
     "build:web": "pnpm --filter @noutynotes/app build:web",

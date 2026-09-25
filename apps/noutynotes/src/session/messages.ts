@@ -30,3 +30,22 @@ export function describeFailure(issues: readonly WorkspaceStorageIssue[], mode: 
   }
   return byCode[cause.code] ?? cause.message;
 }
+
+const IMPORT_FAILED = 'No se importó el ZIP y no cambió nada.';
+
+/** Motivo de una importación ZIP rechazada: la primera incidencia del formato, con su ruta si es un archivo. */
+export function describeImportFailure(issues: readonly WorkspaceStorageIssue[]): string {
+  const [first] = issues;
+  const cause = first?.details?.[0] ?? first;
+  if (!cause) return IMPORT_FAILED;
+  const located = cause.path && cause.path !== 'archivo' ? `${cause.path}: ` : '';
+  return `${IMPORT_FAILED} ${located}${cause.message}`;
+}
+
+/** Resultado de una importación correcta; una copia renombrada se explica siempre. */
+export function describeImport(result: { readonly summary: { readonly id: string; readonly name: string }; readonly renamedFrom?: string }): string {
+  if (result.renamedFrom !== undefined) {
+    return `Ya existía un espacio con el ID «${result.renamedFrom}»: el ZIP se importó como copia con el ID «${result.summary.id}». No se sobrescribió nada.`;
+  }
+  return `ZIP importado: «${result.summary.name}».`;
+}

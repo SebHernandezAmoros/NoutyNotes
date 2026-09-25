@@ -152,7 +152,7 @@ test('carpeta física en disco: nota, edición rápida, cierre inmediato, recarg
 });
 
 test('el puente de disco rechaza rutas que escapan de la carpeta de la prueba', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'El confinamiento no depende del viewport.');
+  test.skip(!testInfo.project.name.endsWith('desktop'), 'El confinamiento no depende del viewport.');
   const notes = testInfo.outputPath('notes');
   const outside = testInfo.outputPath('victima.txt');
   writeFileSync(outside, 'intacto');
@@ -182,7 +182,7 @@ test('el puente de disco rechaza rutas que escapan de la carpeta de la prueba', 
 });
 
 test('el puente de disco: raíz vacía para listar, «/» rechazada y nombres que empiezan por «..» válidos', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'El confinamiento no depende del viewport.');
+  test.skip(!testInfo.project.name.endsWith('desktop'), 'El confinamiento no depende del viewport.');
   const notes = testInfo.outputPath('notes');
   await useDiskFolder(page, notes);
   await page.goto('./');
