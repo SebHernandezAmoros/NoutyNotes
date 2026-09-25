@@ -4,12 +4,21 @@
     "slug": "noutynotes",
     "version": "0.1.0",
     "scheme": "noutynotes",
+    "icon": "./assets/branding/app-icon.png",
     "userInterfaceStyle": "automatic",
     "platforms": ["android", "web"],
-    "android": { "package": "com.noutynotes.app" },
+    "android": {
+      "package": "com.noutynotes.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/branding/adaptive-foreground.png",
+        "backgroundColor": "#FBF8EE"
+      },
+      "blockedPermissions": ["android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"]
+    },
     "web": {
       "bundler": "metro",
       "output": "static",
+      "favicon": "./assets/branding/app-icon.png",
       "name": "NoutyNotes",
       "description": "Un lugar para tus ideas. Notas, tableros y conexiones en tu propio espacio."
     },

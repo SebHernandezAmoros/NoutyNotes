@@ -18,4 +18,11 @@ Fase 9:
 - los ZIP de entrada se construyen con `packages/storage/src/__fixtures__/zip.ts`, un constructor independiente del lector;
 - `integration/workspace-archive.test.ts` y `contracts/archive-storage.contract.test.ts` cubren `ArchiveStorage`.
 
+Fase 10:
+- `contracts/document-tree-storage.contract.test.ts` ejecuta la suite de `WorkspaceStorage` sobre `DocumentTreeFolderPort`;
+- `integration/web-android-equivalence.test.ts` comprueba que el mismo fixture con asset binario produce los mismos bytes en Android, carpeta web y ZIP;
+- `integration/android-saf-cost.test.ts` limita los listados SAF por operación, e `integration/android-permissions.test.ts` comprueba los permisos bloqueados;
+- `integration/android-folder-session.test.ts` cubre elegir y reabrir carpetas en Android: la carpeta se recuerda solo tras leerse bien y solo se olvida con pérdida de acceso confirmada;
+- la validación en emulador es manual y está registrada en `Docs/progress.md`.
+
 Auditoría de fase 9: `pnpm test:firefox` (`playwright.firefox.config.ts`) ejecuta `smoke/` contra el export en Firefox. `repro/firefox-beforeunload-reload.mjs` es una reproducción mínima manual, fuera de las suites, del comportamiento de Firefox bajo Playwright tras cancelar un `beforeunload`.

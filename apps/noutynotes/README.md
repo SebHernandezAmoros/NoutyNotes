@@ -12,4 +12,9 @@ Fase 9 (ADR 0011):
 - los espacios del navegador usan `ArchiveStorage`: «Importar un ZIP» y «Exportar ZIP», con aviso de cambios sin exportar y confirmación al salir o al abrir una carpeta. Iniciar la descarga no los da por guardados: siguen «SIN EXPORTAR» hasta que el usuario pulsa «Ya lo guardé» para esa misma revisión;
 - `src/session/archiveFiles.ts` contiene el selector y la descarga, solo en web;
 - `src/offline/registerOfflineWorker.ts` registra el worker del export para arrancar sin conexión;
-- en Android, importar y exportar ZIP quedan ocultos hasta la fase 10.
+- en Android, importar y exportar ZIP siguen ocultos: Android usa carpetas (fase 10).
+
+Fase 10 (ADR 0012):
+- `src/session/androidFolder.android.ts` usa `expo-file-system` 57: selector SAF, permiso persistente y la última carpeta guardada en un archivo privado para «Reabrir»; `androidFolder.ts` es el sustituto vacío para web;
+- `src/session/safTree.ts` adapta el SAF al contrato `DocumentTree` de storage (nombres visibles, verificación de lo creado y listados reutilizados), y `FolderStorage` hace el resto;
+- `app.json` bloquea `READ/WRITE_EXTERNAL_STORAGE`, que el SAF no necesita.

@@ -12,3 +12,5 @@ export { ARCHIVE_LIMITS, readWorkspaceArchive, writeWorkspaceArchive } from './w
 export type { ArchiveLimits, BinaryAssets, WorkspaceArchive } from './workspace-archive';
 export { ArchiveStorage } from './archive-storage';
 export type { ArchiveExport, ArchiveImport, ExportConfirmation } from './archive-storage';
+export { DocumentTreeDirectory, DocumentTreeFolderPort } from './document-tree';
+export type { DocumentTree, DocumentTreeEntry } from './document-tree';

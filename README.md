@@ -6,13 +6,15 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 
 > **En desarrollo inicial.** Hay un prototipo navegable: crear espacios, añadir notas e imágenes de ejemplo, editar su texto, moverlas, redimensionarlas y conectarlas. Puede usar memoria temporal o elegir una carpeta local en un navegador compatible para guardar archivos. El flujo básico de carpetas ya se validó en Chrome; las plantillas aún no tienen interfaz.
 
+El icono de la app y el favicon ya usan el símbolo NoutyNotes; ver el nuevo icono en Android requiere una compilación e instalación nativa nueva. El workspace sigue siendo un prototipo: la nueva maquetación y el arrastre de tarjetas están pendientes.
+
 ![Pantalla inicial de NoutyNotes en tema claro](assets/readme/home-light.png)
 
 ## Estado actual
 
 **Fase 9 (fallback web ZIP) implementada; aceptación manual pendiente.** En navegadores sin acceso a carpetas (Firefox, Safari, móviles), «Importar un ZIP» abre un espacio exportado. Se edita y se vuelve a guardar con «Exportar ZIP»; como la web no puede saber si el archivo se guardó, el espacio sigue «SIN EXPORTAR» hasta pulsar «Ya lo guardé». La app avisa de los cambios sin exportar y, tras una primera visita con conexión, el export web también arranca sin red. Ver [validación del fallback ZIP](#validar).
 
-Las fases 0B–8 están completadas y la fase 9 (fallback web ZIP y arranque sin conexión) está implementada y verificada automáticamente, pendiente de aceptación manual en Safari o en un navegador móvil real; la fase 10 no se ha iniciado. El núcleo valida datos, transforma layouts, gestiona relaciones y crea workspaces desde plantillas GDD, Storyboard y Research. Las plantillas se importan/exportan como JSON en memoria. Los workspaces se convierten en archivos Markdown/YAML v1 mediante `@noutynotes/storage`. El prototipo usa casos de uso de `@noutynotes/application`; al elegir una carpeta, guarda allí los espacios creados. Sin carpeta, los espacios viven en el navegador (`ArchiveStorage`): se pierden al recargar o cerrar salvo que se exporten como ZIP y se vuelvan a importar. Tras recargar hay que seleccionar de nuevo la misma carpeta para reconectar. Aún no hay selector de plantillas en la interfaz.
+Las fases 0B–8 están completadas y la fase 9 (fallback web ZIP y arranque sin conexión) está implementada y verificada automáticamente, pendiente de aceptación manual en Safari o en un navegador móvil real. La fase 10 (carpetas en Android) está completada y validada en un emulador Android 15; falta probarla en un dispositivo físico. El núcleo valida datos, transforma layouts, gestiona relaciones y crea workspaces desde plantillas GDD, Storyboard y Research. Las plantillas se importan/exportan como JSON en memoria. Los workspaces se convierten en archivos Markdown/YAML v1 mediante `@noutynotes/storage`. El prototipo usa casos de uso de `@noutynotes/application`; al elegir una carpeta, guarda allí los espacios creados. Sin carpeta, los espacios viven en el navegador (`ArchiveStorage`): se pierden al recargar o cerrar salvo que se exporten como ZIP y se vuelvan a importar. Tras recargar hay que seleccionar de nuevo la misma carpeta para reconectar. En Android, «Abrir una carpeta» usa el selector del sistema y, al volver a abrir la app, «Reabrir «carpeta»» reconecta sin volver a elegirla. Aún no hay selector de plantillas en la interfaz.
 
 | Disponible | Pendiente |
 | --- | --- |
@@ -20,9 +22,9 @@ Las fases 0B–8 están completadas y la fase 9 (fallback web ZIP y arranque sin
 | Prototipo: crear espacios, tarjetas, texto, mover, redimensionar y conectar | Vista previa de Markdown e imágenes reales |
 | Inicio y tablero responsive; temas claro, oscuro y del sistema | Arrastre y gestos, selector de plantillas |
 | Dominio, grilla, relaciones y plantillas declarativas probadas | Añadir assets desde la interfaz |
-| Formato de archivos v1 Markdown/YAML, adaptador de carpetas web e importación/exportación ZIP (fase 9, aceptación manual pendiente) | Almacenamiento Android |
+| Formato de archivos v1 Markdown/YAML, adaptador de carpetas web, importación/exportación ZIP (fase 9, aceptación manual pendiente) y carpetas en Android (fase 10, validada en emulador) | Prueba en dispositivo Android físico |
 | Arranque del export web sin conexión tras una primera visita con red (comprobado contra el export local en Chromium y Firefox) | Comprobación en el sitio publicado (fase 15) |
-| TypeScript estricto, lint y pruebas automatizadas (Chromium y Firefox) | Ejecución Android verificada |
+| TypeScript estricto, lint y pruebas automatizadas (Chromium y Firefox); APK release instalado y recorrido en emulador | Compilación nativa en Windows desde la ruta del repositorio |
 | Export web, bundle Android y proyecto nativo generado | |
 
 La preferencia de tema y los espacios del navegador duran la sesión actual; para conservar un espacio hay que exportarlo como ZIP y confirmar «Ya lo guardé». «Abrir una carpeta» se habilita en navegadores compatibles después de cargar la página; «Usar una plantilla» sigue desactivado. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/), cuyo contenido público puede ir detrás de esta copia local; todavía no hay un APK validado.
@@ -60,7 +62,7 @@ pnpm android:prepare
 pnpm android
 ```
 
-`android:prepare` genera o actualiza el proyecto nativo sin limpiarlo ni instalar dependencias. `android` compila e intenta instalar la app, y puede descargar herramientas adicionales.
+En Windows, la compilación nativa falla si la ruta del repositorio tiene espacios o es larga: hay que compilar desde una copia en una ruta corta sin espacios con `nodeLinker: hoisted` y CMake 3.31.6 del SDK (ver `Docs/testing.md`, «Storage Android»). `android:prepare` genera o actualiza el proyecto nativo sin limpiarlo ni instalar dependencias. `android` compila e intenta instalar la app, y puede descargar herramientas adicionales.
 
 Se verificaron la generación del proyecto nativo y el bundle Hermes. La compilación e instalación de un APK en dispositivo o emulador siguen pendientes de validación.
 
@@ -162,11 +164,11 @@ Están activos la app, el paquete UI, el dominio y `@noutynotes/storage` (format
 | A — Fundaciones | Estructura, herramientas, inicio y temas | Completada |
 | B — Núcleo | Dominio, grilla, relaciones y plantillas | Completada |
 | C — Persistencia y prototipo | Serialización, almacenamiento en memoria y edición básica | Completada: serialización, almacenamiento en memoria y prototipo de interfaz |
-| D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Fase 8 completada; fase 9 implementada con aceptación manual pendiente; fase 10 pendiente |
+| D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Fase 8 completada; fase 9 implementada con aceptación manual pendiente; fase 10 completada en emulador |
 | E — Experiencia y calidad | Plantillas en UI, móvil, regresión y rendimiento | Pendiente |
 | F — Publicación y v1 | Demo, documentación completa y release | Pendiente |
 
-La visión del producto es trabajar con Markdown/YAML y assets portables como fuente de verdad, sin backend obligatorio, cuentas, plugins ejecutables ni Git integrado. Las carpetas web (fase 8), el fallback ZIP y el arranque web sin conexión (fase 9) ya están implementados; la fase 9 espera su aceptación manual en Safari o un móvil real, y el almacenamiento Android llegará en la fase 10.
+La visión del producto es trabajar con Markdown/YAML y assets portables como fuente de verdad, sin backend obligatorio, cuentas, plugins ejecutables ni Git integrado. Las carpetas web (fase 8), el fallback ZIP y el arranque web sin conexión (fase 9) ya están implementados; la fase 9 espera su aceptación manual en Safari o un móvil real, y el almacenamiento Android (fase 10) funciona con carpetas elegidas por el usuario.
 
 ## Contribuir
 

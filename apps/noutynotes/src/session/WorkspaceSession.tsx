@@ -7,8 +7,12 @@ import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
 
 import { useHydrated } from '../components/useHydrated';
+import { chooseAndroidFolder, forgetAndroidFolder, readSavedAndroidFolder, rememberAndroidFolder, reopenAndroidFolder, supportsAndroidFolders } from './androidFolder';
+import type { SavedFolder } from './androidFolder';
 import { downloadFile, pickZipFile, supportsArchiveFiles } from './archiveFiles';
 import { chooseFolder, supportsFolderAccess } from './folderAccess';
+import { chooseFolderInto, reopenRememberedInto } from './folderSession';
+import type { FolderState } from './folderSession';
 import { describeImport, describeImportFailure } from './messages';
 
 type Outcome<T = null> = { readonly ok: true; readonly value: T; readonly message: string } | { readonly ok: false; readonly message: string };
@@ -22,6 +26,9 @@ interface Session {
   /** Espacios del navegador con cambios que no se han exportado a ZIP. */
   readonly unexported: readonly WorkspaceId[];
   connectFolder(): Promise<{ ok: true } | { ok: false; message: string }>;
+  /** Android: carpeta elegida en una sesión anterior que se puede reabrir (ADR 0012). */
+  readonly savedFolder: SavedFolder | null;
+  reconnectFolder(): Promise<{ ok: true } | { ok: false; message: string }>;
   /** `null` si el usuario cancela el selector. */
   importArchive(): Promise<Outcome<ArchiveImport> | null>;
   /** Inicia la descarga. No da por conservado nada: devuelve la revisión que el usuario podrá confirmar. */
@@ -43,6 +50,8 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   const [storage, setStorage] = useState<WorkspaceStorage>(archive);
   const [mode, setMode] = useState<'memory' | 'folder'>('memory');
   const [unexported, setUnexported] = useState<readonly WorkspaceId[]>([]);
+  // Fuera de Android siempre es null (el sustituto no lee nada), también en el HTML estático.
+  const [savedFolder, setSavedFolder] = useState<SavedFolder | null>(() => readSavedAndroidFolder());
 
   useEffect(() => archive.subscribe(() => setUnexported(archive.unexportedIds())), [archive]);
 
@@ -55,19 +64,30 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
     return () => window.removeEventListener('beforeunload', warn);
   }, [pending]);
 
+  const memory = { remember: rememberAndroidFolder, forget: forgetAndroidFolder };
+  const apply = (next: FolderState<SavedFolder>) => {
+    setStorage(next.storage);
+    setMode(next.mode);
+    setSavedFolder(next.saved);
+  };
+
+  /** La sesión y la carpeta recordada solo cambian si la carpeta elegida se lee bien (folderSession.ts). */
   const connectFolder = async (): Promise<{ ok: true } | { ok: false; message: string }> => {
-    try {
+    const choose = async () => {
+      if (supportsAndroidFolders()) return chooseAndroidFolder();
       const selected = await chooseFolder();
-      if (!selected) return { ok: false, message: 'Este navegador no admite el acceso a carpetas.' };
-      const listed = await selected.list();
-      if (!listed.ok) return { ok: false, message: listed.issues[0]?.message ?? 'No se pudo leer la carpeta.' };
-      setStorage(selected);
-      setMode('folder');
-      return { ok: true };
-    } catch (cause) {
-      if ((cause as { name?: string }).name === 'AbortError') return { ok: false, message: 'No se seleccionó ninguna carpeta.' };
-      return { ok: false, message: 'No se pudo abrir la carpeta. Revisa los permisos y vuelve a intentarlo.' };
-    }
+      return selected ? { storage: selected, folder: null } : null;
+    };
+    const { state, result } = await chooseFolderInto({ storage, mode, saved: savedFolder }, choose, memory);
+    apply(state);
+    return result;
+  };
+
+  /** Android: reabre la carpeta recordada; solo la olvida si se confirma la pérdida de acceso. */
+  const reconnectFolder = async (): Promise<{ ok: true } | { ok: false; message: string }> => {
+    const { state, result } = await reopenRememberedInto({ storage, mode, saved: savedFolder }, reopenAndroidFolder, memory);
+    apply(state);
+    return result;
   };
 
   const importArchive = async (): Promise<Outcome<ArchiveImport> | null> => {
@@ -116,7 +136,8 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   const archiveSupported = hydrated && mode === 'memory' && supportsArchiveFiles();
   return (
     <StorageContext.Provider value={{
-      storage, mode, folderSupported: hydrated && supportsFolderAccess(), archiveSupported,
+      storage, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
+      savedFolder: mode === 'memory' ? savedFolder : null, reconnectFolder,
       unexported: mode === 'memory' ? unexported : [], connectFolder, importArchive, exportArchive, confirmExported,
     }}
     >

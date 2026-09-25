@@ -82,6 +82,11 @@ export function HomeScreen() {
     setCreateError(result.ok ? null : result.message);
   };
 
+  const reopenFolder = async () => {
+    const result = await session.reconnectFolder();
+    setCreateError(result.ok ? null : result.message);
+  };
+
   const importZip = async () => {
     const outcome = await session.importArchive();
     if (outcome === null) return;
@@ -229,6 +234,24 @@ export function HomeScreen() {
                   </View>
                   <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↗</Text>
                 </Pressable>
+                {Platform.OS !== 'web' && session.savedFolder ? (
+                  <Pressable
+                    testID="reopen-folder"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Reabrir la carpeta ${session.savedFolder.name}`}
+                    accessibilityHint="Vuelve a abrir la carpeta que elegiste la última vez"
+                    onPress={() => void reopenFolder()}
+                    {...actionFocus('reopen')}
+                    style={[styles.action, actionBorder('reopen')]}
+                  >
+                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>02</Text>
+                    <View style={styles.actionText}>
+                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{`Reabrir «${session.savedFolder.name}»`}</Text>
+                      <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>La carpeta que usaste la última vez en este dispositivo.</Text>
+                    </View>
+                    <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↺</Text>
+                  </Pressable>
+                ) : null}
                 {Platform.OS === 'web' && session.mode === 'memory' ? (
                   <Pressable
                     testID="import-zip"
@@ -271,8 +294,12 @@ export function HomeScreen() {
               <View testID="memory-notice" style={[styles.comingSoon, { backgroundColor: colors.surfaceRaised }]}>
                 <Text style={[styles.comingSoonText, { color: colors.textPrimary }]}>
                   {session.mode === 'folder'
-                    ? 'CARPETA LOCAL · Los cambios se guardan en la carpeta elegida. Al recargar, vuelve a seleccionarla para reconectar. Los espacios de memoria no se mezclan.'
-                    : `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Exporta cada espacio como ZIP para conservarlo e impórtalo después, en cualquier navegador; o elige una carpeta compatible. Las plantillas llegarán después.`}
+                    ? (Platform.OS === 'web'
+                      ? 'CARPETA LOCAL · Los cambios se guardan en la carpeta elegida. Al recargar, vuelve a seleccionarla para reconectar. Los espacios de memoria no se mezclan.'
+                      : 'CARPETA LOCAL · Los cambios se guardan en la carpeta elegida. Al volver a abrir la app, usa «Reabrir» para reconectar. Los espacios de memoria no se mezclan.')
+                    : Platform.OS === 'web'
+                      ? `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Exporta cada espacio como ZIP para conservarlo e impórtalo después, en cualquier navegador; o elige una carpeta compatible. Las plantillas llegarán después.`
+                      : `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Elige una carpeta para guardar tus espacios en archivos. Las plantillas llegarán después.`}
                 </Text>
               </View>
               <View testID="session-workspaces" style={styles.sessionList}>

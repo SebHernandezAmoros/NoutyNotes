@@ -54,3 +54,11 @@ Las reglas completas están en el ADR 0007 del proyecto. Pruebas: `pnpm exec vit
 - **Dependencia:** `fflate` 0.8.3.
 
 Reglas en el ADR 0011 del proyecto.
+
+## Árbol de documentos para Android (fase 10)
+
+- **`DocumentTree`:** contrato de un directorio de documentos sin plataforma (listar hijos, subdirectorio, leer, escribir truncando, borrar, comprobar acceso). La app lo implementa sobre el Storage Access Framework; las pruebas, con un árbol en memoria (`src/__fixtures__/document-tree.ts`).
+- **`DocumentTreeDirectory` y `DocumentTreeFolderPort`:** implementan `WorkspaceDirectory` y `FolderPort` sobre ese contrato, así que Android usa el mismo `FolderStorage` que la web: transacción recuperable, detección de cambios externos y `assets/**` intactos. Rechazan rutas con `..`, `.`, segmentos vacíos o `\`.
+- Pruebas: `pnpm exec vitest run packages/storage/src/document-tree.test.ts tests/contracts/document-tree-storage.contract.test.ts tests/integration/web-android-equivalence.test.ts`.
+
+Reglas en el ADR 0012 del proyecto.
