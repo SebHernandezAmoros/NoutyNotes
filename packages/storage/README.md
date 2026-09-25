@@ -1,6 +1,6 @@
 # Persistencia
 
-Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. MemoryStorage y los adaptadores de navegador y Android llegarán en fases posteriores y usarán estos codecs.
+Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. Sobre ellos, `MemoryStorage` implementa el puerto `WorkspaceStorage` de `@noutynotes/application` (fase 6). Los adaptadores de navegador y Android llegarán en fases posteriores.
 
 Depende del API público de `@noutynotes/domain`, de `yaml` (YAML real) y de `zod` (sobres y frontmatter con claves cerradas). Las invariantes semánticas las sigue validando el dominio.
 
@@ -17,6 +17,15 @@ Depende del API público de `@noutynotes/domain`, de `yaml` (YAML real) y de `zo
 | `validateTextFiles`, `validatePortablePath` | Contenedor, límites y rutas portables |
 
 Todas devuelven `StorageResult<T>`, un `ValidationResult` con incidencias `código` + `archivo#ruta`. No lanzan excepciones ante datos inválidos.
+
+## MemoryStorage
+
+Implementa `WorkspaceStorage` guardando cada workspace como paquete `TextFiles` escrito con `serializeWorkspace` y leído con `parseWorkspace`. Nunca guarda referencias a los objetos recibidos.
+- `save` y `rename` conservan los bytes de los documentos sin cambios y los extras.
+- Cada operación se confirma completa o no cambia nada.
+- Fuera del puerto: `MemoryStorage.fromPackages(paquetes)` carga paquetes v1 validados (por ejemplo, fixtures) y `exportPackage(id)` devuelve una copia del paquete.
+- Pasa la suite contractual `tests/contracts/workspace-storage-contract.ts`.
+- No persiste entre ejecuciones.
 
 ## Paquete de workspace
 

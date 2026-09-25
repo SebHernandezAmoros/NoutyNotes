@@ -79,10 +79,19 @@ importers:
         specifier: 0.86.3
         version: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1)
 
+  packages/application:
+    dependencies:
+      '@noutynotes/domain':
+        specifier: workspace:*
+        version: link:../domain
+
   packages/domain: {}
 
   packages/storage:
     dependencies:
+      '@noutynotes/application':
+        specifier: workspace:*
+        version: link:../application
       '@noutynotes/domain':
         specifier: workspace:*
         version: link:../domain

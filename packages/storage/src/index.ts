@@ -5,3 +5,4 @@ export { MAX_PATH_LENGTH, MAX_SEGMENT_LENGTH, assetRefToMarkdownLink, markdownLi
 export { LAYOUT_FILE, RELATIONS_FILE, parseLayouts, parseRelations, serializeLayouts, serializeRelations } from './codecs';
 export { WORKSPACE_FILE, parseWorkspace, serializeWorkspace } from './workspace-codec';
 export { TEMPLATE_FILE, TEMPLATE_README, parseTemplate, serializeTemplate } from './template-codec';
+export { MemoryStorage } from './memory-storage';
