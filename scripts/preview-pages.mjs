@@ -13,7 +13,8 @@ const types = {
 };
 
 // Serve only exported files under the Pages prefix; never fall back to the app.
-createServer(async (request, response) => {
+export async function startPagesPreview() {
+  const server = createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
     if (pathname === '/NoutyNotes') {
@@ -36,6 +37,22 @@ createServer(async (request, response) => {
   } catch {
     response.writeHead(404).end();
   }
-}).listen(8082, '127.0.0.1', () => {
-  console.log('Pages preview: http://127.0.0.1:8082/NoutyNotes/');
-});
+  });
+  await new Promise((resolveReady, reject) => {
+    server.once('error', reject);
+    server.listen(8082, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolveReady();
+    });
+  });
+  return server;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  startPagesPreview().then(() => {
+    console.log('Pages preview: http://127.0.0.1:8082/NoutyNotes/');
+  }).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

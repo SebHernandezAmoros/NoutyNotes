@@ -82,7 +82,7 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 | `pnpm lint` | ESLint sin avisos permitidos |
 | `pnpm typecheck` | Tipos de paquetes, pruebas y aplicación |
 | `pnpm test` | Pruebas unitarias del dominio, grilla, relaciones, plantillas y formato de archivos; integración con fixtures; fronteras del núcleo y de storage; temas, contraste y breakpoint |
-| `pnpm test:smoke` | Web en escritorio y móvil: inicio, tablero y flujo de carpetas con un doble de File System Access (crear, autoguardar, recargar y reconectar); también accesibilidad y responsive |
+| `pnpm test:smoke` | Web en escritorio y móvil: inicio, tablero y flujo de carpetas con un doble de File System Access y con handles reales de Origin Private File System; también borradores pendientes, accesibilidad y responsive |
 | `pnpm build:pages` y `pnpm test:pages` | Export bajo `/NoutyNotes/` y el mismo flujo funcional/visual servido desde sus archivos estáticos |
 | `pnpm build:web` | Export estático en `apps/noutynotes/dist/` |
 | `pnpm build:android:bundle` | JavaScript y assets en `apps/noutynotes/dist/android/`; no produce un APK |
@@ -90,7 +90,9 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 
 Ejecutar el bundle Android después del export web, porque este último regenera `dist/`. Las capturas y trazas de Playwright se guardan en `artifacts/playwright/`.
 
-Para revisar la fase 8 en Chromium sobre `localhost`, crear una carpeta vacía de prueba y abrirla con «Abrir una carpeta». Crear un espacio, añadir una nota, editar su título y esperar el aviso de guardado. Verificar que aparecieron archivos `.nouty/workspace.yaml`, `.nouty/layout.yaml`, `.nouty/relations.yaml` y `cards/tarjeta-1.md` bajo un subdirectorio. Recargar: hay que volver a seleccionar la misma carpeta y reabrir el espacio; el título debe seguir allí. Cambiar el manifiesto fuera de la app mientras el espacio está abierto y probar otra edición: debe mostrarse el conflicto y conservarse el cambio externo. Probar la cancelación del selector y el ancho de 390 px. No usar datos importantes para esta validación: la fase 8 aún espera comprobar una carpeta real y el cierre con texto pendiente.
+Para revisar la fase 8 en Chromium sobre `localhost`, crear una carpeta vacía de prueba y abrirla con «Abrir una carpeta». Crear un espacio, añadir una nota, editar su título y esperar el aviso de guardado. Verificar que aparecieron archivos `.nouty/workspace.yaml`, `.nouty/layout.yaml`, `.nouty/relations.yaml` y `cards/tarjeta-1.md` bajo un subdirectorio. Recargar: hay que volver a seleccionar la misma carpeta y reabrir el espacio; el título debe seguir allí. Editar de nuevo y cerrar inmediatamente el editor o volver al inicio: al reabrir, el texto debe persistir. Cambiar el manifiesto fuera de la app mientras el espacio está abierto y probar otra edición: debe mostrarse el conflicto, conservarse el cambio externo y mantenerse el borrador en el editor. Probar la cancelación del selector y el ancho de 390 px. Usar solo una carpeta desechable: **el selector del sistema y sus permisos en una carpeta visible siguen sin validación manual**, por lo que la fase 8 permanece en curso.
+
+**Verificación local adicional del 24 de septiembre de 2026 (fase 8):** `pnpm check` pasó con 820 pruebas en 42 archivos. `test:smoke` y `test:pages` terminaron con salida 0, 33 pruebas correctas y 3 omisiones previstas cada uno; 34 capturas coincidieron entre desarrollo y Pages. Una regresión posterior de conflicto con borrador pasó en escritorio y móvil en ambos entornos. Los builds de Pages, web y bundle Android fueron correctos. Origin Private File System comprobó archivos con handles nativos de Chromium, pero no reemplaza la validación del selector físico. Detalle en `Docs/testing.md` (documentación local).
 
 **Validación local registrada el 24 de septiembre de 2026 (fase 7):** lint y tipos correctos; 783 pruebas unitarias, de integración y de contrato; 19 pruebas web correctas en desarrollo y 19 en el export de Pages (3 casos se omiten a propósito en el perfil móvil), con capturas idénticas entre ambos; export de Pages, export web y bundle Android correctos. Estos resultados no equivalen a ejecución nativa Android.
 
@@ -123,7 +125,7 @@ Para las pruebas se necesita Chromium instalado con `pnpm exec playwright instal
 
 `build:pages` genera `apps/noutynotes/dist/pages/` y aplica la ruta base solo a ese proceso. El desarrollo local y el export web normal mantienen la ruta raíz. Ejecutar `build:pages` después de `build:web`, que regenera `dist/`. Si cambia el nombre del repositorio o se configura un dominio propio, ajustar la ruta en `apps/noutynotes/app.config.ts` y la vista previa correspondiente.
 
-Esta demo muestra el inicio y los temas; no incorpora guardado ni funcionamiento offline. Configuración basada en las guías de [Expo](https://docs.expo.dev/guides/publishing-websites/#github-pages) y [GitHub Actions para Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+La versión pública puede ir detrás de la copia local. El export local incluye el prototipo y guardado en carpeta en navegadores compatibles; no se ha comprobado funcionamiento offline ni el selector físico en Pages. Configuración basada en las guías de [Expo](https://docs.expo.dev/guides/publishing-websites/#github-pages) y [GitHub Actions para Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
 ## Arquitectura
 
@@ -131,13 +133,13 @@ Esta demo muestra el inicio y los temas; no incorpora guardado ni funcionamiento
 apps/noutynotes/        App Expo, rutas y pantalla inicial
 packages/domain/       Entidades, invariantes, validación y motor de grilla puros
 packages/application/  Puerto WorkspaceStorage y casos de uso
-packages/storage/      Formato de archivos v1 y MemoryStorage
+packages/storage/      Formato de archivos v1, MemoryStorage y FolderStorage
 packages/ui/           Tokens, temas y medida de ventana compartidos
 tests/                 Smoke web, contratos, integración y fixtures del formato
 assets/readme/         Capturas propias para esta documentación
 ```
 
-Están activos la app, el paquete UI, el dominio y `@noutynotes/storage` (formato de archivos Markdown/YAML en memoria); la app usa application y el dominio, y solo su raíz de composición crea `MemoryStorage`. El dominio no depende de React, Expo, filesystem, red ni almacenamiento, y no genera identificadores ni fechas. Las tarjetas pertenecen al workspace; los boards las muestran por referencia, así que una tarjeta puede aparecer en varios. Las posiciones se guardan aparte, en unidades de grilla, y las relaciones no dependen de ellas. Las plantillas son solo datos. Ver [el README del dominio](packages/domain/README.md). Storage depende solo del API público del dominio, de `yaml` y de `zod`; el dominio no depende de storage. `@noutynotes/application` define el puerto `WorkspaceStorage` y los casos de uso, y solo depende del dominio; `MemoryStorage` implementa ese puerto desde storage. Ver [application](packages/application/README.md).
+Están activos la app, el paquete UI, el dominio y `@noutynotes/storage` (formato de archivos Markdown/YAML y adaptadores); la app usa application y el dominio, y su raíz de composición elige `MemoryStorage` o `FolderStorage` al seleccionar una carpeta. El dominio no depende de React, Expo, filesystem, red ni almacenamiento, y no genera identificadores ni fechas. Las tarjetas pertenecen al workspace; los boards las muestran por referencia, así que una tarjeta puede aparecer en varios. Las posiciones se guardan aparte, en unidades de grilla, y las relaciones no dependen de ellas. Las plantillas son solo datos. Ver [el README del dominio](packages/domain/README.md). Storage depende del API público del dominio y application, de `yaml` y de `zod`; el dominio no depende de storage. `@noutynotes/application` define el puerto `WorkspaceStorage` y los casos de uso, y solo depende del dominio. Ver [application](packages/application/README.md).
 
 ## Plan de trabajo
 
@@ -146,7 +148,7 @@ Están activos la app, el paquete UI, el dominio y `@noutynotes/storage` (format
 | A — Fundaciones | Estructura, herramientas, inicio y temas | Completada |
 | B — Núcleo | Dominio, grilla, relaciones y plantillas | Completada |
 | C — Persistencia y prototipo | Serialización, almacenamiento en memoria y edición básica | Completada: serialización, almacenamiento en memoria y prototipo de interfaz |
-| D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Pendiente |
+| D — Web y Android | Carpetas, importación/exportación y persistencia nativa | Fase 8 en curso; 9–10 pendientes |
 | E — Experiencia y calidad | Plantillas en UI, móvil, regresión y rendimiento | Pendiente |
 | F — Publicación y v1 | Demo, documentación completa y release | Pendiente |
 

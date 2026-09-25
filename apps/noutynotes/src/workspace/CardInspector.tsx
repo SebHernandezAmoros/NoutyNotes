@@ -1,9 +1,9 @@
 import { connectCards, disconnectCards, editCardContent, moveCardOnBoard, resizeCardOnBoard } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
-import type { BoardId, Card, CardPlacement, Workspace } from '@noutynotes/domain';
+import type { BoardId, Card, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
@@ -18,6 +18,8 @@ interface CardInspectorProps {
   readonly card: Card;
   readonly placement: CardPlacement | undefined;
   readonly run: Run;
+  readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string }) => void;
+  readonly flushPendingText: () => Promise<boolean>;
   readonly onClose: () => void;
 }
 
@@ -39,20 +41,32 @@ const resizes = [
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onClose }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
   const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
+  const changeTitle = (value: string) => {
+    setTitle(value);
+    if (mode === 'folder') onDraftChange({ cardId: card.id, title: value, content });
+  };
+  const changeContent = (value: string) => {
+    setContent(value);
+    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: value });
+  };
   useEffect(() => {
     if (mode !== 'folder' || !dirty) return;
-    const timer = setTimeout(() => {
-      void run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en la carpeta.');
-    }, 700);
+    const timer = setTimeout(() => { void flushPendingText(); }, 700);
     return () => clearTimeout(timer);
-  }, [mode, dirty, title, content, card.id, run]);
+  }, [mode, dirty, title, content, flushPendingText]);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || mode !== 'folder' || !dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [mode, dirty]);
   const titles = new Map(workspace.cards.map((other) => [other.id, cardTitle(other)]));
   const connected = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id);
   const targets = workspace.cards.filter((other) => other.id !== card.id
@@ -66,17 +80,17 @@ export function CardInspector({ workspace, boardId, card, placement, run, onClos
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>TARJETA SELECCIONADA</Text>
           <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card)}</Text>
         </View>
-        <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={onClose} />
+        <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
       </View>
 
       <View style={styles.section}>
-        <TextField label="Título de la tarjeta" value={title} onChangeText={setTitle} placeholder="Sin título" />
-        <TextField label="Contenido Markdown" value={content} onChangeText={setContent} multiline placeholder="# Una idea" />
+        <TextField label="Título de la tarjeta" value={title} onChangeText={changeTitle} placeholder="Sin título" />
+        <TextField label="Contenido Markdown" value={content} onChangeText={changeContent} multiline placeholder="# Una idea" />
         <View style={styles.row}>
           <ActionButton
             label="Guardar texto"
             tone="primary"
-            onPress={() => void run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en memoria.')}
+            onPress={() => { void (mode === 'folder' ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en memoria.')); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? 'Cambios sin guardar' : 'Sin cambios pendientes'}</Text>
         </View>

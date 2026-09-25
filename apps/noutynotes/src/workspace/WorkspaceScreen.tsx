@@ -1,9 +1,9 @@
-import { addCardToBoard } from '@noutynotes/application';
+import { addCardToBoard, editCardContent } from '@noutynotes/application';
 import type { PrototypeCardKind } from '@noutynotes/application';
 import type { CardId } from '@noutynotes/domain';
 import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -33,13 +33,38 @@ export function WorkspaceScreen() {
   const { view, feedback, saving, run } = useWorkspaceEditor(typeof params.id === 'string' ? params.id : undefined);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
   const scroll = useRef<ScrollView>(null);
+  const pendingText = useRef<{ cardId: CardId; title: string; content: string } | null>(null);
+  const pendingSave = useRef<Promise<boolean> | null>(null);
 
-  const goHome = () => {
+  const flushPendingText = useCallback(async (): Promise<boolean> => {
+    if (storageMode !== 'folder') return true;
+    while (true) {
+      if (pendingSave.current) {
+        if (!await pendingSave.current) return false;
+        continue;
+      }
+      const draft = pendingText.current;
+      if (!draft) return true;
+      let task: Promise<boolean>;
+      task = run((storage, id) => editCardContent(storage, id, draft.cardId, {
+        title: draft.title, content: draft.content,
+      }), 'Texto guardado en la carpeta.').then((result) => {
+        if (result.ok && pendingText.current === draft) pendingText.current = null;
+        return result.ok;
+      }).finally(() => { if (pendingSave.current === task) pendingSave.current = null; });
+      pendingSave.current = task;
+      if (!await task) return false;
+    }
+  }, [run, storageMode]);
+
+  const goHome = async () => {
+    if (!await flushPendingText()) return;
     if (router.canGoBack()) router.back();
     else router.replace('/');
   };
 
-  const select = (cardId: CardId) => {
+  const select = async (cardId: CardId) => {
+    if (!await flushPendingText()) return;
     setSelectedId(cardId);
     // En pantallas apiladas el editor está encima del tablero; sin animación, el resultado es inmediato.
     if (!sideInspector) scroll.current?.scrollTo({ y: 0, animated: false });
@@ -58,7 +83,9 @@ export function WorkspaceScreen() {
       card={selected}
       placement={layout?.placements.find((placement) => placement.cardId === selected.id)}
       run={run}
-      onClose={() => setSelectedId(null)}
+      onDraftChange={(draft) => { pendingText.current = draft; }}
+      flushPendingText={flushPendingText}
+      onClose={() => { setSelectedId(null); }}
     />
   ) : null;
 
@@ -66,7 +93,7 @@ export function WorkspaceScreen() {
     <SafeAreaView testID="workspace-screen" style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView ref={scroll} contentContainerStyle={[styles.page, { padding: compact ? 16 : 32 }]}>
         <View style={[styles.header, { borderColor: colors.border }]}>
-          <ActionButton label="← Mis espacios" accessibilityLabel="Volver a mis espacios" onPress={goHome} />
+          <ActionButton label="← Mis espacios" accessibilityLabel="Volver a mis espacios" onPress={() => void goHome()} />
           <View testID="workspace-memory" style={[styles.memoryChip, { backgroundColor: colors.surfaceRaised }]}>
             <Text style={[styles.memoryText, { color: colors.textPrimary }]}>{storageMode === 'folder' ? (saving ? 'GUARDANDO EN LA CARPETA…' : feedback?.tone === 'error' ? 'ERROR AL GUARDAR · REVISA EL AVISO' : 'CARPETA LOCAL · CAMBIOS GUARDADOS') : 'SOLO EN MEMORIA · SE PIERDE AL RECARGAR'}</Text>
           </View>

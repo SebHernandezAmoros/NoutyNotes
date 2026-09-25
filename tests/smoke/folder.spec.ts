@@ -105,3 +105,73 @@ test('un cambio externo bloquea el siguiente guardado y conserva sus bytes', asy
     return new TextDecoder().decode(new Uint8Array(source));
   })).toBe(changed);
 });
+
+test('salir del editor inmediatamente conserva el texto pendiente en la carpeta', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Salida rápida');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await page.getByTestId('card-tarjeta-1').click();
+  await page.getByLabel('Título de la tarjeta').fill('Título pendiente');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir Salida rápida' }).click();
+  await expect(page.getByTestId('card-tarjeta-1')).toContainText('Título pendiente');
+});
+
+test('volver al inicio inmediatamente espera al guardado del borrador', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Navegación');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await page.getByTestId('card-tarjeta-1').click();
+  await page.getByLabel('Título de la tarjeta').fill('Antes de salir');
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir Navegación' }).click();
+  await expect(page.getByTestId('card-tarjeta-1')).toContainText('Antes de salir');
+});
+
+test('recargar con texto pendiente exige confirmar la salida', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Recarga');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await page.getByTestId('card-tarjeta-1').click();
+  await page.getByLabel('Título de la tarjeta').fill('Pendiente');
+  const warning = page.waitForEvent('dialog');
+  void page.evaluate(() => window.location.reload());
+  const dialog = await warning;
+  expect(dialog.type()).toBe('beforeunload');
+  await dialog.dismiss();
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Pendiente');
+});
+
+test('un fallo al guardar el borrador mantiene abierto el editor y conserva el texto', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Borrador en conflicto');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await page.getByTestId('card-tarjeta-1').click();
+  await page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    const path = 'borrador-en-conflicto/.nouty/workspace.yaml';
+    const source = files[path];
+    if (!source) throw new Error('No se creó el manifiesto.');
+    const original = new TextDecoder().decode(new Uint8Array(source));
+    files[path] = Array.from(new TextEncoder().encode(original.replace('name: Borrador en conflicto', 'name: Externo')));
+    localStorage.setItem('nouty-test-folder', JSON.stringify(files));
+  });
+  await page.getByLabel('Título de la tarjeta').fill('Texto que debo conservar');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toContainText('cambiaron fuera de NoutyNotes');
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Texto que debo conservar');
+});

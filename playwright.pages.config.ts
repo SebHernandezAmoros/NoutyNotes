@@ -1,16 +1,13 @@
 import { defineConfig } from '@playwright/test';
 import config from './playwright.config';
 
-// Reutiliza proyectos y pruebas, pero sustituye el servidor: defineConfig(config, overrides)
-// fusionaría el webServer heredado y arrancaría también Metro en 8081. Solo se sirve el export.
+// Reutiliza proyectos y pruebas, sin el servidor de desarrollo heredado.
+// El preview vive en setup/teardown de Playwright para cerrar sus conexiones sin proceso hijo.
+const pagesConfig = { ...config };
+delete pagesConfig.webServer;
 export default defineConfig({
-  ...config,
+  ...pagesConfig,
   outputDir: 'artifacts/playwright-pages',
   use: { ...config.use, baseURL: 'http://127.0.0.1:8082/NoutyNotes/' },
-  webServer: {
-    command: 'node scripts/preview-pages.mjs',
-    url: 'http://127.0.0.1:8082/NoutyNotes/',
-    reuseExistingServer: false,
-    timeout: 30_000,
-  },
+  globalSetup: './scripts/preview-pages-setup.mjs',
 });
