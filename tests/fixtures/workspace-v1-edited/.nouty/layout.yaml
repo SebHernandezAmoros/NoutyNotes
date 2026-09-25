@@ -1,0 +1,7 @@
+schemaVersion: 1
+layouts:
+  # Colocaciones del board principal
+  - boardId: overview
+    placements:
+      - { cardId: idea-a, display: expanded, rect: { x: 0, y: 0, w: 4, h: 3 } }
+      - { cardId: idea-b, display: minimized, rect: { x: 4, y: 0, w: 4, h: 2 } }

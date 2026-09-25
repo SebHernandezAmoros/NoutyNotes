@@ -29,9 +29,16 @@ export interface DomainIssue {
   readonly message: string;
 }
 
-export type ValidationResult<T> =
+/** Forma mínima de una incidencia; otras capas (storage) pueden ampliar sus códigos. */
+export interface IssueLike {
+  readonly code: string;
+  readonly path: string;
+  readonly message: string;
+}
+
+export type ValidationResult<T, I extends IssueLike = DomainIssue> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly issues: readonly DomainIssue[] };
+  | { readonly ok: false; readonly issues: readonly I[] };
 
 export class DomainError extends Error {
   readonly issues: readonly DomainIssue[];

@@ -81,6 +81,18 @@ importers:
 
   packages/domain: {}
 
+  packages/storage:
+    dependencies:
+      '@noutynotes/domain':
+        specifier: workspace:*
+        version: link:../domain
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+
   packages/ui:
     dependencies:
       react:

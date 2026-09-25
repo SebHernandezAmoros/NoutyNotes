@@ -7,7 +7,7 @@ Paquete `@noutynotes/domain`: modelo y reglas puras de NoutyNotes. No tiene depe
 | Ubicación | Contenido |
 | --- | --- |
 | `src/ids.ts` | Identificadores estables con tipo por entidad; validación sin normalizar |
-| `src/errors.ts` | Incidencias con código, ruta y mensaje; `ValidationResult`, `DomainError` y `assertValid` |
+| `src/errors.ts` | Incidencias con código, ruta y mensaje; `ValidationResult<T, I>` (genérico en la incidencia, para que storage añada sus códigos), `DomainError` y `assertValid` |
 | `src/schema-version.ts` | Versión de esquema admitida (1) |
 | `src/workspace/` | Workspace, metadata y validación de referencias entre colecciones |
 | `src/boards/` | Board como vista ordenada de tarjetas |
@@ -65,6 +65,8 @@ El formato es declarativo, con claves cerradas y protección contra contenido ej
 ```sh
 pnpm exec vitest run packages/domain/src/templates tests/integration/templates-workspace.test.ts
 ```
+
+`collectPlainDataIssues` es la guarda de datos inertes (sin getters, funciones, ciclos ni arrays dispersos; profundidad 64). La usan las plantillas y la frontera de archivos de `@noutynotes/storage`. El dominio no depende de YAML, Zod ni storage.
 
 ## Fuera de alcance
 

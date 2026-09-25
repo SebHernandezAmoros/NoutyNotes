@@ -1,0 +1,2 @@
+# Los fixtures de formato comparan bytes exactos (LF, CRLF, sin salto final): sin conversión de fin de línea.
+tests/fixtures/** -text

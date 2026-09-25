@@ -26,6 +26,20 @@ module.exports = defineConfig([
     },
   },
   {
+    // Codecs de formato: texto en memoria, sin UI, plataforma ni filesystem (ADR 0007).
+    files: ['packages/storage/**/*.ts'],
+    ignores: ['packages/storage/**/*.test.ts', 'packages/storage/**/__fixtures__/**'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['react', 'react/*', 'react-native', 'react-native-*', 'expo', 'expo-*', 'node:*', 'fs', 'path', '@noutynotes/ui', '**/ui/**', '**/apps/**', '**/domain/src/**'],
+          message: 'Storage solo depende del API público de @noutynotes/domain, yaml y zod; los adaptadores de plataforma llegan en fases posteriores.',
+        }],
+      }],
+      'no-restricted-globals': ['error', 'window', 'document', 'localStorage', 'fetch', 'indexedDB'],
+    },
+  },
+  {
     files: ['packages/domain/**/*.ts'],
     rules: {
       'no-restricted-syntax': ['error', {

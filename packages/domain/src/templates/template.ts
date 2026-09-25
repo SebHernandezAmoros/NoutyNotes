@@ -78,7 +78,7 @@ export function collectExecutableContentIssues(value: unknown, path: string, iss
     return;
   }
   if (typeof value !== 'object') {
-    issues.push(issue('executable-content', path, `Una plantilla solo contiene datos; no admite ${typeof value}.`));
+    issues.push(issue('executable-content', path, `Solo se admiten datos; no se admite ${typeof value}.`));
     return;
   }
   if (seen.has(value)) {

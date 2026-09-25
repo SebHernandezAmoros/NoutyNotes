@@ -1,5 +1,37 @@
 # Persistencia
 
-Ubicación reservada para parsers/serializers Markdown y YAML, MemoryStorage y adaptadores de navegador y Android. Implementación prevista a partir de fases 5–6.
+Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. MemoryStorage y los adaptadores de navegador y Android llegarán en fases posteriores y usarán estos codecs.
 
-Implementa puertos de application. Cada plataforma debe cumplir las mismas expectativas comprobables de lectura, escritura y errores; sus límites se documentan explícitamente. No existe acceso real a archivos todavía.
+Depende del API público de `@noutynotes/domain`, de `yaml` (YAML real) y de `zod` (sobres y frontmatter con claves cerradas). Las invariantes semánticas las sigue validando el dominio.
+
+## API
+
+| Función | Resultado |
+| --- | --- |
+| `serializeWorkspace(workspace, previousFiles?)` | `TextFiles` del paquete de workspace |
+| `parseWorkspace(files)` | `Workspace` validado |
+| `serializeTemplate(template, previousFiles?)` | `template.yaml` y `README.md` opcional |
+| `parseTemplate(files)` | `Template` validada |
+| `serializeRelations` / `parseRelations`, `serializeLayouts` / `parseLayouts` | Documentos `.nouty/relations.yaml` y `.nouty/layout.yaml` |
+| `assetRefToMarkdownLink(fromFile, assetRef)` / `markdownLinkToAssetRef(fromFile, href)` | Conversión explícita entre ruta desde la raíz y enlace relativo codificado |
+| `validateTextFiles`, `validatePortablePath` | Contenedor, límites y rutas portables |
+
+Todas devuelven `StorageResult<T>`, un `ValidationResult` con incidencias `código` + `archivo#ruta`. No lanzan excepciones ante datos inválidos.
+
+## Paquete de workspace
+
+```text
+.nouty/workspace.yaml   versión, ID, metadata, tipos y listas ordenadas de tarjetas y boards
+.nouty/layout.yaml      layouts por board
+.nouty/relations.yaml   relaciones
+cards/<id>.md           frontmatter + contenido Markdown literal
+boards/<id>.md          frontmatter + descripción Markdown literal
+README.md, assets/**    extras admitidos, conservados sin interpretar
+```
+
+- **Salida:** determinista, con claves YAML ordenadas, listas en su orden y LF. Los cuerpos Markdown se conservan carácter a carácter, incluidos CRLF. `contentPresent` y `descriptionPresent` distinguen ausente de vacío.
+- **Lectura:** YAML 1.2 core estricto y claves cerradas. Se rechazan versiones distintas de 1, claves duplicadas, anchors, aliases, tags, `__proto__`, BOM y archivos no declarados. También se rechazan las identidades que no coinciden entre manifiesto, ruta y documento, y las rutas no portables o que colisionan sin distinguir mayúsculas.
+- **Con `previousFiles`:** el paquete anterior se valida primero. Cada documento sin cambios semánticos conserva sus bytes (comentarios incluidos), solo se regeneran los modificados y se conservan los extras admitidos. Un documento regenerado pierde sus comentarios YAML.
+- **Límites:** 10 000 archivos, 2 000 000 de caracteres por texto y profundidad de datos 64.
+
+Las reglas completas están en el ADR 0007 del proyecto. Pruebas: `pnpm exec vitest run packages/storage tests/integration/workspace-files.test.ts tests/integration/template-files.test.ts tests/contracts/storage-boundaries.test.ts`.

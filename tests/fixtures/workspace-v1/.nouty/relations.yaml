@@ -1,0 +1,6 @@
+relations:
+  - from: idea-a
+    id: a-references-b
+    to: idea-b
+    typeId: references
+schemaVersion: 1

@@ -1,5 +1,5 @@
 export { DomainError, assertValid } from './errors';
-export type { DomainIssue, DomainIssueCode, ValidationResult } from './errors';
+export type { DomainIssue, DomainIssueCode, IssueLike, ValidationResult } from './errors';
 export { ID_MAX_LENGTH, isValidId, parseId } from './ids';
 export type {
   BoardId, CardId, CardTypeId, FieldKey, Id, RelationId, RelationTypeId, TemplateId, WorkspaceId,
@@ -33,6 +33,8 @@ export { validateRelation } from './relations/relation';
 export type { Relation, RelationTypeDefinition } from './relations/relation';
 export { createRelation, deleteRelation, getIncomingRelations, getOutgoingRelations, getRelatedCards } from './relations/operations';
 export { validateTemplate } from './templates/template';
+// Guarda de datos inertes (JSON/YAML): sin getters, funciones, ciclos ni arrays dispersos; profundidad 64.
+export { collectExecutableContentIssues as collectPlainDataIssues } from './templates/template';
 export type { Template, TemplateBoard, TemplateManifest } from './templates/template';
 export { instantiateTemplate, duplicateTemplate } from './templates/operations';
 export type { InstantiateTemplateOptions, DuplicateTemplateOptions, TemplateInstance } from './templates/operations';

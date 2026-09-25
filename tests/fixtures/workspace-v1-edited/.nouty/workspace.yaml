@@ -1,0 +1,22 @@
+# Manifiesto editado a mano: el orden de claves y los comentarios no cambian el significado.
+schemaVersion: 1
+id: demo
+metadata: { name: "Demo", description: Workspace de prueba }
+cards: [idea-a, idea-b]   # orden de lectura
+boards:
+- overview
+- research
+relationTypes:
+- { id: references, label: Referencia }
+cardTypes:
+- id: note
+  label: Nota
+  base: note
+  fields:
+  - { key: summary, kind: markdown, required: true }
+  - { key: status, kind: select, options: [open, done] }
+  - { key: due, kind: date }
+  - { key: cover, kind: asset }
+  - { key: source, kind: url }
+  - { key: score, kind: number }
+  - { key: pinned, kind: boolean }
