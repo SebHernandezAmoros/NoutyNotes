@@ -4,25 +4,25 @@
 
 NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imágenes, tarjetas y relaciones sobre una grilla. Su objetivo es funcionar con archivos locales y compartir un mismo núcleo entre web y Android.
 
-> **En desarrollo inicial.** Hay un prototipo navegable: crear espacios, añadir notas e imágenes de ejemplo, editar su texto, moverlas, redimensionarlas y conectarlas. **Todo vive en memoria y se pierde al recargar o cerrar la pestaña.** Abrir carpetas y usar plantillas todavía no están disponibles.
+> **En desarrollo inicial.** Hay un prototipo navegable: crear espacios, añadir notas e imágenes de ejemplo, editar su texto, moverlas, redimensionarlas y conectarlas. Puede usar memoria temporal o elegir una carpeta local en un navegador compatible para guardar archivos. La integración de carpetas sigue en validación; las plantillas aún no tienen interfaz.
 
 ![Pantalla inicial de NoutyNotes en tema claro](assets/readme/home-light.png)
 
 ## Estado actual
 
-Las fases 0B (base técnica), 1–4 (dominio, grilla, relaciones y plantillas) y 5 (formato de archivos) están implementadas. El núcleo valida datos, transforma layouts, gestiona relaciones y crea workspaces desde plantillas GDD, Storyboard y Research. Las plantillas se importan/exportan como JSON en memoria y se duplican remapeando IDs y referencias. Todo ello se comprueba con pruebas automatizadas, pero todavía no está conectado a la interfaz: no hay un editor de tarjetas ni un selector de plantillas. Los workspaces y plantillas ya se convierten en archivos Markdown/YAML en memoria y se leen de vuelta sin pérdida (`@noutynotes/storage`). Un puerto de almacenamiento (`@noutynotes/application`) y su adaptador en memoria (`MemoryStorage`) permiten crear, guardar, abrir, listar, renombrar y borrar workspaces con esos archivos. Una suite contractual lo comprueba y la comprobarán también los futuros adaptadores. Desde la fase 7 la interfaz usa estas piezas en un prototipo sobre `MemoryStorage`. Todavía no se guardan en disco ni en una carpeta: el siguiente paso son las carpetas web.
+Las fases 0B–7 están implementadas y la fase 8, carpetas web, está en curso. El núcleo valida datos, transforma layouts, gestiona relaciones y crea workspaces desde plantillas GDD, Storyboard y Research. Las plantillas se importan/exportan como JSON en memoria. Los workspaces se convierten en archivos Markdown/YAML v1 mediante `@noutynotes/storage`. El prototipo usa casos de uso de `@noutynotes/application`; al elegir una carpeta, guarda allí los espacios creados. Sin carpeta, usa `MemoryStorage` y se pierden al recargar. Tras recargar hay que seleccionar de nuevo la misma carpeta para reconectar. Aún no hay selector de plantillas en la interfaz.
 
 | Disponible | Pendiente |
 | --- | --- |
-| App Expo con navegación mediante Expo Router | Guardar y abrir espacios en carpetas |
-| Prototipo: crear espacios, tarjetas, texto, mover, redimensionar y conectar (solo en memoria) | Vista previa de Markdown e imágenes reales |
+| App Expo con navegación mediante Expo Router | Validación final del selector con carpeta real |
+| Prototipo: crear espacios, tarjetas, texto, mover, redimensionar y conectar | Vista previa de Markdown e imágenes reales |
 | Inicio y tablero responsive; temas claro, oscuro y del sistema | Arrastre y gestos, selector de plantillas |
-| Dominio, grilla, relaciones y plantillas declarativas probadas | Guardado, apertura e importación/exportación de carpetas/ZIP |
-| Formato de archivos v1 Markdown/YAML y almacenamiento en memoria con contrato | Carpetas web, ZIP y almacenamiento Android |
+| Dominio, grilla, relaciones y plantillas declarativas probadas | Importación/exportación ZIP |
+| Formato de archivos v1 Markdown/YAML, memoria y adaptador de carpetas web | Almacenamiento Android |
 | TypeScript estricto, lint y pruebas automatizadas | Ejecución Android verificada y arranque web sin conexión |
 | Export web, bundle Android y proyecto nativo generado | |
 
-La preferencia de tema y los espacios creados duran la sesión actual. «Abrir una carpeta» y «Usar una plantilla» aparecen desactivados. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/); todavía no hay un APK validado. La diferencia de distribución del export (una columna en escritorio) está corregida y cubierta por pruebas locales; la demo pública se actualizará cuando se publique el cambio.
+La preferencia de tema y los espacios de memoria duran la sesión actual. «Abrir una carpeta» se habilita en navegadores compatibles después de cargar la página; «Usar una plantilla» sigue desactivado. Hay una [demo inicial en GitHub Pages](https://sebhernandezamoros.github.io/NoutyNotes/), cuyo contenido público puede ir detrás de esta copia local; todavía no hay un APK validado.
 
 ## Tecnologías
 
@@ -67,6 +67,8 @@ Se verificaron la generación del proyecto nativo y el bundle Hermes. La compila
 pnpm check
 pnpm exec playwright install chromium
 pnpm test:smoke
+pnpm build:pages
+pnpm test:pages
 pnpm build:web
 pnpm build:android:bundle
 pnpm android:prepare
@@ -80,14 +82,15 @@ Chromium se instala una vez por entorno; en Linux puede requerir también sus de
 | `pnpm lint` | ESLint sin avisos permitidos |
 | `pnpm typecheck` | Tipos de paquetes, pruebas y aplicación |
 | `pnpm test` | Pruebas unitarias del dominio, grilla, relaciones, plantillas y formato de archivos; integración con fixtures; fronteras del núcleo y de storage; temas, contraste y breakpoint |
-| `pnpm test:smoke` | Web en escritorio y móvil: inicio (distribución, recarga, redimensionado, límite de 800 px, temas, teclado, foco y tamaño táctil) y prototipo (crear, editar, mover, redimensionar, conectar, reabrir, pérdida al recargar, tablero responsive y accesibilidad) |
+| `pnpm test:smoke` | Web en escritorio y móvil: inicio, tablero y flujo de carpetas con un doble de File System Access (crear, autoguardar, recargar y reconectar); también accesibilidad y responsive |
+| `pnpm build:pages` y `pnpm test:pages` | Export bajo `/NoutyNotes/` y el mismo flujo funcional/visual servido desde sus archivos estáticos |
 | `pnpm build:web` | Export estático en `apps/noutynotes/dist/` |
 | `pnpm build:android:bundle` | JavaScript y assets en `apps/noutynotes/dist/android/`; no produce un APK |
 | `pnpm android:prepare` | Proyecto nativo generado en `apps/noutynotes/android/` |
 
 Ejecutar el bundle Android después del export web, porque este último regenera `dist/`. Las capturas y trazas de Playwright se guardan en `artifacts/playwright/`.
 
-Para una revisión manual, cambiar entre Claro/Oscuro/Sistema y reducir el ancho de la ventana a 390 px. Desde 800 px de ancho, la introducción y el panel de acciones aparecen en dos columnas; por debajo, en una. El contenido debe seguir siendo legible, sin desplazamiento horizontal. Para el prototipo: crear un espacio, añadir dos notas y una imagen, seleccionar una tarjeta, editar su texto y guardarlo, pulsar ← para ver el error de límites y → tras bajarla para ver la colisión, conectarla con otra, volver a «Mis espacios» y reabrirla. Al recargar, el espacio debe desaparecer con un aviso. «Abrir una carpeta» y «Usar una plantilla» deben seguir desactivados.
+Para revisar la fase 8 en Chromium sobre `localhost`, crear una carpeta vacía de prueba y abrirla con «Abrir una carpeta». Crear un espacio, añadir una nota, editar su título y esperar el aviso de guardado. Verificar que aparecieron archivos `.nouty/workspace.yaml`, `.nouty/layout.yaml`, `.nouty/relations.yaml` y `cards/tarjeta-1.md` bajo un subdirectorio. Recargar: hay que volver a seleccionar la misma carpeta y reabrir el espacio; el título debe seguir allí. Cambiar el manifiesto fuera de la app mientras el espacio está abierto y probar otra edición: debe mostrarse el conflicto y conservarse el cambio externo. Probar la cancelación del selector y el ancho de 390 px. No usar datos importantes para esta validación: la fase 8 aún espera comprobar una carpeta real y el cierre con texto pendiente.
 
 **Validación local registrada el 24 de septiembre de 2026 (fase 7):** lint y tipos correctos; 783 pruebas unitarias, de integración y de contrato; 19 pruebas web correctas en desarrollo y 19 en el export de Pages (3 casos se omiten a propósito en el perfil móvil), con capturas idénticas entre ambos; export de Pages, export web y bundle Android correctos. Estos resultados no equivalen a ejecución nativa Android.
 

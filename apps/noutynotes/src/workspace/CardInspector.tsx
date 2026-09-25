@@ -2,10 +2,11 @@ import { connectCards, disconnectCards, editCardContent, moveCardOnBoard, resize
 import type { WorkspaceStorageResult } from '@noutynotes/application';
 import type { BoardId, Card, CardPlacement, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { cardTitle } from './Board';
 import type { WorkspaceAction } from './useWorkspaceEditor';
 
@@ -39,11 +40,19 @@ const resizes = [
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
 export function CardInspector({ workspace, boardId, card, placement, run, onClose }: CardInspectorProps) {
+  const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
   const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
+  useEffect(() => {
+    if (mode !== 'folder' || !dirty) return;
+    const timer = setTimeout(() => {
+      void run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en la carpeta.');
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [mode, dirty, title, content, card.id, run]);
   const titles = new Map(workspace.cards.map((other) => [other.id, cardTitle(other)]));
   const connected = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id);
   const targets = workspace.cards.filter((other) => other.id !== card.id

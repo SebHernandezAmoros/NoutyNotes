@@ -11,6 +11,7 @@ import { ActionButton } from '../components/controls';
 import { Board } from './Board';
 import { CardInspector } from './CardInspector';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
+import { useWorkspaceSession } from '../session/WorkspaceSession';
 
 /** A partir de este ancho el editor de la tarjeta se coloca junto al tablero. */
 const SIDE_INSPECTOR_MIN_WIDTH = 1100;
@@ -21,6 +22,7 @@ const additions: readonly { kind: PrototypeCardKind; label: string; success: str
 ];
 
 export function WorkspaceScreen() {
+  const { mode: storageMode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
   const width = useWindowWidth();
@@ -28,7 +30,7 @@ export function WorkspaceScreen() {
   const compact = mode === 'compact';
   const sideInspector = width !== null && width >= SIDE_INSPECTOR_MIN_WIDTH;
   const params = useLocalSearchParams<{ id?: string }>();
-  const { view, feedback, run } = useWorkspaceEditor(typeof params.id === 'string' ? params.id : undefined);
+  const { view, feedback, saving, run } = useWorkspaceEditor(typeof params.id === 'string' ? params.id : undefined);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
   const scroll = useRef<ScrollView>(null);
 
@@ -66,7 +68,7 @@ export function WorkspaceScreen() {
         <View style={[styles.header, { borderColor: colors.border }]}>
           <ActionButton label="← Mis espacios" accessibilityLabel="Volver a mis espacios" onPress={goHome} />
           <View testID="workspace-memory" style={[styles.memoryChip, { backgroundColor: colors.surfaceRaised }]}>
-            <Text style={[styles.memoryText, { color: colors.textPrimary }]}>SOLO EN MEMORIA · SE PIERDE AL RECARGAR</Text>
+            <Text style={[styles.memoryText, { color: colors.textPrimary }]}>{storageMode === 'folder' ? (saving ? 'GUARDANDO EN LA CARPETA…' : feedback?.tone === 'error' ? 'ERROR AL GUARDAR · REVISA EL AVISO' : 'CARPETA LOCAL · CAMBIOS GUARDADOS') : 'SOLO EN MEMORIA · SE PIERDE AL RECARGAR'}</Text>
           </View>
         </View>
 

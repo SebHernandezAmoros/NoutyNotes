@@ -6,3 +6,5 @@ export { LAYOUT_FILE, RELATIONS_FILE, parseLayouts, parseRelations, serializeLay
 export { WORKSPACE_FILE, parseWorkspace, serializeWorkspace } from './workspace-codec';
 export { TEMPLATE_FILE, TEMPLATE_README, parseTemplate, serializeTemplate } from './template-codec';
 export { MemoryStorage } from './memory-storage';
+export { FolderStorage } from './folder-storage';
+export type { FolderPort, WorkspaceDirectory } from './folder-storage';

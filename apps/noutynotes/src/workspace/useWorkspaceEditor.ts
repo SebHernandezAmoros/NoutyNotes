@@ -3,7 +3,7 @@ import type { Workspace, WorkspaceId } from '@noutynotes/domain';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { describeFailure } from '../session/messages';
-import { useWorkspaceStorage } from '../session/WorkspaceSession';
+import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 
 export type WorkspaceView =
   | { readonly kind: 'loading' }
@@ -24,17 +24,19 @@ export type WorkspaceAction<T> = (storage: WorkspaceStorage, id: WorkspaceId) =>
  */
 export function useWorkspaceEditor(id: string | undefined) {
   const storage = useWorkspaceStorage();
+  const { mode } = useWorkspaceSession();
   const workspaceId = (id ?? '') as WorkspaceId;
   const [view, setView] = useState<WorkspaceView>({ kind: 'loading' });
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [saving, setSaving] = useState(false);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const mounted = useRef(false);
 
   const reload = useCallback(async () => {
     const opened = await storage.open(workspaceId);
     if (!mounted.current) return;
-    setView(opened.ok ? { kind: 'ready', workspace: opened.value } : { kind: 'missing', message: describeFailure(opened.issues) });
-  }, [storage, workspaceId]);
+    setView(opened.ok ? { kind: 'ready', workspace: opened.value } : { kind: 'missing', message: describeFailure(opened.issues, mode) });
+  }, [storage, workspaceId, mode]);
 
   useEffect(() => {
     mounted.current = true;
@@ -45,17 +47,19 @@ export function useWorkspaceEditor(id: string | undefined) {
   }, [reload]);
 
   const run = useCallback(<T>(action: WorkspaceAction<T>, success: string): Promise<WorkspaceStorageResult<T>> => {
+    setSaving(true);
     const task = queue.current.then(async () => {
       const result = await action(storage, workspaceId);
       if (mounted.current) {
-        setFeedback(result.ok ? { tone: 'success', text: success } : { tone: 'error', text: describeFailure(result.issues) });
+        setFeedback(result.ok ? { tone: 'success', text: mode === 'folder' ? success.replace('Guardado en memoria.', 'Guardado en la carpeta.') : success } : { tone: 'error', text: describeFailure(result.issues, mode) });
       }
       if (result.ok) await reload();
+      if (mounted.current) setSaving(false);
       return result;
     });
-    queue.current = task.catch(() => undefined);
+    queue.current = task.catch(() => { if (mounted.current) setSaving(false); });
     return task;
-  }, [storage, workspaceId, reload]);
+  }, [storage, workspaceId, reload, mode]);
 
-  return { view, feedback, run };
+  return { view, feedback, saving, run };
 }

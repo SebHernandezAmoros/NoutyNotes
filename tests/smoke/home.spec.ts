@@ -73,7 +73,7 @@ test('inicio responsive, temas, crear activo y acciones reservadas', async ({ pa
 
   await expect(page.getByRole('button', { name: 'Crear un espacio', exact: true })).toBeEnabled();
   await expect(page.getByTestId('memory-notice')).toContainText('se pierden al recargar o cerrar la pestaña');
-  await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Usar una plantilla', exact: true })).toBeDisabled();
 
   const screen = page.getByTestId('home-screen');
@@ -168,7 +168,7 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   const dark = page.getByRole('button', { name: 'Tema oscuro', exact: true });
   const system = page.getByRole('button', { name: 'Tema sistema', exact: true });
   const actions = ['Crear un espacio', 'Abrir una carpeta', 'Usar una plantilla'];
-  const reserved = ['Abrir una carpeta', 'Usar una plantilla'];
+  const reserved = ['Usar una plantilla'];
   const nameField = page.getByLabel('Nombre del nuevo espacio');
   const create = page.getByRole('button', { name: 'Crear un espacio', exact: true });
   const screen = page.getByTestId('home-screen');

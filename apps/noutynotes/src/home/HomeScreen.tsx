@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TextField } from '../components/controls';
 import { useHydrated } from '../components/useHydrated';
 import { MEMORY_LOSS_NOTICE, describeFailure } from '../session/messages';
-import { useWorkspaceStorage } from '../session/WorkspaceSession';
+import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 
 const themeOptions: { value: ThemePreference; label: string }[] = [
   { value: 'light', label: 'Claro' },
@@ -18,9 +18,8 @@ const themeOptions: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'Sistema' },
 ];
 
-// "Abrir una carpeta" llega en la fase 8 y las plantillas en la UI más adelante: siguen desactivadas.
+// El selector de plantillas llegará en una fase posterior.
 const reservedActions = [
-  { number: '02', title: 'Abrir una carpeta', description: 'Vuelve al lugar donde dejaste tus ideas.', symbol: '↗' },
   { number: '03', title: 'Usar una plantilla', description: 'Un pequeño punto de partida.', symbol: '▦' },
 ];
 
@@ -46,6 +45,7 @@ export function HomeScreen() {
   const compact = resolveLayoutMode(useWindowWidth()) === 'compact';
   const [focusedTheme, setFocusedTheme] = useState<ThemePreference | null>(null);
   const storage = useWorkspaceStorage();
+  const session = useWorkspaceSession();
   const workspaces = useSessionWorkspaces();
   const [draftName, setDraftName] = useState('');
   // En el HTML estático el campo no admite escritura: el render del cliente la perdería.
@@ -65,6 +65,11 @@ export function HomeScreen() {
     setCreateError(null);
     setDraftName('');
     openWorkspace(created.value.id);
+  };
+
+  const openFolder = async () => {
+    const result = await session.connectFolder();
+    setCreateError(result.ok ? null : result.message);
   };
 
   const actionFocus = (key: string) => ({
@@ -170,7 +175,7 @@ export function HomeScreen() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Crear un espacio"
-                  accessibilityHint="Crea un espacio vacío en la memoria de esta sesión"
+                  accessibilityHint={session.mode === 'folder' ? 'Crea un espacio en la carpeta seleccionada' : 'Crea un espacio vacío en la memoria de esta sesión'}
                   onPress={() => void createWorkspace()}
                   {...actionFocus('create')}
                   style={[styles.action, actionBorder('create')]}
@@ -183,6 +188,25 @@ export function HomeScreen() {
                   <View style={[styles.actionBadge, { backgroundColor: colors.accent, borderColor: colors.border }]}>
                     <Text style={[styles.actionSymbol, { color: colors.accentText }]}>+</Text>
                   </View>
+                </Pressable>
+                <Pressable
+                  testID="open-folder"
+                  disabled={!hydrated || !session.folderSupported}
+                  accessibilityRole="button"
+                  accessibilityLabel={session.mode === 'folder' ? 'Cambiar carpeta' : 'Abrir una carpeta'}
+                  accessibilityState={{ disabled: !hydrated || !session.folderSupported }}
+                  onPress={() => void openFolder()}
+                  {...actionFocus('folder')}
+                  style={[styles.action, actionBorder('folder')]}
+                >
+                  <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>02</Text>
+                  <View style={styles.actionText}>
+                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{session.mode === 'folder' ? 'Cambiar carpeta' : 'Abrir una carpeta'}</Text>
+                    <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
+                      {session.folderSupported ? 'Elige una carpeta local para abrir y guardar espacios.' : 'Disponible en navegadores compatibles con carpetas locales.'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↗</Text>
                 </Pressable>
                 {reservedActions.map((action) => (
                   <Pressable
@@ -205,11 +229,13 @@ export function HomeScreen() {
               </View>
               <View testID="memory-notice" style={[styles.comingSoon, { backgroundColor: colors.surfaceRaised }]}>
                 <Text style={[styles.comingSoonText, { color: colors.textPrimary }]}>
-                  SOLO EN MEMORIA · {MEMORY_LOSS_NOTICE} Abrir carpetas y usar plantillas llegarán en próximas versiones.
+                  {session.mode === 'folder'
+                    ? 'CARPETA LOCAL · Los cambios se guardan en la carpeta elegida. Al recargar, vuelve a seleccionarla para reconectar. Los espacios de memoria no se mezclan.'
+                    : `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Elige una carpeta compatible para guardar en archivos. Las plantillas llegarán después.`}
                 </Text>
               </View>
               <View testID="session-workspaces" style={styles.sessionList}>
-                <Text accessibilityRole="header" style={[styles.eyebrow, { color: colors.textSecondary }]}>ESPACIOS DE ESTA SESIÓN</Text>
+                <Text accessibilityRole="header" style={[styles.eyebrow, { color: colors.textSecondary }]}>{session.mode === 'folder' ? 'ESPACIOS DE LA CARPETA' : 'ESPACIOS DE ESTA SESIÓN'}</Text>
                 {workspaces.length === 0 ? (
                   <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>Todavía no hay espacios en esta sesión.</Text>
                 ) : (

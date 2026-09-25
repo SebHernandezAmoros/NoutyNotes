@@ -7,7 +7,10 @@ export type WorkspaceStorageErrorCode =
   | 'invalid-workspace-id'
   | 'invalid-workspace'
   | 'invalid-template'
-  | 'invalid-stored-data';
+  | 'invalid-stored-data'
+  | 'permission-denied'
+  | 'external-change'
+  | 'io-failure';
 
 export interface WorkspaceStorageIssue {
   readonly code: WorkspaceStorageErrorCode;

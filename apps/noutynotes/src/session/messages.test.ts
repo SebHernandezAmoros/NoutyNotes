@@ -30,7 +30,7 @@ describe('mensajes visibles de error (fase 7)', () => {
   it('pide un nombre cuando falta y conserva el mensaje original si no hay traducción', () => {
     expect(describeFailure(transform('invalid-value', 'metadata.name'))).toBe('Escribe un nombre para el espacio.');
     expect(describeFailure(transform('unknown-property', 'changes.x'))).toBe('original');
-    expect(describeFailure([{ code: 'invalid-stored-data', path: 'id', message: 'sin detalle' }])).toBe('sin detalle');
+    expect(describeFailure([{ code: 'invalid-stored-data', path: 'id', message: 'sin detalle' }])).toContain('recuperación pendiente');
     expect(describeFailure([])).toBe('No se pudo completar la acción.');
   });
 });
