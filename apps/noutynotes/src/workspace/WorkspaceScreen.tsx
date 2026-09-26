@@ -32,6 +32,7 @@ import { TrashPanel } from './TrashPanel';
 import { useImagePreviews } from './useImagePreviews';
 import { Toolbar } from './Toolbar';
 import type { BoardView } from './Toolbar';
+import { saveStatus } from './saveStatus';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
 
 /** Desde este ancho la navegación de espacios y tableros va en una barra lateral. */
@@ -285,9 +286,9 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
     setArchiveMessage({ tone: 'success', text: 'Sigue sin exportar. Vuelve a exportar cuando quieras.' });
   };
 
-  const status = storageMode === 'folder'
-    ? (saving ? 'GUARDANDO EN LA CARPETA…' : feedback?.tone === 'error' ? 'ERROR AL GUARDAR · REVISA EL AVISO' : 'CARPETA LOCAL · CAMBIOS GUARDADOS')
-    : Platform.OS === 'web' ? 'SOLO EN MEMORIA · SE PIERDE AL RECARGAR' : 'SOLO EN MEMORIA · SE PIERDE AL CERRAR';
+  const { text: status, tone: statusTone } = saveStatus({ mode: storageMode, saving, failed: feedback?.tone === 'error', native: Platform.OS !== 'web' });
+  // Un error nunca usa el color de «guardado»; guardando es neutro y la memoria volátil, aviso.
+  const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' ? colors.textSecondary : colors.danger;
   const hint = tool === 'pan' ? 'Mano: arrastra el lienzo para desplazarte. Las tarjetas no se mueven con esta herramienta.'
     : tool === 'connect'
       ? connectSource ? `Origen: «${workspace?.cards.find((card) => card.id === connectSource)?.title ?? 'Sin título'}». Toca otra tarjeta para conectar o desconectar; toca el origen para cancelar.`
@@ -340,7 +341,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
           </Text>
         ) : null}
         {!sidebar ? (
-          <Text testID="workspace-memory" numberOfLines={2} style={[styles.memoryText, { color: storageMode === 'folder' ? colors.selection : colors.danger }]}>{status}</Text>
+          <Text testID="workspace-memory" numberOfLines={2} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
         ) : null}
       </View>
       {compact ? (
@@ -355,7 +356,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
           ) : null}
           {sidebar ? (
             <View testID="workspace-memory" style={[styles.memoryChip, { backgroundColor: colors.surfaceRaised }]}>
-              <Text style={[styles.memoryText, { color: colors.textPrimary }]}>{status}</Text>
+              <Text style={[styles.memoryText, { color: statusTone === 'error' ? colors.danger : colors.textPrimary }]}>{status}</Text>
             </View>
           ) : null}
         </>
