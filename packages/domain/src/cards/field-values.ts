@@ -9,6 +9,11 @@ export type FieldValue = string | number | boolean;
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const URL_PATTERN = /^(?:https?:\/\/[^\s/?#]+[^\s]*|mailto:[^\s@]+@[^\s@]+)$/i;
 
+/** Enlace admitido en un campo `url`: `http(s)` o `mailto`; nunca `javascript:`, `data:` ni `file:`. */
+export function isLinkUrl(value: unknown): value is string {
+  return typeof value === 'string' && URL_PATTERN.test(value);
+}
+
 /** Fecha de calendario `AAAA-MM-DD`, comprobada sin depender del reloj ni de la zona horaria. */
 export function isCalendarDate(value: string): boolean {
   const match = DATE_PATTERN.exec(value);
@@ -31,7 +36,7 @@ function valueProblem(definition: FieldDefinition, value: unknown): string | nul
     case 'date':
       return typeof value === 'string' && isCalendarDate(value) ? null : 'Debe ser una fecha AAAA-MM-DD válida.';
     case 'url':
-      return typeof value === 'string' && URL_PATTERN.test(value) ? null : 'Debe ser un enlace http(s) o mailto.';
+      return isLinkUrl(value) ? null : 'Debe ser un enlace http(s) o mailto.';
     case 'asset':
       return isValidAssetRef(value) ? null : 'Debe ser una referencia relativa a un asset del workspace.';
     case 'select':

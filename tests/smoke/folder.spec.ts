@@ -482,7 +482,7 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
   await page.getByRole('button', { name: 'Abrir Rutas' }).click();
   await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveText('#japón');
-  await page.getByRole('button', { name: 'Buscar en este proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir la búsqueda' }).click();
   await page.getByTestId('search-input').fill('#japon');
   await expect(page.getByTestId('search-count')).toHaveText('1 RESULTADO');
   await page.getByRole('button', { name: 'Quitar la etiqueta japón de todas las tarjetas' }).click();
@@ -490,4 +490,42 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Etiqueta quitada de todas las tarjetas. Guardado en la carpeta.');
   await expect.poll(async () => (await cards())[0]).toContain('schemaVersion: 1');
   expect((await cards())[0]).not.toContain('tags');
+});
+
+test('carpeta: el enlace se guarda en fields de una tarjeta v1 y la búsqueda global lee los proyectos de la carpeta (ADR 0020)', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Fuentes');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir enlace' }).click();
+  await page.getByTestId('link-url-input').fill('https://archivo.example.org/mapa');
+  await page.getByTestId('link-title-input').fill('Mapa antiguo');
+  await page.getByRole('button', { name: 'Crear enlace' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Enlace añadido. Guardado en la carpeta.');
+  const file = () => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return new TextDecoder().decode(new Uint8Array(files['fuentes/cards/tarjeta-1.md'] ?? []));
+  });
+  await expect.poll(file).toContain('url: https://archivo.example.org/mapa');
+  expect(await file()).toContain('schemaVersion: 1');
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Notas');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await expect(page.getByRole('heading', { name: 'Notas', exact: true })).toBeVisible();
+
+  // Otra sesión: recargar y reconectar la carpeta; la búsqueda global encuentra el enlace por su dirección.
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Notas' }).click();
+  await page.getByRole('button', { name: 'Abrir la búsqueda' }).click();
+  await page.getByRole('button', { name: 'Buscar en todos los proyectos (2)' }).click();
+  await page.getByTestId('search-input').fill('archivo.example');
+  await page.getByTestId('search-input').press('Enter');
+  await expect(page.getByTestId('search-all-count')).toHaveText('1 RESULTADO EN 1 PROYECTO');
+  await page.getByRole('button', { name: 'Ir a Mapa antiguo' }).click();
+  await expect(page.getByRole('heading', { name: 'Fuentes', exact: true })).toBeVisible();
+  await expect(page.getByTestId('card-link-tarjeta-1')).toHaveText('↗ archivo.example.org/mapa');
+  await expect(page.getByTestId('link-input')).toHaveValue('https://archivo.example.org/mapa');
 });

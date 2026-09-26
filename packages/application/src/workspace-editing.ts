@@ -1,6 +1,6 @@
 import {
   WORLD_GRID, addCard, createRelation, deleteRelation, findFreeSpace, moveCard, purgeTrashedCard, resizeCard, restoreTrashedCard, setDisplay, trashCard,
-  updateCard, validateWorkspace,
+  linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
   AssetRef, BoardId, BoardLayout, Card, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, GridConfig, GridPoint, GridSize, RestoreReport,
@@ -8,6 +8,7 @@ import type {
 } from '@noutynotes/domain';
 
 import { nextSequentialId, workspaceIdFromName } from './ids';
+import { LINK_CARD_TYPE, linkCardTypeFor } from './links';
 import type { WorkspaceAssets } from './workspace-assets';
 import { describeUntrustedValue, storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageIssue, WorkspaceStorageResult, WorkspaceSummary } from './workspace-storage';
@@ -25,7 +26,7 @@ export const DEFAULT_CARD_SIZE: GridSize = { w: 4, h: 3 };
 export const PROTOTYPE_BOARD = { id: 'principal' as BoardId, title: 'Tablero principal' } as const;
 export const RELATED_RELATION_TYPE: RelationTypeDefinition = { id: 'relacionada' as RelationTypeId, label: 'Relacionada con' };
 
-export type PrototypeCardKind = 'note' | 'image' | 'title';
+export type PrototypeCardKind = 'note' | 'image' | 'title' | 'link';
 
 interface CardPreset {
   readonly type: CardTypeDefinition;
@@ -39,12 +40,16 @@ export const PROTOTYPE_CARD_PRESETS: Readonly<Record<PrototypeCardKind, CardPres
   note: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nueva nota', content: '' },
   image: { type: { id: 'imagen' as CardTypeId, label: 'Imagen', base: 'image', fields: [] }, title: 'Imagen de ejemplo' },
   title: { type: { id: 'titulo-flotante' as CardTypeId, label: 'Título', base: 'section', fields: [] }, title: 'Nuevo título', size: { w: 6, h: 2 } },
+  // El tipo real se elige por proyecto (`linkCardTypeFor`, ADR 0020); este es el que se añade si no hay ninguno.
+  link: { type: LINK_CARD_TYPE, title: 'Enlace' },
 };
 
 export interface AddCardInput {
   readonly kind: PrototypeCardKind;
-  /** Título inicial; por defecto, el del preset. */
+  /** Título inicial; por defecto, el del preset (en un enlace, su dominio). */
   readonly title?: string;
+  /** Solo para `link`: la dirección tal como la escribe la persona; se normaliza (ADR 0020). */
+  readonly url?: string;
   /** Tablero destino; por defecto, el primero (o el del prototipo si no hay ninguno). */
   readonly boardId?: BoardId;
   /**
@@ -119,22 +124,28 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const title = isObject(input) ? ownValue(input, 'title') : undefined;
   const requestedBoard = isObject(input) ? ownValue(input, 'boardId') : undefined;
   const near = isObject(input) ? ownValue(input, 'near') : undefined;
+  const rawUrl = isObject(input) ? ownValue(input, 'url') : undefined;
   const validNear = near === undefined || (isObject(near) && Number.isSafeInteger(ownValue(near, 'x')) && Number.isSafeInteger(ownValue(near, 'y'))
     && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
-  if ((kind !== 'note' && kind !== 'image' && kind !== 'title') || (title !== undefined && typeof title !== 'string')
+  if ((kind !== 'note' && kind !== 'image' && kind !== 'title' && kind !== 'link') || (title !== undefined && typeof title !== 'string')
     || (requestedBoard !== undefined && typeof requestedBoard !== 'string') || !validNear) {
-    return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen o título) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
+    return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen, título o enlace) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
   }
   const zone = near === undefined ? undefined : near as NonNullable<AddCardInput['near']>;
+  const url = kind === 'link' ? normalizeLinkUrl(typeof rawUrl === 'string' ? rawUrl : '') : undefined;
+  if (url && !url.ok) return storageFailure('invalid-workspace', 'input', 'El enlace no es válido.', url.issues);
   const preset = PROTOTYPE_CARD_PRESETS[kind];
   let created: CardId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
-    const typed = withCardType(workspace, preset.type);
+    const type = kind === 'link' ? linkCardTypeFor(workspace) : preset.type;
+    const typed = withCardType(workspace, type);
     // Con tablero indicado, addCard comprueba que existe; sin él, se usa el primero o se crea el del prototipo.
     const { workspace: target, boardId } = requestedBoard === undefined ? withBoard(typed) : { workspace: typed, boardId: requestedBoard as BoardId };
     const cardId = nextSequentialId('tarjeta', takenCardIds(workspace)) as CardId;
     const card: Card = {
-      id: cardId, typeId: preset.type.id, title: title ?? preset.title, fields: {},
+      id: cardId, typeId: type.id,
+      title: title ?? (url?.ok ? linkDisplay(url.value).host : preset.title),
+      fields: url?.ok ? { [linkUrlField(type) ?? 'url']: url.value } : {},
       ...(preset.content === undefined ? {} : { content: preset.content }),
     };
     const result = addCard(target, card, { boardId, size: preset.size ?? DEFAULT_CARD_SIZE, config: CANONICAL_GRID });
@@ -162,6 +173,38 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   });
   if (!saved.ok) return failed(saved);
   return created === undefined ? storageFailure('invalid-workspace', 'transform', 'No se creó la tarjeta.') : { ok: true, value: created };
+}
+
+export interface PlaceCardInput extends BoardCardTarget {
+  /** Zona visible, como en `AddCardInput`: el hueco se busca donde se está mirando. */
+  readonly near?: AddCardInput['near'];
+}
+
+/**
+ * Coloca en el primer hueco libre una tarjeta que está en el tablero pero no tiene posición (p. ej. un
+ * archivo editado a mano). Si ya tiene posición o no pertenece al tablero, no cambia nada. Devuelve dónde quedó.
+ */
+export async function placeCardOnBoard(storage: WorkspaceStorage, workspaceId: WorkspaceId, input: PlaceCardInput): Promise<WorkspaceStorageResult<GridPoint>> {
+  let placed: GridPoint | undefined;
+  const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
+    const board = workspace.boards.find((candidate) => candidate.id === input.boardId);
+    if (!board || !board.cardIds.includes(input.cardId)) {
+      return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no está en ese tablero.' }] };
+    }
+    const layout = workspace.layouts.find((candidate) => candidate.boardId === board.id) ?? { boardId: board.id, placements: [] };
+    if (layout.placements.some((placement) => placement.cardId === input.cardId)) {
+      return { ok: false, issues: [{ code: 'invalid-value', path: 'cardId', message: 'La tarjeta ya tiene posición en este tablero.' }] };
+    }
+    const zone = input.near;
+    const free = findFreeSpace(layout, DEFAULT_CARD_SIZE, CANONICAL_GRID, zone ? { from: { x: zone.x, y: zone.y }, columns: zone.columns } : {});
+    if (!free.ok) return free;
+    placed = free.value;
+    const next: BoardLayout = { ...layout, placements: [...layout.placements, { cardId: input.cardId, rect: { ...free.value, ...DEFAULT_CARD_SIZE }, display: 'expanded' }] };
+    const exists = workspace.layouts.some((candidate) => candidate.boardId === board.id);
+    return validateWorkspace({ ...workspace, layouts: exists ? workspace.layouts.map((candidate) => (candidate.boardId === board.id ? next : candidate)) : [...workspace.layouts, next] });
+  });
+  if (!saved.ok) return failed(saved);
+  return placed === undefined ? storageFailure('invalid-workspace', 'transform', 'No se colocó la tarjeta.') : { ok: true, value: placed };
 }
 
 /** Añade un tablero vacío (con su layout) al final. ID secuencial `tablero-N`. Devuelve su ID. */

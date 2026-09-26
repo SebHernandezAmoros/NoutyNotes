@@ -1,9 +1,9 @@
 import {
   PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  moveCardOnBoard, moveCardToTrash, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromTrash, setCardDisplay,
+  moveCardOnBoard, moveCardToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromTrash, searchAllWorkspaces, setCardDisplay,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
-import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize } from '@noutynotes/domain';
+import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
 import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -13,6 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrandMark } from '../components/BrandMark';
 import { ActionButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
+import { describeFailure } from '../session/messages';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
@@ -29,6 +30,7 @@ import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
 import { ProjectRail, ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
+import { LinkDialog } from './LinkDialog';
 import { SearchPanel } from './SearchPanel';
 import { TrashPanel } from './TrashPanel';
 import { useImagePreviews } from './useImagePreviews';
@@ -51,13 +53,14 @@ const additions: Readonly<Record<PrototypeCardKind, string>> = {
   note: 'Nota añadida. Guardado en memoria.',
   image: 'Imagen de ejemplo añadida. Guardado en memoria.',
   title: 'Título flotante añadido. Guardado en memoria.',
+  link: 'Enlace añadido. Guardado en memoria.',
 };
 
 export function WorkspaceScreen() {
-  const params = useLocalSearchParams<{ id?: string; notice?: string }>();
+  const params = useLocalSearchParams<{ id?: string; notice?: string; card?: string }>();
   const id = typeof params.id === 'string' ? params.id : undefined;
   // Cambiar de espacio desde la barra lateral reinicia todo el estado de pantalla.
-  return <WorkspaceView key={id ?? ''} id={id} notice={typeof params.notice === 'string' ? params.notice : ''} />;
+  return <WorkspaceView key={id ?? ''} id={id} notice={typeof params.notice === 'string' ? params.notice : ''} initialCard={typeof params.card === 'string' ? params.card : ''} />;
 }
 
 function useSessionSummaries(refresh: unknown): readonly WorkspaceSummary[] {
@@ -71,7 +74,7 @@ function useSessionSummaries(refresh: unknown): readonly WorkspaceSummary[] {
   return summaries;
 }
 
-function WorkspaceView({ id, notice }: { readonly id: string | undefined; readonly notice: string }) {
+function WorkspaceView({ id, notice, initialCard }: { readonly id: string | undefined; readonly notice: string; readonly initialCard: string }) {
   const session = useWorkspaceSession();
   const storageMode = session.mode;
   const { theme } = useTheme();
@@ -87,6 +90,9 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  // Tarjeta del tablero sin posición a la que se llegó desde la búsqueda: se ofrece colocarla (ADR 0020).
+  const [placeOffer, setPlaceOffer] = useState<{ readonly cardId: CardId; readonly boardId: BoardId; readonly title: string } | null>(null);
   const [projectsOpen, setProjectsOpen] = useState(false);
   // Expandir falló por colisión: se ofrece, sin hacerlo por su cuenta, expandir en un hueco libre.
   const [relocateOffer, setRelocateOffer] = useState<CardId | null>(null);
@@ -143,22 +149,58 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
   };
 
   // «Ir» desde la búsqueda: el tablero actual si contiene la tarjeta; si no, el primero que la tenga.
-  // Seleccionarla basta: el lienzo la muestra por su cuenta (efecto de revelado).
-  const goTo = async (result: SearchResult) => {
-    if (!await flushPendingText()) return;
-    const target = board && result.boards.some((entry) => entry.boardId === board.id) ? board.id : result.boards[0]?.boardId;
-    if (!target) {
-      setFeedback({ tone: 'error', text: `«${result.title}» no está en ningún tablero.` });
+  // Seleccionarla basta: el lienzo la muestra por su cuenta (efecto de revelado). Sin posición en ese
+  // tablero, se explica y se ofrece colocarla (ADR 0020).
+  const revealCard = (cardId: CardId) => {
+    if (!workspace) return;
+    const card = workspace.cards.find((candidate) => candidate.id === cardId);
+    if (!card) {
+      setFeedback({ tone: 'error', text: 'Esa tarjeta ya no existe en este proyecto.' });
       return;
     }
-    if (target !== board?.id) {
-      setBoardId(target);
+    const containing = workspace.boards.filter((candidate) => candidate.cardIds.includes(cardId));
+    const target = board && containing.some((candidate) => candidate.id === board.id) ? board : containing[0];
+    if (!target) {
+      setFeedback({ tone: 'error', text: `«${card.title ?? 'Sin título'}» no está en ningún tablero.` });
+      return;
+    }
+    if (target.id !== board?.id) {
+      setBoardId(target.id);
       setConnectSource(null);
       setPan(START_PAN);
     }
-    setSelectedId(result.cardId);
+    const placed = workspace.layouts.find((candidate) => candidate.boardId === target.id)?.placements.some((placement) => placement.cardId === cardId) ?? false;
+    setPlaceOffer(placed ? null : { cardId, boardId: target.id, title: card.title ?? 'Sin título' });
+    setSelectedId(placed ? cardId : null);
     setSheetHidden(false);
   };
+  const goTo = async (result: SearchResult) => {
+    if (!await flushPendingText()) return;
+    revealCard(result.cardId);
+  };
+  const goToProject = async (target: WorkspaceId, cardId: CardId) => {
+    if (!await flushPendingText()) return;
+    router.replace({ pathname: '/workspace', params: { id: target, card: cardId } });
+  };
+  // Llegada desde la búsqueda global (`?card=`): una vez, cuando el proyecto está listo.
+  const arrived = useRef(initialCard === '');
+  useEffect(() => {
+    if (arrived.current || !workspace) return;
+    arrived.current = true;
+    revealCard(initialCard as CardId);
+  });
+  const placeCard = () => {
+    if (!placeOffer) return;
+    const { cardId, boardId: target } = placeOffer;
+    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    void run((storage, workspaceId) => placeCardOnBoard(storage, workspaceId, { boardId: target, cardId, ...(near ? { near } : {}) }), 'Tarjeta colocada en un hueco libre. Guardado en memoria.')
+      .then((result) => {
+        if (!result.ok) return;
+        setPlaceOffer(null);
+        setSelectedId(cardId);
+      });
+  };
+  const searchAll = (query: string) => searchAllWorkspaces(session.storage, query, workspace ?? undefined);
 
   const renameProjectTag = async (from: string, to: string) =>
     (await run((storage, workspaceId) => renameTag(storage, workspaceId, from, to), 'Etiqueta renombrada. Guardado en memoria.')).ok;
@@ -167,10 +209,18 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
 
   // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
-  const add = (kind: PrototypeCardKind) => {
+  const add = (kind: PrototypeCardKind, extra: { readonly url?: string; readonly title?: string } = {}) => {
     const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
-    void run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
-      .then((result) => { if (result.ok) void select(result.value); });
+    return run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...extra, ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
+      .then((result) => {
+        if (result.ok) void select(result.value);
+        return result;
+      });
+  };
+  // Nuevo enlace: el diálogo muestra el motivo si no se crea (en móvil, la hoja tapa el aviso de la pantalla).
+  const addLink = async (url: string, title: string) => {
+    const result = await add('link', { url, ...(title.trim() === '' ? {} : { title: title.trim() }) });
+    return result.ok ? null : describeFailure(result.issues, storageMode);
   };
 
   const createBoard = () => {
@@ -438,10 +488,11 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
       compact={compact}
       tool={tool}
       onTool={changeTool}
-      onAddNote={() => add('note')}
-      onAddTitle={() => add('title')}
+      onAddNote={() => void add('note')}
+      onAddTitle={() => void add('title')}
+      onAddLink={() => setLinkOpen(true)}
       onImportImage={() => void importImage()}
-      onAddExample={() => add('image')}
+      onAddExample={() => void add('image')}
       zoom={zoom}
       onZoomIn={() => setZoom(zoomIn)}
       onZoomOut={() => setZoom(zoomOut)}
@@ -455,6 +506,14 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
       navInSidebar={sidebar}
       trailing={sidebar ? feedbackLine : undefined}
     />
+  ) : null;
+
+  const placeBar = workspace && placeOffer && placeOffer.boardId === board?.id ? (
+    <View testID="place-offer" style={[styles.offer, { borderColor: colors.danger, backgroundColor: colors.surface }]}>
+      <Text style={[styles.offerText, { color: colors.textPrimary }]}>{`«${placeOffer.title}» está en este tablero pero no tiene posición. Sus datos no cambian hasta que la coloques.`}</Text>
+      <ActionButton label="Colocar en un hueco libre" tone="primary" accessibilityLabel={`Colocar ${placeOffer.title} en un hueco libre`} onPress={placeCard} />
+      <ActionButton label="Ahora no" accessibilityLabel="No colocar la tarjeta" onPress={() => setPlaceOffer(null)} />
+    </View>
   ) : null;
 
   const relocateBar = workspace && relocateOffer ? (
@@ -484,7 +543,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
         onMove={move}
         onResize={resize}
         onRejected={(message) => setFeedback({ tone: 'error', text: message })}
-        onCreateFirst={() => add('note')}
+        onCreateFirst={() => void add('note')}
         boardTitle={board?.title ?? 'sin tableros'}
         unplaced={unplaced}
         imageUris={imageUris}
@@ -548,6 +607,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
               {compact ? null : toolbar}
               {sidebar ? null : feedbackLine}
               {relocateBar}
+              {placeBar}
               <View style={[styles.stage, compact ? null : styles.stageRow]}>
                 <View style={styles.boardSlot}>{boardArea}</View>
                 {!compact && inspector ? (
@@ -603,12 +663,16 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
             onPurge={(cardId) => void purge(cardId)}
             onClose={() => setTrashOpen(false)}
           />
+          <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
           <SearchPanel
             visible={searchOpen}
             compact={compact}
             workspace={workspace}
             busy={saving}
+            projectCount={summaries.length}
             onGo={(result) => void goTo(result)}
+            onGoProject={(target, cardId) => void goToProject(target, cardId)}
+            onSearchAll={searchAll}
             onRenameTag={renameProjectTag}
             onRemoveTag={removeProjectTag}
             onClose={() => setSearchOpen(false)}

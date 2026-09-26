@@ -314,6 +314,20 @@ test('fixture v1 con dos tableros: navegar y avisar de tarjetas sin posición en
   await button(page, 'Tablero Resumen').click();
   await expect(page.getByTestId('card-idea-a')).toBeVisible();
   await expect(page.getByTestId('board-unplaced')).toHaveCount(0);
+
+  // ADR 0020: «Ir» a una tarjeta sin posición en el tablero actual lo explica y ofrece colocarla.
+  await button(page, 'Tablero Investigación').click();
+  await button(page, 'Abrir la búsqueda').click();
+  await page.getByTestId('search-input').fill('idea a');
+  await button(page, 'Ir a Idea A').click();
+  await expect(button(page, 'Tablero Investigación')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('place-offer')).toContainText('«Idea A» está en este tablero pero no tiene posición.');
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+  await button(page, 'Colocar Idea A en un hueco libre').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta colocada en un hueco libre. Guardado en memoria.');
+  await expect(page.getByTestId('card-idea-a')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('board-unplaced')).toHaveCount(0);
+  await expect(page.getByTestId('place-offer')).toHaveCount(0);
 });
 
 test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimportarlo (ADR 0015)', async ({ page }, testInfo) => {

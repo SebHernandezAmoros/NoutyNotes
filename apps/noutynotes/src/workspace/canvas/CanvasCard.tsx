@@ -1,3 +1,4 @@
+import { linkDisplay, linkUrlField } from '@noutynotes/domain';
 import type { Card, CardDisplayMode, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
@@ -97,7 +98,11 @@ export function CanvasCard(props: CanvasCardProps) {
   // Con pie (etiquetas o conexiones), el texto cede sus líneas: relleno, título, hueco y bordes (48) más
   // 22 por línea de pie (hueco + 16). Sin pie se conserva el cálculo anterior.
   const footerLines = (tags.length > 0 ? 1 : 0) + (connections > 0 ? 1 : 0);
-  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / 18));
+  // Enlace (ADR 0020): una línea con dominio y ruta, sin descargar nada; ocupa una línea del texto.
+  const linkKey = linkUrlField(type);
+  const linkValue = linkKey ? card.fields[linkKey] : undefined;
+  const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
+  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / 18) - (link ? 1 : 0));
   const headerColor = image ? colors.headerImage : colors.headerNote;
   const icon = miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
@@ -168,7 +173,13 @@ export function CanvasCard(props: CanvasCardProps) {
                 />
               ) : (card.assetRefs?.length ?? 0) > 0 ? (
                 <Text style={[styles.content, { color: colors.textSecondary }]}>Cargando imagen…</Text>
-              ) : <ImagePlaceholder />) : bodyLines > 0 ? (
+              ) : <ImagePlaceholder />) : null}
+              {!image && link ? (
+                <Text testID={`card-link-${card.id}`} numberOfLines={1} style={[styles.link, { color: colors.cardText }]}>
+                  {`↗ ${link.host}${link.rest}`}
+                </Text>
+              ) : null}
+              {!image && bodyLines > 0 ? (
                 <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }]}>{markdownExcerpt(card.content ?? '')}</Text>
               ) : null}
               {tags.length > 0 ? (
@@ -263,6 +274,7 @@ const styles = StyleSheet.create({
   floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },
   // Si aun así no cabe, cede el texto y no el pie.
   content: { fontSize: 13, lineHeight: 18, flexShrink: 1, overflow: 'hidden' },
+  link: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 12, lineHeight: 18, fontWeight: '700', flexShrink: 0 },
   tags: { fontSize: 12, lineHeight: 16, fontWeight: '800', marginTop: 'auto', flexShrink: 0 },
   badge: { fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 'auto', flexShrink: 0 },
   hint: { position: 'absolute', right: 6, bottom: 6, borderWidth: 2, paddingHorizontal: 6, paddingVertical: 2, fontSize: 12, fontWeight: '800' },

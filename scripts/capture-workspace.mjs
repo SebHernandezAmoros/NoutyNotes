@@ -25,7 +25,7 @@ try {
   const searchShots = async (theme) => {
     for (const [size, width, height] of [['mobile', 390, 844], ['tablet', 900, 900], ['desktop', 1366, 900]]) {
       await page.setViewportSize({ width, height });
-      await button('Buscar en este proyecto').click();
+      await button('Abrir la búsqueda').click();
       await page.getByTestId('search-input').fill('#plan');
       await page.getByTestId('search-result-tarjeta-2').waitFor();
       await shot(page, `search-${size}-${theme}`);
@@ -59,6 +59,12 @@ try {
     await button(`Quitar la etiqueta ${tag.toLowerCase()}`).waitFor();
   }
   await button('Añadir imagen de ejemplo').click();
+  // Tarjeta de enlace (ADR 0020): dominio y ruta, sin vista previa descargada.
+  await button('Añadir enlace').click();
+  await page.getByTestId('link-url-input').fill('ejemplo.com/referencias');
+  await page.getByTestId('link-title-input').fill('Referencias');
+  await button('Crear enlace').click();
+  await page.getByTestId('link-dialog').waitFor({ state: 'detached' });
   await button('Cerrar el editor de la tarjeta').click();
   await page.getByTestId('card-tarjeta-2').click();
   for (const [name, width, height] of [['desktop-light', 1366, 900], ['tablet-light', 900, 900], ['mobile-light', 390, 844]]) {

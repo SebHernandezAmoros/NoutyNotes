@@ -8,10 +8,10 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 
 **Experiencia del workspace (ADR 0013):**
 - **Lienzo y tarjetas:** lienzo de tableros con cabecera, barra lateral de espacios y tableros (desde 1100 px), pestañas de tableros y fichas con cabecera por tipo.
-- **Herramientas reales:** Seleccionar, Mano, Conectar, Buscar, Nota, Imagen (importar una real), Ejemplo, zoom 50–200 % con restablecer, Lista, Papelera y Configuración.
+- **Herramientas reales:** Seleccionar, Mano, Conectar, Buscar, Nota, Enlace, Imagen (importar una real), Ejemplo, zoom 50–200 % con restablecer, Lista, Papelera y Configuración.
 - **Manipulación directa:** arrastra tarjetas y usa sus asas (ratón o dedo). La vista previa marca colisiones y límites antes de guardar, y Escape cancela.
 - **Alternativas:** los botones del inspector siguen disponibles para teclado. En móvil el editor aparece en una hoja inferior que se puede ocultar.
-- **Pendiente:** enlaces, frames, búsqueda global entre proyectos, minimapa y deshacer.
+- **Pendiente:** frames, minimapa y deshacer.
 
 **Lienzo, listas y títulos (ADR 0017, ADR 0018):**
 - **Lienzo en dos ejes:** se recorre en X e Y con la Mano, rueda/trackpad, tacto o flechas. Admite posiciones negativas y lejanas en un rango práctico de ±1 000 000 celdas (no es infinito).
@@ -24,6 +24,11 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 - **Etiquetas `#`:** se añaden y quitan desde el editor de la tarjeta (`#Japón` se guarda como `japón`) y la ficha muestra hasta tres. El `#` escrito en el texto no crea etiquetas.
 - **Formato:** una tarjeta con etiquetas se guarda con `schemaVersion: 2`; sin ellas, sigue siendo v1 byte a byte.
 - **Buscar en este proyecto:** busca palabras y `#etiqueta` en títulos, textos, etiquetas y tipos, sin distinguir mayúsculas ni acentos. «Ir» abre el tablero de la tarjeta y la selecciona. Desde el mismo panel se renombra una etiqueta (se fusiona si el nombre ya existe) o se quita de todas las tarjetas, con confirmación y recuento. La Papelera no se busca.
+
+**Búsqueda global y enlaces (ADR 0020):**
+- **Buscar en todos los proyectos:** desde el mismo panel, con el alcance «Todos». Se lanza a mano porque lee cada proyecto, agrupa los resultados por proyecto, avisa de los que no se pudieron leer, e «Ir» abre el proyecto en esa tarjeta. En «Este proyecto» hay además filtro por tipo.
+- **Tarjetas de enlace:** botón «Enlace» con dirección web o de correo y título opcional. Se rechazan `javascript:`, `data:` y `file:`. La ficha muestra dominio y ruta sin descargar nada, y «Abrir enlace» usa el navegador o la app del sistema. El formato no cambia: la dirección va en `fields` de la tarjeta v1.
+- **Tarjeta sin posición:** si «Ir» lleva a una tarjeta del tablero sin posición, se ofrece «Colocar en un hueco libre».
 
 **Tarjetas y navegación (ADR 0016):**
 - **Controles en la cabecera:** cada tarjeta tiene `−` minimizar, `▭`/`□` contraer o expandir y `×` Papelera, a 44 px con cualquier zoom, o un menú `⋯` si no caben.

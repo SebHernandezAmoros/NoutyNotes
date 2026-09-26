@@ -278,7 +278,7 @@ export function Canvas(props: CanvasProps) {
     if (cards.get(placement.cardId)?.typeId !== FLOATING_TITLE) numbers.set(placement.cardId, numbers.size);
   }
   const unplacedText = props.unplaced.length === 0 ? null
-    : `${props.unplaced.length === 1 ? '1 tarjeta de este tablero no tiene' : `${props.unplaced.length} tarjetas de este tablero no tienen`} posición en la grilla: ${props.unplaced.map((title) => `«${title}»`).join(', ')}. Colocarlas desde aquí llegará más adelante; sus datos no cambian.`;
+    : `${props.unplaced.length === 1 ? '1 tarjeta de este tablero no tiene' : `${props.unplaced.length} tarjetas de este tablero no tienen`} posición en la grilla: ${props.unplaced.map((title) => `«${title}»`).join(', ')}. Para colocar una, búscala con «Buscar» y pulsa «Ir»; sus datos no cambian.`;
   const selectedPlacement = placements.find((placement) => placement.cardId === selectedId);
   // La selección abre el inspector y reduce la ventana del lienzo. Revelar la tarjeta seleccionada
   // evita que la recién creada quede recortada; también responde a un resize posterior y a mover o

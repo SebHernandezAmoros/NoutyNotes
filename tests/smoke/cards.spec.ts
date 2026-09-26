@@ -564,7 +564,7 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   await expect(page.getByTestId('card-tags-tarjeta-3')).toHaveText('#japon');
   await closeEditor(page);
 
-  await button(page, 'Buscar en este proyecto').click();
+  await button(page, 'Abrir la búsqueda').click();
   const panel = page.getByTestId('search-panel');
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId('search-count')).toHaveText('RESULTADOS');
@@ -600,7 +600,7 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   await closeEditor(page);
 
   // Renombrar pide confirmación con el recuento; al coincidir con otra etiqueta, se fusionan.
-  await button(page, 'Buscar en este proyecto').click();
+  await button(page, 'Abrir la búsqueda').click();
   await button(page, 'Renombrar la etiqueta japon').click();
   await expect(page.getByTestId('tag-confirmation')).toContainText('Renombrar #japon en 1 tarjeta');
   await button(page, 'Cancelar el cambio de etiqueta').click();
@@ -622,4 +622,91 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveCount(0);
   expect(runtimeErrors).toEqual([]);
+});
+
+test('enlaces: crear con validación, abrir en pestaña nueva con noopener, editar la dirección y buscarla; filtro por tipo (ADR 0020)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Lecturas');
+  // Abrir no navega de verdad en la prueba: se registra lo que se pidió al navegador.
+  await page.evaluate(() => {
+    (window as unknown as { opened: unknown[] }).opened = [];
+    window.open = ((...args: unknown[]) => { (window as unknown as { opened: unknown[] }).opened.push(args); return null; }) as typeof window.open;
+  });
+  await button(page, 'Añadir enlace').click();
+  const dialog = page.getByTestId('link-dialog');
+  await expect(dialog).toBeVisible();
+  await page.getByTestId('link-url-input').fill('javascript:alert(1)');
+  await button(page, 'Crear enlace').click();
+  await expect(page.getByTestId('link-problem')).toHaveText('Usa una dirección web (https://…) o de correo (mailto:…).');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(0);
+  await page.getByTestId('link-url-input').fill('ejemplo.com/guia');
+  await page.screenshot({ path: testInfo.outputPath('link-dialog.png') });
+  await button(page, 'Crear enlace').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(feedback(page)).toHaveText('Enlace añadido. Guardado en memoria.');
+  // Sin título, el dominio; la ficha muestra la dirección sin descargar nada.
+  await expect(card(page, 1)).toContainText('ejemplo.com');
+  await expect(page.getByTestId('card-link-tarjeta-1')).toHaveText('↗ ejemplo.com/guia');
+  await expect(page.getByTestId('link-input')).toHaveValue('https://ejemplo.com/guia');
+
+  await button(page, 'Abrir el enlace https://ejemplo.com/guia').click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([['https://ejemplo.com/guia', '_blank', 'noopener']]);
+
+  const input = page.getByTestId('link-input');
+  await input.fill('file:///etc/passwd');
+  await button(page, 'Guardar enlace').click();
+  await expect(feedback(page)).toHaveText('Usa una dirección web (https://…) o de correo (mailto:…).');
+  await expect(page.getByTestId('card-link-tarjeta-1')).toHaveText('↗ ejemplo.com/guia');
+  await input.fill('otro.org/leer');
+  await button(page, 'Guardar enlace').click();
+  await expect(feedback(page)).toHaveText('Enlace guardado. Guardado en memoria.');
+  await expect(input).toHaveValue('https://otro.org/leer');
+  await expect(page.getByTestId('card-link-tarjeta-1')).toHaveText('↗ otro.org/leer');
+  await page.screenshot({ path: testInfo.outputPath('link-card.png') });
+  await closeEditor(page);
+
+  // La búsqueda encuentra la tarjeta por su dirección; el filtro por tipo limita el resultado.
+  await addNote(page, 'Leer después');
+  await closeEditor(page);
+  await button(page, 'Abrir la búsqueda').click();
+  await page.getByTestId('search-input').fill('otro.org');
+  await expect(page.getByTestId('search-count')).toHaveText('1 RESULTADO');
+  await expect(page.getByTestId('search-result-tarjeta-1')).toContainText('ENLACE · Tablero principal');
+  await page.getByTestId('search-input').fill('');
+  await button(page, 'Solo Nota (1 tarjeta)').click();
+  await expect(page.getByTestId('search-count')).toHaveText('1 RESULTADO');
+  await expect(page.getByTestId('search-result-tarjeta-2')).toBeVisible();
+  await button(page, 'Quitar el filtro Nota (1 tarjeta)').click();
+  await expect(page.getByTestId('search-count')).toHaveText('RESULTADOS');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('búsqueda en todos los proyectos: explícita, agrupada, con aviso de consulta cambiada e «Ir» a otro proyecto (ADR 0020)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Alfa');
+  await addNote(page, 'Mapa del río');
+  await button(page, 'Volver a mis espacios').click();
+  await createWorkspace(page, 'Beta');
+  await addNote(page, 'Río oculto');
+  await closeEditor(page);
+  await button(page, 'Abrir la búsqueda').click();
+  await button(page, 'Buscar en todos los proyectos (2)').click();
+  await page.getByTestId('search-input').fill('rio');
+  // No se busca con cada tecla: hasta pulsar «Buscar» no hay resultados.
+  await expect(page.getByTestId('search-all-count')).toHaveCount(0);
+  await button(page, 'Buscar ahora en todos los proyectos').click();
+  await expect(page.getByTestId('search-all-count')).toHaveText('2 RESULTADOS EN 2 PROYECTOS');
+  await expect(page.getByTestId('search-panel')).toContainText('Beta (este proyecto)');
+  await page.screenshot({ path: testInfo.outputPath('search-all.png') });
+  await page.getByTestId('search-input').fill('rio oculto');
+  await expect(page.getByTestId('search-all-stale')).toHaveText('Resultados de «rio». Pulsa «Buscar» para actualizar.');
+  await page.getByTestId('search-input').fill('rio');
+  await button(page, 'Ir a Mapa del río').click();
+  await expect(page.getByRole('heading', { name: 'Alfa', exact: true })).toBeVisible();
+  await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Mapa del río');
 });

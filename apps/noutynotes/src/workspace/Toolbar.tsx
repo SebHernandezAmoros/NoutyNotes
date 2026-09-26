@@ -14,6 +14,7 @@ interface ToolbarProps {
   readonly onTool: (tool: CanvasTool) => void;
   readonly onAddNote: () => void;
   readonly onAddTitle: () => void;
+  readonly onAddLink: () => void;
   readonly onImportImage: () => void;
   readonly onAddExample: () => void;
   readonly zoom: number;
@@ -34,8 +35,8 @@ interface ToolbarProps {
 
 /**
  * Barra de herramientas real (ADR 0013, ADR 0014). Cada botón ejecuta una acción. En compacto va
- * abajo en dos filas (herramientas y crear/ver); el zoom está en Configuración. Grilla e imán se
- * configuran en Configuración.
+ * abajo en dos filas de seis (herramientas y vista; crear y Papelera); el zoom, la grilla y el imán
+ * están en Configuración.
  */
 export function Toolbar(props: ToolbarProps) {
   const { theme } = useTheme();
@@ -50,10 +51,13 @@ export function Toolbar(props: ToolbarProps) {
         active={props.tool === 'pan'} disabled={!onCanvas} onPress={() => props.onTool('pan')} style={cell} />
       <ToolButton glyph="⤳" label="Conectar" accessibilityLabel="Herramienta Conectar" accessibilityHint="Toca el origen y después otra tarjeta para conectar o desconectar"
         active={props.tool === 'connect'} disabled={!onCanvas} onPress={() => props.onTool('connect')} style={cell} />
-      <ToolButton testID="open-search" glyph="⌕" label="Buscar" accessibilityLabel="Buscar en este proyecto" accessibilityHint="Palabras o #etiqueta en títulos, textos, etiquetas y tipos"
+      <ToolButton testID="open-search" glyph="⌕" label="Buscar" accessibilityLabel="Abrir la búsqueda" accessibilityHint="En este proyecto o en todos: palabras, #etiqueta, enlaces y tipos"
         onPress={props.onOpenSearch} style={cell} />
       {props.compact ? (
-        <ToolButton glyph="⚙" label="Ajustes" accessibilityLabel="Abrir la configuración" onPress={props.onOpenSettings} style={cell} />
+        <>
+          <ToolButton glyph="≡" label="Lista" accessibilityLabel="Vista de lista" active={!onCanvas} onPress={props.onToggleView} style={cell} />
+          <ToolButton glyph="⚙" label="Ajustes" accessibilityLabel="Abrir la configuración" onPress={props.onOpenSettings} style={cell} />
+        </>
       ) : null}
     </View>
   );
@@ -61,11 +65,11 @@ export function Toolbar(props: ToolbarProps) {
     <View style={styles.group}>
       <ToolButton glyph="+" label="Nota" accessibilityLabel="Añadir nota" onPress={props.onAddNote} style={cell} />
       <ToolButton glyph="T" label="Título" accessibilityLabel="Añadir título flotante" onPress={props.onAddTitle} style={cell} />
+      <ToolButton glyph="↗" label="Enlace" accessibilityLabel="Añadir enlace" accessibilityHint="Una dirección web o de correo; no se descarga nada" onPress={props.onAddLink} style={cell} />
       <ToolButton glyph="⤒" label="Imagen" accessibilityLabel="Importar una imagen" accessibilityHint="Elige una imagen PNG, JPEG, GIF o WebP de hasta 5 MB" onPress={props.onImportImage} style={cell} />
       <ToolButton glyph="▣" label="Ejemplo" accessibilityLabel="Añadir imagen de ejemplo" accessibilityHint="Marcador de demostración sin archivo" onPress={props.onAddExample} style={cell} />
       {props.compact ? (
         <>
-          <ToolButton glyph="≡" label="Lista" accessibilityLabel="Vista de lista" active={!onCanvas} onPress={props.onToggleView} style={cell} />
           <ToolButton glyph="🗑" label={props.trashCount > 0 ? `Papelera ${props.trashCount}` : 'Papelera'} accessibilityLabel={`Abrir la Papelera (${props.trashCount})`} onPress={props.onOpenTrash} style={cell} />
         </>
       ) : null}
@@ -117,8 +121,8 @@ const styles = StyleSheet.create({
   compact: { flexDirection: 'column' },
   wide: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   group: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  // Compacto: celdas iguales que reparten el ancho (390 px sin desbordar); amplio: ancho natural.
-  compactCell: { flexGrow: 1, flexShrink: 1, flexBasis: 0, paddingHorizontal: 2 },
+  // Seis por fila y ancho según el texto (el sobrante se reparte): ninguna palabra se parte a 360-390 px.
+  compactCell: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', paddingHorizontal: 2 },
   wideCell: { paddingHorizontal: 10 },
   zoomCell: { minWidth: 64 },
   divider: { width: 2, alignSelf: 'stretch', marginHorizontal: 4 },

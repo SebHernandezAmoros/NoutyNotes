@@ -1,5 +1,6 @@
-import { addCardTag, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard } from '@noutynotes/application';
+import { addCardTag, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
+import { linkUrlField } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -9,6 +10,7 @@ import { ActionButton, TextField } from '../components/controls';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { cardTitle } from './Board';
 import { applyListCommand, normalizeListChange, toggleChecklistLine } from './markdownLists';
+import { openLink } from './openLink';
 import type { ListKind, TextSelection } from './markdownLists';
 import type { WorkspaceAction } from './useWorkspaceEditor';
 
@@ -91,6 +93,29 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const removeTag = (tag: string) => {
     void run((storage, id) => removeCardTag(storage, id, card.id, tag), `Etiqueta «#${tag}» quitada. Guardado en memoria.`);
   };
+  // Enlace (ADR 0020): la dirección se guarda al pulsar «Guardar enlace», normalizada; abrir usa el sistema.
+  const linkKey = linkUrlField(workspace.cardTypes.find((type) => type.id === card.typeId));
+  const savedLink = linkKey ? card.fields[linkKey] : undefined;
+  const currentLink = typeof savedLink === 'string' ? savedLink : '';
+  const [linkDraft, setLinkDraft] = useState(currentLink);
+  // Si la dirección guardada cambia (otra tarjeta, o guardada normalizada), el borrador la sigue.
+  const [linkBase, setLinkBase] = useState(currentLink);
+  if (linkBase !== currentLink) {
+    setLinkBase(currentLink);
+    setLinkDraft(currentLink);
+  }
+  const saveLink = () => {
+    const input = linkDraft;
+    void run((storage, id) => setCardLink(storage, id, card.id, input), 'Enlace guardado. Guardado en memoria.')
+      .then((result) => { if (result.ok) setLinkDraft(result.value); });
+  };
+  const [linkProblem, setLinkProblem] = useState<string | null>(null);
+  const open = () => {
+    setLinkProblem(null);
+    void openLink(currentLink).then((opened) => {
+      if (!opened) setLinkProblem('No se pudo abrir el enlace con este dispositivo. La dirección sigue guardada.');
+    });
+  };
   const toggleCheck = (line: number) => {
     const next = toggleChecklistLine(content, line);
     if (next !== null) {
@@ -129,6 +154,18 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
       <View style={styles.section}>
         <TextField label="Título de la tarjeta" value={title} onChangeText={changeTitle} placeholder="Sin título" />
+        {linkKey ? (
+          <View testID="card-link" style={styles.tagSection}>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>ENLACE</Text>
+            <TextField label="Dirección del enlace" value={linkDraft} onChangeText={setLinkDraft} placeholder="https://ejemplo.com" onSubmitEditing={saveLink} testID="link-input" />
+            <View style={styles.row}>
+              {linkDraft !== currentLink ? <ActionButton label="Guardar enlace" tone="primary" onPress={saveLink} /> : null}
+              {currentLink !== '' ? <ActionButton label="Abrir enlace ↗" accessibilityLabel={`Abrir el enlace ${currentLink}`} onPress={open} /> : null}
+            </View>
+            {linkProblem ? <Text testID="link-open-problem" style={[styles.hint, { color: colors.danger }]}>{linkProblem}</Text> : null}
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>Abrir necesita conexión. NoutyNotes no descarga nada de la página.</Text>
+          </View>
+        ) : null}
         <View testID="card-tags" style={styles.tagSection}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>ETIQUETAS</Text>
           {(card.tags ?? []).length > 0 ? (
