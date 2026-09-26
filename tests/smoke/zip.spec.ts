@@ -68,6 +68,10 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await page.getByLabel('Contenido Markdown').fill('## Desde el navegador\n\n- conservar **todo**');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota del ZIP');
+  // Etiqueta (ADR 0019): la tarjeta viaja como v2; las demás, byte a byte.
+  await page.getByTestId('tag-input').fill('#Exportable');
+  await button(page, 'Añadir la etiqueta').click();
+  await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveText('#exportable');
   // Desde P2 la nota nace en el primer hueco visible: se mueve una fila desde donde nació.
   const rowOf = (text: string) => Number(/fila (\d+)/.exec(text)?.[1]);
   const bornRow = rowOf(await page.getByTestId('card-geometry').innerText());
@@ -106,7 +110,8 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   expect(archive.value.files['cards/idea-b.md']).toBe(decoder.decode(source['cards/idea-b.md']));
   expect(archive.value.assets).toEqual({ 'assets/images/pixel.png': binary, 'assets/notes/lista de ideas.txt': source['assets/notes/lista de ideas.txt'] });
   const card = archive.value.workspace.cards.find((candidate) => candidate.id === 'tarjeta-1');
-  expect(card).toMatchObject({ title: 'Nota del ZIP', content: '## Desde el navegador\n\n- conservar **todo**' });
+  expect(card).toMatchObject({ title: 'Nota del ZIP', content: '## Desde el navegador\n\n- conservar **todo**', tags: ['exportable'] });
+  expect(archive.value.files['cards/tarjeta-1.md']).toContain('schemaVersion: 2');
   expect(archive.value.workspace.relations.map(({ from, to }) => `${from}→${to}`)).toEqual(['idea-a→idea-b', 'tarjeta-1→idea-a']);
   expect(archive.value.workspace.layouts[0]?.placements.find((placement) => placement.cardId === 'tarjeta-1')?.rect.y).toBe(bornRow);
 
@@ -122,6 +127,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await page.getByTestId('card-tarjeta-1').click();
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('## Desde el navegador\n\n- conservar **todo**');
   await expect(page.getByTestId('card-connections')).toContainText('→ Idea A');
+  await expect(button(page, 'Quitar la etiqueta exportable')).toBeVisible();
   expect(await hasHorizontalOverflow(page)).toBe(false);
   await page.screenshot({ path: testInfo.outputPath('zip-reimported.png') });
   expect(runtimeErrors).toEqual([]);

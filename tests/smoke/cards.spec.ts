@@ -515,3 +515,111 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
 });
+
+test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras y #etiqueta, «Ir» a otro tablero, renombrar fusionando y quitar de todas (ADR 0019)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Viaje');
+  await addNote(page, 'Kioto');
+  const tagInput = page.getByTestId('tag-input');
+  await expect(page.getByTestId('card-tags')).toContainText('Sin etiquetas.');
+  // Se normaliza como la escribe la persona: sin «#», en minúsculas.
+  await tagInput.fill('#Japón');
+  await button(page, 'Añadir la etiqueta').click();
+  await expect(feedback(page)).toHaveText('Etiqueta añadida. Guardado en memoria.');
+  await expect(button(page, 'Quitar la etiqueta japón')).toBeVisible();
+  await expect(tagInput).toHaveValue('');
+  await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveText('#japón');
+  // Texto de la ficha: en oscuro la ficha sigue clara y el color de selección no se leería (1,4:1).
+  await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveCSS('color', rgb(themeColors.light.cardText));
+  // Una etiqueta no válida no se añade y el campo conserva lo escrito para corregirlo.
+  await tagInput.fill('dos palabras');
+  await button(page, 'Añadir la etiqueta').click();
+  await expect(feedback(page)).not.toHaveText('Etiqueta añadida. Guardado en memoria.');
+  await expect(tagInput).toHaveValue('dos palabras');
+  await tagInput.fill('borrar');
+  await tagInput.press('Enter');
+  await expect(button(page, 'Quitar la etiqueta borrar')).toBeVisible();
+  await button(page, 'Quitar la etiqueta borrar').click();
+  await expect(button(page, 'Quitar la etiqueta borrar')).toHaveCount(0);
+  await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveText('#japón');
+
+  // El «#» escrito en el texto no es una etiqueta.
+  await addNote(page, 'Lisboa');
+  await page.getByLabel('Contenido Markdown').fill('Tranvía 28 #hola');
+  await button(page, 'Guardar texto').click();
+  await tagInput.fill('portugal');
+  await button(page, 'Añadir la etiqueta').click();
+  await expect(page.getByTestId('card-tags-tarjeta-2')).toHaveText('#portugal');
+  await closeEditor(page);
+
+  // Otro tablero con una tarjeta etiquetada sin acento: «japon» y «japón» son etiquetas distintas.
+  await button(page, 'Crear un tablero').click();
+  await button(page, 'Crear la primera nota').click();
+  await page.getByLabel('Título de la tarjeta').fill('Osaka');
+  await button(page, 'Guardar texto').click();
+  await tagInput.fill('japon');
+  await button(page, 'Añadir la etiqueta').click();
+  await expect(page.getByTestId('card-tags-tarjeta-3')).toHaveText('#japon');
+  await closeEditor(page);
+
+  await button(page, 'Buscar en este proyecto').click();
+  const panel = page.getByTestId('search-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel.getByTestId('search-count')).toHaveText('RESULTADOS');
+  await expect(button(page, 'Filtrar por #japon (1 tarjeta)')).toBeVisible();
+  await expect(button(page, 'Filtrar por #japón (1 tarjeta)')).toBeVisible();
+  await expect(button(page, 'Filtrar por #portugal (1 tarjeta)')).toBeVisible();
+  await expect(panel.getByRole('button', { name: /hola/ })).toHaveCount(0);
+  // Palabras sin mayúsculas ni acentos, en el texto; el extracto es literal.
+  const query = page.getByTestId('search-input');
+  await query.fill('TRANVIA');
+  await expect(panel.getByTestId('search-count')).toHaveText('1 RESULTADO');
+  await expect(panel.getByTestId('search-result-tarjeta-2')).toContainText('Tranvía 28 #hola');
+  await expect(panel.getByTestId('search-result-tarjeta-2')).toContainText('NOTA · Tablero principal');
+  await query.fill('nada-parecido');
+  await expect(panel.getByTestId('search-empty')).toHaveText('Sin resultados para «nada-parecido».');
+  // «#japon» filtra sin acentos: encuentra las dos etiquetas.
+  await query.fill('#japon');
+  await expect(panel.getByTestId('search-count')).toHaveText('2 RESULTADOS');
+  await query.fill('');
+  await button(page, 'Filtrar por #japón (1 tarjeta)').click();
+  await expect(query).toHaveValue('#japón');
+  await expect(button(page, 'Quitar el filtro #japón (1 tarjeta)')).toHaveAttribute('aria-pressed', 'true');
+  await query.fill('kioto');
+  await page.screenshot({ path: testInfo.outputPath('search-open.png') });
+
+  // «Ir» cambia al tablero de la tarjeta y la selecciona.
+  await expect(card(page, 1)).toHaveCount(0);
+  await button(page, 'Ir a Kioto').click();
+  await expect(panel).toHaveCount(0);
+  await expect(button(page, 'Tablero Tablero principal')).toHaveAttribute('aria-pressed', 'true');
+  await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(card(page, 1)).toBeInViewport();
+  await closeEditor(page);
+
+  // Renombrar pide confirmación con el recuento; al coincidir con otra etiqueta, se fusionan.
+  await button(page, 'Buscar en este proyecto').click();
+  await button(page, 'Renombrar la etiqueta japon').click();
+  await expect(page.getByTestId('tag-confirmation')).toContainText('Renombrar #japon en 1 tarjeta');
+  await button(page, 'Cancelar el cambio de etiqueta').click();
+  await expect(page.getByTestId('tag-confirmation')).toHaveCount(0);
+  await button(page, 'Renombrar la etiqueta japon').click();
+  await page.getByTestId('tag-rename-input').fill('#Japón');
+  await button(page, 'Confirmar renombrar japon').click();
+  await expect(feedback(page)).toHaveText('Etiqueta renombrada. Guardado en memoria.');
+  await expect(button(page, 'Filtrar por #japón (2 tarjetas)')).toBeVisible();
+  await expect(button(page, 'Filtrar por #japon (1 tarjeta)')).toHaveCount(0);
+
+  await button(page, 'Quitar la etiqueta japón de todas las tarjetas').click();
+  await expect(page.getByTestId('tag-confirmation')).toContainText('¿Quitar #japón de 2 tarjetas (y de la Papelera)?');
+  await button(page, 'Confirmar quitar japón de todas').click();
+  await expect(feedback(page)).toHaveText('Etiqueta quitada de todas las tarjetas. Guardado en memoria.');
+  await expect(button(page, 'Filtrar por #portugal (1 tarjeta)')).toBeVisible();
+  await expect(panel.getByRole('button', { name: /japón/ })).toHaveCount(0);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveCount(0);
+  expect(runtimeErrors).toEqual([]);
+});

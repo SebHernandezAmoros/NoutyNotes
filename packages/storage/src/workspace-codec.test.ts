@@ -101,7 +101,8 @@ describe('lectura de paquetes inválidos', () => {
     ['sin frontmatter', (f) => edit(f, 'cards/idea-b.md', '# Nota\n'), 'invalid-document@cards/idea-b.md'],
     ['contenido con contentPresent false', (f) => edit(f, 'cards/idea-b.md', `${f['cards/idea-b.md'] ?? ''}texto`), 'invalid-document@cards/idea-b.md'],
     ['descripción con descriptionPresent false', (f) => edit(f, 'boards/research.md', `${f['boards/research.md'] ?? ''}texto`), 'invalid-document@boards/research.md'],
-    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 2')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
+    // La v2 de tarjeta existe desde ADR 0019 (etiquetas): «posterior» es ahora la 3.
+    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 3')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
     ['versión de manifiesto posterior', (f) => edit(f, '.nouty/workspace.yaml', (f['.nouty/workspace.yaml'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 2')), 'unsupported-schema-version@.nouty/workspace.yaml#schemaVersion'],
     ['clave desconocida en frontmatter', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ncolor: red')), 'unknown-property@cards/idea-b.md#color'],
     ['clave desconocida en manifiesto', (f) => edit(f, '.nouty/workspace.yaml', `${f['.nouty/workspace.yaml'] ?? ''}plugins: []\n`), 'unknown-property@.nouty/workspace.yaml#plugins'],

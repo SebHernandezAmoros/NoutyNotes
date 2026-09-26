@@ -1,4 +1,4 @@
-import { connectCards, disconnectCards, editCardContent, moveCardOnBoard, resizeCardOnBoard } from '@noutynotes/application';
+import { addCardTag, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
 import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
@@ -81,6 +81,16 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     setForcedSelection(selectionRef.current);
     if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: edit.text });
   };
+  // Etiquetas (ADR 0019): se guardan al momento, aparte del texto; lo escrito se normaliza (#Idea → idea).
+  const [tagDraft, setTagDraft] = useState('');
+  const addTag = () => {
+    const input = tagDraft;
+    void run((storage, id) => addCardTag(storage, id, card.id, input), 'Etiqueta añadida. Guardado en memoria.')
+      .then((result) => { if (result.ok) setTagDraft(''); });
+  };
+  const removeTag = (tag: string) => {
+    void run((storage, id) => removeCardTag(storage, id, card.id, tag), `Etiqueta «#${tag}» quitada. Guardado en memoria.`);
+  };
   const toggleCheck = (line: number) => {
     const next = toggleChecklistLine(content, line);
     if (next !== null) {
@@ -119,6 +129,22 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
       <View style={styles.section}>
         <TextField label="Título de la tarjeta" value={title} onChangeText={changeTitle} placeholder="Sin título" />
+        <View testID="card-tags" style={styles.tagSection}>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>ETIQUETAS</Text>
+          {(card.tags ?? []).length > 0 ? (
+            <View style={styles.row} accessibilityLabel="Etiquetas de la tarjeta">
+              {(card.tags ?? []).map((tag) => (
+                <ActionButton key={tag} label={`#${tag}  ×`} accessibilityLabel={`Quitar la etiqueta ${tag}`} onPress={() => removeTag(tag)} />
+              ))}
+            </View>
+          ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>Sin etiquetas. El «#» escrito en el texto no crea etiquetas.</Text>}
+          <View style={styles.tagAdd}>
+            <View style={styles.tagInput}>
+              <TextField label="Nueva etiqueta" value={tagDraft} onChangeText={setTagDraft} placeholder="#idea" onSubmitEditing={addTag} testID="tag-input" />
+            </View>
+            <ActionButton label="Añadir" accessibilityLabel="Añadir la etiqueta" onPress={addTag} />
+          </View>
+        </View>
         <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Listas Markdown">
           <Text style={[styles.hint, { color: colors.textSecondary }]}>LISTAS</Text>
           <ActionButton label="−" accessibilityLabel="Insertar lista con guiones" onPress={() => insertList('dash')} style={styles.listButton} />
@@ -260,6 +286,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 }
 
 const styles = StyleSheet.create({
+  tagSection: { gap: 6 },
+  tagAdd: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  tagInput: { flex: 1, minWidth: 0 },
   // Botones de lista de 44 × 44: los cuatro caben en una fila junto a «LISTAS» (panel de 320 px).
   listButton: { width: 44, minWidth: 44, paddingHorizontal: 0 },
   panel: { padding: 16, gap: 20 },

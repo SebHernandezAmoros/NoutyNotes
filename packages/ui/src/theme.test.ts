@@ -40,6 +40,9 @@ describe.each(['light', 'dark'] as const)('legibilidad del tema %s', (mode) => {
       [colors.textSecondary, colors.surfaceRaised],
       [colors.accentText, colors.accent],
       [colors.noteText, colors.note],
+      // Etiquetas en el color de selección (panel de búsqueda, ADR 0019).
+      [colors.selection, colors.surface],
+      [colors.selection, colors.background],
     ] as const;
     for (const [foreground, background] of pairs) {
       const values = [luminance(foreground), luminance(background)];

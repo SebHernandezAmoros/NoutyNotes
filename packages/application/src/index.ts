@@ -15,3 +15,6 @@ export type { ImageKind, ImportImageInput } from './images';
 export type { WorkspaceAssets } from './workspace-assets';
 export type { PurgeResult, SetCardDisplayInput } from './workspace-editing';
 export type { AddBoardInput, AddCardInput, BoardCardTarget, ConnectCardsInput, PrototypeCardKind } from './workspace-editing';
+export { addCardTag, removeCardTag, removeTagEverywhere, renameTag, workspaceTags } from './tags';
+export { fold, searchWorkspace } from './search';
+export type { SearchResult } from './search';

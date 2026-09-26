@@ -21,6 +21,18 @@ try {
   const page = await browser.newPage({ viewport: { width: 1366, height: 900 }, deviceScaleFactor: 1 });
   await page.emulateMedia({ colorScheme: 'light' });
   const button = (name) => page.getByRole('button', { name, exact: true });
+  // Búsqueda local con filtro de etiqueta (ADR 0019): hoja en móvil, modal desde 800 px.
+  const searchShots = async (theme) => {
+    for (const [size, width, height] of [['mobile', 390, 844], ['tablet', 900, 900], ['desktop', 1366, 900]]) {
+      await page.setViewportSize({ width, height });
+      await button('Buscar en este proyecto').click();
+      await page.getByTestId('search-input').fill('#plan');
+      await page.getByTestId('search-result-tarjeta-2').waitFor();
+      await shot(page, `search-${size}-${theme}`);
+      await page.keyboard.press('Escape');
+      await page.getByTestId('search-panel').waitFor({ state: 'detached' });
+    }
+  };
   await page.goto(base);
   await button('Tema claro').click();
 
@@ -41,6 +53,11 @@ try {
   await page.getByLabel('Título de la tarjeta').fill('Próximos pasos');
   await page.getByLabel('Contenido Markdown').fill('- [x] Definir el concepto\n- [ ] Reunir referencias\n- [ ] Preparar la primera versión');
   await button('Guardar texto').click();
+  for (const tag of ['plan', 'Ideas']) {
+    await page.getByTestId('tag-input').fill(tag);
+    await button('Añadir la etiqueta').click();
+    await button(`Quitar la etiqueta ${tag.toLowerCase()}`).waitFor();
+  }
   await button('Añadir imagen de ejemplo').click();
   await button('Cerrar el editor de la tarjeta').click();
   await page.getByTestId('card-tarjeta-2').click();
@@ -48,6 +65,7 @@ try {
     await page.setViewportSize({ width, height });
     await shot(page, name);
   }
+  await searchShots('light');
 
   // Oscuro explícito y Sistema (sigue al sistema operativo, aquí oscuro).
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -58,6 +76,7 @@ try {
     await page.setViewportSize({ width, height });
     await shot(page, name);
   }
+  await searchShots('dark');
   await page.setViewportSize({ width: 1366, height: 900 });
   await button('Volver a mis espacios').click();
   await button('Tema sistema').click();

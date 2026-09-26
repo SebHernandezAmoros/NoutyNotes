@@ -77,7 +77,8 @@ function Tab({ label, count, active, vertical, accessibilityLabel, disabled = fa
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   vertical: { flexDirection: 'column', flexWrap: 'nowrap' },
-  scroll: { flexGrow: 0 },
+  // Sin encoger: con el teclado abierto la hoja del editor cede alto, las pestañas no.
+  scroll: { flexGrow: 0, flexShrink: 0 },
   scrollRow: { flexDirection: 'row', gap: 6 },
   tab: { minHeight: 44, minWidth: 44, maxWidth: 240, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderWidth: 2 },
   tabVertical: { maxWidth: undefined, justifyContent: 'space-between' },

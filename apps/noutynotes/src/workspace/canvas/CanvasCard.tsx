@@ -93,7 +93,11 @@ export function CanvasCard(props: CanvasCardProps) {
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
   const hint = connectHints[connectRole];
   const borderColor = colliding ? colors.danger : selected || focused || connectRole === 'source' ? colors.selection : colors.border;
-  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - 40) / 18));
+  const tags = card.tags ?? [];
+  // Con pie (etiquetas o conexiones), el texto cede sus líneas: relleno, título, hueco y bordes (48) más
+  // 22 por línea de pie (hueco + 16). Sin pie se conserva el cálculo anterior.
+  const footerLines = (tags.length > 0 ? 1 : 0) + (connections > 0 ? 1 : 0);
+  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / 18));
   const headerColor = image ? colors.headerImage : colors.headerNote;
   const icon = miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
@@ -167,8 +171,14 @@ export function CanvasCard(props: CanvasCardProps) {
               ) : <ImagePlaceholder />) : bodyLines > 0 ? (
                 <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }]}>{markdownExcerpt(card.content ?? '')}</Text>
               ) : null}
+              {tags.length > 0 ? (
+                // Pie de etiquetas (ADR 0019): hasta tres y el resto como «+n»; el nombre completo va en el inspector.
+                <Text testID={`card-tags-${card.id}`} numberOfLines={1} style={[styles.tags, { color: colors.cardText }]}>
+                  {tags.slice(0, 3).map((tag) => `#${tag}`).join('  ')}{tags.length > 3 ? `  +${tags.length - 3}` : ''}
+                </Text>
+              ) : null}
               {connections > 0 ? (
-                <Text style={[styles.badge, { color: colors.textSecondary }]}>{connections === 1 ? '1 conexión' : `${connections} conexiones`}</Text>
+                <Text style={[styles.badge, { color: colors.textSecondary }, tags.length > 0 ? { marginTop: 2 } : null]}>{connections === 1 ? '1 conexión' : `${connections} conexiones`}</Text>
               ) : null}
             </View>
           </>
@@ -251,8 +261,10 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
   floatingTitleWrap: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 36, paddingBottom: 8 },
   floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },
-  content: { fontSize: 13, lineHeight: 18 },
-  badge: { fontSize: 11, fontWeight: '700', marginTop: 'auto' },
+  // Si aun así no cabe, cede el texto y no el pie.
+  content: { fontSize: 13, lineHeight: 18, flexShrink: 1, overflow: 'hidden' },
+  tags: { fontSize: 12, lineHeight: 16, fontWeight: '800', marginTop: 'auto', flexShrink: 0 },
+  badge: { fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 'auto', flexShrink: 0 },
   hint: { position: 'absolute', right: 6, bottom: 6, borderWidth: 2, paddingHorizontal: 6, paddingVertical: 2, fontSize: 12, fontWeight: '800' },
   handleHit: { position: 'absolute', width: HANDLE_HIT, height: HANDLE_HIT, alignItems: 'center', justifyContent: 'center', zIndex: 5 },
   handleMark: { width: HANDLE_MARK, height: HANDLE_MARK, borderWidth: 2 },

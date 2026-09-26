@@ -23,7 +23,7 @@ export const metadataSchema = z.strictObject({ name: text, description: text.opt
 
 export const cardSchema = z.strictObject({
   id: text, typeId: text, title: text.optional(), content: text.optional(),
-  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(),
+  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(),
 });
 export const boardSchema = z.strictObject({ id: text, title: text, description: text.optional(), cardIds: z.array(text) });
 
@@ -52,9 +52,10 @@ export const workspaceManifestSchema = z.strictObject({
   cardTypes: z.array(cardTypeSchema), relationTypes: z.array(relationTypeSchema),
   cards: z.array(text), boards: z.array(text),
 });
+/** v1: sin etiquetas. v2: con `tags` no vacío (ADR 0019); la coherencia se comprueba al leer. */
 export const cardFrontmatterSchema = z.strictObject({
-  schemaVersion: z.literal(1), id: text, typeId: text, title: text.optional(),
-  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), contentPresent: z.boolean(),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]), id: text, typeId: text, title: text.optional(),
+  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), contentPresent: z.boolean(),
 });
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),

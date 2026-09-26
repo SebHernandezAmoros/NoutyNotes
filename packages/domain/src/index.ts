@@ -11,6 +11,7 @@ export type { AssetRef } from './assets/asset-ref';
 export { validateBoard } from './boards/board';
 export type { Board } from './boards/board';
 export { validateCard } from './cards/card';
+export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export type { Card } from './cards/card';
 export { addCard, deleteCard, updateCard } from './cards/operations';
 export type { AddCardOptions, CardContentChanges, DeleteCardOptions } from './cards/operations';

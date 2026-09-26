@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { describeFailure } from '../session/messages';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
+import { isSaveFailure } from './saveStatus';
 
 export type WorkspaceView =
   | { readonly kind: 'loading' }
@@ -13,6 +14,8 @@ export type WorkspaceView =
 export interface Feedback {
   readonly tone: 'error' | 'success';
   readonly text: string;
+  /** Falló la carpeta (no una validación): la cabecera muestra «error al guardar». */
+  readonly saveFailed?: boolean;
 }
 
 export type WorkspaceAction<T> = (storage: WorkspaceStorage, id: WorkspaceId) => Promise<WorkspaceStorageResult<T>>;
@@ -51,7 +54,7 @@ export function useWorkspaceEditor(id: string | undefined) {
     const task = queue.current.then(async () => {
       const result = await action(storage, workspaceId);
       if (mounted.current) {
-        setFeedback(result.ok ? { tone: 'success', text: mode === 'folder' ? success.replace('Guardado en memoria.', 'Guardado en la carpeta.') : success } : { tone: 'error', text: describeFailure(result.issues, mode) });
+        setFeedback(result.ok ? { tone: 'success', text: mode === 'folder' ? success.replace('Guardado en memoria.', 'Guardado en la carpeta.') : success } : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
       }
       if (result.ok) await reload();
       if (mounted.current) setSaving(false);

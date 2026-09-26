@@ -8,6 +8,7 @@ import { collectCardTypeIssues } from './card-type';
 import type { CardTypeDefinition } from './card-type';
 import { collectFieldValueIssues } from './field-values';
 import type { FieldValue } from './field-values';
+import { collectTagIssues } from './tags';
 
 /**
  * Unidad de contenido. Pertenece al workspace, no a un board: los boards la referencian por ID
@@ -22,6 +23,8 @@ export interface Card {
   readonly content?: string;
   readonly fields: Readonly<Record<string, FieldValue>>;
   readonly assetRefs?: readonly AssetRef[];
+  /** Etiquetas `#` normalizadas, únicas y ordenadas (ADR 0019); ausentes si no tiene ninguna. */
+  readonly tags?: readonly string[];
 }
 
 /**
@@ -44,6 +47,7 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   } else if (!isRecord(card.fields)) {
     issues.push(issue('invalid-value', `${path}.fields`, 'Debe ser un objeto de campos.'));
   }
+  collectTagIssues(card.tags, `${path}.tags`, issues);
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);
     refs.forEach((ref, index) => checkAssetRef(ref, `${path}.assetRefs[${index}]`, issues));

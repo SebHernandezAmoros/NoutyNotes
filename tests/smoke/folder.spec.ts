@@ -447,3 +447,47 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta eliminada definitivamente. Guardado en la carpeta.');
   expect(Object.keys(await files())).not.toContain('galeria/assets/images/tarjeta-1.png');
 });
+
+test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a recargar y al quitarlas vuelve a v1 (ADR 0019)', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Rutas');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await page.getByLabel('Título de la tarjeta').fill('Kioto');
+  await page.getByTestId('tag-input').fill('#Japón');
+  await page.getByRole('button', { name: 'Añadir la etiqueta' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Etiqueta añadida. Guardado en la carpeta.');
+  // Una etiqueta rechazada no escribe nada: su aviso no convierte la cabecera en «error al guardar».
+  await page.getByRole('button', { name: 'Añadir la etiqueta' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Escribe un nombre para la etiqueta.');
+  await expect(page.getByTestId('workspace-memory')).toHaveText('CARPETA LOCAL · CAMBIOS GUARDADOS');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  const cards = () => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return ['rutas/cards/tarjeta-1.md', 'rutas/cards/tarjeta-2.md'].map((path) => new TextDecoder().decode(new Uint8Array(files[path] ?? [])));
+  });
+  // Solo la tarjeta con etiquetas pasa a v2; la otra conserva sus bytes v1.
+  await expect.poll(cards).toEqual([
+    expect.stringMatching(/schemaVersion: 2[\s\S]*tags:\s*\n\s*- japón/),
+    expect.stringContaining('schemaVersion: 1'),
+  ]);
+  expect((await cards())[1]).not.toContain('tags');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Rutas' }).click();
+  await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveText('#japón');
+  await page.getByRole('button', { name: 'Buscar en este proyecto' }).click();
+  await page.getByTestId('search-input').fill('#japon');
+  await expect(page.getByTestId('search-count')).toHaveText('1 RESULTADO');
+  await page.getByRole('button', { name: 'Quitar la etiqueta japón de todas las tarjetas' }).click();
+  await page.getByRole('button', { name: 'Confirmar quitar japón de todas' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Etiqueta quitada de todas las tarjetas. Guardado en la carpeta.');
+  await expect.poll(async () => (await cards())[0]).toContain('schemaVersion: 1');
+  expect((await cards())[0]).not.toContain('tags');
+});

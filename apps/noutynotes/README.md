@@ -45,6 +45,10 @@ Controles de tarjeta y proyectos (ADR 0016):
 - `src/workspace/canvas/cardChrome.ts` (puro): acciones y posición de los controles en píxeles de pantalla. `CardControls.tsx` los dibuja fuera de la escala del zoom, junto con el menú `⋯`, y `CardIcon.tsx` dibuja los iconos de nota e imagen;
 - `src/workspace/ProjectTabs.tsx`: pestañas verticales de proyectos (≥ 800 px) y hoja «Proyectos» en móvil. Cambiar de proyecto guarda antes el borrador.
 
+Etiquetas y búsqueda (ADR 0019):
+- `src/workspace/SearchPanel.tsx`: panel «Buscar en este proyecto» (`Dialog`) con los resultados de `searchWorkspace`, chips de etiquetas con recuento que activan o quitan el filtro, y renombrar o quitar de todas con confirmación;
+- `CardInspector.tsx` (sección ETIQUETAS) y `canvas/CanvasCard.tsx` (pie con hasta tres etiquetas; el texto cede sus líneas para que el pie no se corte).
+
 Configuración, representación, imágenes y Papelera (ADR 0014, ADR 0015):
 - `src/components/Dialog.tsx`: modal centrado desde 800 px u hoja inferior en móvil; cierra con Escape (web) o atrás (Android);
 - `src/workspace/SettingsPanel.tsx` («Lienzo y grilla») y `canvas/preferences.ts` (límites y `metricsFor`, puros). Las preferencias se guardan en `src/session/viewPreferencesStore(.android).ts`, fuera del workspace;

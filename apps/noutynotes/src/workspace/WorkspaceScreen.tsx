@@ -1,17 +1,18 @@
 import {
   PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  moveCardOnBoard, moveCardToTrash, purgeCardFromTrash, resizeCardOnBoard, restoreCardFromTrash, setCardDisplay,
+  moveCardOnBoard, moveCardToTrash, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromTrash, setCardDisplay,
 } from '@noutynotes/application';
-import type { PrototypeCardKind, WorkspaceSummary } from '@noutynotes/application';
+import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize } from '@noutynotes/domain';
 import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '../components/BrandMark';
 import { ActionButton } from '../components/controls';
+import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
@@ -28,6 +29,7 @@ import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
 import { ProjectRail, ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
+import { SearchPanel } from './SearchPanel';
 import { TrashPanel } from './TrashPanel';
 import { useImagePreviews } from './useImagePreviews';
 import { Toolbar } from './Toolbar';
@@ -84,6 +86,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
   const { showGrid, snap } = preferences;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
   // Expandir falló por colisión: se ofrece, sin hacerlo por su cuenta, expandir en un hueco libre.
   const [relocateOffer, setRelocateOffer] = useState<CardId | null>(null);
@@ -138,6 +141,29 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
     setConnectSource(null);
     setPan(START_PAN);
   };
+
+  // «Ir» desde la búsqueda: el tablero actual si contiene la tarjeta; si no, el primero que la tenga.
+  // Seleccionarla basta: el lienzo la muestra por su cuenta (efecto de revelado).
+  const goTo = async (result: SearchResult) => {
+    if (!await flushPendingText()) return;
+    const target = board && result.boards.some((entry) => entry.boardId === board.id) ? board.id : result.boards[0]?.boardId;
+    if (!target) {
+      setFeedback({ tone: 'error', text: `«${result.title}» no está en ningún tablero.` });
+      return;
+    }
+    if (target !== board?.id) {
+      setBoardId(target);
+      setConnectSource(null);
+      setPan(START_PAN);
+    }
+    setSelectedId(result.cardId);
+    setSheetHidden(false);
+  };
+
+  const renameProjectTag = async (from: string, to: string) =>
+    (await run((storage, workspaceId) => renameTag(storage, workspaceId, from, to), 'Etiqueta renombrada. Guardado en memoria.')).ok;
+  const removeProjectTag = async (tag: string) =>
+    (await run((storage, workspaceId) => removeTagEverywhere(storage, workspaceId, tag), 'Etiqueta quitada de todas las tarjetas. Guardado en memoria.')).ok;
 
   // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
@@ -286,7 +312,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
     setArchiveMessage({ tone: 'success', text: 'Sigue sin exportar. Vuelve a exportar cuando quieras.' });
   };
 
-  const { text: status, tone: statusTone } = saveStatus({ mode: storageMode, saving, failed: feedback?.tone === 'error', native: Platform.OS !== 'web' });
+  const { text: status, tone: statusTone } = saveStatus({ mode: storageMode, saving, failed: feedback?.saveFailed === true, native: Platform.OS !== 'web' });
   // Un error nunca usa el color de «guardado»; guardando es neutro y la memoria volátil, aviso.
   const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' ? colors.textSecondary : colors.danger;
   const hint = tool === 'pan' ? 'Mano: arrastra el lienzo para desplazarte. Las tarjetas no se mueven con esta herramienta.'
@@ -425,6 +451,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
       trashCount={workspace.trash?.length ?? 0}
       onOpenTrash={() => setTrashOpen(true)}
       onOpenSettings={() => setSettingsOpen(true)}
+      onOpenSearch={() => setSearchOpen(true)}
       navInSidebar={sidebar}
       trailing={sidebar ? feedbackLine : undefined}
     />
@@ -477,10 +504,17 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
     <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical={false} scroll={compact} />
   ) : null;
   const trashCount = workspace?.trash?.length ?? 0;
+  // Teclado abierto (nativo): se reserva su alto (menos la barra del sistema, ya reservada), la barra
+  // inferior se oculta porque quedaría tapada y la hoja del editor puede crecer.
+  const keyboard = useKeyboardInset();
+  const insets = useSafeAreaInsets();
+  const typing = compact && keyboard > 0;
+  const sheetScroll = useRef<ScrollView>(null);
+  const onSheetScroll = useRevealFocusedInput(keyboard, sheetScroll);
 
   return (
     <SafeAreaView testID="workspace-screen" style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={[styles.frame, compact ? null : styles.frameRow]}>
+      <View style={[styles.frame, compact ? null : styles.frameRow, typing ? { paddingBottom: Math.max(0, keyboard - insets.bottom) } : null]}>
         {sidebar ? (
           <ScrollView testID="workspace-sidebar" style={[styles.sidebar, { backgroundColor: colors.surface, borderColor: colors.gridLine }]} contentContainerStyle={styles.sidebarContent}>
             <View style={styles.brandRow}>
@@ -524,7 +558,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
               </View>
               {/* Móvil: el editor ocupa la parte baja sin tapar la barra de herramientas. */}
               {compact && inspector ? (
-                <View testID="inspector-sheet" style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <View testID="inspector-sheet" style={[styles.sheet, typing ? styles.sheetTyping : null, { backgroundColor: colors.background, borderColor: colors.border }]}>
                   <View style={styles.sheetBar}>
                     {/* Una sola barra: título, mostrar/ocultar y cerrar (sin repetir la cabecera del inspector). */}
                     <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{selected?.title ?? 'Sin título'}</Text>
@@ -536,10 +570,10 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
                     <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={closeInspector} />
                   </View>
                   {/* Oculto, sigue montado: el texto sin guardar no se pierde. */}
-                  <ScrollView style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>
+                  <ScrollView ref={sheetScroll} onScroll={onSheetScroll} scrollEventThrottle={32} style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>
                 </View>
               ) : null}
-              {compact ? toolbar : null}
+              {compact && !typing ? toolbar : null}
             </View>
           ) : null}
         </View>
@@ -568,6 +602,16 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
             onRestore={(cardId) => void restore(cardId)}
             onPurge={(cardId) => void purge(cardId)}
             onClose={() => setTrashOpen(false)}
+          />
+          <SearchPanel
+            visible={searchOpen}
+            compact={compact}
+            workspace={workspace}
+            busy={saving}
+            onGo={(result) => void goTo(result)}
+            onRenameTag={renameProjectTag}
+            onRemoveTag={removeProjectTag}
+            onClose={() => setSearchOpen(false)}
           />
         </>
       ) : null}
@@ -683,6 +727,8 @@ const styles = StyleSheet.create({
   sidePanel: { width: 280, flexGrow: 0, borderWidth: 1 },
   sidePanelContent: { padding: 0 },
   sheet: { maxHeight: '32%', flexShrink: 0, borderTopWidth: 3, paddingTop: 6 },
+  // Escribiendo: la hoja crece, pero cede alto antes que desbordar por debajo del teclado.
+  sheetTyping: { maxHeight: '65%', flexShrink: 1 },
   sheetBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingBottom: 6 },
   sheetTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800' },
   hidden: { display: 'none' },

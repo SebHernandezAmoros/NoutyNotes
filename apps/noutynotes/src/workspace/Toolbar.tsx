@@ -25,6 +25,7 @@ interface ToolbarProps {
   readonly trashCount: number;
   readonly onOpenTrash: () => void;
   readonly onOpenSettings: () => void;
+  readonly onOpenSearch: () => void;
   /** Con barra lateral (≥ 1100 px), Papelera y Configuración están en ella y no se repiten aquí. */
   readonly navInSidebar: boolean;
   /** Contenido al final de la fila en escritorio (el aviso del workspace): ahorra una fila al lienzo. */
@@ -49,6 +50,8 @@ export function Toolbar(props: ToolbarProps) {
         active={props.tool === 'pan'} disabled={!onCanvas} onPress={() => props.onTool('pan')} style={cell} />
       <ToolButton glyph="⤳" label="Conectar" accessibilityLabel="Herramienta Conectar" accessibilityHint="Toca el origen y después otra tarjeta para conectar o desconectar"
         active={props.tool === 'connect'} disabled={!onCanvas} onPress={() => props.onTool('connect')} style={cell} />
+      <ToolButton testID="open-search" glyph="⌕" label="Buscar" accessibilityLabel="Buscar en este proyecto" accessibilityHint="Palabras o #etiqueta en títulos, textos, etiquetas y tipos"
+        onPress={props.onOpenSearch} style={cell} />
       {props.compact ? (
         <ToolButton glyph="⚙" label="Ajustes" accessibilityLabel="Abrir la configuración" onPress={props.onOpenSettings} style={cell} />
       ) : null}
