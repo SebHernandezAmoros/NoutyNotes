@@ -114,6 +114,8 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await expect(page.getByTestId('session-workspaces')).toContainText('Todavía no hay espacios');
   await importZip(page, 'demo.zip', Buffer.from(exported));
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota del ZIP');
+  // Enfocarla primero la trae a la vista si el lienzo no la muestra (a 390 px puede quedar fuera).
+  await page.getByTestId('card-tarjeta-1').focus();
   await page.getByTestId('card-tarjeta-1').click();
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('## Desde el navegador\n\n- conservar **todo**');
   await expect(page.getByTestId('card-connections')).toContainText('→ Idea A');
@@ -275,10 +277,66 @@ test('exportar no da por conservado nada si la descarga falla, se cancela o hubo
   download = page.waitForEvent('download');
   await button(page, 'Exportar este espacio como ZIP').click();
   await download;
-  await button(page, 'Añadir imagen').click();
+  await button(page, 'Añadir imagen de ejemplo').click();
   await expect(page.getByTestId('card-tarjeta-2')).toBeVisible();
   await button(page, 'Confirmar que guardé demo.zip').click();
   await expect(page.getByTestId('archive-message')).toHaveText('Hubo cambios después de exportar ese ZIP: sigue sin exportar. Vuelve a exportar.');
   await expect(page.getByTestId('export-status')).toHaveText('CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.');
   await expect(button(page, 'Confirmar que guardé demo.zip')).toHaveCount(0);
+});
+
+test('fixture v1 con dos tableros: navegar y avisar de tarjetas sin posición en vez de un tablero vacío (ADR 0013)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await importZip(page, 'demo.zip', fixtureZip());
+  await expect(page.getByRole('heading', { name: 'Demo', exact: true })).toBeVisible();
+  await expect(page.getByText('RESUMEN · 2 TARJETAS')).toBeVisible();
+  await expect(button(page, 'Tablero Resumen')).toHaveAttribute('aria-pressed', 'true');
+
+  // «Investigación» declara idea-a pero su layout no la coloca: v1 válido, no un tablero vacío.
+  await button(page, 'Tablero Investigación').click();
+  await expect(button(page, 'Tablero Investigación')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('INVESTIGACIÓN · 1 TARJETA')).toBeVisible();
+  await expect(page.getByTestId('board-unplaced')).toContainText('1 tarjeta de este tablero no tiene posición en la grilla: «Idea A».');
+  await expect(page.getByTestId('board-empty')).toHaveCount(0);
+  await expect(page.getByTestId('card-idea-a')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('zip-unplaced.png') });
+  await button(page, 'Tablero Resumen').click();
+  await expect(page.getByTestId('card-idea-a')).toBeVisible();
+  await expect(page.getByTestId('board-unplaced')).toHaveCount(0);
+});
+
+test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimportarlo (ADR 0015)', async ({ page }, testInfo) => {
+  const icon = fileURLToPath(new URL('../../apps/noutynotes/assets/branding/app-icon.png', import.meta.url));
+  await page.addInitScript({ content: withoutFolderAccess });
+  await page.goto('./');
+  await page.getByLabel('Nombre del nuevo espacio').fill('Viaje');
+  await button(page, 'Crear un espacio').click();
+  const chooser = page.waitForEvent('filechooser');
+  await button(page, 'Importar una imagen').click();
+  await (await chooser).setFiles(icon);
+  await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
+  await button(page, 'Añadir nota').click();
+  await page.getByLabel('Título de la tarjeta').fill('Descartada');
+  await button(page, 'Guardar texto').click();
+  await button(page, 'Enviar la tarjeta Descartada a la Papelera').click();
+  await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
+
+  const download = page.waitForEvent('download');
+  await button(page, 'Exportar este espacio como ZIP').click();
+  const zipPath = testInfo.outputPath('viaje.zip');
+  await (await download).saveAs(zipPath);
+  const archive = readWorkspaceArchive(new Uint8Array(readFileSync(zipPath)));
+  expect(archive.ok).toBe(true);
+  if (!archive.ok) return;
+  expect(archive.value.assets['assets/images/tarjeta-1.png']).toEqual(new Uint8Array(readFileSync(icon)));
+  expect(archive.value.workspace.trash?.map((entry) => entry.card.title)).toEqual(['Descartada']);
+
+  // Otra sesión: reimportar trae la vista previa (sin red) y la Papelera.
+  await page.reload();
+  await button(page, 'Volver a mis espacios').click();
+  await importZip(page, 'viaje.zip', readFileSync(zipPath));
+  await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
+  await button(page, 'Abrir la Papelera (1)').click();
+  await expect(page.getByTestId('trash-item-tarjeta-2')).toContainText('Descartada');
 });

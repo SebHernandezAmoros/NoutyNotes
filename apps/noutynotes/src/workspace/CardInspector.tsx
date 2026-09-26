@@ -1,6 +1,6 @@
 import { connectCards, disconnectCards, editCardContent, moveCardOnBoard, resizeCardOnBoard } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
-import type { BoardId, Card, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
+import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
@@ -21,7 +21,16 @@ interface CardInspectorProps {
   readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string }) => void;
   readonly flushPendingText: () => Promise<boolean>;
   readonly onClose: () => void;
+  /** Representación y Papelera (ADR 0014, ADR 0015); los mismos caminos que la barra de la tarjeta. */
+  readonly onDisplay: (display: CardDisplayMode) => void;
+  readonly onTrash: () => void;
 }
+
+const displays: readonly { display: CardDisplayMode; label: string }[] = [
+  { display: 'expanded', label: 'Expandida' },
+  { display: 'collapsed', label: 'Contraída' },
+  { display: 'minimized', label: 'Minimizada' },
+];
 
 const moves = [
   { label: '←', name: 'Mover a la izquierda', dx: -1, dy: 0 },
@@ -41,7 +50,7 @@ const resizes = [
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -131,6 +140,31 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         ) : null}
       </View>
 
+      {placement ? (
+        <View testID="card-display" style={styles.section}>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>REPRESENTACIÓN</Text>
+          <View style={styles.row}>
+            {displays.map((option) => (
+              <ActionButton
+                key={option.display}
+                label={option.label}
+                accessibilityLabel={`Mostrar ${option.label.toLowerCase()}`}
+                pressed={placement.display === option.display}
+                onPress={() => { if (placement.display !== option.display) onDisplay(option.display); }}
+              />
+            ))}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Conserva el contenido, el tamaño expandido y las conexiones.</Text>
+        </View>
+      ) : null}
+
+      {(card.assetRefs?.length ?? 0) > 0 ? (
+        <View style={styles.section}>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>ARCHIVO</Text>
+          <Text testID="card-asset" style={[styles.body, { color: colors.textPrimary }]}>{card.assetRefs?.join(', ')}</Text>
+        </View>
+      ) : null}
+
       <View testID="card-connections" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>CONEXIONES</Text>
         {connected.length === 0 ? (
@@ -162,6 +196,10 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             />
           ))}
         </View>
+      </View>
+      <View style={styles.section}>
+        <ActionButton label="Enviar a la Papelera" accessibilityLabel={`Enviar la tarjeta ${cardTitle(card)} a la Papelera`} onPress={onTrash} />
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>No se borra: podrás restaurarla desde la Papelera.</Text>
       </View>
     </View>
   );

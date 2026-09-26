@@ -1,5 +1,5 @@
 import { createEmptyWorkspaceNamed } from '@noutynotes/application';
-import type { WorkspaceSummary } from '@noutynotes/application';
+import type { WorkspaceStorage, WorkspaceSummary } from '@noutynotes/application';
 import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
 import type { ThemePreference } from '@noutynotes/ui';
 import { router, useFocusEffect } from 'expo-router';
@@ -7,10 +7,12 @@ import { useCallback, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BrandMark } from '../components/BrandMark';
 import { TextField } from '../components/controls';
 import { useHydrated } from '../components/useHydrated';
 import { MEMORY_LOSS_NOTICE, describeFailure } from '../session/messages';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
+import { numberActions, singleFlight } from './actions';
 
 const themeOptions: { value: ThemePreference; label: string }[] = [
   { value: 'light', label: 'Claro' },
@@ -20,8 +22,8 @@ const themeOptions: { value: ThemePreference; label: string }[] = [
 
 // El selector de plantillas llegará en una fase posterior.
 const reservedActions = [
-  { number: '04', title: 'Usar una plantilla', description: 'Un pequeño punto de partida.', symbol: '▦' },
-];
+  { key: 'template', title: 'Usar una plantilla', description: 'Un pequeño punto de partida.', symbol: '▦' },
+] as const;
 
 const untitledWorkspace = 'Espacio sin título';
 
@@ -55,16 +57,30 @@ export function HomeScreen() {
 
   const openWorkspace = (id: string) => router.push({ pathname: '/workspace', params: { id } });
 
+  // Una sola creación en curso: con la latencia de una carpeta, otra pulsación creaba otro espacio.
+  const [createOnce] = useState(() => singleFlight(async (target: WorkspaceStorage, name: string) => createEmptyWorkspaceNamed(target, name)));
+  const [creating, setCreating] = useState(false);
+  // Sigue desactivado hasta volver al inicio: entre crear y cambiar de pantalla también se ignora otra pulsación.
+  useFocusEffect(useCallback(() => { setCreating(false); }, []));
   const createWorkspace = async () => {
+    if (createOnce.busy() || creating) return;
     const name = draftName.trim() === '' ? untitledWorkspace : draftName.trim();
-    const created = await createEmptyWorkspaceNamed(storage, name);
-    if (!created.ok) {
-      setCreateError(describeFailure(created.issues));
-      return;
+    setCreating(true);
+    let navigated = false;
+    try {
+      const created = await createOnce(storage, name);
+      if (!created) return;
+      if (!created.ok) {
+        setCreateError(describeFailure(created.issues));
+        return;
+      }
+      setCreateError(null);
+      setDraftName('');
+      openWorkspace(created.value.id);
+      navigated = true;
+    } finally {
+      if (!navigated) setCreating(false);
     }
-    setCreateError(null);
-    setDraftName('');
-    openWorkspace(created.value.id);
   };
 
   const openFolder = async () => {
@@ -98,6 +114,12 @@ export function HomeScreen() {
     router.push({ pathname: '/workspace', params: { id: outcome.value.summary.id, notice: outcome.message } });
   };
 
+  const showReopen = Platform.OS !== 'web' && session.savedFolder !== null;
+  const showZip = Platform.OS === 'web' && session.mode === 'memory';
+  const numbers = numberActions([
+    'create', 'folder', ...(showReopen ? ['reopen' as const] : []), ...(showZip ? ['zip' as const] : []), 'template',
+  ] as const);
+
   const actionFocus = (key: string) => ({
     onFocus: () => setFocusedAction(key),
     onBlur: () => setFocusedAction((current) => (current === key ? null : current)),
@@ -112,9 +134,7 @@ export function HomeScreen() {
       <ScrollView contentContainerStyle={[styles.page, { padding: compact ? 20 : 44 }]}>
         <View style={[styles.header, { borderColor: colors.border }]}>
           <View style={styles.brand}>
-            <View style={[styles.brandMark, { backgroundColor: colors.accent, borderColor: colors.border }]}>
-              <Text style={[styles.brandInitial, { color: colors.accentText }]}>N.</Text>
-            </View>
+            <BrandMark size={46} />
             <Text style={[styles.brandName, { color: colors.textPrimary }]}>NoutyNotes</Text>
           </View>
 
@@ -202,13 +222,15 @@ export function HomeScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Crear un espacio"
                   accessibilityHint={session.mode === 'folder' ? 'Crea un espacio en la carpeta seleccionada' : 'Crea un espacio vacío en la memoria de esta sesión'}
+                  accessibilityState={{ busy: creating, disabled: creating }}
+                  disabled={creating}
                   onPress={() => void createWorkspace()}
                   {...actionFocus('create')}
                   style={[styles.action, actionBorder('create')]}
                 >
-                  <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>01</Text>
+                  <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.create}</Text>
                   <View style={styles.actionText}>
-                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>Crear un espacio</Text>
+                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{creating ? 'Creando el espacio…' : 'Crear un espacio'}</Text>
                     <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>Una página en blanco para lo que viene.</Text>
                   </View>
                   <View style={[styles.actionBadge, { backgroundColor: colors.accent, borderColor: colors.border }]}>
@@ -225,7 +247,7 @@ export function HomeScreen() {
                   {...actionFocus('folder')}
                   style={[styles.action, actionBorder('folder')]}
                 >
-                  <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>02</Text>
+                  <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.folder}</Text>
                   <View style={styles.actionText}>
                     <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{session.mode === 'folder' ? 'Cambiar carpeta' : 'Abrir una carpeta'}</Text>
                     <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
@@ -234,7 +256,7 @@ export function HomeScreen() {
                   </View>
                   <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↗</Text>
                 </Pressable>
-                {Platform.OS !== 'web' && session.savedFolder ? (
+                {showReopen && session.savedFolder ? (
                   <Pressable
                     testID="reopen-folder"
                     accessibilityRole="button"
@@ -244,7 +266,7 @@ export function HomeScreen() {
                     {...actionFocus('reopen')}
                     style={[styles.action, actionBorder('reopen')]}
                   >
-                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>02</Text>
+                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.reopen}</Text>
                     <View style={styles.actionText}>
                       <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{`Reabrir «${session.savedFolder.name}»`}</Text>
                       <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>La carpeta que usaste la última vez en este dispositivo.</Text>
@@ -252,7 +274,7 @@ export function HomeScreen() {
                     <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↺</Text>
                   </Pressable>
                 ) : null}
-                {Platform.OS === 'web' && session.mode === 'memory' ? (
+                {showZip ? (
                   <Pressable
                     testID="import-zip"
                     disabled={!session.archiveSupported}
@@ -264,7 +286,7 @@ export function HomeScreen() {
                     {...actionFocus('zip')}
                     style={[styles.action, actionBorder('zip')]}
                   >
-                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>03</Text>
+                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.zip}</Text>
                     <View style={styles.actionText}>
                       <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>Importar un ZIP</Text>
                       <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>Abre un espacio exportado. Funciona en cualquier navegador.</Text>
@@ -274,15 +296,15 @@ export function HomeScreen() {
                 ) : null}
                 {reservedActions.map((action) => (
                   <Pressable
-                    key={action.number}
+                    key={action.key}
                     disabled
                     accessibilityRole="button"
                     accessibilityLabel={action.title}
                     accessibilityHint="Disponible en una próxima versión"
                     accessibilityState={{ disabled: true }}
-                    style={[styles.action, actionBorder(action.number)]}
+                    style={[styles.action, actionBorder(action.key)]}
                   >
-                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{action.number}</Text>
+                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers[action.key]}</Text>
                     <View style={styles.actionText}>
                       <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{action.title}</Text>
                       <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{action.description}</Text>
@@ -347,8 +369,6 @@ const styles = StyleSheet.create({
   page: { flexGrow: 1, width: '100%', maxWidth: 1440, alignSelf: 'center' },
   header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 22, paddingBottom: 24, borderBottomWidth: 2 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  brandMark: { width: 46, height: 46, borderWidth: 2, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-4deg' }] },
-  brandInitial: { fontSize: 26, fontWeight: '900' },
   brandName: { fontSize: 27, fontWeight: '900', letterSpacing: -1 },
   themeControl: { flexDirection: 'row', borderWidth: 1, padding: 3, gap: 2 },
   themeButton: { minHeight: 44, minWidth: 68, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2 },

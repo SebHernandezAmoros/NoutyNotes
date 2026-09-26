@@ -1,6 +1,8 @@
 import type { WorkspaceStorageIssue } from '@noutynotes/application';
 
-export const MEMORY_LOSS_NOTICE = 'Los espacios del prototipo viven en memoria y se pierden al recargar o cerrar la pestaña.';
+import { MEMORY_LOSS_NOTICE } from './memoryNotice';
+
+export { MEMORY_LOSS_NOTICE };
 
 /** Textos para los códigos que la interfaz puede provocar. La lógica usa códigos, nunca mensajes. */
 const byCode: Readonly<Record<string, string>> = {
@@ -18,6 +20,11 @@ const byCode: Readonly<Record<string, string>> = {
   'io-failure': 'No se pudieron guardar los archivos. Vuelve a seleccionar la carpeta para intentar la recuperación.',
   'invalid-stored-data': 'La carpeta contiene datos inválidos o una recuperación pendiente. No se sobrescribió nada.',
 };
+
+/** Texto de un código del motor de grilla o de relaciones, para avisos previos al guardado. */
+export function describeCode(code: string): string {
+  return byCode[code] ?? 'Posición o tamaño no válidos.';
+}
 
 /** Mensaje legible del primer problema: la incidencia original del dominio si la hay, o la del puerto. */
 export function describeFailure(issues: readonly WorkspaceStorageIssue[], mode: 'memory' | 'folder' = 'memory'): string {

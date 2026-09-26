@@ -1,20 +1,22 @@
 import { isValidId, validateWorkspace } from '@noutynotes/domain';
-import type { Board, Card, DomainIssue, Workspace } from '@noutynotes/domain';
+import type { Board, Card, DomainIssue, TrashedCard, Workspace } from '@noutynotes/domain';
 import type { z } from 'zod';
 
 import { LAYOUT_FILE, RELATIONS_FILE, layoutData, parseLayouts, parseRelations, relationData } from './codecs';
-import { checkShape, checkVersionedData, compact, duplicateIdIssues, mergeWithPrevious, plainDataIssues, previousFilesIssues, yamlDocument } from './documents';
+import { checkShape, checkVersionedData, compact, duplicateIdIssues, mergeWithPrevious, plainDataIssues, previousFilesIssues, readVersionedYaml, yamlDocument } from './documents';
 import type { GeneratedDocument, PreviousPackage } from './documents';
 import { joinFrontmatter, splitFrontmatter } from './frontmatter';
 import { fail, storageIssue, succeed } from './issues';
 import type { StorageIssue, StorageResult } from './issues';
 import { isPortableAssetRef } from './paths';
-import { boardFrontmatterSchema, cardFrontmatterSchema, workspaceManifestSchema, workspaceSchema } from './schemas';
+import { boardFrontmatterSchema, cardFrontmatterSchema, trashFileSchema, workspaceManifestSchema, workspaceSchema } from './schemas';
 import { validateTextFiles } from './text-files';
 import type { TextFiles } from './text-files';
 import { parseYaml, stringifyYaml } from './yaml';
 
 export const WORKSPACE_FILE = '.nouty/workspace.yaml';
+/** Papelera de tarjetas (ADR 0015): documento administrado opcional, solo si no está vacía. */
+export const TRASH_FILE = '.nouty/trash.yaml';
 export const WORKSPACE_README = 'README.md';
 export const ASSETS_DIRECTORY = 'assets/';
 
@@ -43,6 +45,17 @@ function cardDocument(card: Card): GeneratedDocument {
   }), card.content ?? '');
 }
 
+/** Copia canónica de una instantánea de la Papelera, sin claves ausentes ni orden accidental. */
+function trashData(entry: TrashedCard): unknown {
+  const { card } = entry;
+  return compact({
+    card: { id: card.id, typeId: card.typeId, title: card.title, fields: card.fields, assetRefs: card.assetRefs, content: card.content },
+    boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
+    placements: entry.placements.map(({ boardId, rect, display }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
+    relations: entry.relations.map(relationData),
+  });
+}
+
 function boardDocument(board: Board): GeneratedDocument {
   return markdownDocument(compact({
     schemaVersion: 1, id: board.id, title: board.title, cardIds: board.cardIds,
@@ -65,6 +78,9 @@ function workspaceDocuments(workspace: Workspace): Map<string, GeneratedDocument
   documents.set(RELATIONS_FILE, yamlDocument({ schemaVersion: 1, relations: workspace.relations.map(relationData) }));
   for (const card of workspace.cards) documents.set(cardPath(card.id), cardDocument(card));
   for (const board of workspace.boards) documents.set(boardPath(board.id), boardDocument(board));
+  if (workspace.trash && workspace.trash.length > 0) {
+    documents.set(TRASH_FILE, yamlDocument({ schemaVersion: 1, items: workspace.trash.map(trashData) }));
+  }
   return documents;
 }
 
@@ -73,7 +89,8 @@ function assetPathIssues(workspace: Workspace, locate: (cardIndex: number, rest:
   const kinds = new Map(workspace.cardTypes.map((type) => [type.id, new Map(type.fields.map((field) => [field.key as string, field.kind]))]));
   const issues: StorageIssue[] = [];
   const message = 'Las referencias a assets deben ser rutas portables.';
-  workspace.cards.forEach((card, index) => {
+  const cards = [...workspace.cards, ...(workspace.trash ?? []).map((entry) => entry.card)];
+  cards.forEach((card, index) => {
     card.assetRefs?.forEach((ref, j) => {
       if (!isPortableAssetRef(ref)) issues.push(storageIssue('invalid-path', locate(index, `assetRefs[${j}]`), message));
     });
@@ -98,6 +115,7 @@ function locateWorkspaceIssue(issue: DomainIssue | StorageIssue, workspace: Work
     }
   }
   if (/^layouts(\[|$)/.test(issue.path)) return { ...issue, path: `${LAYOUT_FILE}#${issue.path}` };
+  if (/^trash(\[|$)/.test(issue.path)) return { ...issue, path: `${TRASH_FILE}#${issue.path}` };
   if (/^relations(\[|$)/.test(issue.path)) return { ...issue, path: `${RELATIONS_FILE}#${issue.path}` };
   return { ...issue, path: issue.path ? `${WORKSPACE_FILE}#${issue.path}` : WORKSPACE_FILE };
 }
@@ -154,10 +172,12 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (idIssues.length > 0) return fail(idIssues);
 
   const managed = new Set([WORKSPACE_FILE, LAYOUT_FILE, RELATIONS_FILE, ...cardIds.map(cardPath), ...boardIds.map(boardPath)]);
+  // La Papelera es opcional: se administra si existe, pero su ausencia no es un error.
+  const hasTrash = files[TRASH_FILE] !== undefined;
   const issues: StorageIssue[] = [];
   const extras = new Map<string, string>();
   for (const [path, text] of Object.entries(files)) {
-    if (managed.has(path)) continue;
+    if (managed.has(path) || path === TRASH_FILE) continue;
     if (isWorkspaceExtra(path)) extras.set(path, text);
     else issues.push(storageIssue('unexpected-file', path, 'Archivo no declarado en el manifiesto ni admitido como extra (README.md o assets/).'));
   }
@@ -206,12 +226,15 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (!layouts.ok) issues.push(...layouts.issues);
   const relations = parseRelations(files[RELATIONS_FILE] ?? '');
   if (!relations.ok) issues.push(...relations.issues);
-  if (issues.length > 0 || !layouts.ok || !relations.ok) return fail(issues);
+  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema) : null;
+  if (trash && !trash.ok) issues.push(...trash.issues);
+  if (issues.length > 0 || !layouts.ok || !relations.ok || (trash && !trash.ok)) return fail(issues);
 
   const { id, metadata, cardTypes, relationTypes } = manifest.value;
   // Datos con la forma comprobada; `validateWorkspace` decide si cumplen las invariantes.
   const workspace = compact({
     schemaVersion: 1, id, metadata, cardTypes, relationTypes, cards, boards, layouts: layouts.value, relations: relations.value,
+    trash: trash?.ok ? trash.value.items : undefined,
   }) as unknown as Workspace;
   const semantic = validateWorkspace(workspace);
   const located = [

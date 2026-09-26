@@ -7,6 +7,11 @@ export type { CreateEmptyWorkspaceInput, CreateFromTemplateInput, WorkspaceTrans
 export { nextSequentialId, workspaceIdFromName } from './ids';
 export {
   CANONICAL_GRID, DEFAULT_CARD_SIZE, PROTOTYPE_BOARD, PROTOTYPE_CARD_PRESETS, RELATED_RELATION_TYPE,
-  addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, resizeCardOnBoard,
+  addBoardToWorkspace, addCardToBoard, connectCards, moveCardToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, resizeCardOnBoard,
 } from './workspace-editing';
-export type { AddCardInput, BoardCardTarget, ConnectCardsInput, PrototypeCardKind } from './workspace-editing';
+export { assetsOf } from './workspace-assets';
+export { MAX_IMAGE_BYTES, importImageCard, inspectImage } from './images';
+export type { ImageKind, ImportImageInput } from './images';
+export type { WorkspaceAssets } from './workspace-assets';
+export type { PurgeResult, SetCardDisplayInput } from './workspace-editing';
+export type { AddBoardInput, AddCardInput, BoardCardTarget, ConnectCardsInput, PrototypeCardKind } from './workspace-editing';

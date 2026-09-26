@@ -27,8 +27,8 @@ interface BoardProps {
 }
 
 /**
- * Dibuja el layout del board: la grilla canónica de 12 columnas en modo amplio o su proyección de
- * una columna en compacto. Solo representa; los cambios pasan por los casos de uso.
+ * Vista de lista (ADR 0013): la proyección de una columna del layout canónico, en orden de lectura.
+ * Solo representa y selecciona; mover y redimensionar se hacen en el lienzo o con el inspector.
  */
 export function Board({ workspace, layout, mode, selectedId, onSelect }: BoardProps) {
   const { theme } = useTheme();
@@ -41,8 +41,8 @@ export function Board({ workspace, layout, mode, selectedId, onSelect }: BoardPr
 
   return (
     <View
-      testID="board"
-      accessibilityLabel={`Tablero en ${mode === 'wide' ? 'grilla de 12 columnas' : 'una columna'}`}
+      testID="board-list"
+      accessibilityLabel={`Lista del tablero en ${mode === 'wide' ? 'grilla de 12 columnas' : 'una columna'}`}
       onLayout={(event) => setWidth(Math.max(0, event.nativeEvent.layout.width - 2 * BOARD_BORDER))}
       style={[styles.board, { height: (geometry?.height ?? 3 * BOARD_ROW_HEIGHT) + 2 * BOARD_BORDER, backgroundColor: colors.surface, borderColor: colors.border }]}
     >
@@ -54,7 +54,7 @@ export function Board({ workspace, layout, mode, selectedId, onSelect }: BoardPr
       {empty ? (
         <View testID="board-empty" style={styles.emptyState}>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Este tablero está vacío. Añade una nota o una imagen para empezar.
+            Este tablero está vacío. Añade una nota o una imagen de ejemplo para empezar.
           </Text>
         </View>
       ) : null}

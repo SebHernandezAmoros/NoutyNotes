@@ -61,5 +61,5 @@ export function useWorkspaceEditor(id: string | undefined) {
     return task;
   }, [storage, workspaceId, reload, mode]);
 
-  return { view, feedback, saving, run };
+  return { view, feedback, saving, run, setFeedback };
 }

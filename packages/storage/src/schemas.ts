@@ -27,12 +27,21 @@ export const cardSchema = z.strictObject({
 });
 export const boardSchema = z.strictObject({ id: text, title: text, description: text.optional(), cardIds: z.array(text) });
 
+/** Tarjeta en la Papelera (ADR 0015): instantánea completa para restaurarla. */
+export const trashItemSchema = z.strictObject({
+  card: z.lazy(() => cardSchema),
+  boards: z.array(z.strictObject({ boardId: text, index: z.number() })),
+  placements: z.array(z.strictObject({ boardId: text, rect: rectSchema, display: text })),
+  relations: z.array(relationSchema),
+});
+
 /** Forma del Workspace del dominio que el serializador sabe escribir sin perder claves. */
 export const workspaceSchema = z.strictObject({
   schemaVersion: z.number(), id: text, metadata: metadataSchema,
   cardTypes: z.array(cardTypeSchema), relationTypes: z.array(relationTypeSchema),
   cards: z.array(cardSchema), boards: z.array(boardSchema),
   layouts: z.array(layoutSchema), relations: z.array(relationSchema),
+  trash: z.array(trashItemSchema).optional(),
 });
 
 // Documentos del formato v1.
@@ -50,6 +59,7 @@ export const cardFrontmatterSchema = z.strictObject({
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),
 });
+export const trashFileSchema = z.strictObject({ schemaVersion: z.literal(1), items: z.array(trashItemSchema) });
 export const templateFileSchema = z.strictObject({
   schemaVersion: z.literal(1), definition: z.record(text, z.unknown()), readmeFile: z.literal('README.md').optional(),
 });

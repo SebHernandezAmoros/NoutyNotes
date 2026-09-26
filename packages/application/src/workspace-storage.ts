@@ -10,7 +10,11 @@ export type WorkspaceStorageErrorCode =
   | 'invalid-stored-data'
   | 'permission-denied'
   | 'external-change'
-  | 'io-failure';
+  | 'io-failure'
+  /** Assets (ADR 0015): ya existe un archivo en esa ruta; nunca se sobrescribe. */
+  | 'asset-conflict'
+  /** Assets (ADR 0015): formato no admitido, vacío o demasiado grande. */
+  | 'invalid-asset';
 
 export interface WorkspaceStorageIssue {
   readonly code: WorkspaceStorageErrorCode;

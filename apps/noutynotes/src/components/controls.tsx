@@ -43,6 +43,55 @@ export function ActionButton({ label, accessibilityLabel, onPress, tone = 'defau
   );
 }
 
+interface ToolButtonProps {
+  /** Símbolo visible sobre la etiqueta. */
+  readonly glyph: string;
+  readonly label: string;
+  readonly accessibilityLabel?: string;
+  readonly accessibilityHint?: string;
+  readonly onPress: () => void;
+  /** Herramienta activa o interruptor encendido: se anuncia como pulsado y se rellena con el acento. */
+  readonly active?: boolean;
+  readonly disabled?: boolean;
+  readonly testID?: string;
+  readonly style?: StyleProp<ViewStyle>;
+}
+
+/** Botón de la barra de herramientas: símbolo y etiqueta corta, 44 × 44 como mínimo, foco visible. */
+export function ToolButton({ glyph, label, accessibilityLabel, accessibilityHint, onPress, active, disabled = false, testID, style }: ToolButtonProps) {
+  const { theme } = useTheme();
+  const colors = theme.colors;
+  const [focused, setFocused] = useState(false);
+  const on = active === true;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      {...(accessibilityHint === undefined ? {} : { accessibilityHint })}
+      accessibilityState={{ selected: on, disabled }}
+      {...(Platform.OS === 'web' && active !== undefined ? { 'aria-pressed': on } : {})}
+      {...(testID === undefined ? {} : { testID })}
+      disabled={disabled}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={[
+        styles.tool,
+        {
+          backgroundColor: on ? colors.accent : colors.surface,
+          // Un botón que se desactiva con el foco puede no recibir blur en web: sin foco visible si está desactivado.
+          borderColor: focused && !disabled ? colors.selection : on ? colors.border : colors.surface,
+          opacity: disabled ? 0.5 : 1,
+        },
+        style,
+      ]}
+    >
+      <Text style={[styles.toolGlyph, { color: on ? colors.accentText : colors.textPrimary }]}>{glyph}</Text>
+      <Text numberOfLines={2} style={[styles.toolLabel, { color: on ? colors.accentText : colors.textSecondary }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 interface TextFieldProps {
   readonly label: string;
   readonly value: string;
@@ -88,6 +137,9 @@ export function TextField({ label, value, onChangeText, placeholder, multiline =
 const styles = StyleSheet.create({
   button: { minHeight: 44, minWidth: 44, paddingHorizontal: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   buttonLabel: { fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  tool: { minHeight: 48, minWidth: 48, paddingHorizontal: 6, paddingVertical: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  toolGlyph: { fontSize: 17, lineHeight: 20, fontWeight: '800', textAlign: 'center' },
+  toolLabel: { fontSize: 11, lineHeight: 13, fontWeight: '700', textAlign: 'center' },
   field: { gap: 6 },
   fieldLabel: { fontSize: 13, fontWeight: '600' },
   input: { minHeight: 44, borderWidth: 2, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },

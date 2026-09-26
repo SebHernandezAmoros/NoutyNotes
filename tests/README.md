@@ -26,3 +26,26 @@ Fase 10:
 - la validación en emulador es manual y está registrada en `Docs/progress.md`.
 
 Auditoría de fase 9: `pnpm test:firefox` (`playwright.firefox.config.ts`) ejecuta `smoke/` contra el export en Firefox. `repro/firefox-beforeunload-reload.mjs` es una reproducción mínima manual, fuera de las suites, del comportamiento de Firefox bajo Playwright tras cancelar un `beforeunload`.
+
+Experiencia del workspace (ADR 0013):
+- `smoke/workspace.spec.ts` recorre:
+  - el estado vacío, crear, editar y conectar (herramienta e inspector);
+  - arrastrar con ratón (vista previa, imán, colisión, límites, Escape) y asas;
+  - táctil real con eventos touch de Chromium (solo perfil móvil);
+  - Mano, zoom, grilla y lista, tableros y espacios;
+  - la distribución a 390, 768, 799, 800, 1024 y 1366 px en ambos sentidos, y la accesibilidad.
+- `smoke/folder.spec.ts` comprueba que arrastrar en carpeta reescribe `layout.yaml` y que un destino inválido no cambia ningún byte.
+- `smoke/zip.spec.ts` comprueba el fixture v1 con dos tableros y una tarjeta sin posición.
+- `integration/workspace-boards.test.ts` cubre los casos de uso de tableros.
+
+Configuración, representación, imágenes y Papelera (ADR 0014, ADR 0015):
+- `smoke/cards.spec.ts`:
+  - Configuración: modal o hoja, cambios al instante, restablecer, Escape y preferencias del dispositivo tras recargar;
+  - minimizar, contraer y expandir con colisión y reubicación elegida;
+  - imagen real: vista previa, archivo inválido, cancelación y ejemplo aparte;
+  - Papelera;
+  - regresión del foco: una tarjeta fuera de la vista se muestra con el pan, nunca con scroll nativo.
+- `smoke/folder.spec.ts` y `zip.spec.ts`: la imagen, la ficha minimizada y la Papelera sobreviven a recargar y a reimportar el ZIP; eliminar definitivamente borra el binario.
+- `integration/cards-trash-display.test.ts` y `image-assets.test.ts`: reserva de IDs, fallo inyectado sin borrado parcial, persistencia en carpeta, colisión al expandir, validación y compensación de assets.
+- `contracts/platform-files.test.ts`: un `.android.ts` no importa valores de su propio nombre base.
+- En las pruebas de humo, `tapCard` activa con el teclado (foco y Espacio) las tarjetas que el pan o la barra de acciones pueden dejar fuera de la vista o tapadas.

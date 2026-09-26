@@ -1,7 +1,7 @@
 import { invalidWorkspaceIdFailure, storageFailure } from '@noutynotes/application';
-import type { WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from '@noutynotes/application';
-import { isValidId } from '@noutynotes/domain';
-import type { Workspace, WorkspaceId } from '@noutynotes/domain';
+import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from '@noutynotes/application';
+import { isValidAssetRef, isValidId } from '@noutynotes/domain';
+import type { AssetRef, Workspace, WorkspaceId } from '@noutynotes/domain';
 
 import { parseWorkspace, serializeWorkspace } from './workspace-codec';
 import type { TextFiles } from './text-files';
@@ -26,7 +26,7 @@ const DELETED = '.nouty-deleted';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const managedPath = (path: string): boolean => path === MANIFEST || path === '.nouty/layout.yaml'
-  || path === '.nouty/relations.yaml' || /^cards\/[a-z0-9_-]+\.md$/.test(path)
+  || path === '.nouty/relations.yaml' || path === '.nouty/trash.yaml' || /^cards\/[a-z0-9_-]+\.md$/.test(path)
   || /^boards\/[a-z0-9_-]+\.md$/.test(path);
 
 interface Transaction {
@@ -49,7 +49,7 @@ function summary(workspace: Workspace): WorkspaceSummary { return { id: workspac
  * gestionados; los bytes bajo assets/ nunca se leen ni modifican. La transacción guarda una copia
  * recuperable de los documentos que cambiarán antes de tocarlos.
  */
-export class FolderStorage implements WorkspaceStorage {
+export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
   readonly #baseline = new Map<string, string>();
   constructor(readonly port: FolderPort) {}
 
@@ -150,6 +150,50 @@ export class FolderStorage implements WorkspaceStorage {
       this.#baseline.set(id, found.fingerprint);
       return success(found.workspace);
     } catch { return error('invalid-stored-data', 'id', 'No se pudo leer o recuperar el workspace.'); }
+  }
+
+  /** Carpeta de un workspace para operar con sus assets (ADR 0015). */
+  async #assetFolder(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<WorkspaceDirectory>> {
+    if (!isValidId(id)) return invalidWorkspaceIdFailure(id, 'id');
+    if (!isValidAssetRef(ref) || !ref.startsWith('assets/')) return storageFailure('invalid-asset', 'ref', 'La ruta del asset debe estar bajo assets/.');
+    const denied = await this.#allowed<WorkspaceDirectory>();
+    if (denied) return denied;
+    try {
+      const found = (await this.#packages()).find((item) => item.workspace.id === id);
+      if (!found) return storageFailure('workspace-not-found', 'id', `No existe el workspace "${id}".`);
+      return { ok: true, value: found.folder };
+    } catch { return error('invalid-stored-data', 'id', 'No se pudo leer el workspace.'); }
+  }
+
+  /** Crea un asset nuevo; nunca sobrescribe uno existente (ADR 0015). */
+  async writeAsset(id: WorkspaceId, ref: AssetRef, bytes: Uint8Array): Promise<WorkspaceStorageResult<null>> {
+    const folder = await this.#assetFolder(id, ref);
+    if (!folder.ok) return { ok: false, issues: folder.issues };
+    const directory = folder.value;
+    try {
+      if (await directory.read(ref) !== undefined) return storageFailure('asset-conflict', 'ref', `Ya existe ${ref}.`);
+      await directory.write(ref, bytes.slice());
+      return { ok: true, value: null };
+    } catch { return error('io-failure', 'ref', 'No se pudo copiar la imagen a la carpeta.'); }
+  }
+
+  async readAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<Uint8Array>> {
+    const folder = await this.#assetFolder(id, ref);
+    if (!folder.ok) return { ok: false, issues: folder.issues };
+    try {
+      const bytes = await folder.value.read(ref);
+      return bytes ? { ok: true, value: bytes } : error('io-failure', 'ref', `No existe ${ref}.`);
+    } catch { return error('io-failure', 'ref', 'No se pudo leer la imagen.'); }
+  }
+
+  /** Borra un asset; solo se usa con los liberados al eliminar definitivamente una tarjeta. */
+  async removeAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<null>> {
+    const folder = await this.#assetFolder(id, ref);
+    if (!folder.ok) return { ok: false, issues: folder.issues };
+    try {
+      await folder.value.remove(ref);
+      return { ok: true, value: null };
+    } catch { return error('io-failure', 'ref', 'No se pudo borrar la imagen.'); }
   }
 
   /** Reconocer explícitamente cambios externos tras mostrar el conflicto al usuario. */

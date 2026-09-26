@@ -1,7 +1,7 @@
 import { invalidWorkspaceIdFailure, storageFailure, workspaceIdFromName } from '@noutynotes/application';
-import type { WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from '@noutynotes/application';
-import { isValidId } from '@noutynotes/domain';
-import type { Workspace, WorkspaceId } from '@noutynotes/domain';
+import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from '@noutynotes/application';
+import { isValidAssetRef, isValidId } from '@noutynotes/domain';
+import type { AssetRef, Workspace, WorkspaceId } from '@noutynotes/domain';
 
 import { MemoryStorage } from './memory-storage';
 import { readWorkspaceArchive, writeWorkspaceArchive } from './workspace-archive';
@@ -37,7 +37,7 @@ function copyAssets(assets: BinaryAssets): BinaryAssets {
  * saber si el usuario guardó el archivo. Solo `confirmExported` con la revisión exportada (tras la
  * confirmación del usuario) marca como conservado ese estado, y nunca una edición posterior.
  */
-export class ArchiveStorage implements WorkspaceStorage {
+export class ArchiveStorage implements WorkspaceStorage, WorkspaceAssets {
   readonly #memory = new MemoryStorage();
   readonly #assets = new Map<string, BinaryAssets>();
   /** Revisión actual de cada workspace y última revisión cuyo ZIP el usuario confirmó guardar. */
@@ -71,6 +71,42 @@ export class ArchiveStorage implements WorkspaceStorage {
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => { this.#listeners.delete(listener); };
+  }
+
+  async #assetTarget(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<BinaryAssets>> {
+    if (!isValidId(id)) return invalidWorkspaceIdFailure(id, 'id');
+    if (!isValidAssetRef(ref) || !ref.startsWith('assets/')) return storageFailure('invalid-asset', 'ref', 'La ruta del asset debe estar bajo assets/.');
+    const opened = await this.#memory.open(id);
+    if (!opened.ok) return { ok: false, issues: opened.issues };
+    return { ok: true, value: this.#assets.get(id) ?? {} };
+  }
+
+  /** Crea un asset (ADR 0015); nunca sobrescribe. Es un cambio sin exportar. */
+  async writeAsset(id: WorkspaceId, ref: AssetRef, bytes: Uint8Array): Promise<WorkspaceStorageResult<null>> {
+    const target = await this.#assetTarget(id, ref);
+    if (!target.ok) return { ok: false, issues: target.issues };
+    if (target.value[ref] !== undefined) return storageFailure('asset-conflict', 'ref', `Ya existe ${ref}.`);
+    this.#assets.set(id, { ...target.value, [ref]: bytes.slice() });
+    this.#markUnexported(id);
+    return { ok: true, value: null };
+  }
+
+  async readAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<Uint8Array>> {
+    const target = await this.#assetTarget(id, ref);
+    if (!target.ok) return { ok: false, issues: target.issues };
+    const bytes = target.value[ref];
+    return bytes ? { ok: true, value: bytes.slice() } : storageFailure('io-failure', 'ref', `No existe ${ref}.`);
+  }
+
+  async removeAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<null>> {
+    const target = await this.#assetTarget(id, ref);
+    if (!target.ok) return { ok: false, issues: target.issues };
+    if (target.value[ref] === undefined) return { ok: true, value: null };
+    const rest = { ...target.value };
+    delete rest[ref];
+    this.#assets.set(id, rest);
+    this.#markUnexported(id);
+    return { ok: true, value: null };
   }
 
   hasUnexportedChanges(id: WorkspaceId): boolean {

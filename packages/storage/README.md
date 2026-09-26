@@ -1,6 +1,6 @@
 # Persistencia
 
-Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. Sobre ellos, `MemoryStorage` implementa el puerto `WorkspaceStorage` de `@noutynotes/application` (fase 6). `FolderStorage` (carpetas web, fase 8) y `ArchiveStorage` (espacios del navegador con ZIP, fase 9, aceptación manual pendiente) implementan el mismo puerto; el adaptador Android llegará en la fase 10.
+Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. Sobre ellos, `MemoryStorage` implementa el puerto `WorkspaceStorage` de `@noutynotes/application` (fase 6). `FolderStorage` (carpetas web, fase 8) y `ArchiveStorage` (espacios del navegador con ZIP, fase 9, aceptación manual pendiente) implementan el mismo puerto; en Android, `FolderStorage` funciona sobre el árbol de documentos del SAF (fase 10).
 
 Depende del API público de `@noutynotes/domain` y `@noutynotes/application`, de `yaml` (YAML real), de `zod` (sobres y frontmatter con claves cerradas) y de `fflate` (inflado y deflado ZIP). Las invariantes semánticas las sigue validando el dominio.
 
@@ -62,3 +62,12 @@ Reglas en el ADR 0011 del proyecto.
 - Pruebas: `pnpm exec vitest run packages/storage/src/document-tree.test.ts tests/contracts/document-tree-storage.contract.test.ts tests/integration/web-android-equivalence.test.ts`.
 
 Reglas en el ADR 0012 del proyecto.
+
+## Papelera y assets importados (ADR 0015)
+
+- `.nouty/trash.yaml` es un documento opcional del formato v1: solo existe si la Papelera no está vacía. Tiene claves cerradas y guarda cada tarjeta con sus tableros, posiciones y relaciones.
+- `ArchiveStorage` y `FolderStorage` implementan el puerto opcional `WorkspaceAssets` de application:
+  - `writeAsset` crea y nunca sobrescribe (`asset-conflict`);
+  - `readAsset` lee;
+  - `removeAsset` borra.
+- `FolderStorage` solo crea bajo `assets/images/` y solo borra los assets que libera «Eliminar definitivamente». No reescribe ningún asset existente.

@@ -4,6 +4,8 @@ import { collectCardIssues } from '../cards/card';
 import type { Card } from '../cards/card';
 import { collectCardTypeIssues } from '../cards/card-type';
 import type { CardTypeDefinition } from '../cards/card-type';
+import { collectTrashIssues } from '../cards/trashed-card';
+import type { TrashedCard } from '../cards/trashed-card';
 import { checkOptionalText, checkRequiredText, isRecord, issue, listAt, resultOf } from '../errors';
 import type { DomainIssue, ValidationResult } from '../errors';
 import { checkId, checkUniqueIds, isValidId } from '../ids';
@@ -33,6 +35,8 @@ export interface Workspace {
   readonly boards: readonly Board[];
   readonly layouts: readonly BoardLayout[];
   readonly relations: readonly Relation[];
+  /** Tarjetas enviadas a la Papelera, en orden de envío (ADR 0015). Opcional: sin Papelera, ausente. */
+  readonly trash?: readonly TrashedCard[];
 }
 
 /** Índice de elementos que existen por ID; ignora IDs inválidos o repetidos, ya informados. */
@@ -161,5 +165,6 @@ export function validateWorkspace(workspace: Workspace): ValidationResult<Worksp
   });
 
   collectDuplicateRelationIssues(relations, 'relations', issues);
+  collectTrashIssues(input.trash, usableCardTypes, new Set(cardIndex.keys()), issues);
   return resultOf(workspace, issues);
 }

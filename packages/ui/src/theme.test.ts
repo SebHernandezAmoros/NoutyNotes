@@ -56,3 +56,31 @@ describe.each(['light', 'dark'] as const)('legibilidad del tema %s', (mode) => {
     }
   });
 });
+
+const ratio = (a: string, b: string) => {
+  const values = [luminance(a), luminance(b)];
+  return (Math.max(...values) + 0.05) / (Math.min(...values) + 0.05);
+};
+
+describe.each(['light', 'dark'] as const)('tokens del lienzo del tema %s (ADR 0013)', (mode) => {
+  it('texto de tarjetas, cabeceras por tipo y marca con contraste de al menos 4.5:1', () => {
+    const colors = themeColors[mode];
+    for (const [foreground, background] of [
+      [colors.cardText, colors.cardSurface],
+      [colors.headerText, colors.headerNote],
+      [colors.headerText, colors.headerImage],
+      [colors.brandText, colors.brand],
+      [colors.textPrimary, colors.canvas],
+      [colors.danger, colors.canvas],
+    ] as const) {
+      expect(ratio(foreground, background)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('selección, error, líneas de relación y marca se distinguen del lienzo al menos 3:1', () => {
+    const colors = themeColors[mode];
+    for (const color of [colors.selection, colors.danger, colors.relationLine, colors.brand]) {
+      expect(ratio(color, colors.canvas)).toBeGreaterThanOrEqual(3);
+    }
+  });
+});

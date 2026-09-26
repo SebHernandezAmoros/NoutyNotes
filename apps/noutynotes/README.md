@@ -18,3 +18,17 @@ Fase 10 (ADR 0012):
 - `src/session/androidFolder.android.ts` usa `expo-file-system` 57: selector SAF, permiso persistente y la última carpeta guardada en un archivo privado para «Reabrir»; `androidFolder.ts` es el sustituto vacío para web;
 - `src/session/safTree.ts` adapta el SAF al contrato `DocumentTree` de storage (nombres visibles, verificación de lo creado y listados reutilizados), y `FolderStorage` hace el resto;
 - `app.json` bloquea `READ/WRITE_EXTERNAL_STORAGE`, que el SAF no necesita.
+
+Experiencia del workspace (ADR 0013):
+- `src/workspace/WorkspaceScreen.tsx` compone la cabecera, la barra lateral (desde 1100 px), las pestañas de tableros, `Toolbar`, el lienzo o la vista de lista y el inspector (panel desde 800 px; hoja ocultable en móvil);
+- `src/workspace/canvas/` contiene el lienzo (`Canvas`, `CanvasCard`) y su lógica pura: `geometry` (celdas ↔ píxeles, arrastre, asas, validación con el dominio), `viewport` (zoom y desplazamiento), `connect` (herramienta Conectar) y `boardCards` (tarjetas sin posición);
+- los gestos usan `PanResponder` de React Native (ratón y táctil en web, táctil en Android), sin dependencias nuevas;
+- `src/components/BrandMark.tsx` dibuja el símbolo de `assets/branding/mark-transparent.png` teñido por tema.
+
+Configuración, representación, imágenes y Papelera (ADR 0014, ADR 0015):
+- `src/components/Dialog.tsx`: modal centrado desde 800 px u hoja inferior en móvil; cierra con Escape (web) o atrás (Android);
+- `src/workspace/SettingsPanel.tsx` («Lienzo y grilla») y `canvas/preferences.ts` (límites y `metricsFor`, puros). Las preferencias se guardan en `src/session/viewPreferencesStore(.android).ts`, fuera del workspace;
+- `src/workspace/TrashPanel.tsx`: restaurar y eliminar definitivamente con confirmación;
+- `src/session/imageFiles(.android).ts` elige el archivo (`<input type=file>` o `File.pickFileAsync`), con las constantes en el módulo neutro `imageTypes.ts`. Un `x.android.ts` no puede importar valores de `./x`, porque Metro lo resuelve a sí mismo;
+- `src/workspace/useImagePreviews.ts` y `dataUri.ts`: vista previa sin red;
+- en web, el lienzo deshace el scroll nativo, y una tarjeta enfocada con el teclado se muestra con `panToReveal` (`canvas/viewport.ts`).
