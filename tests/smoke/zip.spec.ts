@@ -68,8 +68,11 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await page.getByLabel('Contenido Markdown').fill('## Desde el navegador\n\n- conservar **todo**');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota del ZIP');
+  // Desde P2 la nota nace en el primer hueco visible: se mueve una fila desde donde nació.
+  const rowOf = (text: string) => Number(/fila (\d+)/.exec(text)?.[1]);
+  const bornRow = rowOf(await page.getByTestId('card-geometry').innerText());
   await button(page, 'Mover abajo').click();
-  await expect(page.getByTestId('card-geometry')).toContainText('fila 2');
+  await expect(page.getByTestId('card-geometry')).toContainText(`fila ${bornRow + 1}`);
   await button(page, 'Conectar con Idea A').click();
   await expect(page.getByTestId('card-connections')).toContainText('→ Idea A');
 
@@ -105,7 +108,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   const card = archive.value.workspace.cards.find((candidate) => candidate.id === 'tarjeta-1');
   expect(card).toMatchObject({ title: 'Nota del ZIP', content: '## Desde el navegador\n\n- conservar **todo**' });
   expect(archive.value.workspace.relations.map(({ from, to }) => `${from}→${to}`)).toEqual(['idea-a→idea-b', 'tarjeta-1→idea-a']);
-  expect(archive.value.workspace.layouts[0]?.placements.find((placement) => placement.cardId === 'tarjeta-1')?.rect.y).toBe(1);
+  expect(archive.value.workspace.layouts[0]?.placements.find((placement) => placement.cardId === 'tarjeta-1')?.rect.y).toBe(bornRow);
 
   // Otra sesión: recargar pierde la memoria; reimportar el ZIP exportado lo recupera todo.
   await page.reload();
@@ -290,13 +293,14 @@ test('fixture v1 con dos tableros: navegar y avisar de tarjetas sin posición en
   await page.goto('./');
   await importZip(page, 'demo.zip', fixtureZip());
   await expect(page.getByRole('heading', { name: 'Demo', exact: true })).toBeVisible();
-  await expect(page.getByText('RESUMEN · 2 TARJETAS')).toBeVisible();
+  // Número de tarjetas de cada tablero en su pestaña (en móvil la cabecera no repite el tablero).
+  await expect(button(page, 'Tablero Resumen')).toContainText('2');
   await expect(button(page, 'Tablero Resumen')).toHaveAttribute('aria-pressed', 'true');
 
   // «Investigación» declara idea-a pero su layout no la coloca: v1 válido, no un tablero vacío.
   await button(page, 'Tablero Investigación').click();
   await expect(button(page, 'Tablero Investigación')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByText('INVESTIGACIÓN · 1 TARJETA')).toBeVisible();
+  await expect(button(page, 'Tablero Investigación')).toContainText('1');
   await expect(page.getByTestId('board-unplaced')).toContainText('1 tarjeta de este tablero no tiene posición en la grilla: «Idea A».');
   await expect(page.getByTestId('board-empty')).toHaveCount(0);
   await expect(page.getByTestId('card-idea-a')).toHaveCount(0);

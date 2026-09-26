@@ -23,9 +23,10 @@ import { unplacedCardIds } from './canvas/boardCards';
 import { connectTap } from './canvas/connect';
 import { DEFAULT_PREFERENCES, metricsFor, parsePreferences } from './canvas/preferences';
 import type { ViewPreferences } from './canvas/preferences';
-import { zoomIn, zoomOut } from './canvas/viewport';
+import { visibleCells, zoomIn, zoomOut } from './canvas/viewport';
 import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
+import { ProjectRail, ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
 import { TrashPanel } from './TrashPanel';
 import { useImagePreviews } from './useImagePreviews';
@@ -46,6 +47,7 @@ const displayMessages: Readonly<Record<CardDisplayMode, string>> = {
 const additions: Readonly<Record<PrototypeCardKind, string>> = {
   note: 'Nota añadida. Guardado en memoria.',
   image: 'Imagen de ejemplo añadida. Guardado en memoria.',
+  title: 'Título flotante añadido. Guardado en memoria.',
 };
 
 export function WorkspaceScreen() {
@@ -81,6 +83,7 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
   const { showGrid, snap } = preferences;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
   // Expandir falló por colisión: se ofrece, sin hacerlo por su cuenta, expandir en un hueco libre.
   const [relocateOffer, setRelocateOffer] = useState<CardId | null>(null);
   const [archiveMessage, setArchiveMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(
@@ -135,8 +138,11 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
     setPan(START_PAN);
   };
 
+  // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
+  const canvasSize = useRef<{ width: number; height: number } | null>(null);
   const add = (kind: PrototypeCardKind) => {
-    void run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...(board ? { boardId: board.id } : {}) }), additions[kind])
+    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    void run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
       .then((result) => { if (result.ok) void select(result.value); });
   };
 
@@ -286,7 +292,9 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
     : tool === 'connect'
       ? connectSource ? `Origen: «${workspace?.cards.find((card) => card.id === connectSource)?.title ?? 'Sin título'}». Toca otra tarjeta para conectar o desconectar; toca el origen para cancelar.`
         : 'Conectar: toca la tarjeta de origen.'
-      : 'Toca una tarjeta para editarla; arrástrala para moverla y usa sus asas para cambiar el tamaño.';
+      : (layout?.placements.length ?? 0) === 0
+        ? 'Tablero vacío: crea la primera nota desde el lienzo o con «Nota» en la barra.'
+        : 'Toca una tarjeta para editarla; arrástrala para moverla y usa sus asas para cambiar el tamaño.';
 
   const inspector = workspace && board && selected ? (
     <CardInspector
@@ -301,11 +309,23 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
       onClose={() => { setSelectedId(null); }}
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
+      inSheet={compact}
     />
   ) : null;
+  // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
+  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) setSelectedId(null); }); };
 
+  // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
+  // y el lienzo recupera la fila de la barra; en móvil siguen en su barra compacta.
+  const exportStatus = (
+    <Text testID="export-status" accessibilityLiveRegion="polite" numberOfLines={3}
+      style={[styles.exportStatus, compact ? styles.exportStatusCompact : styles.exportStatusHeader, { color: unexported ? colors.textPrimary : colors.textSecondary }]}>
+      {unexported ? 'CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.' : 'SIN CAMBIOS PENDIENTES DE EXPORTAR'}
+    </Text>
+  );
+  const exportButton = <ActionButton label="Exportar ZIP" accessibilityLabel="Exportar este espacio como ZIP" tone={unexported ? 'primary' : 'default'} onPress={exportZip} />;
   const header = (
-    <View style={[styles.header, compact ? styles.headerCompact : null, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+    <View style={[styles.header, { borderColor: colors.gridLine, backgroundColor: colors.surface }]}>
       <ActionButton label="←" accessibilityLabel="Volver a mis espacios" onPress={() => void goHome()} />
       {sidebar ? null : <BrandMark size={32} />}
       <View style={styles.headerTitle}>
@@ -314,26 +334,44 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
             {workspace.metadata.name}
           </Text>
         ) : null}
-        {workspace ? (
+        {workspace && !compact ? (
           <Text numberOfLines={1} style={[styles.eyebrow, { color: colors.textSecondary }]}>
             {(board?.title ?? 'Sin tableros').toUpperCase()} · {boardCount === 1 ? '1 TARJETA' : `${boardCount} TARJETAS`}
           </Text>
         ) : null}
+        {!sidebar ? (
+          <Text testID="workspace-memory" numberOfLines={2} style={[styles.memoryText, { color: storageMode === 'folder' ? colors.selection : colors.danger }]}>{status}</Text>
+        ) : null}
       </View>
-      <View testID="workspace-memory" style={[styles.memoryChip, compact ? styles.memoryChipCompact : null, { backgroundColor: colors.surfaceRaised }]}>
-        <Text style={[styles.memoryText, { color: colors.textPrimary }]}>{status}</Text>
-      </View>
+      {compact ? (
+        workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null
+      ) : (
+        <>
+          {showArchive && workspace ? (
+            <View testID="export-bar" style={styles.headerExport}>
+              {exportStatus}
+              {exportButton}
+            </View>
+          ) : null}
+          {sidebar ? (
+            <View testID="workspace-memory" style={[styles.memoryChip, { backgroundColor: colors.surfaceRaised }]}>
+              <Text style={[styles.memoryText, { color: colors.textPrimary }]}>{status}</Text>
+            </View>
+          ) : null}
+        </>
+      )}
     </View>
   );
 
-  const exportBar = showArchive && workspace ? (
-    <View testID="export-bar" style={[styles.exportBar, compact ? styles.exportBarCompact : null, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={styles.exportRow}>
-        <Text testID="export-status" accessibilityLiveRegion="polite" style={[styles.exportStatus, compact ? styles.exportStatusCompact : null, { color: colors.textPrimary }]}>
-          {unexported ? 'CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.' : 'SIN CAMBIOS PENDIENTES DE EXPORTAR'}
-        </Text>
-        <ActionButton label="Exportar ZIP" accessibilityLabel="Exportar este espacio como ZIP" tone={unexported ? 'primary' : 'default'} onPress={exportZip} />
-      </View>
+  const exportExtras = Boolean(archiveMessage) || Boolean(awaiting && unexported);
+  const exportBar = showArchive && workspace && (compact || exportExtras) ? (
+    <View testID={compact ? 'export-bar' : 'export-notice'} style={[styles.exportBar, compact ? styles.exportBarCompact : null, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
+      {compact ? (
+        <View style={styles.exportRow}>
+          {exportStatus}
+          {exportButton}
+        </View>
+      ) : null}
       {archiveMessage ? (
         <Text
           testID="archive-message"
@@ -352,12 +390,29 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
     </View>
   ) : null;
 
+  const feedbackLine = workspace ? (
+    <Text
+      testID="workspace-feedback"
+      accessibilityLiveRegion="polite"
+      {...(feedback?.tone === 'error' && connectSource === null ? { accessibilityRole: 'alert' as const } : {})}
+      numberOfLines={compact ? 2 : 3}
+      style={[styles.feedback, compact ? styles.feedbackCompact : null, sidebar ? styles.feedbackInline : null, {
+        color: feedback?.tone === 'error' && connectSource === null ? colors.danger : colors.textPrimary,
+        backgroundColor: colors.surface,
+        borderColor: feedback?.tone === 'error' && connectSource === null ? colors.danger : colors.gridLine,
+      }]}
+    >
+      {connectSource !== null ? hint : feedback ? feedback.text : hint}
+    </Text>
+  ) : null;
+
   const toolbar = workspace ? (
     <Toolbar
       compact={compact}
       tool={tool}
       onTool={changeTool}
       onAddNote={() => add('note')}
+      onAddTitle={() => add('title')}
       onImportImage={() => void importImage()}
       onAddExample={() => add('image')}
       zoom={zoom}
@@ -369,23 +424,9 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
       trashCount={workspace.trash?.length ?? 0}
       onOpenTrash={() => setTrashOpen(true)}
       onOpenSettings={() => setSettingsOpen(true)}
+      navInSidebar={sidebar}
+      trailing={sidebar ? feedbackLine : undefined}
     />
-  ) : null;
-
-  const feedbackLine = workspace ? (
-    <Text
-      testID="workspace-feedback"
-      accessibilityLiveRegion="polite"
-      {...(feedback?.tone === 'error' && connectSource === null ? { accessibilityRole: 'alert' as const } : {})}
-      numberOfLines={compact ? 2 : 3}
-      style={[styles.feedback, compact ? styles.feedbackCompact : null, {
-        color: feedback?.tone === 'error' && connectSource === null ? colors.danger : colors.textPrimary,
-        backgroundColor: colors.surface,
-        borderColor: feedback?.tone === 'error' && connectSource === null ? colors.danger : colors.gridLine,
-      }]}
-    >
-      {connectSource !== null ? hint : feedback ? feedback.text : hint}
-    </Text>
   ) : null;
 
   const relocateBar = workspace && relocateOffer ? (
@@ -421,6 +462,8 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
         imageUris={imageUris}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onTrash={(cardId) => void sendToTrash(cardId)}
+        compact={compact}
+        onViewport={(size) => { canvasSize.current = size; }}
       />
     ) : (
       <ScrollView testID="board-list-scroll" contentContainerStyle={styles.listPage}>
@@ -430,28 +473,26 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
   ) : null;
 
   const tabs = workspace && !sidebar ? (
-    <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical={false} />
+    <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical={false} scroll={compact} />
   ) : null;
+  const trashCount = workspace?.trash?.length ?? 0;
 
   return (
     <SafeAreaView testID="workspace-screen" style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={[styles.frame, sidebar ? styles.frameRow : null]}>
+      <View style={[styles.frame, compact ? null : styles.frameRow]}>
         {sidebar ? (
-          <ScrollView testID="workspace-sidebar" style={[styles.sidebar, { backgroundColor: colors.surface, borderColor: colors.border }]} contentContainerStyle={styles.sidebarContent}>
+          <ScrollView testID="workspace-sidebar" style={[styles.sidebar, { backgroundColor: colors.surface, borderColor: colors.gridLine }]} contentContainerStyle={styles.sidebarContent}>
             <View style={styles.brandRow}>
               <BrandMark size={44} />
               <Text style={[styles.brandName, { color: colors.brand }]}>NoutyNotes</Text>
-            </View>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ESPACIOS</Text>
-            <View style={styles.spaceList}>
-              {summaries.map((summary) => (
-                <SpaceLink key={summary.id} name={summary.name} active={summary.id === id} onPress={() => void openSpace(summary.id)} />
-              ))}
             </View>
             {workspace ? (
               <>
                 <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TABLEROS</Text>
                 <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical />
+                <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
+                <NavItem glyph="🗑" label="Papelera" count={trashCount} accessibilityLabel={`Abrir la Papelera (${trashCount})`} onPress={() => setTrashOpen(true)} />
+                <NavItem glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={() => setSettingsOpen(true)} />
               </>
             ) : null}
           </ScrollView>
@@ -470,12 +511,12 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
               {tabs}
               {exportBar}
               {compact ? null : toolbar}
-              {feedbackLine}
+              {sidebar ? null : feedbackLine}
               {relocateBar}
               <View style={[styles.stage, compact ? null : styles.stageRow]}>
                 <View style={styles.boardSlot}>{boardArea}</View>
                 {!compact && inspector ? (
-                  <ScrollView testID="inspector-panel" style={[styles.sidePanel, { borderColor: colors.border }]} contentContainerStyle={styles.sidePanelContent}>
+                  <ScrollView testID="inspector-panel" style={[styles.sidePanel, { borderColor: colors.gridLine }]} contentContainerStyle={styles.sidePanelContent}>
                     {inspector}
                   </ScrollView>
                 ) : null}
@@ -484,12 +525,14 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
               {compact && inspector ? (
                 <View testID="inspector-sheet" style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
                   <View style={styles.sheetBar}>
-                    <Text numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{selected?.title ?? 'Sin título'}</Text>
+                    {/* Una sola barra: título, mostrar/ocultar y cerrar (sin repetir la cabecera del inspector). */}
+                    <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{selected?.title ?? 'Sin título'}</Text>
                     <ActionButton
-                      label={sheetHidden ? 'Mostrar editor' : 'Ocultar editor'}
+                      label={sheetHidden ? 'Mostrar' : 'Ocultar'}
                       accessibilityLabel={sheetHidden ? 'Mostrar el editor de la tarjeta' : 'Ocultar el editor de la tarjeta'}
                       onPress={() => setSheetHidden((current) => !current)}
                     />
+                    <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={closeInspector} />
                   </View>
                   {/* Oculto, sigue montado: el texto sin guardar no se pierde. */}
                   <ScrollView style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>
@@ -499,9 +542,11 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
             </View>
           ) : null}
         </View>
+        {!compact && workspace ? <ProjectRail projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} /> : null}
       </View>
       {workspace ? (
         <>
+          <ProjectSheet projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} visible={projectsOpen} onClose={() => setProjectsOpen(false)} />
           <SettingsPanel
             visible={settingsOpen}
             compact={compact}
@@ -529,21 +574,29 @@ function WorkspaceView({ id, notice }: { readonly id: string | undefined; readon
   );
 }
 
-function SpaceLink({ name, active, onPress }: { readonly name: string; readonly active: boolean; readonly onPress: () => void }) {
+/** Entrada de la barra lateral: solo secciones que funcionan (ADR 0016). */
+function NavItem({ glyph, label, count, accessibilityLabel, onPress }: {
+  readonly glyph: string;
+  readonly label: string;
+  readonly count?: number;
+  readonly accessibilityLabel: string;
+  readonly onPress: () => void;
+}) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={active ? `${name}, espacio actual` : `Ir al espacio ${name}`}
-      accessibilityState={{ selected: active }}
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={[styles.spaceLink, { backgroundColor: active ? colors.accent : 'transparent', borderColor: focused ? colors.selection : active ? colors.border : 'transparent' }]}
+      style={({ pressed }) => [styles.navItem, { borderColor: focused ? colors.selection : 'transparent', backgroundColor: pressed ? colors.surfaceRaised : 'transparent' }]}
     >
-      <Text numberOfLines={1} style={[styles.spaceText, { color: active ? colors.accentText : colors.textPrimary }]}>{name}</Text>
+      <Text style={[styles.navGlyph, { color: colors.textPrimary }]}>{glyph}</Text>
+      <Text numberOfLines={1} style={[styles.navLabel, { color: colors.textPrimary }]}>{label}</Text>
+      {count !== undefined && count > 0 ? <Text style={[styles.navCount, { color: colors.textSecondary }]}>{count}</Text> : null}
     </Pressable>
   );
 }
@@ -584,24 +637,23 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   frame: { flex: 1 },
   frameRow: { flexDirection: 'row' },
-  sidebar: { width: 248, flexGrow: 0, borderRightWidth: 2 },
+  sidebar: { width: 220, flexGrow: 0, borderRightWidth: 1 },
   sidebarContent: { padding: 16, gap: 12 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   brandName: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
   sectionLabel: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 8 },
-  spaceList: { gap: 4 },
-  spaceLink: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderWidth: 2 },
-  spaceText: { fontSize: 15, fontWeight: '700' },
+  navRule: { height: 2, marginVertical: 8 },
+  navItem: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, borderWidth: 2 },
+  navGlyph: { width: 22, fontSize: 17, textAlign: 'center' },
+  navLabel: { flex: 1, fontSize: 16, fontWeight: '800' },
+  navCount: { fontSize: 13, fontWeight: '800' },
   main: { flex: 1, minWidth: 0 },
   // Solo propiedades largas (columnGap/rowGap): mezclar `gap` con `rowGap` daba otro resultado en el export estático.
-  header: { flexDirection: 'row', alignItems: 'center', columnGap: 10, rowGap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 2 },
+  header: { flexDirection: 'row', alignItems: 'center', columnGap: 10, rowGap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1 },
   headerTitle: { flex: 1, minWidth: 0 },
   title: { fontWeight: '900', letterSpacing: -0.5 },
   eyebrow: { fontFamily: mono, fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
   memoryChip: { paddingHorizontal: 8, paddingVertical: 6, maxWidth: 200 },
-  // En compacto el estado ocupa su propia fila y el nombre del espacio no se corta.
-  headerCompact: { flexWrap: 'wrap', rowGap: 6 },
-  memoryChipCompact: { maxWidth: '100%', width: '100%' },
   memoryText: { fontFamily: mono, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
   body: { fontSize: 15, lineHeight: 22 },
   pad: { padding: 16 },
@@ -609,12 +661,17 @@ const styles = StyleSheet.create({
   workArea: { flex: 1, minHeight: 0, gap: 8 },
   workCompact: { padding: 6, gap: 5 },
   workWide: { padding: 12 },
-  exportBar: { borderWidth: 2, padding: 10, gap: 8 },
+  exportBar: { borderWidth: 1, padding: 6, gap: 8 },
   exportRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   exportStatus: { flex: 1, minWidth: 180, fontFamily: mono, fontSize: 12, fontWeight: '700', lineHeight: 18 },
+  // En la cabecera: bloque estrecho de dos líneas junto al botón.
+  exportStatusHeader: { flex: 0, flexShrink: 1, minWidth: 170, maxWidth: 270, fontSize: 10, lineHeight: 13 },
+  headerExport: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   feedback: { fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   offer: { borderWidth: 2, padding: 8, gap: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   offerText: { flexBasis: 220, flexGrow: 1, fontSize: 14, lineHeight: 19 },
+  // En la barra de herramientas (escritorio): mismo aviso, sin fondo propio que compita con la barra.
+  feedbackInline: { fontSize: 13, lineHeight: 18, paddingVertical: 4 },
   feedbackCompact: { fontSize: 13, lineHeight: 17, paddingVertical: 5 },
   exportBarCompact: { padding: 6, gap: 6 },
   exportStatusCompact: { fontSize: 10, lineHeight: 14, minWidth: 150 },
@@ -622,9 +679,9 @@ const styles = StyleSheet.create({
   stageRow: { flexDirection: 'row' },
   boardSlot: { flex: 1, minWidth: 0, minHeight: 0 },
   listPage: { paddingBottom: 16 },
-  sidePanel: { width: 360, flexGrow: 0, borderWidth: 2 },
+  sidePanel: { width: 280, flexGrow: 0, borderWidth: 1 },
   sidePanelContent: { padding: 0 },
-  sheet: { maxHeight: '36%', flexShrink: 0, borderTopWidth: 3, paddingTop: 6 },
+  sheet: { maxHeight: '32%', flexShrink: 0, borderTopWidth: 3, paddingTop: 6 },
   sheetBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingBottom: 6 },
   sheetTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800' },
   hidden: { display: 'none' },

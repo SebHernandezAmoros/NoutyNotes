@@ -3,12 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { layoutOf, place } from '../__fixtures__/grid';
 import { problems, unsafe } from '../__fixtures__/workspace';
 import {
-  DESKTOP_GRID, MAX_GRID_COLUMNS, MOBILE_GRID, TABLET_GRID,
+  DESKTOP_GRID, MAX_GRID_COLUMNS, MOBILE_GRID, TABLET_GRID, WORLD_GRID,
   cellsOverlap, footprint, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout,
 } from './grid';
 import type { GridConfig } from './grid';
 
 describe('configuración de grilla', () => {
+  it('admite un mundo bidireccional sin perder las reglas de la grilla acotada', () => {
+    expect(validateGridLayout(layoutOf(place('a', -3, -2, 4, 3), place('b', 20, 30, 1, 1)), WORLD_GRID).ok).toBe(true);
+    expect(validateGridLayout(layoutOf(place('a', -3, -2, 4, 3)), DESKTOP_GRID).ok).toBe(false);
+  });
   it('ofrece presets de escritorio, tablet y móvil válidos', () => {
     expect([DESKTOP_GRID.columns, TABLET_GRID.columns, MOBILE_GRID.columns]).toEqual([12, 6, 1]);
     for (const config of [DESKTOP_GRID, TABLET_GRID, MOBILE_GRID, { columns: 12, rows: 4 }]) {
@@ -97,7 +101,7 @@ describe('validación de un layout contra la grilla', () => {
     ['sale por abajo con filas limitadas', layoutOf(place('a', 0, 3, 1, 2)), 'out-of-bounds@placements[0].rect'],
     ['tamaño expandido mayor que la grilla', layoutOf(place('a', 0, 0, 13, 1, 'minimized')), 'out-of-bounds@placements[0].rect.w'],
     ['solapamiento', layoutOf(place('a', 0, 0, 3, 3), place('b', 2, 2, 2, 2)), 'grid-collision@placements[1]'],
-    ['estructura inválida', layoutOf(place('a', -1, 0, 1, 1)), 'invalid-layout@placements[0].rect.x'],
+    ['fuera de la grilla acotada', layoutOf(place('a', -1, 0, 1, 1)), 'out-of-bounds@placements[0].rect'],
     ['coordenada no finita', layoutOf(place('a', Number.POSITIVE_INFINITY, 0, 1, 1)), 'invalid-layout@placements[0].rect.x'],
   ])('rechaza %s', (_case, layout, expected) => {
     expect(problems(validateGridLayout(layout, { columns: 12, rows: 4 }))).toContain(expected);

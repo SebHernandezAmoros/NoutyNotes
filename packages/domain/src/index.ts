@@ -25,7 +25,7 @@ export { cardDisplayModes, validateLayout } from './layouts/layout';
 export type { BoardLayout, CardDisplayMode, CardPlacement, GridRect } from './layouts/layout';
 export {
   DESKTOP_GRID, MAX_GRID_COLUMNS, MOBILE_GRID, TABLET_GRID,
-  cellsOverlap, compareReadingOrder, footprint, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout,
+  cellsOverlap, compareReadingOrder, footprint, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,
 } from './layouts/grid';
 export type { GridCell, GridConfig, GridPoint, GridSize } from './layouts/grid';
 export { compactLayout, findFreeSpace, moveCard, resizeCard, setDisplay } from './layouts/operations';

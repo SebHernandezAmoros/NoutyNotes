@@ -5,12 +5,16 @@ import { Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from
 
 import { cardTitle, isImageCard } from '../Board';
 import { ImagePlaceholder } from '../ImagePlaceholder';
+import { markdownExcerpt } from '../markdownLists';
 import type { GestureController } from './Canvas';
+import { miniIcon } from './cardChrome';
+import { CardIcon } from './CardIcon';
 import type { ConnectRole } from './connect';
 import { isDrag } from './geometry';
 import type { PixelBox, ResizeHandle } from './geometry';
 
-const HEADER = 26;
+/** Alto de la cabecera a zoom 100 %: aloja los controles de 44 px (ADR 0016). */
+export const HEADER = 44;
 /** Área táctil de cada asa; el cuadrado visible es menor. */
 const HANDLE_HIT = 44;
 const HANDLE_MARK = 14;
@@ -32,6 +36,10 @@ interface CanvasCardProps {
   readonly controller: GestureController;
   /** Vista previa de una imagen importada; sin ella, una tarjeta de imagen es de ejemplo. */
   readonly imageUri: string | undefined;
+  /** Ancho, en unidades del lienzo, que ocupan los controles de la cabecera (dibujados fuera del zoom). */
+  readonly reserveRight: number;
+  /** Con el zoom alejado, los controles de 44 px bajan sobre el cuerpo: el título les deja sitio. */
+  readonly controlsOverBody: boolean;
 }
 
 const displayNames: Readonly<Record<CardDisplayMode, string>> = { expanded: '', collapsed: ', contraída', minimized: ', minimizada' };
@@ -81,10 +89,16 @@ export function CanvasCard(props: CanvasCardProps) {
   });
   const image = isImageCard(workspace, card);
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
+  const floatingTitle = card.typeId === 'titulo-flotante';
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
   const hint = connectHints[connectRole];
   const borderColor = colliding ? colors.danger : selected || focused || connectRole === 'source' ? colors.selection : colors.border;
-  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - 48) / 18));
+  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - 40) / 18));
+  const headerColor = image ? colors.headerImage : colors.headerNote;
+  const icon = miniIcon(type?.base);
+  const number3 = String(number).padStart(3, '0');
+  // Con los controles ocupando la cabecera, si no cabe «001 // TIPO» se muestra solo el número.
+  const tabLabel = box.width - props.reserveRight - 16 >= 110 ? `${number3} // ${(type?.label ?? 'Tarjeta').toUpperCase()}` : number3;
   const accessibilityHint = connectRole === 'connect' ? `Conectar ${connectSourceName} con esta tarjeta`
     : connectRole === 'disconnect' ? `Desconectar ${connectSourceName} de esta tarjeta`
       : connectRole === 'source' ? 'Cancelar la conexión' : 'Selecciona para editar; arrastra para mover';
@@ -105,28 +119,41 @@ export function CanvasCard(props: CanvasCardProps) {
         onFocus={() => { setFocused(true); props.onFocus(); }}
         onBlur={() => setFocused(false)}
         style={[styles.card, {
-          backgroundColor: colors.cardSurface,
-          borderColor,
-          borderWidth: selected || colliding || focused || connectRole === 'source' ? 3 : 2,
+          backgroundColor: floatingTitle && display === 'expanded' ? 'transparent' : colors.cardSurface,
+          borderColor: floatingTitle && !(selected || colliding || focused || connectRole === 'source') ? 'transparent' : borderColor,
+          borderWidth: selected || colliding || focused || connectRole === 'source' ? 3 : floatingTitle && display === 'expanded' ? 0 : 2,
           opacity: dragging ? 0.85 : 1,
         }]}
       >
         {display === 'minimized' ? (
-          // Ficha mínima (1 × 1): número y la inicial del título, legibles y tocables en móvil.
-          <View testID={`minimized-${card.id}`} style={[styles.mini, { backgroundColor: image ? colors.headerImage : colors.headerNote }]}>
-            <Text style={[styles.miniNumber, { color: colors.headerText }]}>{String(number).padStart(3, '0')}</Text>
-            <Text numberOfLines={1} style={[styles.miniInitial, { color: colors.headerText }]}>{cardTitle(card).slice(0, 1).toUpperCase()}</Text>
+          // Ficha mínima (1 × 1): icono del tipo y título; sin icono propio, solo el título (ADR 0016).
+          <View testID={`minimized-${card.id}`} style={[styles.mini, { backgroundColor: headerColor }]}>
+            {icon ? <CardIcon kind={icon} testID={`minimized-icon-${card.id}`} /> : null}
+            <Text numberOfLines={icon ? (box.height >= 56 ? 2 : 1) : 3} style={[styles.miniTitle, { color: colors.headerText }]}>{cardTitle(card)}</Text>
+          </View>
+        ) : floatingTitle && display === 'expanded' ? (
+          <View testID={`floating-title-${card.id}`} style={styles.floatingTitleWrap}>
+            <Text numberOfLines={Math.max(1, Math.floor((box.height - 36) / 38))} style={[styles.floatingTitle, { color: colors.textPrimary, paddingRight: box.height >= 100 ? 0 : props.reserveRight }]}>{cardTitle(card)}</Text>
+          </View>
+        ) : display === 'collapsed' ? (
+          // Contraída: una barra de título con los controles a la derecha.
+          <View style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
+            <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>{number3}</Text>
+            <Text numberOfLines={1} style={[styles.collapsedTitle, { color: colors.headerText }]}>{cardTitle(card)}</Text>
           </View>
         ) : (
           <>
-            <View style={[styles.header, { backgroundColor: image ? colors.headerImage : colors.headerNote, borderColor: colors.border }]}>
-              <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>
-                {`${String(number).padStart(3, '0')} // ${(type?.label ?? 'Tarjeta').toUpperCase()}${display === 'collapsed' ? ' · CONTRAÍDA' : ''}`}
-              </Text>
+            {/* Cabecera en forma de pestaña de carpeta: número y tipo; los controles se dibujan encima. */}
+            <View style={[styles.header, { borderColor: colors.border, paddingRight: props.reserveRight + 8 }]}>
+              <View style={[styles.tab, { backgroundColor: headerColor, borderColor: colors.border }]}>
+                <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>
+                  {tabLabel}
+                </Text>
+              </View>
             </View>
             <View style={styles.body}>
-              <Text numberOfLines={display === 'collapsed' ? 1 : 2} style={[styles.title, { color: colors.cardText }]}>{cardTitle(card)}</Text>
-              {display === 'expanded' ? (image ? (props.imageUri ? (
+              <Text numberOfLines={2} style={[styles.title, { color: colors.cardText }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>{cardTitle(card)}</Text>
+              {image ? (props.imageUri ? (
                 <Image
                   testID={`image-preview-${card.id}`}
                   accessibilityRole="image"
@@ -138,9 +165,9 @@ export function CanvasCard(props: CanvasCardProps) {
               ) : (card.assetRefs?.length ?? 0) > 0 ? (
                 <Text style={[styles.content, { color: colors.textSecondary }]}>Cargando imagen…</Text>
               ) : <ImagePlaceholder />) : bodyLines > 0 ? (
-                <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }]}>{card.content ?? ''}</Text>
-              ) : null) : null}
-              {connections > 0 && display === 'expanded' ? (
+                <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }]}>{markdownExcerpt(card.content ?? '')}</Text>
+              ) : null}
+              {connections > 0 ? (
                 <Text style={[styles.badge, { color: colors.textSecondary }]}>{connections === 1 ? '1 conexión' : `${connections} conexiones`}</Text>
               ) : null}
             </View>
@@ -210,16 +237,20 @@ const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
 const styles = StyleSheet.create({
   wrap: { position: 'absolute' },
   handles: { position: 'absolute', zIndex: 20 },
-  mini: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 0 },
-  miniNumber: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 10, fontWeight: '700' },
-  miniInitial: { fontSize: 18, lineHeight: 22, fontWeight: '900' },
+  mini: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 3 },
+  miniTitle: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
   photo: { flex: 1, minHeight: 40, borderWidth: 1 },
   lifted: { zIndex: 10 },
   card: { flex: 1, overflow: 'hidden' },
-  header: { height: HEADER, justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 2 },
+  header: { height: HEADER, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 0, borderBottomWidth: 2 },
+  headerCollapsed: { flex: 1, height: undefined, alignItems: 'center', gap: 8, paddingLeft: 8, borderBottomWidth: 0 },
+  tab: { height: 30, justifyContent: 'center', paddingHorizontal: 8, borderRightWidth: 2, borderTopWidth: 0, maxWidth: '100%' },
+  collapsedTitle: { flexShrink: 1, fontSize: 15, fontWeight: '800' },
   headerText: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   body: { flex: 1, padding: 8, gap: 6 },
   title: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  floatingTitleWrap: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 36, paddingBottom: 8 },
+  floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },
   content: { fontSize: 13, lineHeight: 18 },
   badge: { fontSize: 11, fontWeight: '700', marginTop: 'auto' },
   hint: { position: 'absolute', right: 6, bottom: 6, borderWidth: 2, paddingHorizontal: 6, paddingVertical: 2, fontSize: 12, fontWeight: '800' },

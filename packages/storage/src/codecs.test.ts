@@ -34,6 +34,16 @@ const layouts = deepFreeze<BoardLayout[]>(unsafe([
   { boardId: 'empty', placements: [] },
 ]));
 
+it('versiona posiciones negativas del mundo sin alterar los archivos v1 existentes', () => {
+  const signed: BoardLayout[] = [{ boardId: 'b' as BoardLayout['boardId'], placements: [
+    { cardId: 'a' as BoardLayout['placements'][number]['cardId'], display: 'expanded', rect: { x: -2, y: -3, w: 2, h: 1 } },
+  ] }];
+  const text = valueOf(serializeLayouts(signed));
+  expect(text).toContain('schemaVersion: 2');
+  expect(valueOf(parseLayouts(text))).toEqual(signed);
+  expect(problems(parseLayouts(text.replace('schemaVersion: 2', 'schemaVersion: 1')))).toContain('invalid-layout@.nouty/layout.yaml#layouts[0].placements[0].rect.x');
+});
+
 const layoutsText = [
   'layouts:',
   '  - boardId: overview',

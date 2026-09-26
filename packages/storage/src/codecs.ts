@@ -36,13 +36,25 @@ export function relationIssues(relations: readonly Relation[], path: string): (S
   return [...issues, ...duplicateIdIssues(relations.map((relation) => relation.id), path, 'las relaciones')];
 }
 
-export function layoutIssues(layouts: readonly BoardLayout[], path: string): (StorageIssue | DomainIssue)[] {
+export function layoutIssues(layouts: readonly BoardLayout[], path: string, version: 1 | 2 = 1): (StorageIssue | DomainIssue)[] {
   const issues: (StorageIssue | DomainIssue)[] = [];
   layouts.forEach((layout, index) => {
     const checked = validateLayout(layout);
     if (!checked.ok) issues.push(...reprefix(checked.issues, 'layout', `${path}[${index}]`));
+    if (version === 1) layout.placements.forEach((placement, placementIndex) => {
+      for (const axis of ['x', 'y'] as const) {
+        if (typeof placement.rect?.[axis] === 'number' && placement.rect[axis] < 0) {
+          issues.push({ code: 'invalid-layout', path: `${path}[${index}].placements[${placementIndex}].rect.${axis}`, message: 'La versión 1 no admite posiciones negativas.' });
+        }
+      }
+    });
   });
   return [...issues, ...duplicateIdIssues(layouts.map((layout) => layout.boardId), path, 'los layouts (uno por board)')];
+}
+
+/** Solo un layout con coordenadas negativas necesita el esquema 2; los archivos viejos conservan v1. */
+export function layoutSchemaVersion(layouts: readonly BoardLayout[]): 1 | 2 {
+  return layouts.some((layout) => layout.placements.some((placement) => placement.rect.x < 0 || placement.rect.y < 0)) ? 2 : 1;
 }
 
 /** Datos inertes y de forma cerrada antes de leer ningún campo; las rutas empiezan en `root`. */
@@ -72,16 +84,17 @@ export function parseRelations(text: string, file = RELATIONS_FILE): StorageResu
 export function serializeLayouts(layouts: readonly BoardLayout[]): StorageResult<string> {
   const shaped = checkInput(layouts, 'layouts', z.array(layoutSchema));
   if (!shaped.ok) return shaped;
-  const issues = layoutIssues(layouts, 'layouts');
+  const version = layoutSchemaVersion(layouts);
+  const issues = layoutIssues(layouts, 'layouts', version);
   if (issues.length > 0) return fail(issues);
-  return succeed(stringifyYaml({ schemaVersion: 1, layouts: layouts.map(layoutData) }));
+  return succeed(stringifyYaml({ schemaVersion: version, layouts: layouts.map(layoutData) }));
 }
 
 export function parseLayouts(text: string, file = LAYOUT_FILE): StorageResult<BoardLayout[]> {
-  const read = readVersionedYaml(text, file, layoutFileSchema);
+  const read = readVersionedYaml(text, file, layoutFileSchema, [1, 2]);
   if (!read.ok) return read;
   // Forma comprobada por Zod; enteros, modos y colocaciones se validan a continuación.
   const layouts = read.value.layouts.map((layout) => layoutData(layout as unknown as BoardLayout));
-  const issues = layoutIssues(layouts, 'layouts');
+  const issues = layoutIssues(layouts, 'layouts', read.value.schemaVersion);
   return issues.length > 0 ? fail(located(issues, file)) : succeed(layouts);
 }

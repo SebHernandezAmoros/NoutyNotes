@@ -35,6 +35,15 @@ describe('mensajes visibles de error (fase 7)', () => {
   });
 });
 
+describe('formato de una versión más reciente (P2)', () => {
+  it('explica que no reconoce el formato (quizá de una versión posterior) y que no se tocó nada, en vez del detalle técnico', () => {
+    const newer: WorkspaceStorageIssue[] = [{ code: 'invalid-stored-data', path: 'id', message: 'm', details: [
+      { code: 'unsupported-schema-version', path: '.nouty/layout.yaml#schemaVersion', message: 'Versión de esquema no admitida: 3. Versiones admitidas: 1, 2.' },
+    ] }];
+    expect(describeFailure(newer, 'folder')).toBe('Esta versión de NoutyNotes no reconoce el formato de .nouty/layout.yaml; puede venir de una versión más reciente. Actualiza la app para abrirlo; no se modificó ningún archivo.');
+  });
+});
+
 describe('mensajes del fallback ZIP (fase 9)', () => {
   const importIssue = (code: string, path: string, message: string): WorkspaceStorageIssue[] =>
     [{ code: 'invalid-workspace', path: 'archivo', message: 'm', details: [{ code, path, message }] }];

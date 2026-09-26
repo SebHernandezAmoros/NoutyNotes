@@ -32,6 +32,12 @@ export function describeFailure(issues: readonly WorkspaceStorageIssue[], mode: 
   if (!first) return 'No se pudo completar la acción.';
   const cause = first.details?.[0] ?? first;
   if (cause.code === 'invalid-value' && cause.path === 'metadata.name') return 'Escribe un nombre para el espacio.';
+  // Un archivo con una versión posterior del formato (por ejemplo, layout v2 abierto por una app que solo
+  // conoce v1): se dice qué pasa y qué hacer, y que no se tocó nada, en vez del detalle del esquema.
+  if (cause.code === 'unsupported-schema-version') {
+    const file = cause.path.split('#')[0] ?? cause.path;
+    return `Esta versión de NoutyNotes no reconoce el formato de ${file}; puede venir de una versión más reciente. Actualiza la app para abrirlo; no se modificó ningún archivo.`;
+  }
   if (mode === 'folder' && (cause.code === 'workspace-not-found' || cause.code === 'invalid-workspace-id')) {
     return 'Este espacio no está disponible en la carpeta seleccionada. Si recargaste, vuelve al inicio y selecciona la carpeta.';
   }

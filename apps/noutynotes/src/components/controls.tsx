@@ -102,10 +102,13 @@ interface TextFieldProps {
   readonly onSubmitEditing?: () => void;
   /** Falso mientras el campo no pueda conservar lo que se escriba. */
   readonly editable?: boolean;
+  /** Cursor opcional para comandos de edición; sin él, el campo gestiona su propia selección. */
+  readonly selection?: { readonly start: number; readonly end: number } | undefined;
+  readonly onSelectionChange?: (selection: { start: number; end: number }) => void;
 }
 
 /** Campo con etiqueta visible, nombre accesible y foco visible. */
-export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true }: TextFieldProps) {
+export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true, selection, onSelectionChange }: TextFieldProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
@@ -116,6 +119,8 @@ export function TextField({ label, value, onChangeText, placeholder, multiline =
         accessibilityLabel={label}
         value={value}
         onChangeText={onChangeText}
+        {...(selection === undefined ? {} : { selection })}
+        {...(onSelectionChange === undefined ? {} : { onSelectionChange: (event) => onSelectionChange(event.nativeEvent.selection) })}
         multiline={multiline}
         editable={editable}
         {...(placeholder === undefined ? {} : { placeholder })}

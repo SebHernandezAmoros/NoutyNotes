@@ -340,3 +340,23 @@ describe('regresiones de la revisión de fase 2 (G1, G3, G4)', () => {
     expect(problems(compactLayout(unsafe(undefined), DESKTOP_GRID))).toEqual(['invalid-value@layout']);
   });
 });
+
+describe('findFreeSpace dentro de una zona (P2: colocar donde se está mirando)', () => {
+  const world = { columns: 12, world: true } as const;
+
+  it('empieza en la esquina de la zona, también con coordenadas negativas', () => {
+    expect(value(findFreeSpace(layoutOf(place('a', 0, 0, 4, 3)), { w: 4, h: 3 }, world, { from: { x: -10, y: 5 }, columns: 6 }))).toEqual({ x: -10, y: 5 });
+  });
+
+  it('recorre la zona en orden de lectura y baja de fila cuando la banda no admite otra tarjeta', () => {
+    const layout = layoutOf(place('a', -10, 5, 4, 3));
+    expect(value(findFreeSpace(layout, { w: 4, h: 3 }, world, { from: { x: -10, y: 5 }, columns: 6 }))).toEqual({ x: -10, y: 8 });
+    // Una banda más estrecha que la tarjeta se ensancha hasta su ancho.
+    expect(value(findFreeSpace(layout, { w: 4, h: 3 }, world, { from: { x: -10, y: 5 }, columns: 2 }))).toEqual({ x: -10, y: 8 });
+  });
+
+  it('rechaza una zona mal formada sin buscar', () => {
+    expect(problems(findFreeSpace(layoutOf(), { w: 1, h: 1 }, world, { columns: 0 }))).toEqual(['invalid-value@options.columns']);
+    expect(problems(findFreeSpace(layoutOf(), { w: 1, h: 1 }, world, { from: { x: 0.5, y: 0 } }))).toEqual(['invalid-value@options.from']);
+  });
+});

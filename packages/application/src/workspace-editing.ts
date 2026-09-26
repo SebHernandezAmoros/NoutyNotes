@@ -1,5 +1,5 @@
 import {
-  DESKTOP_GRID, addCard, createRelation, deleteRelation, moveCard, purgeTrashedCard, resizeCard, restoreTrashedCard, setDisplay, trashCard,
+  WORLD_GRID, addCard, createRelation, deleteRelation, findFreeSpace, moveCard, purgeTrashedCard, resizeCard, restoreTrashedCard, setDisplay, trashCard,
   updateCard, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
@@ -18,25 +18,27 @@ import { createEmptyWorkspace, modifyWorkspace } from './workspace-use-cases';
  * del dominio y guarda mediante `modifyWorkspace`; si algo falla, no se guarda nada.
  */
 
-/** El layout persistido es el canónico de escritorio (ADR 0004); las vistas se derivan. */
-export const CANONICAL_GRID: GridConfig = DESKTOP_GRID;
+/** El layout editable usa coordenadas del mundo; las grillas acotadas siguen disponibles para plantillas. */
+export const CANONICAL_GRID: GridConfig = WORLD_GRID;
 export const DEFAULT_CARD_SIZE: GridSize = { w: 4, h: 3 };
 /** Board que se crea con la primera tarjeta si el workspace aún no tiene ninguno. */
 export const PROTOTYPE_BOARD = { id: 'principal' as BoardId, title: 'Tablero principal' } as const;
 export const RELATED_RELATION_TYPE: RelationTypeDefinition = { id: 'relacionada' as RelationTypeId, label: 'Relacionada con' };
 
-export type PrototypeCardKind = 'note' | 'image';
+export type PrototypeCardKind = 'note' | 'image' | 'title';
 
 interface CardPreset {
   readonly type: CardTypeDefinition;
   readonly title: string;
   readonly content?: string;
+  readonly size?: GridSize;
 }
 
 /** Tipos mínimos que el prototipo añade a demanda. La imagen es un marcador de posición sin asset. */
 export const PROTOTYPE_CARD_PRESETS: Readonly<Record<PrototypeCardKind, CardPreset>> = {
   note: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nueva nota', content: '' },
   image: { type: { id: 'imagen' as CardTypeId, label: 'Imagen', base: 'image', fields: [] }, title: 'Imagen de ejemplo' },
+  title: { type: { id: 'titulo-flotante' as CardTypeId, label: 'Título', base: 'section', fields: [] }, title: 'Nuevo título', size: { w: 6, h: 2 } },
 };
 
 export interface AddCardInput {
@@ -45,6 +47,11 @@ export interface AddCardInput {
   readonly title?: string;
   /** Tablero destino; por defecto, el primero (o el del prototipo si no hay ninguno). */
   readonly boardId?: BoardId;
+  /**
+   * Zona visible del mundo (P2): la tarjeta va al primer hueco libre que empieza en `x,y` dentro de una
+   * banda de `columns` celdas. Sin ella, primer hueco desde el origen en la banda de 12 columnas.
+   */
+  readonly near?: { readonly x: number; readonly y: number; readonly columns: number };
 }
 
 export interface AddBoardInput {
@@ -104,17 +111,21 @@ function withBoard(workspace: Workspace): { readonly workspace: Workspace; reado
 }
 
 /**
- * Añade una nota o una imagen de ejemplo al board indicado (por defecto, el primero), en el primer
+ * Añade una nota, imagen de ejemplo o título flotante al board indicado, en el primer
  * hueco libre. Un board inexistente es un error y no guarda nada. Devuelve su ID.
  */
 export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: WorkspaceId, input: AddCardInput): Promise<WorkspaceStorageResult<CardId>> {
   const kind = isObject(input) ? ownValue(input, 'kind') : undefined;
   const title = isObject(input) ? ownValue(input, 'title') : undefined;
   const requestedBoard = isObject(input) ? ownValue(input, 'boardId') : undefined;
-  if ((kind !== 'note' && kind !== 'image') || (title !== undefined && typeof title !== 'string')
-    || (requestedBoard !== undefined && typeof requestedBoard !== 'string')) {
-    return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota o imagen) y, opcionalmente, un título y un tablero de texto.');
+  const near = isObject(input) ? ownValue(input, 'near') : undefined;
+  const validNear = near === undefined || (isObject(near) && Number.isSafeInteger(ownValue(near, 'x')) && Number.isSafeInteger(ownValue(near, 'y'))
+    && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
+  if ((kind !== 'note' && kind !== 'image' && kind !== 'title') || (title !== undefined && typeof title !== 'string')
+    || (requestedBoard !== undefined && typeof requestedBoard !== 'string') || !validNear) {
+    return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen o título) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
   }
+  const zone = near === undefined ? undefined : near as NonNullable<AddCardInput['near']>;
   const preset = PROTOTYPE_CARD_PRESETS[kind];
   let created: CardId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
@@ -126,8 +137,27 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       id: cardId, typeId: preset.type.id, title: title ?? preset.title, fields: {},
       ...(preset.content === undefined ? {} : { content: preset.content }),
     };
-    const result = addCard(target, card, { boardId, size: DEFAULT_CARD_SIZE, config: CANONICAL_GRID });
+    const result = addCard(target, card, { boardId, size: preset.size ?? DEFAULT_CARD_SIZE, config: CANONICAL_GRID });
     if (result.ok) created = cardId;
+    if (result.ok && (kind !== 'title' || zone)) {
+      // La primera tarjeta crea el layout: antes, el tablero está vacío.
+      const before = target.layouts.find((layout) => layout.boardId === boardId) ?? { boardId, placements: [] };
+      const heading = kind === 'title' ? undefined : before?.placements.find((placement) => placement.rect.x === 0 && placement.rect.y === 0
+        && target.cards.some((candidate) => candidate.id === placement.cardId && candidate.typeId === PROTOTYPE_CARD_PRESETS.title.type.id));
+      const after = result.value.layouts.find((layout) => layout.boardId === boardId);
+      if (before && after && (heading || zone)) {
+        // El título al origen funciona como encabezado del tablero: la primera fila de tarjetas
+        // comienza debajo. Solo es una pista de auto-colocación; el usuario puede mover todo después.
+        // Con zona visible, se busca dentro de ella: la tarjeta aparece donde se está mirando.
+        const free = findFreeSpace({ ...before, placements: before.placements.map((placement) => placement === heading
+          ? { ...placement, rect: { ...placement.rect, w: CANONICAL_GRID.columns } } : placement) }, preset.size ?? DEFAULT_CARD_SIZE, CANONICAL_GRID,
+        zone ? { from: { x: zone.x, y: zone.y }, columns: zone.columns } : {});
+        if (free.ok) {
+          const moved = moveCard(after, cardId, free.value, CANONICAL_GRID);
+          if (moved.ok) return validateWorkspace({ ...result.value, layouts: result.value.layouts.map((layout) => layout === after ? moved.value : layout) });
+        }
+      }
+    }
     return result;
   });
   if (!saved.ok) return failed(saved);

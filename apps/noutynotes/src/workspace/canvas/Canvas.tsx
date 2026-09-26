@@ -10,10 +10,13 @@ import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
 import { relationSegments } from '../board-geometry';
 import { CanvasCard, ResizeHandles } from './CanvasCard';
+import { CONTROL_SIZE, chromeFor } from './cardChrome';
+import type { CardAction, Chrome } from './cardChrome';
+import { CardControls, CardMenu } from './CardControls';
 import { connectTarget } from './connect';
-import { canvasSize, cardBox, checkMove, checkResize, dragTarget, previewBox, resizeTarget } from './geometry';
+import { cardBox, checkMove, checkResize, dragTarget, previewBox, resizeTarget } from './geometry';
 import type { CanvasMetrics, PlacementCheck, ResizeHandle } from './geometry';
-import { clampPan, panToReveal } from './viewport';
+import { panToRevealWorld, renderBase, visibleGridLines, worldPan } from './viewport';
 import type { Point, Size } from './viewport';
 
 export type CanvasTool = 'select' | 'pan' | 'connect';
@@ -69,14 +72,15 @@ interface CanvasProps {
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
+  /** Distribución compacta: el menú «⋯» se abre como hoja inferior. */
+  readonly compact: boolean;
+  /** Tamaño visible del lienzo: la pantalla coloca las tarjetas nuevas dentro de lo que se ve (P2). */
+  readonly onViewport?: (size: Size) => void;
 }
 
-const displayActions: readonly { display: CardDisplayMode; label: string }[] = [
-  { display: 'expanded', label: 'Expandir' },
-  { display: 'collapsed', label: 'Contraer' },
-  { display: 'minimized', label: 'Minimizar' },
-];
-const ACTION_BAR_HEIGHT = 52;
+
+/** Tipo del título flotante (ADR 0018): rótulo sin marco, sin número y con controles solo seleccionado. */
+const FLOATING_TITLE = 'titulo-flotante';
 
 /** Destino de un gesto en curso y su validez según el motor de grilla, antes de guardar nada. */
 function evaluate(layout: BoardLayout, placement: CardPlacement, gesture: Gesture, zoom: number, metrics: CanvasMetrics) {
@@ -96,7 +100,7 @@ function rejection(check: PlacementCheck, names: ReadonlyMap<CardId, string>): s
 }
 
 /**
- * Lienzo del tablero (ADR 0013): layout canónico de 12 columnas con zoom y desplazamiento, tarjetas
+ * Lienzo del tablero (ADR 0017): coordenadas del mundo con zoom y desplazamiento, tarjetas
  * que se arrastran y redimensionan con vista previa validada por el dominio, relaciones y grilla.
  * Nunca modifica datos: al soltar un destino válido llama a `onMove`/`onResize`, que usan los casos de uso.
  */
@@ -106,15 +110,16 @@ export function Canvas(props: CanvasProps) {
   const colors = theme.colors;
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
-  const content = canvasSize(layout, metrics);
+  // Tarjeta estrecha cuyo menú «⋯» está abierto.
+  const [menuFor, setMenuFor] = useState<CardId | null>(null);
   const cards = useMemo(() => new Map(workspace.cards.map((card) => [card.id, card])), [workspace.cards]);
   const names = useMemo(() => new Map(workspace.cards.map((card) => [card.id, cardTitle(card)])), [workspace.cards]);
   const placements = layout?.placements ?? [];
 
   // Lo que leen los gestores de gestos (creados una vez); se actualiza tras cada render.
-  const latest = useRef({ props, viewport, content, names });
+  const latest = useRef({ props, viewport, names });
   useLayoutEffect(() => {
-    latest.current = { props, viewport, content, names };
+    latest.current = { props, viewport, names };
   });
 
   // Controlador estable de gestos: las tarjetas y las asas crean sus PanResponder con él.
@@ -181,16 +186,52 @@ export function Canvas(props: CanvasProps) {
     };
     const press = () => { pointerDown.current = true; };
     const release = () => { pointerDown.current = false; };
+    // Un arrastre nativo del navegador (de una selección de texto que quedó en la página o de una
+    // <img> de tarjeta) cancela el puntero con `pointercancel` y deja la Mano o el arrastre de la
+    // tarjeta a medias. En el lienzo nunca se quiere: se anula.
+    const noNativeDrag = (event: Event) => event.preventDefault();
+    node.addEventListener('dragstart', noNativeDrag, true);
     node.addEventListener('scroll', reset);
     node.addEventListener('pointerdown', press, true);
     window.addEventListener('pointerup', release, true);
     window.addEventListener('pointercancel', release, true);
     return () => {
+      node.removeEventListener('dragstart', noNativeDrag, true);
       node.removeEventListener('scroll', reset);
       node.removeEventListener('pointerdown', press, true);
       window.removeEventListener('pointerup', release, true);
       window.removeEventListener('pointercancel', release, true);
     };
+  }, []);
+
+  // Rueda y trackpad desplazan el mundo en ambos ejes. Shift+rueda permite desplazamiento lateral
+  // con un ratón de una sola rueda; el listener no es pasivo para evitar que la página robe el scroll.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const node = viewportRef.current as unknown as HTMLElement | null;
+    if (!node) return;
+    node.tabIndex = 0;
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const current = latest.current;
+      const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? current.viewport.height : 1;
+      const dx = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
+      const dy = event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
+      current.props.onPan(worldPan({ x: current.props.pan.x - dx * factor, y: current.props.pan.y - dy * factor }));
+    };
+    const keys = (event: KeyboardEvent) => {
+      if (event.target !== node || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      event.preventDefault();
+      const step = event.shiftKey ? 192 : 64;
+      const current = latest.current;
+      current.props.onPan(worldPan({
+        x: current.props.pan.x + (event.key === 'ArrowLeft' ? step : event.key === 'ArrowRight' ? -step : 0),
+        y: current.props.pan.y + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0),
+      }));
+    };
+    node.addEventListener('wheel', wheel, { passive: false });
+    node.addEventListener('keydown', keys);
+    return () => { node.removeEventListener('wheel', wheel); node.removeEventListener('keydown', keys); };
   }, []);
 
   // Escape cancela el gesto en curso sin guardar (en web; en táctil, soltar en el origen cancela).
@@ -209,7 +250,7 @@ export function Canvas(props: CanvasProps) {
       start: () => { origin = latest.current.props.pan; },
       move: (dx: number, dy: number) => {
         const current = latest.current;
-        current.props.onPan(clampPan({ x: origin.x + dx, y: origin.y + dy }, current.content, current.props.zoom, current.viewport));
+        current.props.onPan(worldPan({ x: origin.x + dx, y: origin.y + dy }));
       },
     };
   });
@@ -224,15 +265,69 @@ export function Canvas(props: CanvasProps) {
   const active = gesture ? placements.find((placement) => placement.cardId === gesture.cardId) : undefined;
   const preview = gesture && active && layout ? evaluate(layout, active, gesture, zoom, metrics) : null;
   const colliding = new Set(preview && !preview.check.ok ? preview.check.colliding : []);
-  const boxes = placements.map((placement) => ({ cardId: placement.cardId, ...cardBox(footprint(placement), metrics) }));
+  // Lo que se pinta dentro de la capa escalada se dibuja respecto a una base cerca de la cámara: así los
+  // números pintados son pequeños aunque las tarjetas estén a un millón de celdas (ADR 0017).
+  const base = renderBase(pan, zoom);
+  const local = <T extends { readonly left: number; readonly top: number }>(box: T): T => ({ ...box, left: box.left - base.x, top: box.top - base.y });
+  const boxes = placements.map((placement) => ({ cardId: placement.cardId, ...local(cardBox(footprint(placement), metrics)) }));
   const segments = relationSegments(workspace.relations, boxes);
   const empty = placements.length === 0 && props.unplaced.length === 0;
+  // Numeración de las fichas (001, 002…) en orden del layout, sin contar los títulos flotantes.
+  const numbers = new Map<CardId, number>();
+  for (const placement of placements) {
+    if (cards.get(placement.cardId)?.typeId !== FLOATING_TITLE) numbers.set(placement.cardId, numbers.size);
+  }
   const unplacedText = props.unplaced.length === 0 ? null
     : `${props.unplaced.length === 1 ? '1 tarjeta de este tablero no tiene' : `${props.unplaced.length} tarjetas de este tablero no tienen`} posición en la grilla: ${props.unplaced.map((title) => `«${title}»`).join(', ')}. Colocarlas desde aquí llegará más adelante; sus datos no cambian.`;
   const selectedPlacement = placements.find((placement) => placement.cardId === selectedId);
+  // La selección abre el inspector y reduce la ventana del lienzo. Revelar la tarjeta seleccionada
+  // evita que la recién creada quede recortada; también responde a un resize posterior y a mover o
+  // redimensionar esa tarjeta (por ejemplo, con los botones del inspector). Ni el zoom ni la cámara
+  // la disparan: «Restablecer vista» vuelve al origen aunque haya una tarjeta seleccionada.
+  const selectedRect = (() => {
+    const found = placements.find((placement) => placement.cardId === selectedId);
+    return found ? `${found.rect.x},${found.rect.y},${found.rect.w},${found.rect.h},${found.display}` : '';
+  })();
+  useEffect(() => {
+    if (!selectedId || selectedRect === '' || viewport.width <= 0 || viewport.height <= 0) return;
+    const current = latest.current;
+    const placement = current.props.layout?.placements.find((candidate) => candidate.cardId === selectedId);
+    if (!placement) return;
+    const next = panToRevealWorld(current.props.pan, cardBox(footprint(placement), current.props.metrics), current.props.zoom, current.viewport);
+    if (next.x !== current.props.pan.x || next.y !== current.props.pan.y) current.props.onPan(next);
+  }, [selectedId, selectedRect, viewport.width, viewport.height]);
+  // Controles de cabecera (ADR 0016): en píxeles de pantalla, fuera de la escala del zoom.
+  const chrome = new Map<CardId, Chrome>();
+  if (tool === 'select') {
+    for (const placement of placements) {
+      if (gesture?.cardId === placement.cardId) continue;
+      // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
+      if (cards.get(placement.cardId)?.typeId === FLOATING_TITLE && placement.cardId !== selectedId) continue;
+      const box = cardBox(footprint(placement), metrics);
+      const screen = { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
+      const found = chromeFor(placement.display, screen, placement.cardId === selectedId, viewport);
+      if (found) chrome.set(placement.cardId, found);
+    }
+  }
+  const runAction = (cardId: CardId, action: CardAction) => {
+    if (action.kind === 'trash') props.onTrash(cardId);
+    else props.onDisplay(cardId, action.kind);
+  };
+  // Foco sin puntero en una tarjeta o en sus controles: el pan la muestra (ADR 0014).
+  const reveal = (cardId: CardId) => {
+    if (pointerDown.current) return;
+    const current = latest.current;
+    const placement = current.props.layout?.placements.find((candidate) => candidate.cardId === cardId);
+    if (!placement) return;
+    const next = panToRevealWorld(current.props.pan, cardBox(footprint(placement), current.props.metrics), current.props.zoom, current.viewport);
+    if (next !== current.props.pan) current.props.onPan(next);
+  };
+  const menuPlacement = menuFor ? placements.find((placement) => placement.cardId === menuFor) : undefined;
   const status = preview
     ? preview.check.ok
-      ? `${gesture?.kind === 'move' ? 'Soltar en' : 'Nuevo tamaño:'} ${gesture?.kind === 'move' ? `columna ${preview.rect.x + 1}, fila ${preview.rect.y + 1}` : `${preview.rect.w} × ${preview.rect.h}`}. Escape cancela.`
+      ? `${gesture?.kind === 'move' ? 'Soltar en' : 'Nuevo tamaño:'} ${gesture?.kind === 'move'
+        ? preview.rect.x < 0 || preview.rect.y < 0 ? `X ${preview.rect.x}, Y ${preview.rect.y}` : `columna ${preview.rect.x + 1}, fila ${preview.rect.y + 1}`
+        : `${preview.rect.w} × ${preview.rect.h}`}. Escape cancela.`
       : rejection(preview.check, names)
     : null;
 
@@ -241,33 +336,41 @@ export function Canvas(props: CanvasProps) {
       ref={viewportRef}
       testID="board-canvas"
       accessibilityLabel={`Lienzo del tablero ${boardTitle}`}
-      onLayout={(event: LayoutChangeEvent) => setViewport({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
+      accessibilityHint="Usa las flechas para desplazar el lienzo; Mayús desplaza más distancia."
+      onLayout={(event: LayoutChangeEvent) => {
+        const size = { width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height };
+        setViewport(size);
+        props.onViewport?.(size);
+      }}
       style={[styles.viewport, { backgroundColor: colors.canvas, borderColor: colors.border }, tool === 'pan' ? styles.grab : null]}
       {...panHandlers}
     >
+      {/* El papel y la grilla pertenecen al viewport: nunca terminan en la última tarjeta. */}
+      <View style={StyleSheet.absoluteFill} onStartShouldSetResponder={() => tool === 'select'} onResponderRelease={props.onBackgroundPress} />
+      {showGrid ? (
+        <View testID="canvas-grid" style={styles.overlay} pointerEvents="none">
+          {visibleGridLines(pan.x, zoom, metrics.cell / 4, viewport.width).map((left) => (
+            <View key={`sc${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine, opacity: 0.32 }]} />
+          ))}
+          {visibleGridLines(pan.y, zoom, metrics.row / 4, viewport.height).map((top) => (
+            <View key={`sr${top}`} style={[styles.gridRow, { top, backgroundColor: colors.gridLine, opacity: 0.32 }]} />
+          ))}
+          {visibleGridLines(pan.x, zoom, metrics.cell, viewport.width).map((left) => (
+            <View key={`c${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine }]} />
+          ))}
+          {visibleGridLines(pan.y, zoom, metrics.row, viewport.height).map((top) => (
+            <View key={`r${top}`} style={[styles.gridRow, { top, backgroundColor: colors.gridLine }]} />
+          ))}
+        </View>
+      ) : null}
       <View
         testID="canvas-content"
+        pointerEvents="box-none"
         style={[styles.content, {
-          width: content.width, height: content.height,
-          transform: [{ translateX: pan.x }, { translateY: pan.y }, { scale: zoom }],
+          width: viewport.width, height: viewport.height,
+          transform: [{ translateX: pan.x + base.x * zoom }, { translateY: pan.y + base.y * zoom }, { scale: zoom }],
         }]}
       >
-        {/* Toque en el papel: deselecciona. No es enfocable; el inspector tiene «Cerrar». */}
-        <View
-          style={StyleSheet.absoluteFill}
-          onStartShouldSetResponder={() => tool === 'select'}
-          onResponderRelease={props.onBackgroundPress}
-        />
-        {showGrid ? (
-          <View testID="canvas-grid" style={styles.overlay}>
-            {Array.from({ length: 13 }, (_, index) => (
-              <View key={`c${index}`} style={[styles.gridColumn, { left: index * metrics.cell, backgroundColor: colors.gridLine }]} />
-            ))}
-            {Array.from({ length: content.rows + 1 }, (_, index) => (
-              <View key={`r${index}`} style={[styles.gridRow, { top: index * metrics.row, backgroundColor: colors.gridLine }]} />
-            ))}
-          </View>
-        ) : null}
         {segments.map((segment) => {
           const highlighted = selectedId !== null && workspace.relations.some((relation) => relation.id === segment.relationId
             && (relation.from === selectedId || relation.to === selectedId));
@@ -284,16 +387,17 @@ export function Canvas(props: CanvasProps) {
             </View>
           );
         })}
-        {placements.map((placement, index) => {
+        {placements.map((placement) => {
           const card = cards.get(placement.cardId);
           if (!card) return null;
+          const index = numbers.get(card.id) ?? 0;
           const cell = footprint(placement);
           const dragging = gesture?.cardId === card.id;
-          const box = dragging && preview
+          const box = local(dragging && preview
             ? gesture.kind === 'move'
               ? previewBox(cell, { x: preview.rect.x, y: preview.rect.y }, gesture.dx, gesture.dy, zoom, snap, metrics)
               : cardBox(footprint({ ...placement, rect: preview.rect }), metrics)
-            : cardBox(cell, metrics);
+            : cardBox(cell, metrics));
           const selected = selectedId === card.id;
           return (
             <CanvasCard
@@ -310,12 +414,12 @@ export function Canvas(props: CanvasProps) {
               connectSourceName={connectSource ? names.get(connectSource) ?? '' : ''}
               imageUri={props.imageUris.get(card.id)}
               onPress={() => props.onCardPress(card.id)}
-              onFocus={() => {
-                if (pointerDown.current) return;
-                const current = latest.current;
-                const next = panToReveal(current.props.pan, cardBox(cell, metrics), current.content, current.props.zoom, current.viewport);
-                if (next !== current.props.pan) current.props.onPan(next);
-              }}
+              onFocus={() => reveal(card.id)}
+              reserveRight={(() => {
+                const found = chrome.get(card.id);
+                return found && found.kind !== 'strip' ? (found.count * CONTROL_SIZE + 4) / zoom : 0;
+              })()}
+              controlsOverBody={zoom < 1}
               controller={controller}
             />
           );
@@ -325,18 +429,20 @@ export function Canvas(props: CanvasProps) {
           <View
             testID="drag-target"
             accessibilityLabel={preview.check.ok ? 'Destino válido' : 'Destino no válido'}
-            style={[styles.target, cardBox(footprint({ ...active, rect: preview.rect }), metrics), {
+            style={[styles.target, local(cardBox(footprint({ ...active, rect: preview.rect }), metrics)), {
               borderColor: preview.check.ok ? colors.selection : colors.danger,
             }]}
           />
         ) : null}
-        {selectedPlacement && tool === 'select' ? (
+        {/* Una ficha minimizada no se redimensiona desde el lienzo: su tamaño expandido queda oculto y la tira de
+            controles va a su lado (ADR 0016). El inspector conserva «Más ancha/estrecha». */}
+        {selectedPlacement && tool === 'select' && selectedPlacement.display !== 'minimized' ? (
           <ResizeHandles
             key={selectedPlacement.cardId}
             cardId={selectedPlacement.cardId}
-            box={gesture?.cardId === selectedPlacement.cardId && preview
+            box={local(gesture?.cardId === selectedPlacement.cardId && preview
               ? cardBox(footprint({ ...selectedPlacement, rect: preview.rect }), metrics)
-              : cardBox(footprint(selectedPlacement), metrics)}
+              : cardBox(footprint(selectedPlacement), metrics))}
             controller={controller}
           />
         ) : null}
@@ -357,29 +463,32 @@ export function Canvas(props: CanvasProps) {
           {unplacedText}
         </Text>
       ) : null}
-      {selectedPlacement && tool === 'select' && !gesture ? (() => {
-        // Fuera de la escala del zoom: los botones miden siempre 44 px reales.
-        const box = cardBox(footprint(selectedPlacement), metrics);
-        const screenTop = pan.y + box.top * zoom;
-        const preferred = screenTop >= ACTION_BAR_HEIGHT + 4 ? screenTop - ACTION_BAR_HEIGHT : pan.y + (box.top + box.height) * zoom + 6;
-        // Siempre dentro del lienzo: fuera, el recorte la ocultaría y mostrarla exigiría un scroll nativo.
-        const top = Math.max(4, Math.min(preferred, viewport.height - ACTION_BAR_HEIGHT - 4));
-        const left = Math.max(4, Math.min(pan.x + box.left * zoom, viewport.width - 320));
-        const title = names.get(selectedPlacement.cardId) ?? 'Sin título';
+      {placements.map((placement) => {
+        const found = chrome.get(placement.cardId);
+        if (!found) return null;
         return (
-          <View testID="card-actions" style={[styles.actions, { top, left, backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {displayActions.filter((action) => action.display !== selectedPlacement.display).map((action) => (
-              <ActionButton
-                key={action.display}
-                label={action.label}
-                accessibilityLabel={`${action.label} ${title}`}
-                onPress={() => props.onDisplay(selectedPlacement.cardId, action.display)}
-              />
-            ))}
-            <ActionButton label="Papelera" accessibilityLabel={`Enviar ${title} a la Papelera`} onPress={() => props.onTrash(selectedPlacement.cardId)} />
-          </View>
+          <CardControls
+            key={placement.cardId}
+            cardId={placement.cardId}
+            title={names.get(placement.cardId) ?? 'Sin título'}
+            display={placement.display}
+            floating={cards.get(placement.cardId)?.typeId === FLOATING_TITLE}
+            chrome={found}
+            onAction={(action) => runAction(placement.cardId, action)}
+            onMenu={() => setMenuFor(placement.cardId)}
+            onFocus={() => reveal(placement.cardId)}
+          />
         );
-      })() : null}
+      })}
+      {menuPlacement ? (
+        <CardMenu
+          title={names.get(menuPlacement.cardId) ?? 'Sin título'}
+          display={menuPlacement.display}
+          compact={props.compact}
+          onAction={(action) => runAction(menuPlacement.cardId, action)}
+          onClose={() => setMenuFor(null)}
+        />
+      ) : null}
       {status ? (
         <Text
           testID="drag-status"
@@ -394,9 +503,10 @@ export function Canvas(props: CanvasProps) {
 }
 
 const styles = StyleSheet.create({
-  viewport: { flex: 1, overflow: 'hidden', borderWidth: 2, position: 'relative' },
+  // Superficie de gestos, no de texto: sin selección que el navegador pueda arrastrar.
+  viewport: { flex: 1, overflow: 'hidden', borderWidth: 2, position: 'relative', userSelect: 'none' },
   grab: Platform.OS === 'web' ? ({ cursor: 'grab' } as object) : {},
-  content: { position: 'absolute', left: 0, top: 0, transformOrigin: 'left top' },
+  content: { position: 'absolute', left: 0, top: 0, overflow: 'visible', transformOrigin: 'left top' },
   overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, pointerEvents: 'none' },
   gridColumn: { position: 'absolute', top: 0, bottom: 0, width: 1 },
   gridRow: { position: 'absolute', left: 0, right: 0, height: 1 },
@@ -407,7 +517,6 @@ const styles = StyleSheet.create({
   empty: { maxWidth: 360, width: '100%', borderWidth: 2, padding: 20, gap: 12, alignItems: 'flex-start' },
   emptyTitle: { fontSize: 20, lineHeight: 25, fontWeight: '900' },
   emptyText: { fontSize: 15, lineHeight: 22 },
-  actions: { position: 'absolute', flexDirection: 'row', flexWrap: 'wrap', gap: 4, padding: 2, borderWidth: 2, maxWidth: 360, zIndex: 30 },
   unplaced: { position: 'absolute', left: 12, right: 12, top: 12, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19 },
   status: { position: 'absolute', left: 12, right: 12, bottom: 12, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19, fontWeight: '700' },
 });

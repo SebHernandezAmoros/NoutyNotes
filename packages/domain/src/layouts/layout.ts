@@ -36,14 +36,18 @@ function isNonNegativeInteger(value: unknown): boolean {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+function isCoordinate(value: unknown): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
 function collectRectIssues(rect: unknown, path: string, issues: DomainIssue[]): void {
   if (!isRecord(rect)) {
     issues.push(issue('invalid-layout', path, 'Debe indicar x, y, w y h en unidades de grilla.'));
     return;
   }
   for (const axis of ['x', 'y'] as const) {
-    if (!isNonNegativeInteger(rect[axis])) {
-      issues.push(issue('invalid-layout', `${path}.${axis}`, 'Debe ser un entero mayor o igual que 0.'));
+    if (!isCoordinate(rect[axis])) {
+      issues.push(issue('invalid-layout', `${path}.${axis}`, 'Debe ser un entero seguro de grilla.'));
     }
   }
   for (const size of ['w', 'h'] as const) {

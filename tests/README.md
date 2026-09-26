@@ -38,6 +38,26 @@ Experiencia del workspace (ADR 0013):
 - `smoke/zip.spec.ts` comprueba el fixture v1 con dos tableros y una tarjeta sin posición.
 - `integration/workspace-boards.test.ts` cubre los casos de uso de tableros.
 
+Lienzo, listas y títulos (ADR 0017, ADR 0018):
+- `smoke/cards.spec.ts`:
+  - «Restablecer vista» con selección;
+  - foco que revela sin scroll nativo;
+  - listas con teclado, casilla táctil y HTML/JS como texto;
+  - título flotante con Papelera.
+- `smoke/folder.spec.ts`:
+  - posiciones negativas y lejanas reabiertas;
+  - pintado con números pequeños a x = 999 000.
+- Los arrastres mantienen el puntero dentro de la ventana (Firefox lo fija en el borde).
+- `tapCard` espera al foco real antes de pulsar Espacio.
+- `sideBySide` coloca dos tarjetas lado a lado cuando la prueba lo necesita.
+
+Controles de tarjeta y proyectos (ADR 0016):
+- `smoke/cards.spec.ts` comprueba los controles de cabecera, la ficha con icono, el menú `⋯` y los 44 px con el zoom alejado;
+- `smoke/workspace.spec.ts` comprueba las pestañas y la hoja de proyectos;
+- `smoke/folder.spec.ts` comprueba que el borrador se guarda al cambiar de proyecto.
+
+Los arrastres por cabecera agarran la franja izquierda, que los controles dejan libre.
+
 Configuración, representación, imágenes y Papelera (ADR 0014, ADR 0015):
 - `smoke/cards.spec.ts`:
   - Configuración: modal o hoja, cambios al instante, restablecer, Escape y preferencias del dispositivo tras recargar;

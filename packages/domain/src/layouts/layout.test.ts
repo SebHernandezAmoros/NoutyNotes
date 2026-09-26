@@ -20,9 +20,11 @@ describe('layouts en unidades de grilla', () => {
     expect(validateLayout({ ...layout, placements: [] }).ok).toBe(true);
   });
 
+  it('acepta coordenadas firmadas; los límites dependen de la configuración de grilla', () => {
+    expect(validateLayout(withPlacement({ rect: { x: -1, y: -3, w: 1, h: 1 } })).ok).toBe(true);
+  });
+
   it.each([
-    ['x negativa', { rect: { x: -1, y: 0, w: 1, h: 1 } }, 'invalid-layout@layout.placements[0].rect.x'],
-    ['y negativa', { rect: { x: 0, y: -3, w: 1, h: 1 } }, 'invalid-layout@layout.placements[0].rect.y'],
     ['coordenada fraccionaria (píxeles)', { rect: { x: 12.5, y: 0, w: 1, h: 1 } }, 'invalid-layout@layout.placements[0].rect.x'],
     ['ancho cero', { rect: { x: 0, y: 0, w: 0, h: 1 } }, 'invalid-layout@layout.placements[0].rect.w'],
     ['alto negativo', { rect: { x: 0, y: 0, w: 1, h: -2 } }, 'invalid-layout@layout.placements[0].rect.h'],

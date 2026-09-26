@@ -59,15 +59,16 @@ describe('validación previa al guardado con el motor de grilla', () => {
     expect(checkMove(layout, id('b'), { x: 0, y: 4 })).toEqual({ ok: false, code: 'grid-collision', colliding: ['c'] });
   });
 
-  it('rechaza salir de los límites sin tarjetas implicadas', () => {
-    expect(checkMove(layout, id('b'), { x: 9, y: 0 })).toEqual({ ok: false, code: 'out-of-bounds', colliding: [] });
-    expect(checkMove(layout, id('a'), { x: 0, y: -1 })).toEqual({ ok: false, code: 'out-of-bounds', colliding: [] });
+  it('admite mover en ambos ejes y rechaza solo el límite seguro del mundo', () => {
+    expect(checkMove(layout, id('b'), { x: 9, y: 0 })).toEqual({ ok: true });
+    expect(checkMove(layout, id('a'), { x: 0, y: -1 })).toEqual({ ok: true });
+    expect(checkMove(layout, id('a'), { x: 1_000_000, y: 0 })).toEqual({ ok: false, code: 'out-of-bounds', colliding: [] });
   });
 
   it('valida tamaños con las mismas reglas', () => {
     expect(checkResize(layout, id('a'), { w: 4, h: 5 })).toEqual({ ok: true });
     expect(checkResize(layout, id('a'), { w: 5, h: 3 })).toEqual({ ok: false, code: 'grid-collision', colliding: ['b'] });
-    expect(checkResize(layout, id('b'), { w: 9, h: 3 })).toEqual({ ok: false, code: 'out-of-bounds', colliding: [] });
+    expect(checkResize(layout, id('b'), { w: 9, h: 3 })).toEqual({ ok: true });
   });
 });
 

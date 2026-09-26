@@ -22,7 +22,13 @@ const card = (page: Page, id: number) => page.getByTestId(`card-tarjeta-${id}`);
  * centro «pulsaría» algo que la persona no ve.
  */
 async function tapCard(page: Page, id: number) {
-  await card(page, id).focus();
+  // Al cerrar un diálogo, el foco vuelve (de forma asíncrona) al botón que lo abrió: se espera a que
+  // la tarjeta tenga el foco de verdad antes de pulsar Espacio, o Espacio activaría ese botón.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(async () => {
+    await card(page, id).focus();
+    await expect(card(page, id)).toBeFocused({ timeout: 200 });
+  }).toPass();
   await page.keyboard.press('Space');
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
@@ -55,9 +61,10 @@ async function box(locator: Locator) {
 }
 
 /** Arrastre con ratón en pasos, desde la cabecera de la tarjeta (o el centro del elemento). */
+/** Por la cabecera se agarra a 20 px del borde izquierdo: los controles van a la derecha (ADR 0016). */
 async function mouseDrag(page: Page, locator: Locator, dx: number, dy: number, options: { release?: boolean; header?: boolean } = {}) {
   const found = await box(locator);
-  const x = found.x + Math.min(found.width / 2, 60);
+  const x = found.x + (options.header === false ? Math.min(found.width / 2, 60) : 20);
   const y = found.y + (options.header === false ? found.height / 2 : 12);
   await page.mouse.move(x, y);
   await page.mouse.down();
@@ -68,7 +75,7 @@ async function mouseDrag(page: Page, locator: Locator, dx: number, dy: number, o
 /** Arrastre táctil real (eventos touch de Chromium), no simulado con ratón. */
 async function touchDrag(page: Page, locator: Locator, dx: number, dy: number, header = true) {
   const found = await box(locator);
-  const x = Math.round(found.x + (header ? Math.min(found.width / 2, 60) : found.width / 2));
+  const x = Math.round(found.x + (header ? 20 : found.width / 2));
   const y = Math.round(found.y + (header ? 12 : found.height / 2));
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
@@ -86,6 +93,25 @@ async function revealCanvas(page: Page) {
 }
 
 const isCompact = (page: Page) => (page.viewportSize()?.width ?? 0) < at.width;
+
+/** «Restablecer vista»: zoom 100 % y cámara en el origen (barra en escritorio, Configuración en móvil). */
+async function resetView(page: Page) {
+  if (isCompact(page)) await inSettings(page, async () => { await button(page, 'Restablecer la vista del lienzo').click(); });
+  else await page.getByTestId('zoom-level').click();
+}
+
+/**
+ * Dos notas lado a lado en la primera fila. Desde P2 la segunda nace debajo, dentro de lo visible;
+ * los recorridos que prueban colisiones horizontales la colocan con los botones del inspector.
+ */
+async function sideBySide(page: Page) {
+  await addCards(page, ['nota', 'nota']);
+  for (let step = 0; step < 4; step += 1) await button(page, 'Mover a la derecha').click();
+  for (let step = 0; step < 3; step += 1) await button(page, 'Mover arriba').click();
+  await expect(geometry(page)).toHaveText('Columna 5, fila 1 · 4 × 3');
+  await closeEditor(page);
+  await resetView(page);
+}
 
 /** Abre la Configuración, ejecuta `action` y la cierra (ADR 0014: grilla, imán y, en móvil, zoom). */
 async function inSettings(page: Page, action: () => Promise<void>) {
@@ -154,12 +180,13 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
   await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeAttached();
   await expect(feedback(page)).toHaveText('Imagen de ejemplo añadida. Guardado en memoria.');
-  await expect(card(page, 1)).toContainText('001 // NOTA');
-  await expect(card(page, 3)).toContainText('003 // IMAGEN');
+  // Con los controles en la cabecera, en una tarjeta estrecha solo cabe el número.
+  await expect(card(page, 1)).toContainText(isCompact(page) ? '001' : '001 // NOTA');
+  await expect(card(page, 3)).toContainText(isCompact(page) ? '003' : '003 // IMAGEN');
   await expect(page.getByTestId('card-inspector')).toBeVisible();
 
   // 3. Editar título y Markdown.
-  await card(page, 1).click();
+  await tapCard(page, 1);
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('Título de la tarjeta').fill('Escena inicial');
   await page.getByLabel('Contenido Markdown').fill('# Plano\n\n- abierto');
@@ -167,18 +194,22 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
   await expect(card(page, 1)).toContainText('Escena inicial');
-  await expect(card(page, 1)).toContainText('# Plano');
+  await expect(card(page, 1)).toContainText('Plano');
 
   // 4. Botones del inspector (alternativa accesible a los gestos) con los errores del motor.
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
   await button(page, 'Mover a la izquierda').click();
-  await expect(page.getByRole('alert')).toHaveText('La tarjeta saldría de los límites de la grilla.');
-  await button(page, 'Mover abajo').click();
-  await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 4 × 3');
+  await expect(geometry(page)).toHaveText('X -1, Y 0 · 4 × 3');
   await button(page, 'Mover a la derecha').click();
+  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
+  // Desde P2 la segunda nota nace debajo, dentro de lo visible: a la derecha hay sitio y abajo, no.
+  await button(page, 'Mover a la derecha').click();
+  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
+  await button(page, 'Mover abajo').click();
   await expect(page.getByRole('alert')).toHaveText('Ahí se solaparía con otra tarjeta.');
-  await button(page, 'Más alta').click();
-  await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 4 × 4');
+  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
+  await button(page, 'Más ancha').click();
+  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 5 × 3');
 
   // 5. Conectar desde el inspector y con la herramienta Conectar, que también desconecta.
   const connections = page.getByTestId('card-connections');
@@ -219,7 +250,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.getByTestId('workspace-screen')).toHaveCSS('background-color', rgb(themeColors.dark.background));
   await expect(page.getByTestId('board-canvas')).toHaveCSS('background-color', rgb(themeColors.dark.canvas));
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
-  await expectGeometry(page, 1, 'Columna 1, fila 2 · 4 × 4');
+  await expectGeometry(page, 1, 'Columna 2, fila 1 · 5 × 3');
   await expect(page.getByTestId('card-connections')).toContainText('→ Imagen de ejemplo');
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('# Plano\n\n- abierto');
   await page.screenshot({ path: testInfo.outputPath('workspace-reopened-dark.png') });
@@ -232,11 +263,11 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await createWorkspace(page, 'Arrastre');
-  await addCards(page, ['nota', 'nota']);
-  await closeEditor(page);
+  await sideBySide(page);
   const cell = cellSize(page);
 
-  // Vista previa válida y cancelación con Escape: no se guarda nada.
+  // Vista previa válida y cancelación con Escape: no se guarda nada (el aviso no cambia).
+  const lastFeedback = await feedback(page).innerText();
   await mouseDrag(page, card(page, 1), 0, 4 * cell.y, { release: false });
   await expect(page.getByTestId('drag-target')).toHaveAttribute('aria-label', 'Destino válido');
   await expect(page.getByTestId('drag-status')).toHaveText('Soltar en columna 1, fila 5. Escape cancela.');
@@ -244,7 +275,7 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('drag-status')).toHaveCount(0);
   await page.mouse.up();
-  await expect(feedback(page)).toHaveText('Nota añadida. Guardado en memoria.');
+  await expect(feedback(page)).toHaveText(lastFeedback);
   await expectGeometry(page, 1, 'Columna 1, fila 1 · 4 × 3');
   await closeEditor(page);
 
@@ -260,9 +291,11 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await expectGeometry(page, 1, 'Columna 1, fila 1 · 4 × 3');
   await closeEditor(page);
 
-  // Fuera de límites.
-  await mouseDrag(page, card(page, 1), 0, -3 * cell.y, { release: false });
-  await expect(page.getByTestId('drag-status')).toHaveText('La tarjeta saldría de los límites de la grilla.');
+  // Hacia arriba del origen ahora es un destino válido del mundo; Escape cancela sin guardar.
+  // Dos filas: el puntero no sale de la ventana (Firefox bajo Playwright lo fija en el borde).
+  await mouseDrag(page, card(page, 1), 0, -2 * cell.y, { release: false });
+  await expect(page.getByTestId('drag-status')).toHaveText('Soltar en X 0, Y -2. Escape cancela.');
+  await page.keyboard.press('Escape');
   await page.mouse.up();
   await expectGeometry(page, 1, 'Columna 1, fila 1 · 4 × 3');
   await closeEditor(page);
@@ -285,7 +318,7 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
   await expectGeometry(page, 1, 'Columna 1, fila 5 · 4 × 3');
 
-  // Asas: la esquina cambia ancho y alto; salirse de la grilla se rechaza sin guardar. Soltar no
+  // Asas: la esquina cambia ancho y alto; el mundo admite pasar de 12 columnas. Soltar no
   // selecciona otra vez ni abre nada: la tarjeta sigue seleccionada.
   await revealCanvas(page);
   // En móvil la esquina queda bajo el borde visible: se aleja la vista (75 %) como haría el usuario.
@@ -299,9 +332,9 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await zoomBy(page, 'out', 3);
   await expectZoom(page, '50 %');
   await mouseDrag(page, page.getByTestId('resize-e-tarjeta-1'), 8 * cell.x * 0.5, 0, { header: false, release: false });
-  await expect(page.getByTestId('drag-status')).toHaveText('La tarjeta saldría de los límites de la grilla.');
+  await expect(page.getByTestId('drag-status')).toHaveText('Nuevo tamaño: 13 × 4. Escape cancela.');
+  await page.keyboard.press('Escape');
   await page.mouse.up();
-  await expect(feedback(page)).toHaveText('No se guardó el cambio. La tarjeta saldría de los límites de la grilla.');
   await expect(geometry(page)).toHaveText('Columna 1, fila 5 · 5 × 4');
   await page.screenshot({ path: testInfo.outputPath('drag-resized.png') });
 });
@@ -335,8 +368,7 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await createWorkspace(page, 'Vista');
-  await addCards(page, ['nota', 'nota']);
-  await closeEditor(page);
+  await sideBySide(page);
   const cell = cellSize(page);
 
   // Mano: desplaza el lienzo; las tarjetas no se mueven ni se seleccionan.
@@ -393,6 +425,58 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   expect(await hasHorizontalOverflow(page)).toBe(false);
 });
 
+test('P4: una tarjeta recién creada se revela completa cuando el inspector estrecha el lienzo', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.endsWith('desktop'), 'El estrechamiento por inspector se comprueba en escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Encuadre');
+  await addCards(page, ['nota', 'nota']);
+  const canvas = await page.getByTestId('board-canvas').boundingBox();
+  const created = await card(page, 2).boundingBox();
+  expect(canvas).not.toBeNull();
+  expect(created).not.toBeNull();
+  expect(created!.x).toBeGreaterThanOrEqual(canvas!.x);
+  expect(created!.x + created!.width).toBeLessThanOrEqual(canvas!.x + canvas!.width + 1);
+});
+
+test('lienzo de mundo: rueda, trackpad y tacto exploran ambos ejes sin borde en la última tarjeta', async ({ page, browserName }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Mundo');
+  await addCards(page, ['nota']);
+  await closeEditor(page);
+  const canvas = page.getByTestId('board-canvas');
+  const first = await box(card(page, 1));
+  const frame = await box(canvas);
+  const relative = async () => {
+    const [tile, board] = await Promise.all([box(card(page, 1)), box(canvas)]);
+    return { x: Math.round(tile.x - board.x - (first.x - frame.x)), y: Math.round(tile.y - board.y - (first.y - frame.y)) };
+  };
+  if (isCompact(page)) {
+    await button(page, 'Herramienta Mano').click();
+    // Desde el centro del lienzo: el puntero no sale de la ventana (Firefox lo fija en el borde).
+    const middle = await box(canvas);
+    await page.mouse.move(middle.x + middle.width / 2, middle.y + middle.height / 2);
+    await page.mouse.down();
+    for (let step = 1; step <= 10; step += 1) await page.mouse.move(middle.x + middle.width / 2 - step * 10, middle.y + middle.height / 2 - step * 12);
+    await page.mouse.up();
+    await expect.poll(async () => (await relative()).x).toBe(-100);
+    await expect.poll(async () => (await relative()).y).toBe(-120);
+    // Eventos táctiles reales solo por CDP (Chromium); en Firefox queda probado el recorrido con ratón.
+    if (browserName !== 'chromium') return;
+    for (let step = 0; step < 4; step += 1) await touchDrag(page, canvas, 50, 40, false);
+    await expect.poll(async () => (await relative()).x).toBe(100);
+    await expect.poll(async () => (await relative()).y).toBe(40);
+    return;
+  }
+  await canvas.hover();
+  await page.mouse.wheel(310, 470);
+  await expect.poll(async () => (await relative()).x).toBe(-310);
+  await expect.poll(async () => (await relative()).y).toBe(-470);
+  await page.mouse.wheel(-620, -940);
+  await expect.poll(async () => (await relative()).x).toBe(310);
+  await expect.poll(async () => (await relative()).y).toBe(470);
+  await expect(canvas).toBeVisible();
+});
+
 test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visible', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
@@ -410,22 +494,37 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
   await expect(card(page, 2)).toBeVisible();
   await expect(card(page, 1)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Guion', exact: true })).toBeVisible();
-  await expect(page.getByText('TABLERO 2 · 1 TARJETA')).toBeVisible();
+  // El tablero y su número de tarjetas: en la cabecera desde 800 px; en móvil, en su pestaña.
+  if (isCompact(page)) await expect(button(page, 'Tablero Tablero 2')).toContainText('1');
+  else await expect(page.getByText('TABLERO 2 · 1 TARJETA')).toBeVisible();
   await button(page, 'Tablero Tablero 1').click();
   await expect(card(page, 1)).toBeVisible();
   await expect(card(page, 2)).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('boards.png') });
 
-  // Barra lateral (desde 1100 px): los espacios de la sesión son navegación real.
-  if ((page.viewportSize()?.width ?? 0) >= 1100) {
-    await expect(page.getByTestId('workspace-sidebar')).toBeVisible();
-    await button(page, 'Ir al espacio Primero').click();
-    await expect(page.getByRole('heading', { name: 'Primero', exact: true })).toBeVisible();
-    await expect(page.getByTestId('board-empty')).toBeVisible();
-    await expect(button(page, 'Primero, espacio actual')).toBeVisible();
+  // Proyectos (ADR 0016): pestañas a la derecha desde 800 px; en móvil, la lista desde la cabecera.
+  // Son los espacios reales de la sesión y cambiar de uno a otro es navegación real.
+  if (isCompact(page)) {
+    await expect(page.getByTestId('project-tabs')).toHaveCount(0);
+    await button(page, 'Cambiar de proyecto').click();
+    await expect(page.getByTestId('project-sheet')).toBeVisible();
+    await expect(button(page, 'Guion, proyecto actual')).toBeVisible();
+    await button(page, 'Ir al proyecto Primero').click();
   } else {
-    await expect(page.getByTestId('workspace-sidebar')).toHaveCount(0);
+    const rail = page.getByTestId('project-tabs');
+    await expect(rail).toBeVisible();
+    await expect(rail.getByRole('button')).toHaveCount(2);
+    await expect(button(page, 'Guion, proyecto actual')).toHaveAttribute('aria-pressed', 'true');
+    // A la derecha del área de trabajo, sin tapar el lienzo.
+    const [tabs, canvas] = [await rail.boundingBox(), await page.getByTestId('board-canvas').boundingBox()];
+    expect(tabs && canvas && tabs.x >= canvas.x + canvas.width).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('projects-rail.png') });
+    await button(page, 'Ir al proyecto Primero').click();
   }
+  await expect(page.getByRole('heading', { name: 'Primero', exact: true })).toBeVisible();
+  await expect(page.getByTestId('board-empty')).toBeVisible();
+  if (!isCompact(page)) await expect(button(page, 'Primero, proyecto actual')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('workspace-sidebar')).toHaveCount((page.viewportSize()?.width ?? 0) >= 1100 ? 1 : 0);
 });
 
 test('recargar pierde los datos en memoria y la interfaz lo indica', async ({ page }, testInfo) => {
@@ -497,7 +596,8 @@ test('distribución responsive: carga inicial, tablet, 799/800 y redimensionado 
   await page.goto('./');
   await createWorkspace(page, 'Responsive');
   await addCards(page, ['nota', 'nota', 'imagen']);
-  await card(page, 1).click();
+  // La última tarjeta creada se reveló; la primera puede quedar fuera de la vista: se activa con el teclado.
+  await tapCard(page, 1);
   // Primera medida con el tamaño inicial, antes de redimensionar.
   await expectLayout(page, initial.width);
   await page.screenshot({ path: testInfo.outputPath('responsive-initial.png') });
@@ -533,14 +633,15 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await card(page, 1).focus();
   await page.keyboard.press('Space');
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
-  const moveDown = button(page, 'Mover abajo');
-  await moveDown.focus();
+  // La segunda tarjeta nace debajo (P2): a la derecha hay sitio.
+  const moveRight = button(page, 'Mover a la derecha');
+  await moveRight.focus();
   await page.keyboard.press('Enter');
-  await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 4 × 3');
-  expect(await activeLabel(page)).toBe('Mover abajo');
+  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
+  expect(await activeLabel(page)).toBe('Mover a la derecha');
   // Escape cancela una conexión a medias.
   await button(page, 'Herramienta Conectar').click();
-  await card(page, 2).click();
+  await tapCard(page, 2);
   await expect(page.getByTestId('connect-hint-tarjeta-2')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('connect-hint-tarjeta-2')).toHaveCount(0);

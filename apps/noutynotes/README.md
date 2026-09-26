@@ -25,6 +25,26 @@ Experiencia del workspace (ADR 0013):
 - los gestos usan `PanResponder` de React Native (ratón y táctil en web, táctil en Android), sin dependencias nuevas;
 - `src/components/BrandMark.tsx` dibuja el símbolo de `assets/branding/mark-transparent.png` teñido por tema.
 
+Lienzo en dos ejes, listas y pulido (ADR 0017, ADR 0018):
+- `canvas/viewport.ts`:
+  - `worldPan`, `visibleGridLines` (solo líneas visibles);
+  - `visibleCells`: zona visible, donde se colocan las tarjetas nuevas;
+  - `panToRevealWorld`;
+  - `renderBase`: pintado respecto a una base cercana a la cámara, porque lejos del origen la coma flotante de 32 bits del compositor pintaba mal.
+- `Canvas`:
+  - revela la tarjeta seleccionada al seleccionarla, moverla o redimensionarla, pero no con el zoom ni al guardar;
+  - deshace el scroll nativo;
+  - anula `dragstart` y no admite selección de texto.
+- `src/workspace/markdownLists.ts` (puro): comandos de lista, Enter, renumeración por nivel (con el número inicial al borrar el primero), casillas y extracto como texto seguro.
+- **Pantalla:**
+  - desde 800 px, el estado del ZIP y «Exportar ZIP» van en la cabecera;
+  - desde 1100 px, el aviso ocupa el final de la barra de herramientas;
+  - la hoja móvil del editor tiene una sola barra (`CardInspector` con `inSheet`).
+
+Controles de tarjeta y proyectos (ADR 0016):
+- `src/workspace/canvas/cardChrome.ts` (puro): acciones y posición de los controles en píxeles de pantalla. `CardControls.tsx` los dibuja fuera de la escala del zoom, junto con el menú `⋯`, y `CardIcon.tsx` dibuja los iconos de nota e imagen;
+- `src/workspace/ProjectTabs.tsx`: pestañas verticales de proyectos (≥ 800 px) y hoja «Proyectos» en móvil. Cambiar de proyecto guarda antes el borrador.
+
 Configuración, representación, imágenes y Papelera (ADR 0014, ADR 0015):
 - `src/components/Dialog.tsx`: modal centrado desde 800 px u hoja inferior en móvil; cierra con Escape (web) o atrás (Android);
 - `src/workspace/SettingsPanel.tsx` («Lienzo y grilla») y `canvas/preferences.ts` (límites y `metricsFor`, puros). Las preferencias se guardan en `src/session/viewPreferencesStore(.android).ts`, fuera del workspace;

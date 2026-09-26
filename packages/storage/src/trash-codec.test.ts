@@ -11,6 +11,17 @@ function ok<T>(result: { ok: true; value: T } | { ok: false; issues: readonly un
 }
 
 describe('Papelera en el formato v1: .nouty/trash.yaml (ADR 0015)', () => {
+  it('declara v2 si una tarjeta retirada conserva una posición negativa', () => {
+    const source = workspaceFixture();
+    const moved: Workspace = { ...source, layouts: source.layouts.map((layout) => ({ ...layout, placements: layout.placements.map((placement, index) => index === 0
+      ? { ...placement, rect: { ...placement.rect, x: -4, y: -2 } } : placement) })) };
+    const trashed = ok(trashCard(moved, moved.cards[0]?.id as CardId));
+    const files = ok(serializeWorkspace(trashed));
+    expect(files['.nouty/trash.yaml']).toContain('schemaVersion: 2');
+    expect(ok(parseWorkspace(files)).trash).toEqual(trashed.trash);
+    const mislabeled = { ...files, '.nouty/trash.yaml': files['.nouty/trash.yaml']?.replace('schemaVersion: 2', 'schemaVersion: 1') ?? '' };
+    expect(parseWorkspace(mislabeled).ok).toBe(false);
+  });
   it('sin Papelera no hay archivo; con ella, ida y vuelta exacta y la tarjeta deja de tener cards/<id>.md', () => {
     const source = workspaceFixture();
     expect(Object.keys(ok(serializeWorkspace(source)))).not.toContain('.nouty/trash.yaml');

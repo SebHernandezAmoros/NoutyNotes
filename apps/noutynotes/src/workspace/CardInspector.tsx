@@ -2,12 +2,14 @@ import { connectCards, disconnectCards, editCardContent, moveCardOnBoard, resize
 import type { WorkspaceStorageResult } from '@noutynotes/application';
 import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { cardTitle } from './Board';
+import { applyListCommand, normalizeListChange, toggleChecklistLine } from './markdownLists';
+import type { ListKind, TextSelection } from './markdownLists';
 import type { WorkspaceAction } from './useWorkspaceEditor';
 
 type Run = <T>(action: WorkspaceAction<T>, success: string) => Promise<WorkspaceStorageResult<T>>;
@@ -24,6 +26,8 @@ interface CardInspectorProps {
   /** Representación y Papelera (ADR 0014, ADR 0015); los mismos caminos que la barra de la tarjeta. */
   readonly onDisplay: (display: CardDisplayMode) => void;
   readonly onTrash: () => void;
+  /** En la hoja móvil, la barra de la hoja ya muestra el título y «Cerrar»: no se repiten aquí. */
+  readonly inSheet?: boolean;
 }
 
 const displays: readonly { display: CardDisplayMode; label: string }[] = [
@@ -50,20 +54,39 @@ const resizes = [
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, inSheet = false }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
+  const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
+  const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
   const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
   const changeTitle = (value: string) => {
     setTitle(value);
     if (mode === 'folder') onDraftChange({ cardId: card.id, title: value, content });
   };
   const changeContent = (value: string) => {
-    setContent(value);
-    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: value });
+    const edit = normalizeListChange(content, value, selectionRef.current);
+    const next = edit?.text ?? value;
+    setContent(next);
+    if (edit) setForcedSelection({ start: edit.caret, end: edit.caret });
+    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
+  };
+  const insertList = (kind: ListKind) => {
+    const edit = applyListCommand(content, selectionRef.current, kind);
+    setContent(edit.text);
+    selectionRef.current = { start: edit.caret, end: edit.caret };
+    setForcedSelection(selectionRef.current);
+    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: edit.text });
+  };
+  const toggleCheck = (line: number) => {
+    const next = toggleChecklistLine(content, line);
+    if (next !== null) {
+      setContent(next);
+      if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
+    }
   };
   useEffect(() => {
     if (mode !== 'folder' || !dirty) return;
@@ -84,17 +107,46 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
   return (
     <View testID="card-inspector" style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={styles.header}>
-        <View style={styles.headerText}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>TARJETA SELECCIONADA</Text>
-          <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card)}</Text>
+      {inSheet ? null : (
+        <View style={styles.header}>
+          <View style={styles.headerText}>
+            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>TARJETA SELECCIONADA</Text>
+            <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card)}</Text>
+          </View>
+          <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
         </View>
-        <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
-      </View>
+      )}
 
       <View style={styles.section}>
         <TextField label="Título de la tarjeta" value={title} onChangeText={changeTitle} placeholder="Sin título" />
-        <TextField label="Contenido Markdown" value={content} onChangeText={changeContent} multiline placeholder="# Una idea" />
+        <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Listas Markdown">
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>LISTAS</Text>
+          <ActionButton label="−" accessibilityLabel="Insertar lista con guiones" onPress={() => insertList('dash')} style={styles.listButton} />
+          <ActionButton label="•" accessibilityLabel="Insertar lista con viñetas" onPress={() => insertList('bullet')} style={styles.listButton} />
+          <ActionButton label="1." accessibilityLabel="Insertar lista numerada" onPress={() => insertList('number')} style={styles.listButton} />
+          <ActionButton label="☐" accessibilityLabel="Insertar lista de tareas" onPress={() => insertList('check')} style={styles.listButton} />
+        </View>
+        <TextField label="Contenido Markdown" value={content} onChangeText={changeContent} multiline placeholder="# Una idea"
+          selection={forcedSelection}
+          onSelectionChange={(selection) => {
+            selectionRef.current = selection;
+            if (forcedSelection && selection.start === forcedSelection.start && selection.end === forcedSelection.end) setForcedSelection(undefined);
+          }} />
+        {content.split('\n').some((line) => /^\s*[-*+]\s+\[[ xX]\]/.test(line)) ? (
+          <View testID="checklist-preview" style={styles.preview}>
+            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>VISTA DE TAREAS</Text>
+            {content.split('\n').map((line, index) => {
+              const check = /^(\s*[-*+]\s+)\[([ xX])\]\s*(.*)$/.exec(line);
+              if (!check) return <Text key={index} style={[styles.body, { color: colors.textPrimary }]}>{line || ' '}</Text>;
+              const checked = check[2]?.toLowerCase() === 'x';
+              return <View key={index} style={styles.checkRow}>
+                <ActionButton label={checked ? '☑' : '☐'} accessibilityLabel={`${checked ? 'Desmarcar' : 'Marcar'} tarea ${check[3] ?? ''}`}
+                  pressed={checked} onPress={() => toggleCheck(index)} />
+                <Text style={[styles.body, styles.checkText, { color: colors.textPrimary }]}>{check[3]}</Text>
+              </View>;
+            })}
+          </View>
+        ) : null}
         <View style={styles.row}>
           <ActionButton
             label="Guardar texto"
@@ -106,9 +158,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       </View>
 
       <View style={styles.section}>
-        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>POSICIÓN EN LA GRILLA DE 12 COLUMNAS</Text>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>POSICIÓN EN EL LIENZO</Text>
         <Text testID="card-geometry" style={[styles.body, { color: colors.textPrimary }]}>
-          {rect ? `Columna ${rect.x + 1}, fila ${rect.y + 1} · ${rect.w} × ${rect.h}` : 'Sin colocación en este tablero'}
+          {rect ? rect.x < 0 || rect.y < 0
+            ? `X ${rect.x}, Y ${rect.y} · ${rect.w} × ${rect.h}`
+            : `Columna ${rect.x + 1}, fila ${rect.y + 1} · ${rect.w} × ${rect.h}` : 'Sin colocación en este tablero'}
         </Text>
         {rect ? (
           <>
@@ -206,7 +260,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 }
 
 const styles = StyleSheet.create({
-  panel: { borderWidth: 2, padding: 16, gap: 20 },
+  // Botones de lista de 44 × 44: los cuatro caben en una fila junto a «LISTAS» (panel de 320 px).
+  listButton: { width: 44, minWidth: 44, paddingHorizontal: 0 },
+  panel: { padding: 16, gap: 20 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   headerText: { flex: 1, minWidth: 0, gap: 4 },
   eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
@@ -217,4 +273,7 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, lineHeight: 18 },
   connection: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   connectionText: { flex: 1, minWidth: 0 },
+  preview: { gap: 6 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checkText: { flex: 1, minWidth: 0 },
 });

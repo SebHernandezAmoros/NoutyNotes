@@ -13,6 +13,18 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 - **Alternativas:** los botones del inspector siguen disponibles para teclado. En móvil el editor aparece en una hoja inferior que se puede ocultar.
 - **Pendiente:** enlaces, frames, búsqueda, minimapa y deshacer.
 
+**Lienzo, listas y títulos (ADR 0017, ADR 0018):**
+- **Lienzo en dos ejes:** se recorre en X e Y con la Mano, rueda/trackpad, tacto o flechas. Admite posiciones negativas y lejanas en un rango práctico de ±1 000 000 celdas (no es infinito).
+- **Formato:** un layout con posiciones negativas se guarda con `schemaVersion: 2`; sin ellas sigue siendo v1.
+- **Tarjetas nuevas:** aparecen en la parte visible del tablero.
+- **Listas Markdown portables:** guiones, viñetas, numeradas y checklist; Enter continúa o termina la lista, se renumera sola y las casillas se marcan desde el editor. El HTML, CSS o JavaScript de una nota se muestra como texto y nunca se ejecuta.
+- **Títulos flotantes:** rótulos editables sobre el tablero que se mueven, minimizan y van a la Papelera como cualquier tarjeta.
+
+**Tarjetas y navegación (ADR 0016):**
+- **Controles en la cabecera:** cada tarjeta tiene `−` minimizar, `▭`/`□` contraer o expandir y `×` Papelera, a 44 px con cualquier zoom, o un menú `⋯` si no caben.
+- **Fichas minimizadas:** muestran el icono del tipo y el título.
+- **Proyectos:** pestañas a la derecha para cambiar entre los espacios reales; en móvil se abren desde «Proyectos».
+
 **Configuración, tarjetas e imágenes (ADR 0014, ADR 0015):**
 - **Configuración del lienzo:** modal en escritorio y hoja en móvil. Incluye grilla, imán, zoom, alto de fila y separación entre fichas. Son preferencias del dispositivo: no viajan con el workspace.
 - **Representación:** minimizar, contraer y expandir desde la barra de la tarjeta o el inspector. Si al expandir choca con otra tarjeta, ofrece «Expandir en un hueco libre».

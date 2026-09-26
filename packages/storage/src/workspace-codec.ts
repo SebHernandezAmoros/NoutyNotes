@@ -2,7 +2,7 @@ import { isValidId, validateWorkspace } from '@noutynotes/domain';
 import type { Board, Card, DomainIssue, TrashedCard, Workspace } from '@noutynotes/domain';
 import type { z } from 'zod';
 
-import { LAYOUT_FILE, RELATIONS_FILE, layoutData, parseLayouts, parseRelations, relationData } from './codecs';
+import { LAYOUT_FILE, RELATIONS_FILE, layoutData, layoutSchemaVersion, parseLayouts, parseRelations, relationData } from './codecs';
 import { checkShape, checkVersionedData, compact, duplicateIdIssues, mergeWithPrevious, plainDataIssues, previousFilesIssues, readVersionedYaml, yamlDocument } from './documents';
 import type { GeneratedDocument, PreviousPackage } from './documents';
 import { joinFrontmatter, splitFrontmatter } from './frontmatter';
@@ -56,6 +56,10 @@ function trashData(entry: TrashedCard): unknown {
   });
 }
 
+function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 {
+  return entries.some((entry) => entry.placements.some((placement) => placement.rect.x < 0 || placement.rect.y < 0)) ? 2 : 1;
+}
+
 function boardDocument(board: Board): GeneratedDocument {
   return markdownDocument(compact({
     schemaVersion: 1, id: board.id, title: board.title, cardIds: board.cardIds,
@@ -74,12 +78,12 @@ function workspaceDocuments(workspace: Workspace): Map<string, GeneratedDocument
     cardTypes: workspace.cardTypes, relationTypes: workspace.relationTypes,
     cards: workspace.cards.map((card) => card.id), boards: workspace.boards.map((board) => board.id),
   })));
-  documents.set(LAYOUT_FILE, yamlDocument({ schemaVersion: 1, layouts: workspace.layouts.map(layoutData) }));
+  documents.set(LAYOUT_FILE, yamlDocument({ schemaVersion: layoutSchemaVersion(workspace.layouts), layouts: workspace.layouts.map(layoutData) }));
   documents.set(RELATIONS_FILE, yamlDocument({ schemaVersion: 1, relations: workspace.relations.map(relationData) }));
   for (const card of workspace.cards) documents.set(cardPath(card.id), cardDocument(card));
   for (const board of workspace.boards) documents.set(boardPath(board.id), boardDocument(board));
   if (workspace.trash && workspace.trash.length > 0) {
-    documents.set(TRASH_FILE, yamlDocument({ schemaVersion: 1, items: workspace.trash.map(trashData) }));
+    documents.set(TRASH_FILE, yamlDocument({ schemaVersion: trashSchemaVersion(workspace.trash), items: workspace.trash.map(trashData) }));
   }
   return documents;
 }
@@ -226,8 +230,17 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (!layouts.ok) issues.push(...layouts.issues);
   const relations = parseRelations(files[RELATIONS_FILE] ?? '');
   if (!relations.ok) issues.push(...relations.issues);
-  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema) : null;
+  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2]) : null;
   if (trash && !trash.ok) issues.push(...trash.issues);
+  if (trash?.ok && trash.value.schemaVersion === 1) {
+    trash.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
+      for (const axis of ['x', 'y'] as const) {
+        if (placement.rect[axis] < 0) issues.push(storageIssue('invalid-layout',
+          `${TRASH_FILE}#items[${itemIndex}].placements[${placementIndex}].rect.${axis}`,
+          'La versión 1 no admite posiciones negativas.'));
+      }
+    }));
+  }
   if (issues.length > 0 || !layouts.ok || !relations.ok || (trash && !trash.ok)) return fail(issues);
 
   const { id, metadata, cardTypes, relationTypes } = manifest.value;
@@ -285,4 +298,3 @@ export function serializeWorkspace(workspace: Workspace, previousFiles?: TextFil
   // Los extras también cuentan para los límites del resultado.
   return mergeWithPrevious(workspaceDocuments(workspace), previous);
 }
-

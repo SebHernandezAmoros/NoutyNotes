@@ -50,17 +50,17 @@ export function plainDataIssues(value: unknown, path: string): DomainIssue[] {
  * Lee un documento YAML versionado: YAML estricto, objeto raíz, `schemaVersion` admitida y forma
  * cerrada. Las incidencias quedan situadas en `file#ruta`.
  */
-export function readVersionedYaml<T>(text: string, file: string, schema: z.ZodType<T>): StorageResult<T> {
+export function readVersionedYaml<T>(text: string, file: string, schema: z.ZodType<T>, allowedVersions: readonly number[] = [1]): StorageResult<T> {
   const parsed = parseYaml(text, file);
   if (!parsed.ok) return parsed;
-  return checkVersionedData(parsed.value, file, schema);
+  return checkVersionedData(parsed.value, file, schema, allowedVersions);
 }
 
-export function checkVersionedData<T>(data: unknown, file: string, schema: z.ZodType<T>): StorageResult<T> {
+export function checkVersionedData<T>(data: unknown, file: string, schema: z.ZodType<T>, allowedVersions: readonly number[] = [1]): StorageResult<T> {
   if (!isObject(data)) return fail([storageIssue('invalid-document', file, 'El documento debe ser un objeto YAML.')]);
-  if (!isSupportedSchemaVersion(data.schemaVersion)) {
+  if (!(allowedVersions.length === 1 && allowedVersions[0] === 1 ? isSupportedSchemaVersion(data.schemaVersion) : allowedVersions.includes(data.schemaVersion as number))) {
     return fail([storageIssue('unsupported-schema-version', `${file}#schemaVersion`,
-      `Versión de esquema no admitida: ${JSON.stringify(data.schemaVersion) ?? 'ausente'}. Este formato solo lee la versión 1, sin migraciones.`)]);
+      `Versión de esquema no admitida: ${JSON.stringify(data.schemaVersion) ?? 'ausente'}. Versiones admitidas: ${allowedVersions.join(', ')}.`)]);
   }
   const shaped = checkShape(schema, data);
   return shaped.ok ? shaped : fail(located(shaped.issues, file));

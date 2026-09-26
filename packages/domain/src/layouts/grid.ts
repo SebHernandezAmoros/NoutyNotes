@@ -10,6 +10,8 @@ import type { BoardLayout, CardPlacement } from './layout';
 export interface GridConfig {
   readonly columns: number;
   readonly rows?: number;
+  /** Mundo con coordenadas firmadas; `columns` sigue definiendo el ancho inicial de autocolocación. */
+  readonly world?: boolean;
 }
 
 export interface GridPoint {
@@ -29,6 +31,9 @@ export const MAX_GRID_COLUMNS = 48;
 export const DESKTOP_GRID: GridConfig = { columns: 12 };
 export const TABLET_GRID: GridConfig = { columns: 6 };
 export const MOBILE_GRID: GridConfig = { columns: 1 };
+/** Límite práctico: 96 millones de píxeles a la escala base, lejos de la precisión insegura. */
+export const MAX_WORLD_CELL = 1_000_000;
+export const WORLD_GRID: GridConfig = { columns: 12, world: true };
 
 function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
@@ -44,6 +49,12 @@ export function collectGridConfigIssues(config: unknown, issues: DomainIssue[]):
   }
   if (config.rows !== undefined && !isPositiveSafeInteger(config.rows)) {
     issues.push(issue('invalid-grid-config', 'rows', 'Si se indica, debe ser un entero mayor o igual que 1.'));
+  }
+  if (config.world !== undefined && config.world !== true) {
+    issues.push(issue('invalid-grid-config', 'world', 'Debe ser true cuando se indique.'));
+  }
+  if (config.world && config.rows !== undefined) {
+    issues.push(issue('invalid-grid-config', 'rows', 'Un mundo bidireccional no admite límite de filas.'));
   }
 }
 
@@ -124,6 +135,9 @@ export function candidateRows(cells: readonly GridCell[], from: number, extra: r
 export function fitsGrid(cell: GridCell, config: GridConfig): boolean {
   const right = cell.x + cell.w;
   const bottom = cell.y + cell.h;
+  if (config.world) return Number.isSafeInteger(right) && Number.isSafeInteger(bottom)
+    && cell.x >= -MAX_WORLD_CELL && cell.y >= -MAX_WORLD_CELL
+    && right <= MAX_WORLD_CELL && bottom <= MAX_WORLD_CELL;
   return cell.x >= 0 && cell.y >= 0 && Number.isSafeInteger(right) && Number.isSafeInteger(bottom)
     && right <= config.columns && (config.rows === undefined || bottom <= config.rows);
 }
@@ -150,7 +164,7 @@ export function collectGridIssues(layout: BoardLayout, config: GridConfig, issue
     if (!fitsGrid(cells[index] as GridCell, config)) {
       issues.push(issue('out-of-bounds', path, 'La tarjeta sale de los límites de la grilla.'));
     }
-    if (placement.rect.w > config.columns || (config.rows !== undefined && placement.rect.h > config.rows)) {
+    if ((!config.world && placement.rect.w > config.columns) || (config.rows !== undefined && placement.rect.h > config.rows)) {
       issues.push(issue('out-of-bounds', `${path}.${placement.rect.w > config.columns ? 'w' : 'h'}`,
         'El tamaño expandido no cabe en la grilla.'));
     }

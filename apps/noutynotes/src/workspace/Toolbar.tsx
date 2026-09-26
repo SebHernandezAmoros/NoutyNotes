@@ -1,4 +1,5 @@
 import { useTheme } from '@noutynotes/ui';
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ToolButton } from '../components/controls';
@@ -12,6 +13,7 @@ interface ToolbarProps {
   readonly tool: CanvasTool;
   readonly onTool: (tool: CanvasTool) => void;
   readonly onAddNote: () => void;
+  readonly onAddTitle: () => void;
   readonly onImportImage: () => void;
   readonly onAddExample: () => void;
   readonly zoom: number;
@@ -23,6 +25,10 @@ interface ToolbarProps {
   readonly trashCount: number;
   readonly onOpenTrash: () => void;
   readonly onOpenSettings: () => void;
+  /** Con barra lateral (≥ 1100 px), Papelera y Configuración están en ella y no se repiten aquí. */
+  readonly navInSidebar: boolean;
+  /** Contenido al final de la fila en escritorio (el aviso del workspace): ahorra una fila al lienzo. */
+  readonly trailing?: ReactNode;
 }
 
 /**
@@ -51,6 +57,7 @@ export function Toolbar(props: ToolbarProps) {
   const create = (
     <View style={styles.group}>
       <ToolButton glyph="+" label="Nota" accessibilityLabel="Añadir nota" onPress={props.onAddNote} style={cell} />
+      <ToolButton glyph="T" label="Título" accessibilityLabel="Añadir título flotante" onPress={props.onAddTitle} style={cell} />
       <ToolButton glyph="⤒" label="Imagen" accessibilityLabel="Importar una imagen" accessibilityHint="Elige una imagen PNG, JPEG, GIF o WebP de hasta 5 MB" onPress={props.onImportImage} style={cell} />
       <ToolButton glyph="▣" label="Ejemplo" accessibilityLabel="Añadir imagen de ejemplo" accessibilityHint="Marcador de demostración sin archivo" onPress={props.onAddExample} style={cell} />
       {props.compact ? (
@@ -68,8 +75,12 @@ export function Toolbar(props: ToolbarProps) {
         disabled={!onCanvas} onPress={props.onZoomReset} style={[cell, styles.zoomCell]} />
       <ToolButton glyph="+" label="Acercar" accessibilityLabel="Acercar" disabled={!onCanvas || props.zoom >= MAX_ZOOM} onPress={props.onZoomIn} style={cell} />
       <ToolButton glyph="≡" label="Lista" accessibilityLabel="Vista de lista" active={!onCanvas} onPress={props.onToggleView} style={cell} />
-      <ToolButton glyph="🗑" label={props.trashCount > 0 ? `Papelera ${props.trashCount}` : 'Papelera'} accessibilityLabel={`Abrir la Papelera (${props.trashCount})`} onPress={props.onOpenTrash} style={cell} />
-      <ToolButton glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={props.onOpenSettings} style={cell} />
+      {props.navInSidebar ? null : (
+        <>
+          <ToolButton glyph="🗑" label={props.trashCount > 0 ? `Papelera ${props.trashCount}` : 'Papelera'} accessibilityLabel={`Abrir la Papelera (${props.trashCount})`} onPress={props.onOpenTrash} style={cell} />
+          <ToolButton glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={props.onOpenSettings} style={cell} />
+        </>
+      )}
     </View>
   );
   return (
@@ -77,7 +88,7 @@ export function Toolbar(props: ToolbarProps) {
       testID="workspace-toolbar"
       accessibilityRole="toolbar"
       accessibilityLabel="Herramientas del tablero"
-      style={[styles.bar, props.compact ? styles.compact : styles.wide, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      style={[styles.bar, props.compact ? styles.compact : styles.wide, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}
     >
       {props.compact ? (
         <>
@@ -91,6 +102,7 @@ export function Toolbar(props: ToolbarProps) {
           {create}
           <View style={[styles.divider, { backgroundColor: colors.gridLine }]} />
           {view}
+          {props.trailing ? <View style={styles.trailing}>{props.trailing}</View> : null}
         </>
       )}
     </View>
@@ -98,7 +110,7 @@ export function Toolbar(props: ToolbarProps) {
 }
 
 const styles = StyleSheet.create({
-  bar: { borderWidth: 2, padding: 4, gap: 4 },
+  bar: { borderWidth: 1, padding: 4, gap: 4 },
   compact: { flexDirection: 'column' },
   wide: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   group: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
@@ -107,4 +119,5 @@ const styles = StyleSheet.create({
   wideCell: { paddingHorizontal: 10 },
   zoomCell: { minWidth: 64 },
   divider: { width: 2, alignSelf: 'stretch', marginHorizontal: 4 },
+  trailing: { flexGrow: 1, flexShrink: 1, flexBasis: 240, minWidth: 220, alignSelf: 'stretch', justifyContent: 'center' },
 });

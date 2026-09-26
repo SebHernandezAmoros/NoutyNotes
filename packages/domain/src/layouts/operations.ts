@@ -9,6 +9,10 @@ import type { BoardLayout, CardDisplayMode, CardPlacement } from './layout';
 export interface FindFreeSpaceOptions {
   /** Tarjeta cuya huella se ignora, por ejemplo al buscar un nuevo sitio para ella misma. */
   readonly ignore?: CardId;
+  /** Esquina superior izquierda de la zona de búsqueda (por ejemplo, la parte visible del mundo). Por defecto, el origen. */
+  readonly from?: GridPoint;
+  /** Ancho de la banda de búsqueda en celdas; se ensancha hasta el de la tarjeta. Por defecto, las columnas de la grilla. */
+  readonly columns?: number;
 }
 
 export interface SetDisplayOptions {
@@ -68,24 +72,41 @@ function invalidOptions(options: unknown): DomainIssue[] {
   return isRecord(options) ? [] : [issue('invalid-value', 'options', 'Debe ser un objeto de opciones.')];
 }
 
+function invalidZone(options: FindFreeSpaceOptions): DomainIssue[] {
+  const issues: DomainIssue[] = [];
+  const { from, columns } = options;
+  if (from !== undefined && (!isRecord(from) || !Number.isSafeInteger(from.x) || !Number.isSafeInteger(from.y))) {
+    issues.push(issue('invalid-value', 'options.from', 'Debe ser un punto de la grilla con enteros.'));
+  }
+  if (columns !== undefined && (!Number.isSafeInteger(columns) || columns < 1)) {
+    issues.push(issue('invalid-value', 'options.columns', 'Debe ser un entero mayor o igual que 1.'));
+  }
+  return issues;
+}
+
 /** Primera posición libre en orden de lectura: filas de arriba abajo y columnas de izquierda a derecha. */
 export function findFreeSpace(layout: BoardLayout, size: GridSize, config: GridConfig, options: FindFreeSpaceOptions = {}): ValidationResult<GridPoint> {
   const origin: GridPoint = { x: 0, y: 0 };
   const optionIssues = invalidOptions(options);
   if (optionIssues.length > 0) return fail(origin, optionIssues);
+  const zoneIssues = invalidZone(options);
+  if (zoneIssues.length > 0) return fail(origin, zoneIssues);
   const checked = validateGridLayout(layout, config);
   if (!checked.ok) return fail(origin, [...checked.issues]);
   const sizeIssues = checkIntegers(size, ['w', 'h'], 'size', 1);
   if (sizeIssues.length > 0) return fail(origin, sizeIssues);
-  if (size.w > config.columns || (config.rows !== undefined && size.h > config.rows)) {
+  if ((!config.world && size.w > config.columns) || (config.rows !== undefined && size.h > config.rows)) {
     return fail(origin, [issue('out-of-bounds', 'size', 'El tamaño no cabe en la grilla.')]);
   }
   const occupied = layout.placements.filter((placement) => placement.cardId !== options.ignore).map(footprint);
-  for (const y of candidateRows(occupied, 0)) {
+  const start = options.from ?? origin;
+  const end = start.x + Math.max(options.columns ?? config.columns, size.w);
+  for (const y of candidateRows(occupied, start.y)) {
     // Filas en orden creciente: si esta ya no es representable o excede el límite, las siguientes tampoco.
-    if (!fitsGrid({ x: 0, y, w: size.w, h: size.h }, config)) break;
-    for (let x = 0; x + size.w <= config.columns; x += 1) {
+    if (!fitsGrid({ x: start.x, y, w: size.w, h: size.h }, config)) break;
+    for (let x = start.x; x + size.w <= end; x += 1) {
       const candidate: GridCell = { x, y, w: size.w, h: size.h };
+      if (!fitsGrid(candidate, config)) continue;
       if (occupied.every((cell) => !cellsOverlap(candidate, cell))) return resultOf({ x, y }, []);
     }
   }
@@ -109,7 +130,7 @@ export function resizeCard(layout: BoardLayout, cardId: CardId, size: GridSize, 
   if (!located.ok) return fail(layout, [...located.issues]);
   const sizeIssues = checkIntegers(size, ['w', 'h'], 'size', 1);
   if (sizeIssues.length > 0) return fail(layout, sizeIssues);
-  if (size.w > config.columns || (config.rows !== undefined && size.h > config.rows)) {
+  if ((!config.world && size.w > config.columns) || (config.rows !== undefined && size.h > config.rows)) {
     return fail(layout, [issue('out-of-bounds', 'size', 'El tamaño no cabe en la grilla.')]);
   }
   const { placement, index } = located.value;

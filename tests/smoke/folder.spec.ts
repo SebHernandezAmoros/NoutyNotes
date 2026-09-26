@@ -71,6 +71,146 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.screenshot({ path: testInfo.outputPath('folder-reconnected.png'), fullPage: true });
 });
 
+test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conserva formato v2 y se reabre en el mismo lugar', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  const press = (name: string) => page.getByRole('button', { name, exact: true }).click();
+  const geometry = page.getByTestId('card-geometry');
+  const layoutText = () => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    const bytes = files['mundo/.nouty/layout.yaml'];
+    return bytes ? new TextDecoder().decode(new Uint8Array(bytes)) : '';
+  });
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Mundo');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await press('Añadir nota');
+  await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
+  // A la izquierda y por encima del origen: coordenadas negativas en ambos ejes.
+  await press('Mover a la izquierda');
+  await press('Mover arriba');
+  await press('Mover arriba');
+  await expect(geometry).toHaveText('X -1, Y -2 · 4 × 3');
+  await expect.poll(layoutText).toContain('schemaVersion: 2');
+
+  // Otra tarjeta, lejos: más allá de la columna 12 del formato antiguo y muy abajo.
+  await press('Añadir nota');
+  await expect(page.getByTestId('card-tarjeta-2')).toHaveAttribute('aria-pressed', 'true');
+  // La geometría se lee «Columna c, fila f» o, con alguna coordenada negativa, «X x, Y y».
+  const cell = async () => {
+    const text = await geometry.innerText();
+    const grid = /Columna (\d+), fila (\d+)/.exec(text);
+    if (grid) return { x: Number(grid[1]) - 1, y: Number(grid[2]) - 1 };
+    const world = /X (-?\d+), Y (-?\d+)/.exec(text);
+    if (!world) throw new Error(`Geometría ilegible: ${text}`);
+    return { x: Number(world[1]), y: Number(world[2]) };
+  };
+  // Cada paso espera a que se guarde el anterior (la geometría cambia) antes de volver a pulsar.
+  const step = async (name: string) => {
+    const before = await cell();
+    await press(name);
+    await expect.poll(cell).not.toEqual(before);
+  };
+  while ((await cell()).x < 20) await step('Mover a la derecha');
+  while ((await cell()).y < 30) await step('Mover abajo');
+  await expect(geometry).toHaveText('Columna 21, fila 31 · 4 × 3');
+  await expect.poll(layoutText).toMatch(/cardId: tarjeta-2[\s\S]*?x: 20\n\s+"y": 30/);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Mundo' }).click();
+  // La cámara arranca en el origen: la lejana no se ve hasta enfocarla; el foco la trae con el pan.
+  const canvas = await page.getByTestId('board-canvas').boundingBox();
+  if (!canvas) throw new Error('Sin lienzo');
+  expect((await page.getByTestId('card-tarjeta-2').boundingBox())?.y ?? 0).toBeGreaterThan(canvas.y + canvas.height);
+  await page.getByTestId('card-tarjeta-2').focus();
+  await page.keyboard.press('Space');
+  await expect(geometry).toHaveText('Columna 21, fila 31 · 4 × 3');
+  const far = await page.getByTestId('card-tarjeta-2').boundingBox();
+  const frame = await page.getByTestId('board-canvas').boundingBox();
+  expect(far && frame && far.y >= frame.y && far.y < frame.y + frame.height).toBe(true);
+  await page.getByTestId('card-tarjeta-1').focus();
+  await page.keyboard.press('Space');
+  await expect(geometry).toHaveText('X -1, Y -2 · 4 × 3');
+});
+
+test('P2: una tarjeta a casi un millón de celdas se pinta con coordenadas pequeñas, sin perder precisión', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  const press = (name: string) => page.getByRole('button', { name, exact: true }).click();
+  await press('Abrir una carpeta');
+  await page.getByLabel('Nombre del nuevo espacio').fill('Lejos');
+  await press('Crear un espacio');
+  await press('Añadir nota');
+  await expect(page.getByTestId('workspace-memory')).toHaveText('CARPETA LOCAL · CAMBIOS GUARDADOS');
+  // Otra aplicación (o un editor de texto) deja la tarjeta en x = 999 000, y = -999 000 con layout v2.
+  await page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    const text = new TextDecoder().decode(new Uint8Array(files['lejos/.nouty/layout.yaml'] ?? []));
+    const far = text.replace('schemaVersion: 1', 'schemaVersion: 2').replace(/x: 0\n(\s+)"y": 0/, 'x: 999000\n$1"y": -999000');
+    files['lejos/.nouty/layout.yaml'] = Array.from(new TextEncoder().encode(far));
+    localStorage.setItem('nouty-test-folder', JSON.stringify(files));
+  });
+  await page.reload();
+  await press('Volver a mis espacios');
+  await press('Abrir una carpeta');
+  await press('Abrir Lejos');
+  await page.getByTestId('card-tarjeta-1').focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByTestId('card-geometry')).toHaveText('X 999000, Y -999000 · 4 × 3');
+  // Con la cámara allí, lo pintado usa números pequeños: el compositor trabaja en coma flotante de
+  // 32 bits (unos 16,7 millones exactos) y a -96 millones de píxeles la tarjeta se pintaba rota.
+  const painted = await page.evaluate(() => {
+    const content = document.querySelector('[data-testid="canvas-content"]') as HTMLElement;
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(content).transform);
+    const wrap = document.querySelector('[data-testid="card-tarjeta-1"]')?.parentElement as HTMLElement;
+    return [matrix.m41, matrix.m42, parseFloat(wrap.style.left), parseFloat(wrap.style.top)].map((value) => Math.abs(value));
+  });
+  expect(Math.max(...painted)).toBeLessThan(100_000);
+  const [card, frame] = [await page.getByTestId('card-tarjeta-1').boundingBox(), await page.getByTestId('board-canvas').boundingBox()];
+  expect(card && frame && card.x >= frame.x && card.y >= frame.y && card.x + card.width <= frame.x + frame.width).toBe(true);
+});
+
+test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la carpeta', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Editorial');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir título flotante' }).click();
+  await expect(page.getByTestId('floating-title-tarjeta-1')).toBeVisible();
+  await page.getByLabel('Título de la tarjeta').fill('Proyecto Solace');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await page.getByTestId('card-tarjeta-2').click();
+  const editor = page.getByLabel('Contenido Markdown');
+  await page.getByRole('button', { name: 'Insertar lista de tareas' }).click();
+  await expect(editor).toHaveValue('- [ ] ');
+  await editor.focus();
+  await editor.press('End');
+  await editor.type('Primera');
+  await editor.press('Enter');
+  await expect(editor).toHaveValue('- [ ] Primera\n- [ ] ');
+  await page.getByRole('button', { name: 'Marcar tarea Primera' }).click();
+  await expect(editor).toHaveValue('- [x] Primera\n- [ ] ');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await expect.poll(() => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    const title = files['editorial/cards/tarjeta-1.md'];
+    const note = files['editorial/cards/tarjeta-2.md'];
+    return title && note ? [title, note].map((bytes) => new TextDecoder().decode(new Uint8Array(bytes))) : [];
+  })).toEqual([expect.stringContaining('title: Proyecto Solace'), expect.stringContaining('- [x] Primera')]);
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Editorial' }).click();
+  await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
+  await page.getByTestId('card-tarjeta-2').click();
+  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('- [x] Primera\n- [ ] ');
+});
+
 test('cancelar el selector conserva el modo de memoria y muestra un aviso', async ({ page }) => {
   await page.addInitScript({ content: `window.showDirectoryPicker = async () => { throw Object.assign(new Error('Cancelado'), { name: 'AbortError' }); };` });
   await page.goto('./');
@@ -136,6 +276,28 @@ test('volver al inicio inmediatamente espera al guardado del borrador', async ({
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Antes de salir');
 });
 
+test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 0016)', async ({ page }) => {
+  const files = () => page.evaluate(() => JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>);
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  for (const name of ['Uno', 'Dos']) {
+    await page.getByLabel('Nombre del nuevo espacio').fill(name);
+    await page.getByRole('button', { name: 'Crear un espacio' }).click();
+    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+    if (name === 'Uno') await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  }
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByLabel('Título de la tarjeta').fill('Borrador sin guardar');
+  // Sin pulsar «Guardar texto»: cambiar de proyecto desde las pestañas (o la lista en móvil).
+  if ((page.viewportSize()?.width ?? 0) < 800) await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Ir al proyecto Uno', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Uno', exact: true })).toBeVisible();
+  const card = new TextDecoder().decode(new Uint8Array((await files())['dos/cards/tarjeta-1.md'] ?? []));
+  expect(card).toContain('title: Borrador sin guardar');
+});
+
 test('recargar con texto pendiente exige confirmar la salida', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -188,7 +350,20 @@ test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ning�
     await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
     await expect(page.getByTestId(`card-tarjeta-${id}`)).toBeVisible();
   }
+  // Desde P2 la segunda nace debajo, dentro de lo visible. Para probar la colisión horizontal se
+  // coloca a su derecha con los botones del inspector y se restablece la vista.
+  const press = (name: string) => page.getByRole('button', { name, exact: true }).click();
+  for (let step = 0; step < 4; step += 1) await press('Mover a la derecha');
+  for (let step = 0; step < 3; step += 1) await press('Mover arriba');
+  await expect(page.getByTestId('card-geometry')).toHaveText('Columna 5, fila 1 · 4 × 3');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta', exact: true }).click();
+  if ((page.viewportSize()?.width ?? 0) < 800) {
+    await press('Abrir la configuración');
+    await press('Restablecer la vista del lienzo');
+    await press('Cerrar configuración');
+  } else {
+    await page.getByTestId('zoom-level').click();
+  }
   const cell = (page.viewportSize()?.width ?? 0) >= 800 ? { x: 96, y: 64 } : { x: 56, y: 56 };
   const snapshot = () => page.evaluate(() => localStorage.getItem('nouty-test-folder') ?? '');
   const layout = () => page.evaluate(() => {

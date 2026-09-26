@@ -5,7 +5,7 @@ import {
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId, CardId, RelationId, WorkspaceId } from '../../packages/domain/src/index';
-import { MemoryStorage } from '../../packages/storage/src/index';
+import { MemoryStorage, readWorkspaceArchive, writeWorkspaceArchive } from '../../packages/storage/src/index';
 
 const id = (value: string) => value as WorkspaceId;
 const card = (value: string) => value as CardId;
@@ -46,6 +46,37 @@ describe('crear espacios desde un nombre (fase 7)', () => {
 });
 
 describe('añadir tarjetas (fase 7)', () => {
+  it('P3: crea un título flotante como sección portable, editable y con layout propio', async () => {
+    const { storage, workspaceId } = await session();
+    const titleId = ok(await addCardToBoard(storage, workspaceId, { kind: 'title', title: 'Proyecto Solace' }));
+    const opened = ok(await storage.open(workspaceId));
+    expect(opened.cardTypes).toContainEqual({ id: 'titulo-flotante', label: 'Título', base: 'section', fields: [] });
+    expect(opened.cards[0]).toMatchObject({ id: titleId, typeId: 'titulo-flotante', title: 'Proyecto Solace' });
+    expect(opened.layouts[0]?.placements[0]?.rect).toEqual({ x: 0, y: 0, w: 6, h: 2 });
+    const noteId = ok(await addCardToBoard(storage, workspaceId, { kind: 'note' }));
+    expect(ok(await storage.open(workspaceId)).layouts[0]?.placements.find((placement) => placement.cardId === noteId)?.rect)
+      .toEqual({ x: 0, y: 2, w: 4, h: 3 });
+    ok(await editCardContent(storage, workspaceId, titleId, { title: 'Ideas que perduran' }));
+    ok(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: titleId, to: { x: -3, y: 12 } }));
+    expect(ok(storage.exportPackage(workspaceId))['cards/tarjeta-1.md']).toContain('title: Ideas que perduran');
+    expect(ok(await storage.open(workspaceId)).layouts[0]?.placements[0]?.rect).toMatchObject({ x: -3, y: 12 });
+    const archive = writeWorkspaceArchive(ok(storage.exportPackage(workspaceId)), {});
+    if (!archive.ok) throw new Error(JSON.stringify(archive.issues));
+    const restored = readWorkspaceArchive(archive.value);
+    if (!restored.ok) throw new Error(JSON.stringify(restored.issues));
+    expect(restored.value.workspace.cards[0]).toMatchObject({ typeId: 'titulo-flotante', title: 'Ideas que perduran' });
+    expect(restored.value.workspace.layouts[0]?.placements[0]?.rect).toMatchObject({ x: -3, y: 12 });
+  });
+  it('P2: una tarjeta nueva va al primer hueco de la zona visible que indica la interfaz, no fuera de la vista', async () => {
+    const { storage, workspaceId } = await session();
+    const near = { x: -8, y: 10, columns: 6 };
+    const first = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', near }));
+    const second = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', near }));
+    const rects = ok(await storage.open(workspaceId)).layouts[0]?.placements.map((placement) => [placement.cardId, placement.rect]);
+    // Dos tarjetas de 4 columnas no caben lado a lado en 6 columnas visibles: la segunda va debajo.
+    expect(rects).toEqual([[first, { x: -8, y: 10, w: 4, h: 3 }], [second, { x: -8, y: 13, w: 4, h: 3 }]]);
+    expect(failureOf(await addCardToBoard(storage, workspaceId, { kind: 'note', near: { x: 0, y: 0, columns: 0 } }))).toEqual(['invalid-workspace@input']);
+  });
   it('la primera tarjeta crea el tipo, el board principal y su layout; las siguientes ocupan el siguiente hueco', async () => {
     const { storage, workspaceId } = await session();
     expect(ok(await addCardToBoard(storage, workspaceId, { kind: 'note' }))).toBe('tarjeta-1');
@@ -97,16 +128,25 @@ describe('editar, mover, redimensionar y relacionar a través del puerto (fase 7
     const rects = async () => ok(await storage.open(workspaceId)).layouts[0]?.placements.map(({ rect }) => rect);
     expect(await rects()).toEqual([{ x: 0, y: 0, w: 5, h: 2 }, { x: 4, y: 3, w: 4, h: 3 }]);
 
+    ok(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, to: { x: -2, y: -3 } }));
+    expect((await rects())?.[0]).toMatchObject({ x: -2, y: -3 });
+    expect(ok(storage.exportPackage(workspaceId))['.nouty/layout.yaml']).toContain('schemaVersion: 2');
+    ok(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, to: { x: 20, y: 0 } }));
+    ok(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, to: { x: 0, y: 0 } }));
+    // Sin posiciones negativas el layout vuelve a v1: una app que solo conoce v1 puede abrirlo otra vez
+    // (x = 20 ya era válido en v1).
+    expect(ok(storage.exportPackage(workspaceId))['.nouty/layout.yaml']).toContain('schemaVersion: 1');
+
     const before = ok(storage.exportPackage(workspaceId));
-    expect(failureOf(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, to: { x: -1, y: 0 } })))
+    expect(failureOf(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, to: { x: -1_000_001, y: 0 } })))
       .toEqual(['invalid-workspace@transform', 'out-of-bounds@to']);
-    expect(failureOf(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, to: { x: 9, y: 0 } })))
+    expect(failureOf(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, to: { x: 1_000_000, y: 0 } })))
       .toEqual(['invalid-workspace@transform', 'out-of-bounds@to']);
     expect(failureOf(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: second, to: { x: 4, y: 1 } })))
       .toEqual(['invalid-workspace@transform', 'grid-collision@placements[0]']);
     expect(failureOf(await resizeCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, size: { w: 5, h: 4 } })))
       .toEqual(['invalid-workspace@transform', 'grid-collision@placements[1]']);
-    expect(failureOf(await resizeCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, size: { w: 13, h: 1 } })))
+    expect(failureOf(await resizeCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, size: { w: 1_000_001, h: 1 } })))
       .toEqual(['invalid-workspace@transform', 'out-of-bounds@size']);
     expect(failureOf(await moveCardOnBoard(storage, workspaceId, { boardId: 'otro' as BoardId, cardId: first, to: { x: 0, y: 0 } })))
       .toEqual(['invalid-workspace@transform', 'missing-reference@boardId']);
