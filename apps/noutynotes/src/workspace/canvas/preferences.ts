@@ -12,9 +12,11 @@ export interface ViewPreferences {
   readonly rowHeight: number;
   /** Separación entre fichas en píxeles. */
   readonly cardGap: number;
+  /** Fecha de creación en el pie de las fichas (ADR 0029). */
+  readonly showDates: boolean;
 }
 
-export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 64, cardGap: 8 };
+export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 64, cardGap: 8, showDates: false };
 
 export const PREFERENCE_LIMITS = {
   rowHeight: { min: 56, max: 96, step: 8 },
@@ -37,10 +39,10 @@ export function parsePreferences(stored: string | null): ViewPreferences {
     data = null;
   }
   const record = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {};
-  const flag = (key: 'showGrid' | 'snap') => (typeof record[key] === 'boolean' ? (record[key] as boolean) : DEFAULT_PREFERENCES[key]);
+  const flag = (key: 'showGrid' | 'snap' | 'showDates') => (typeof record[key] === 'boolean' ? (record[key] as boolean) : DEFAULT_PREFERENCES[key]);
   const number = (key: NumericPreference) => (typeof record[key] === 'number' && Number.isFinite(record[key])
     ? snapTo(record[key] as number, PREFERENCE_LIMITS[key]) : DEFAULT_PREFERENCES[key]);
-  return { showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap') };
+  return { showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'), showDates: flag('showDates') };
 }
 
 export function stepPreference(preferences: ViewPreferences, key: NumericPreference, direction: 1 | -1): ViewPreferences {

@@ -29,6 +29,48 @@ export interface CardPlacement {
 export interface BoardLayout {
   readonly boardId: BoardId;
   readonly placements: readonly CardPlacement[];
+  /** Marcos del tablero (ADR 0027): áreas con título; sus tarjetas son las que están enteras dentro. */
+  readonly frames?: readonly Frame[];
+}
+
+/** Marco (ADR 0027). No ocupa la grilla de las tarjetas ni guarda sus hijas: la pertenencia es geométrica. */
+export interface Frame {
+  readonly id: string;
+  readonly title: string;
+  readonly rect: GridRect;
+}
+
+export const MAX_FRAME_TITLE = 80;
+
+/** Título válido: entre 1 y 80 caracteres sin contar los espacios de los extremos. */
+export function isFrameTitle(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length >= 1 && value.trim().length <= MAX_FRAME_TITLE;
+}
+
+// Solape de rectángulos; grid.ts importa este módulo, así que no se reutiliza el suyo.
+const overlaps = (a: GridRect, b: GridRect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+function collectFrameIssues(value: unknown, path: string, issues: DomainIssue[]): void {
+  const frames = listAt(value, path, issues);
+  frames.forEach((frame, index) => {
+    const framePath = `${path}[${index}]`;
+    if (!isRecord(frame)) {
+      issues.push(issue('invalid-layout', framePath, 'Debe ser un objeto.'));
+      return;
+    }
+    checkId(frame.id, `${framePath}.id`, issues);
+    if (!isFrameTitle(frame.title)) issues.push(issue('invalid-value', `${framePath}.title`, `Debe tener entre 1 y ${MAX_FRAME_TITLE} caracteres.`));
+    collectRectIssues(frame.rect, `${framePath}.rect`, issues);
+  });
+  checkUniqueIds(frames.map((frame) => (isRecord(frame) ? frame.id : undefined)), path, 'los marcos del tablero', issues);
+  const rects = frames.map((frame) => (isRecord(frame) && isRecord(frame.rect) ? frame.rect as unknown as GridRect : null));
+  rects.forEach((rect, index) => {
+    if (!rect) return;
+    for (let other = 0; other < index; other += 1) {
+      const previous = rects[other];
+      if (previous && overlaps(rect, previous)) issues.push(issue('grid-collision', `${path}[${index}].rect`, 'Los marcos no pueden solaparse.'));
+    }
+  });
 }
 
 // Enteros seguros: valores mayores no se pueden sumar ni comparar de forma exacta (ADR 0004).
@@ -82,6 +124,7 @@ export function collectLayoutIssues(layout: unknown, path: string, issues: Domai
     `el layout del board "${String(layout.boardId)}"`,
     issues,
   );
+  if (layout.frames !== undefined) collectFrameIssues(layout.frames, `${path}.frames`, issues);
 }
 
 export function validateLayout(layout: BoardLayout): ValidationResult<BoardLayout> {

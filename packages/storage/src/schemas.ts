@@ -11,7 +11,8 @@ const fieldValue = z.union([z.string(), z.number(), z.boolean()]);
 
 export const rectSchema = z.strictObject({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
 export const placementSchema = z.strictObject({ cardId: text, rect: rectSchema, display: text });
-export const layoutSchema = z.strictObject({ boardId: text, placements: z.array(placementSchema) });
+export const frameSchema = z.strictObject({ id: text, title: text, rect: rectSchema });
+export const layoutSchema = z.strictObject({ boardId: text, placements: z.array(placementSchema), frames: z.array(frameSchema).optional() });
 export const relationSchema = z.strictObject({ id: text, typeId: text, from: text, to: text, label: text.optional() });
 
 export const fieldDefinitionSchema = z.strictObject({
@@ -50,7 +51,7 @@ export const workspaceSchema = z.strictObject({
 
 // Documentos del formato v1.
 export const relationsFileSchema = z.strictObject({ schemaVersion: z.literal(1), relations: z.array(relationSchema) });
-export const layoutFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2)]), layouts: z.array(layoutSchema) });
+export const layoutFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), layouts: z.array(layoutSchema) });
 export const workspaceManifestSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, metadata: metadataSchema,
   cardTypes: z.array(cardTypeSchema), relationTypes: z.array(relationTypeSchema),

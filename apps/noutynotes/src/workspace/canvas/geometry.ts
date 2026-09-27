@@ -1,5 +1,5 @@
 import { CANONICAL_GRID } from '@noutynotes/application';
-import { cellsOverlap, footprint, moveCard, moveCards, resizeCard } from '@noutynotes/domain';
+import { cellsOverlap, footprint, frameMembers, moveCard, moveCards, moveFrame, resizeCard } from '@noutynotes/domain';
 import type { BoardLayout, CardId, GridCell, GridPoint, GridSize, ValidationResult } from '@noutynotes/domain';
 
 /**
@@ -104,6 +104,21 @@ export function checkMoveMany(layout: BoardLayout, cardIds: readonly CardId[], d
     .map((placement) => footprint({ ...placement, rect: { ...placement.rect, x: placement.rect.x + delta.x, y: placement.rect.y + delta.y } }));
   const colliding = layout.placements
     .filter((other) => !members.has(other.cardId) && moved.some((area) => cellsOverlap(area, footprint(other))))
+    .map((other) => other.cardId);
+  return { ok: false, code, colliding };
+}
+
+/** ¿Se puede mover el marco con sus tarjetas? Mismas reglas que `moveFrameOnBoard` (ADR 0027). */
+export function checkFrameMove(layout: BoardLayout, frameId: string, delta: GridPoint): PlacementCheck {
+  const result = moveFrame(layout, frameId, delta, CANONICAL_GRID);
+  if (result.ok) return { ok: true };
+  const code = result.issues[0]?.code ?? 'invalid-layout';
+  const frame = layout.frames?.find((candidate) => candidate.id === frameId);
+  if (code !== 'grid-collision' || !frame) return { ok: false, code, colliding: [] };
+  const members = new Set(frameMembers(layout, frameId));
+  const rect = { ...frame.rect, x: frame.rect.x + delta.x, y: frame.rect.y + delta.y };
+  const colliding = layout.placements
+    .filter((other) => !members.has(other.cardId) && cellsOverlap(rect, footprint(other)))
     .map((other) => other.cardId);
   return { ok: false, code, colliding };
 }

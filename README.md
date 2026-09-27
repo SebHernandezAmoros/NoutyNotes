@@ -29,6 +29,19 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 - **Archivar:** saca una tarjeta de los tableros y de las búsquedas sin destruirla (con su sitio, conexiones y fecha), y se guarda en `.nouty/archive.yaml`.
 - **Panel Archivo:** busca, filtra por tipo y ordena. «Restaurar» la devuelve a su sitio, o al primer hueco libre si está ocupado. «Enviar a la Papelera» es la única forma de eliminar, y solo la Papelera borra.
 
+**Configuración y fechas (ADR 0029):**
+- La Configuración del proyecto reúne **Apariencia** (Claro, Oscuro o Sistema; el mismo ajuste que en el inicio), **Fechas** («Mostrar la fecha de creación en las fichas») y **Lienzo y grilla**. Todo es de este dispositivo: no cambia las notas ni viaja con el ZIP.
+- El tema elegido se conserva al recargar o volver a abrir la app. El editor de la tarjeta indica siempre cuándo se creó o que no tiene fecha.
+
+**Vista general del lienzo (ADR 0028):**
+- Controles abajo a la derecha del lienzo: «Ver todo» (⌖) encuadra todas las tarjetas y marcos; el minimapa (▦) las muestra a escala con la zona visible, y tocar un punto lleva la vista allí. En móvil también está ahí el zoom.
+- **Selección por área:** con Seleccionar, arrastrar sobre el fondo dibuja un rectángulo; las tarjetas que toca pasan a la selección múltiple. Un toque en el fondo sigue cerrando el editor.
+
+**Marcos (ADR 0027):**
+- «Agrupar» en la barra de selección múltiple crea un marco con título alrededor de las tarjetas. Una tarjeta es del marco si está entera dentro: arrastrarla dentro o fuera la añade o la quita.
+- Tocar el título del marco abre su editor: renombrar, mover (también arrastrando el título, con sus tarjetas), ancho y alto sin cortar tarjetas, «Añadir nota en el marco», «Seleccionar sus tarjetas» y «Quitar el marco» (las tarjetas se quedan).
+- **Formato:** `layout.yaml` usa `schemaVersion: 3` solo si hay marcos; sin ellos, conserva sus bytes.
+
 **Deshacer y rehacer (ADR 0026):**
 - «Deshacer» y «Rehacer» en la barra (en móvil, ↶ y ↷ junto al aviso), y Ctrl/⌘ + Z, Ctrl/⌘ + Mayús + Z o Ctrl + Y fuera de los campos de texto. Cubre todo lo que cambia el proyecto en esta sesión: crear, texto, mover, tamaño, conexiones, Papelera, Archivo, Diario… Los textos seguidos de una tarjeta son un paso.
 - **Límites:** 50 pasos, solo mientras el proyecto está abierto. Eliminar definitivamente o borrar assets vacía el historial. Si otra app cambió la carpeta, no se deshace nada y se avisa. Deshacer no borra el archivo de una imagen añadida: queda «sin usar» en Assets.

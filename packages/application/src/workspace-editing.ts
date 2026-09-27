@@ -62,6 +62,8 @@ export interface AddCardInput {
    * banda de `columns` celdas. Sin ella, primer hueco desde el origen en la banda de 12 columnas.
    */
   readonly near?: { readonly x: number; readonly y: number; readonly columns: number };
+  /** Tamaño inicial en celdas; por defecto, el del preset (una nota dentro de un marco estrecho, ADR 0027). */
+  readonly size?: GridSize;
 }
 
 export interface AddBoardInput {
@@ -136,6 +138,10 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const rawUrl = isObject(input) ? ownValue(input, 'url') : undefined;
   const assetRef = isObject(input) ? ownValue(input, 'assetRef') : undefined;
   const createdAt = isObject(input) ? ownValue(input, 'createdAt') : undefined;
+  const size = isObject(input) ? ownValue(input, 'size') : undefined;
+  if (size !== undefined && !(isObject(size) && [ownValue(size, 'w'), ownValue(size, 'h')].every((side) => Number.isSafeInteger(side) && (side as number) >= 1))) {
+    return storageFailure('invalid-workspace', 'size', 'El tamaño debe ser de enteros mayores o iguales que 1.');
+  }
   if (createdAt !== undefined && !isArchiveInstant(createdAt)) return storageFailure('invalid-workspace', 'createdAt', 'La fecha de creación debe ser ISO 8601 en UTC.');
   const validNear = near === undefined || (isObject(near) && Number.isSafeInteger(ownValue(near, 'x')) && Number.isSafeInteger(ownValue(near, 'y'))
     && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
@@ -150,6 +156,7 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
     return storageFailure('invalid-asset', 'assetRef', 'Solo una imagen del proyecto (bajo assets/) puede añadirse como tarjeta de imagen.');
   }
   const preset = PROTOTYPE_CARD_PRESETS[kind];
+  const cardSize = size === undefined ? preset.size ?? DEFAULT_CARD_SIZE : { w: ownValue(size, 'w') as number, h: ownValue(size, 'h') as number };
   let created: CardId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
     const type = kind === 'link' ? linkCardTypeFor(workspace) : preset.type;
@@ -166,7 +173,7 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       ...(typeof createdAt === 'string' ? { createdAt } : {}),
       ...(preset.content === undefined ? {} : { content: preset.content }),
     };
-    const result = addCard(target, card, { boardId, size: preset.size ?? DEFAULT_CARD_SIZE, config: CANONICAL_GRID });
+    const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID });
     if (result.ok) created = cardId;
     if (result.ok && (kind !== 'title' || zone)) {
       // La primera tarjeta crea el layout: antes, el tablero está vacío.
@@ -179,7 +186,7 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
         // comienza debajo. Solo es una pista de auto-colocación; el usuario puede mover todo después.
         // Con zona visible, se busca dentro de ella: la tarjeta aparece donde se está mirando.
         const free = findFreeSpace({ ...before, placements: before.placements.map((placement) => placement === heading
-          ? { ...placement, rect: { ...placement.rect, w: CANONICAL_GRID.columns } } : placement) }, preset.size ?? DEFAULT_CARD_SIZE, CANONICAL_GRID,
+          ? { ...placement, rect: { ...placement.rect, w: CANONICAL_GRID.columns } } : placement) }, cardSize, CANONICAL_GRID,
         zone ? { from: { x: zone.x, y: zone.y }, columns: zone.columns } : {});
         if (free.ok) {
           const moved = moveCard(after, cardId, free.value, CANONICAL_GRID);

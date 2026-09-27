@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { formatCreated } from './dates';
 import { describeFailure } from '../session/messages';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
@@ -201,6 +202,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       )}
 
+      <Text testID="card-created" style={[styles.hint, { color: colors.textSecondary }]}>
+        {formatCreated(card.createdAt, new Date(card.createdAt ?? 0).getTimezoneOffset())}
+      </Text>
       {onSelectMany ? (
         <View style={styles.row}>
           <ActionButton label="Seleccionar varias" accessibilityLabel="Seleccionar varias tarjetas empezando por esta" onPress={onSelectMany} />

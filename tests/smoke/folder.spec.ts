@@ -738,3 +738,38 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   await expect(geometry).toHaveText(start);
   await expect(page.getByRole('button', { name: /^Deshacer/ })).toHaveAttribute('aria-disabled', 'true');
 });
+
+test('carpeta: el marco se guarda en layout.yaml (v3) y reaparece al recargar; quitarlo vuelve a la versión anterior (ADR 0027)', async ({ page }) => {
+  const button = (name: string) => page.getByRole('button', { name, exact: true });
+  const layoutText = () => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return new TextDecoder().decode(new Uint8Array(files['album/.nouty/layout.yaml'] ?? []));
+  });
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await button('Abrir una carpeta').click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Álbum');
+  await button('Crear un espacio').click();
+  await button('Añadir nota').click();
+  await button('Cerrar el editor de la tarjeta').click();
+  await button('Añadir nota').click();
+  await button('Seleccionar varias tarjetas empezando por esta').click();
+  await button('Seleccionar todas las tarjetas del tablero').click();
+  await button('Agrupar las 2 seleccionadas en un marco').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Marco creado con 2 tarjetas. Guardado en la carpeta.');
+  await page.getByLabel('Título del marco').fill('Viaje');
+  await button('Guardar el título del marco').click();
+  await expect.poll(layoutText).toContain('title: Viaje');
+  expect(await layoutText()).toContain('schemaVersion: 3');
+
+  await page.reload();
+  await button('Volver a mis espacios').click();
+  await button('Abrir una carpeta').click();
+  await button('Abrir Álbum').click();
+  await expect(page.getByTestId('frame-header-marco-1')).toContainText('Viaje');
+  await page.getByTestId('frame-header-marco-1').focus();
+  await page.keyboard.press('Enter');
+  await button('Quitar el marco Viaje').click();
+  await expect.poll(layoutText).not.toContain('frames');
+  expect(await layoutText()).not.toContain('schemaVersion: 3');
+});

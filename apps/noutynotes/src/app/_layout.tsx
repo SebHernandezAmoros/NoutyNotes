@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { registerOfflineWorker } from '../offline/registerOfflineWorker';
 
 import { WorkspaceSessionProvider } from '../session/WorkspaceSession';
+import { loadThemePreference, saveThemePreference } from '../session/viewPreferencesStore';
 
 function AppNavigation() {
   const { theme } = useTheme();
@@ -24,7 +25,7 @@ export default function RootLayout() {
   // El almacenamiento en memoria vive por encima del tema y de la navegación (ADR 0009).
   return (
     <WorkspaceSessionProvider>
-      <ThemeProvider>
+      <ThemeProvider load={loadThemePreference} save={saveThemePreference}>
         <AppNavigation />
       </ThemeProvider>
     </WorkspaceSessionProvider>

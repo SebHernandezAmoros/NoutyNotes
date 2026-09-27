@@ -795,3 +795,165 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
   await expect(redoButton).toHaveAttribute('aria-disabled', 'true');
   expect(runtimeErrors).toEqual([]);
 });
+
+test('marcos: agrupar la selección, renombrar, mover con sus tarjetas (flechas y arrastrando el título), añadir nota dentro, sus tarjetas y quitar (ADR 0027)', async ({ page, browserName }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Marcos');
+  await sideBySide(page);
+  const frameGeometry = page.getByTestId('frame-geometry');
+  const header = page.getByTestId('frame-header-marco-1');
+  // Justo después de arrastrar el título, una pulsación en él se descarta 400 ms (es el «click» del
+  // gesto): se repite hasta abrir el editor. Seleccionar el marco es idempotente.
+  const openFrame = async () => {
+    await expect(async () => {
+      await header.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('frame-inspector')).toBeVisible({ timeout: 300 });
+    }).toPass();
+  };
+  const closeFrame = async () => {
+    await button(page, 'Cerrar el editor del marco').click();
+    await expect(page.getByTestId('frame-inspector')).toHaveCount(0);
+  };
+
+  // Agrupar: el marco rodea la selección con una fila más arriba para el título y se abre su editor.
+  await tapCard(page, 1);
+  await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
+  await tapCard(page, 2);
+  await button(page, 'Agrupar las 2 seleccionadas en un marco').click();
+  await expect(feedback(page)).toHaveText('Marco creado con 2 tarjetas. Guardado en memoria.');
+  await expect(page.getByTestId('frame-inspector')).toBeVisible();
+  await expect(frameGeometry).toHaveText('X 0, Y -1 · 8 × 4');
+  await expect(page.getByTestId('frame-members')).toContainText('2 tarjetas dentro');
+  await page.getByLabel('Título del marco').fill('Kioto');
+  await button(page, 'Guardar el título del marco').click();
+  await expect(feedback(page)).toHaveText('Marco renombrado. Guardado en memoria.');
+  await expect(header).toContainText('Kioto');
+
+  // Flechas: el marco baja una fila y sus tarjetas con él.
+  await button(page, 'Mover el marco abajo').click();
+  await expect(feedback(page)).toHaveText('Marco movido. Guardado en memoria.');
+  await expect(frameGeometry).toHaveText('Columna 1, fila 1 · 8 × 4');
+  await page.screenshot({ path: testInfo.outputPath('frame.png') });
+  await closeFrame();
+  await expectGeometry(page, 2, 'Columna 5, fila 2 · 4 × 3');
+  await closeEditor(page);
+
+  // Arrastrar el título mueve el marco con sus tarjetas, con vista previa.
+  const cell = cellSize(page);
+  await resetView(page);
+  if (isCompact(page)) {
+    if (browserName === 'chromium' && testInfo.project.use.hasTouch) await touchDrag(page, header, 0, 2 * cell.y, false);
+    else await mouseDrag(page, header, 0, 2 * cell.y, { header: false });
+  } else {
+    await mouseDrag(page, header, 0, 2 * cell.y, { header: false, release: false });
+    await expect(page.getByTestId('drag-status')).toHaveText('Mover el marco «Kioto» con 2 tarjetas: +0 columnas, +2 filas. Escape cancela.');
+    await page.mouse.up();
+  }
+  await expect(feedback(page)).toHaveText('Marco movido. Guardado en memoria.');
+  await expectGeometry(page, 1, 'Columna 1, fila 4 · 4 × 3');
+  await closeEditor(page);
+
+  // Lleno, no añade nada; más alto, la nota aparece dentro y se abre su editor.
+  await openFrame();
+  await button(page, 'Añadir nota en el marco').click();
+  await expect(feedback(page)).toHaveText('El marco no tiene hueco para otra nota: hazlo más grande.');
+  for (let step = 0; step < 3; step += 1) await button(page, 'Marco más alto').click();
+  await expect(frameGeometry).toHaveText('Columna 1, fila 3 · 8 × 7');
+  await button(page, 'Añadir nota en el marco').click();
+  await expect(feedback(page)).toHaveText('Nota añadida en el marco. Guardado en memoria.');
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await closeEditor(page);
+
+  // Sus tarjetas abren la selección múltiple; quitar el marco deja las tarjetas.
+  await openFrame();
+  await expect(page.getByTestId('frame-members')).toContainText('3 tarjetas dentro');
+  await button(page, 'Seleccionar las tarjetas del marco').click();
+  await expect(page.getByTestId('multi-count')).toHaveText('3 SELECCIONADAS');
+  await button(page, 'Cancelar la selección').click();
+  await openFrame();
+  await button(page, 'Quitar el marco Kioto').click();
+  await expect(feedback(page)).toHaveText('Marco quitado; sus tarjetas siguen en el tablero. Guardado en memoria.');
+  await expect(page.getByTestId('frame-marco-1')).toHaveCount(0);
+  await expect(card(page, 3)).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('vista general: selección por área, un toque en el fondo cierra el editor, «Ver todo», minimapa y zoom en móvil (ADR 0028)', async ({ page, browserName }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Vista');
+  await sideBySide(page);
+  const canvas = await box(page.getByTestId('board-canvas'));
+  const cell = cellSize(page);
+
+  // Arrastrar sobre el fondo, de abajo a la derecha hacia la primera tarjeta, selecciona las que toca.
+  const from = { x: canvas.x + canvas.width - 24, y: canvas.y + 5 * cell.y };
+  const to = { x: canvas.x + 30, y: canvas.y + 30 };
+  if (isCompact(page) && browserName === 'chromium' && testInfo.project.use.hasTouch) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(from.x), y: Math.round(from.y) }] });
+    for (let step = 1; step <= 10; step += 1) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: Math.round(from.x + ((to.x - from.x) * step) / 10), y: Math.round(from.y + ((to.y - from.y) * step) / 10) }] });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cdp.detach();
+  } else {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    for (let step = 1; step <= 10; step += 1) await page.mouse.move(from.x + ((to.x - from.x) * step) / 10, from.y + ((to.y - from.y) * step) / 10);
+    await expect(page.getByTestId('selection-area')).toBeVisible();
+    await page.mouse.up();
+  }
+  await expect(page.getByTestId('multi-count')).toHaveText('2 SELECCIONADAS');
+  await button(page, 'Cancelar la selección').click();
+
+  // Un toque en el fondo (sin arrastrar) sigue cerrando el editor.
+  await tapCard(page, 1);
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await revealCanvas(page);
+  // Con el editor abierto, el lienzo es más estrecho (escritorio): el punto se toma del lienzo actual.
+  const now = await box(page.getByTestId('board-canvas'));
+  await page.mouse.click(now.x + 20, now.y + 6 * cell.y);
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+
+  // Una tarjeta lejos: «Ver todo» encuadra las dos con menos zoom.
+  await tapCard(page, 2);
+  for (let step = 0; step < 10; step += 1) await button(page, 'Mover abajo').click();
+  await expect(geometry(page)).toHaveText('Columna 5, fila 11 · 4 × 3');
+  await closeEditor(page);
+  await resetView(page);
+  await button(page, 'Ver todo el tablero').click();
+  await expect(page.getByTestId(isCompact(page) ? 'canvas-zoom' : 'zoom-level')).not.toContainText('100 %');
+  // Las dos se ven enteras y ninguna queda bajo los controles inferiores.
+  const controls = await box(page.getByTestId('canvas-controls'));
+  for (const id of [1, 2]) {
+    const found = await box(card(page, id));
+    expect(found.y).toBeGreaterThanOrEqual(canvas.y - 1);
+    expect(found.y + found.height).toBeLessThanOrEqual(controls.y + 1);
+  }
+
+  // Minimapa: tocar la esquina de arriba lleva la vista hacia la primera tarjeta.
+  await button(page, 'Mostrar el minimapa').click();
+  const map = page.getByTestId('canvas-minimap');
+  await expect(map).toHaveAccessibleName('Minimapa: 2 tarjetas; toca para ir a esa zona');
+  await page.screenshot({ path: testInfo.outputPath('minimap.png') });
+  const before = await box(card(page, 2));
+  const mapBox = await box(map);
+  await page.mouse.click(mapBox.x + mapBox.width / 2, mapBox.y + mapBox.height - 8);
+  await expect.poll(async () => (await box(card(page, 2))).y).toBeLessThan(before.y);
+  await button(page, 'Ocultar el minimapa').click();
+  await expect(map).toHaveCount(0);
+
+  // Móvil: el zoom está en los controles del lienzo, sin abrir Configuración.
+  if (isCompact(page)) {
+    await button(page, 'Acercar la vista').click();
+    await expect(page.getByTestId('canvas-zoom')).toHaveText('75 %');
+    await page.getByTestId('canvas-zoom').click();
+    await expect(page.getByTestId('canvas-zoom')).toHaveText('100 %');
+  }
+  expect(runtimeErrors).toEqual([]);
+});

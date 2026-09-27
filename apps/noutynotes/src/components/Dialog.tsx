@@ -59,7 +59,9 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(20, 22, 18, 0.35)' },
-  backdropWide: { alignItems: 'center', justifyContent: 'center', padding: 24 },
+  // Arriba y a distancia fija, no centrado: centrar un panel de alto variable lo dejaba en medios píxeles
+  // y Firefox medía 43,99 px un botón de 44 (auditoría de 7a).
+  backdropWide: { alignItems: 'center', justifyContent: 'flex-start', padding: 24, paddingTop: 48 },
   backdropCompact: { justifyContent: 'flex-end' },
   panel: { width: '100%', maxWidth: 560, maxHeight: '85%', borderWidth: 2 },
   sheet: { width: '100%', maxHeight: '62%', borderTopWidth: 3 },

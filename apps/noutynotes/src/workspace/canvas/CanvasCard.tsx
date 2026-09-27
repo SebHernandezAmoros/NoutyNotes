@@ -29,6 +29,8 @@ interface CanvasCardProps {
   readonly box: PixelBox;
   readonly display: CardDisplayMode;
   readonly selected: boolean;
+  /** Fecha de creación visible en el pie (ADR 0029): ya formateada, o undefined. */
+  readonly createdLabel?: string | undefined;
   readonly dragging: boolean;
   readonly colliding: boolean;
   readonly connectRole: ConnectRole;
@@ -103,7 +105,9 @@ export function CanvasCard(props: CanvasCardProps) {
   const tags = card.tags ?? [];
   // Con pie (etiquetas o conexiones), el texto cede sus líneas: relleno, título, hueco y bordes (48) más
   // 22 por línea de pie (hueco + 16). Sin pie se conserva el cálculo anterior.
-  const footerLines = (tags.length > 0 ? 1 : 0) + (connections > 0 ? 1 : 0);
+  // Línea de datos del pie: conexiones y, si se pide, la fecha de creación (ADR 0029).
+  const meta = [connections > 0 ? (connections === 1 ? '1 conexión' : `${connections} conexiones`) : '', props.createdLabel ?? ''].filter(Boolean).join(' · ');
+  const footerLines = (tags.length > 0 ? 1 : 0) + (meta !== '' ? 1 : 0);
   // Enlace (ADR 0020): una línea con dominio y ruta, sin descargar nada; ocupa una línea del texto.
   const linkKey = linkUrlField(type);
   const linkValue = linkKey ? card.fields[linkKey] : undefined;
@@ -198,8 +202,8 @@ export function CanvasCard(props: CanvasCardProps) {
                   {tags.slice(0, 3).map((tag) => `#${tag}`).join('  ')}{tags.length > 3 ? `  +${tags.length - 3}` : ''}
                 </Text>
               ) : null}
-              {connections > 0 ? (
-                <Text style={[styles.badge, { color: colors.textSecondary }, tags.length > 0 ? { marginTop: 2 } : null]}>{connections === 1 ? '1 conexión' : `${connections} conexiones`}</Text>
+              {meta !== '' ? (
+                <Text testID={`card-meta-${card.id}`} numberOfLines={1} style={[styles.badge, { color: colors.cardText }, tags.length > 0 ? { marginTop: 2 } : null]}>{meta}</Text>
               ) : null}
             </View>
           </>

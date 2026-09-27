@@ -1,4 +1,5 @@
 import { useTheme } from '@noutynotes/ui';
+import type { ThemePreference } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -21,13 +22,42 @@ interface SettingsPanelProps {
   readonly onClose: () => void;
 }
 
-/** Configuración del workspace: sección «Lienzo y grilla» (ADR 0014). Todo se aplica al instante. */
+const themes: readonly { readonly value: ThemePreference; readonly label: string }[] = [
+  { value: 'light', label: 'Claro' },
+  { value: 'dark', label: 'Oscuro' },
+  { value: 'system', label: 'Sistema' },
+];
+
+/**
+ * Configuración del workspace (ADR 0014, ADR 0029): apariencia, fechas y lienzo. Todo es del dispositivo
+ * y se aplica al instante; ninguna preferencia cambia las notas ni viaja con el espacio.
+ */
 export function SettingsPanel(props: SettingsPanelProps) {
-  const { theme } = useTheme();
+  const { theme, preference, setPreference } = useTheme();
   const colors = theme.colors;
   const { preferences } = props;
   return (
     <Dialog visible={props.visible} title="Configuración" compact={props.compact} onClose={props.onClose} testID="settings-panel">
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>Apariencia</Text>
+        <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel="Tema">
+          {themes.map(({ value, label }) => (
+            <ActionButton key={value} label={label} accessibilityLabel={`Usar el tema ${label.toLowerCase()}`} pressed={preference === value} onPress={() => setPreference(value)} />
+          ))}
+        </View>
+        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>
+          Es el mismo ajuste que en el inicio: se guarda en este dispositivo y cambia toda la app. «Sistema» sigue el modo del dispositivo.
+        </Text>
+      </View>
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>Fechas</Text>
+        <Toggle
+          label="Mostrar la fecha de creación en las fichas"
+          description="Las tarjetas creadas antes de esta versión no tienen fecha y no muestran ninguna. El editor de la tarjeta siempre la indica."
+          value={preferences.showDates}
+          onChange={(showDates) => props.onChange({ ...preferences, showDates })}
+        />
+      </View>
       <View style={styles.section}>
         <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>Lienzo y grilla</Text>
         <Toggle
@@ -126,7 +156,8 @@ function Stepper({ label, unit, value, limits, onStep }: {
 }
 
 const styles = StyleSheet.create({
-  section: { gap: 12 },
+  section: { gap: 12, marginBottom: 12 },
+  choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   sectionTitle: { fontSize: 13, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
   toggle: { borderWidth: 2, padding: 8 },

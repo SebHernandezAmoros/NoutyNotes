@@ -19,3 +19,25 @@ export function saveViewPreferences(serialized: string): void {
     // Sin almacenamiento, la preferencia dura la sesión.
   }
 }
+
+const themes = ['light', 'dark', 'system'] as const;
+const themeFile = () => new File(Paths.document, 'nouty-theme.txt');
+
+/** Tema del dispositivo (ADR 0029) en un archivo privado; solo un valor conocido. */
+export function loadThemePreference(): (typeof themes)[number] | null {
+  try {
+    const stored = themeFile();
+    const value = stored.exists ? stored.textSync().trim() : null;
+    return themes.find((theme) => theme === value) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveThemePreference(preference: (typeof themes)[number]): void {
+  try {
+    themeFile().write(preference);
+  } catch {
+    // Sin almacenamiento, el tema dura la sesión.
+  }
+}

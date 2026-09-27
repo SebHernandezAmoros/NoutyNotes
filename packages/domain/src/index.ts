@@ -25,8 +25,9 @@ export { baseCardKinds, fieldKinds, validateCardType } from './cards/card-type';
 export type { BaseCardKind, CardTypeDefinition, FieldDefinition, FieldKind } from './cards/card-type';
 export { isCalendarDate } from './cards/field-values';
 export type { FieldValue } from './cards/field-values';
-export { cardDisplayModes, validateLayout } from './layouts/layout';
-export type { BoardLayout, CardDisplayMode, CardPlacement, GridRect } from './layouts/layout';
+export { MAX_FRAME_TITLE, cardDisplayModes, isFrameTitle, validateLayout } from './layouts/layout';
+export { frameAround, frameMembers, moveFrame, removeFrame, renameFrame, resizeFrame } from './layouts/frames';
+export type { BoardLayout, CardDisplayMode, CardPlacement, Frame, GridRect } from './layouts/layout';
 export {
   DESKTOP_GRID, MAX_GRID_COLUMNS, MOBILE_GRID, TABLET_GRID,
   cellsOverlap, compareReadingOrder, footprint, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,

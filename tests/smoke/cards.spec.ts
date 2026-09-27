@@ -981,3 +981,48 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
 });
+
+test('Configuración: tema desde el proyecto y fecha de creación visible en las fichas, que sobrevive a recargar (ADR 0029)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  const settings = async (action: () => Promise<void>) => {
+    await openSettings(page);
+    await expect(page.getByTestId('settings-panel')).toBeVisible();
+    await action();
+    await button(page, 'Cerrar configuración').click();
+    await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  };
+  const dateSwitch = () => page.getByRole('switch', { name: 'Mostrar la fecha de creación en las fichas' });
+  await page.goto('./');
+  await createWorkspace(page, 'Fechas');
+  await addNote(page, 'Con fecha');
+  // El editor siempre dice cuándo se creó.
+  await expect(page.getByTestId('card-created')).toHaveText(/^Creada el \d{1,2} (ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic) \d{4}, \d{2}:\d{2}$/);
+  await closeEditor(page);
+  await expect(page.getByTestId('card-meta-tarjeta-1')).toHaveCount(0);
+
+  // Tema oscuro desde la Configuración del proyecto: cambia toda la app al instante.
+  await settings(async () => {
+    await button(page, 'Usar el tema oscuro').click();
+    await expect(button(page, 'Usar el tema oscuro')).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => page.getByTestId('workspace-screen').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(rgb(themeColors.dark.background));
+    await dateSwitch().click();
+    await expect(dateSwitch()).toHaveAttribute('aria-checked', 'true');
+  });
+  await expect(page.getByTestId('card-meta-tarjeta-1')).toHaveText(/^\d{1,2} (ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic) \d{4}$/);
+  await page.screenshot({ path: testInfo.outputPath('dates-dark.png') });
+
+  // Las preferencias son del dispositivo: tras recargar (el espacio en memoria se pierde) siguen activas.
+  await page.goto('./');
+  await createWorkspace(page, 'Otra');
+  await addNote(page, 'Nueva');
+  await closeEditor(page);
+  await expect(page.getByTestId('card-meta-tarjeta-1')).toBeVisible();
+  await expect.poll(() => page.getByTestId('workspace-screen').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(rgb(themeColors.dark.background));
+  await settings(async () => {
+    await button(page, 'Usar el tema claro').click();
+    await dateSwitch().click();
+  });
+  await expect(page.getByTestId('card-meta-tarjeta-1')).toHaveCount(0);
+  expect(runtimeErrors).toEqual([]);
+});

@@ -1,9 +1,10 @@
 import {
   PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
+  groupCardsInFrame, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
+import { frameMembers } from '@noutynotes/domain';
 import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -29,6 +30,7 @@ import type { ViewPreferences } from './canvas/preferences';
 import { visibleCells, zoomIn, zoomOut } from './canvas/viewport';
 import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
+import { FrameInspector } from './FrameInspector';
 import { ProjectRail, ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
 import { ArchivePanel } from './ArchivePanel';
@@ -111,6 +113,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
   // Selección múltiple (ADR 0025): null fuera del modo; en el modo, tocar una tarjeta la añade o la quita.
   const [multi, setMulti] = useState<readonly CardId[] | null>(null);
+  // Marco seleccionado (ADR 0027): excluye la tarjeta abierta y la selección múltiple.
+  const [frameId, setFrameId] = useState<string | null>(null);
   const [boardId, setBoardId] = useState<BoardId | null>(null);
   const [tool, setTool] = useState<CanvasTool>('select');
   const [connectSource, setConnectSource] = useState<CardId | null>(null);
@@ -144,8 +148,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
     setMulti(null);
+    setFrameId(null);
     setSheetHidden(false);
     if (cardId === null) setFocus(false);
+  };
+  const selectFrame = async (next: string | null) => {
+    if (!await flushPendingText()) return;
+    setSelectedId(null);
+    setMulti(null);
+    setFrameId(next);
+    setFocus(false);
+    setSheetHidden(false);
   };
   // Doble toque o doble clic: selecciona y abre el editor enfocado. En selección múltiple solo alterna.
   const openCard = async (cardId: CardId) => {
@@ -174,13 +187,26 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const base = multi ?? (selectedId && visibleIds.has(selectedId) ? [selectedId] : []);
     setMulti(base.includes(cardId) ? base.filter((current) => current !== cardId) : [...base, cardId]);
     setSelectedId(null);
+    setFrameId(null);
     setFocus(false);
   };
-  const startMulti = async (cardId: CardId) => {
+  const startMulti = async (cardIds: readonly CardId[]) => {
     if (!await flushPendingText()) return;
-    setMulti([cardId]);
+    setMulti(cardIds);
     setSelectedId(null);
+    setFrameId(null);
     setFocus(false);
+  };
+  // «Agrupar» (ADR 0027): un marco alrededor de la selección; se abre su editor para darle nombre.
+  const groupMany = async () => {
+    if (!board || multiIds.length === 0) return;
+    const result = await run((storage, workspaceId) => groupCardsInFrame(storage, workspaceId, { boardId: board.id, cardIds: multiIds, title: 'Nuevo marco' }),
+      plural(multiIds.length, 'Marco creado con 1 tarjeta. Guardado en memoria.', 'Marco creado con # tarjetas. Guardado en memoria.'));
+    if (result.ok) void selectFrame(result.value);
+  };
+  const moveFrame = (target: string, delta: GridPoint) => {
+    if (!board) return;
+    void run((storage, workspaceId) => moveFrameOnBoard(storage, workspaceId, { boardId: board.id, frameId: target, delta }), 'Marco movido. Guardado en memoria.');
   };
   const plural = (count: number, one: string, many: string) => (count === 1 ? one : many.replace('#', String(count)));
   const moveMany = (cardIds: readonly CardId[], delta: GridPoint) => {
@@ -206,6 +232,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setBoardId(next);
     setSelectedId(null);
     setMulti(null);
+    setFrameId(null);
     setConnectSource(null);
     setPan(START_PAN);
   };
@@ -312,6 +339,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setTool(next);
     setConnectSource(null);
     setMulti(null);
+    setFrameId(null);
   };
 
   // Deshacer y rehacer (ADR 0026): antes se guarda el borrador, que es un paso más.
@@ -490,7 +518,21 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         ? 'Tablero vacío: crea la primera nota desde el lienzo o con «Nota» en la barra.'
         : 'Toca una tarjeta para editarla; arrástrala para moverla y usa sus asas para cambiar el tamaño.';
 
-  const inspector = workspace && board && selected ? (
+  const frame = frameId ? layout?.frames?.find((candidate) => candidate.id === frameId) : undefined;
+  const frameInspector = workspace && board && layout && frame ? (
+    <FrameInspector
+      key={`${frame.id}-${revision}`}
+      frame={frame}
+      boardId={board.id}
+      members={frameMembers(layout, frame.id).length}
+      run={run}
+      inSheet={compact}
+      onClose={() => setFrameId(null)}
+      onSelectMembers={() => void startMulti(frameMembers(layout, frame.id))}
+      onNoteAdded={(cardId) => void select(cardId)}
+    />
+  ) : null;
+  const cardInspector = workspace && board && selected ? (
     <CardInspector
       key={`${selected.id}-${revision}`}
       workspace={workspace}
@@ -504,16 +546,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
       onArchive={() => void archiveSelected(selected.id)}
-      onSelectMany={boardView === 'canvas' && tool === 'select' ? () => void startMulti(selected.id) : undefined}
+      onSelectMany={boardView === 'canvas' && tool === 'select' ? () => void startMulti([selected.id]) : undefined}
       inSheet={compact}
       noteImages={previews.refs}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
     />
   ) : null;
-  const focusing = focus && inspector !== null;
+  const inspector = frameInspector ?? cardInspector;
+  const focusing = focus && cardInspector !== null;
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
-  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setSelectedId(null); setFocus(false); } }); };
+  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setSelectedId(null); setFrameId(null); setFocus(false); } }); };
 
   // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
   // y el lienzo recupera la fila de la barra; en móvil siguen en su barra compacta.
@@ -673,6 +716,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           <ActionButton label="↓" accessibilityLabel="Mover la selección hacia abajo" onPress={() => moveMany(multiIds, { x: 0, y: 1 })} />
           <ActionButton label="→" accessibilityLabel="Mover la selección a la derecha" onPress={() => moveMany(multiIds, { x: 1, y: 0 })} />
           <View style={styles.multiGap} />
+          <ActionButton label={compact ? '▢' : 'Agrupar'} accessibilityLabel={plural(multiIds.length, 'Agrupar la seleccionada en un marco', 'Agrupar las # seleccionadas en un marco')} onPress={() => void groupMany()} />
           {/* En móvil, los glifos de la navegación (▤ Archivo, 🗑 Papelera) con su nombre accesible completo. */}
           <ActionButton label={compact ? '▤' : 'Archivar'} accessibilityLabel={plural(multiIds.length, 'Archivar la seleccionada', 'Archivar las # seleccionadas')} onPress={() => void archiveMany()} />
           <ActionButton label={compact ? '🗑' : 'Papelera'} accessibilityLabel={plural(multiIds.length, 'Enviar la seleccionada a la Papelera', 'Enviar las # seleccionadas a la Papelera')} onPress={() => void trashMany()} />
@@ -705,9 +749,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         selectedIds={multiSet}
         onCardToggle={(cardId) => void toggleCard(cardId)}
         onMoveMany={moveMany}
+        selectedFrameId={frame?.id ?? null}
+        onFramePress={(target) => void selectFrame(target)}
+        onFrameMove={moveFrame}
+        onZoom={setZoom}
+        onView={(nextZoom, nextPan) => { setZoom(nextZoom); setPan(nextPan); }}
+        onResetView={() => { setZoom(1); setPan(START_PAN); }}
+        onAreaSelect={(cardIds) => void startMulti(cardIds)}
+        showDates={preferences.showDates}
         connectSource={connectSource}
         onCardPress={pressCard}
-        onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (selectedId) void select(null); }}
+        onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (frameId) void selectFrame(null); else if (selectedId) void select(null); }}
         onMove={move}
         onResize={resize}
         onRejected={(message) => setFeedback({ tone: 'error', text: message })}
@@ -798,20 +850,20 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <View testID="inspector-sheet" style={[styles.sheet, typing ? styles.sheetTyping : null, focusing ? styles.sheetFocus : null, { backgroundColor: colors.background, borderColor: colors.border }]}>
                   <View style={styles.sheetBar}>
                     {/* Una sola barra: título, mostrar/ocultar y cerrar (sin repetir la cabecera del inspector). */}
-                    <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{selected?.title ?? 'Sin título'}</Text>
+                    <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{frame ? frame.title : selected?.title ?? 'Sin título'}</Text>
                     {focusing ? (
                       <ActionButton label="Volver" accessibilityLabel="Volver al tablero" onPress={() => setFocus(false)} />
                     ) : (
                       <>
-                        <ActionButton label="⤢" accessibilityLabel="Ampliar el editor" onPress={() => { setSheetHidden(false); setFocus(true); }} />
+                        {frame ? null : <ActionButton label="⤢" accessibilityLabel="Ampliar el editor" onPress={() => { setSheetHidden(false); setFocus(true); }} />}
                         <ActionButton
                           label={sheetHidden ? 'Mostrar' : 'Ocultar'}
-                          accessibilityLabel={sheetHidden ? 'Mostrar el editor de la tarjeta' : 'Ocultar el editor de la tarjeta'}
+                          accessibilityLabel={`${sheetHidden ? 'Mostrar' : 'Ocultar'} el editor ${frame ? 'del marco' : 'de la tarjeta'}`}
                           onPress={() => setSheetHidden((current) => !current)}
                         />
                       </>
                     )}
-                    <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={closeInspector} />
+                    <ActionButton label="Cerrar" accessibilityLabel={frame ? 'Cerrar el editor del marco' : 'Cerrar el editor de la tarjeta'} onPress={closeInspector} />
                   </View>
                   {/* Oculto, sigue montado: el texto sin guardar no se pierde. */}
                   <ScrollView ref={sheetScroll} onScroll={onSheetScroll} scrollEventThrottle={32} style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>

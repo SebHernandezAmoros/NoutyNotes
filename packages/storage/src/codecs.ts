@@ -23,6 +23,8 @@ export function layoutData(layout: BoardLayout): BoardLayout {
   return {
     boardId: layout.boardId,
     placements: layout.placements.map(({ cardId, rect, display }) => ({ cardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
+    // Marcos (ADR 0027): solo si hay; sin ellos, los bytes v1/v2 no cambian.
+    ...(layout.frames === undefined ? {} : { frames: layout.frames.map(({ id, title, rect }) => ({ id, title, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })) }),
   };
 }
 
@@ -36,11 +38,14 @@ export function relationIssues(relations: readonly Relation[], path: string): (S
   return [...issues, ...duplicateIdIssues(relations.map((relation) => relation.id), path, 'las relaciones')];
 }
 
-export function layoutIssues(layouts: readonly BoardLayout[], path: string, version: 1 | 2 = 1): (StorageIssue | DomainIssue)[] {
+export function layoutIssues(layouts: readonly BoardLayout[], path: string, version: 1 | 2 | 3 = 1): (StorageIssue | DomainIssue)[] {
   const issues: (StorageIssue | DomainIssue)[] = [];
   layouts.forEach((layout, index) => {
     const checked = validateLayout(layout);
     if (!checked.ok) issues.push(...reprefix(checked.issues, 'layout', `${path}[${index}]`));
+    if (version < 3 && layout.frames !== undefined) {
+      issues.push({ code: 'invalid-layout', path: `${path}[${index}].frames`, message: `La versión ${version} no admite marcos.` });
+    }
     if (version === 1) layout.placements.forEach((placement, placementIndex) => {
       for (const axis of ['x', 'y'] as const) {
         if (typeof placement.rect?.[axis] === 'number' && placement.rect[axis] < 0) {
@@ -52,8 +57,9 @@ export function layoutIssues(layouts: readonly BoardLayout[], path: string, vers
   return [...issues, ...duplicateIdIssues(layouts.map((layout) => layout.boardId), path, 'los layouts (uno por board)')];
 }
 
-/** Solo un layout con coordenadas negativas necesita el esquema 2; los archivos viejos conservan v1. */
-export function layoutSchemaVersion(layouts: readonly BoardLayout[]): 1 | 2 {
+/** Marcos: esquema 3 (ADR 0027). Coordenadas negativas: 2. Los archivos viejos conservan v1. */
+export function layoutSchemaVersion(layouts: readonly BoardLayout[]): 1 | 2 | 3 {
+  if (layouts.some((layout) => layout.frames !== undefined)) return 3;
   return layouts.some((layout) => layout.placements.some((placement) => placement.rect.x < 0 || placement.rect.y < 0)) ? 2 : 1;
 }
 
@@ -91,7 +97,7 @@ export function serializeLayouts(layouts: readonly BoardLayout[]): StorageResult
 }
 
 export function parseLayouts(text: string, file = LAYOUT_FILE): StorageResult<BoardLayout[]> {
-  const read = readVersionedYaml(text, file, layoutFileSchema, [1, 2]);
+  const read = readVersionedYaml(text, file, layoutFileSchema, [1, 2, 3]);
   if (!read.ok) return read;
   // Forma comprobada por Zod; enteros, modos y colocaciones se validan a continuación.
   const layouts = read.value.layouts.map((layout) => layoutData(layout as unknown as BoardLayout));

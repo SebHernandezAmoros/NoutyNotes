@@ -1,5 +1,5 @@
 import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridSize, Workspace } from '@noutynotes/domain';
-import { footprint } from '@noutynotes/domain';
+import { footprint, frameMembers } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
@@ -10,13 +10,18 @@ import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
 import { relationSegments } from '../board-geometry';
 import { CanvasCard, ResizeHandles } from './CanvasCard';
+import { CanvasFrame } from './CanvasFrame';
+import { CanvasOverview } from './CanvasOverview';
+import type { FrameGestures } from './CanvasFrame';
 import { CONTROL_SIZE, chromeFor } from './cardChrome';
 import type { CardAction, Chrome } from './cardChrome';
 import { CardControls, CardMenu } from './CardControls';
 import { connectTarget } from './connect';
-import { cardBox, checkMove, checkMoveMany, checkResize, dragTarget, previewBox, resizeTarget } from './geometry';
+import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
+import { cardsInArea, contentBounds, fitView } from './overview';
 import type { CanvasMetrics, PlacementCheck, ResizeHandle } from './geometry';
-import { panToRevealWorld, renderBase, visibleGridLines, worldPan } from './viewport';
+import { formatDay } from '../dates';
+import { panToRevealWorld, renderBase, visibleGridLines, worldPan, zoomIn, zoomOut } from './viewport';
 import type { Point, Size } from './viewport';
 
 export type CanvasTool = 'select' | 'pan' | 'connect';
@@ -66,6 +71,17 @@ interface CanvasProps {
   /** Ctrl, ⌘ o Mayús + clic: añade o quita la tarjeta de la selección. */
   readonly onCardToggle: (cardId: CardId) => void;
   readonly onMoveMany: (cardIds: readonly CardId[], delta: GridPoint) => void;
+  /** Marcos (ADR 0027): el seleccionado, tocar su título y soltar un arrastre válido. */
+  readonly selectedFrameId: string | null;
+  readonly onFramePress: (frameId: string) => void;
+  readonly onFrameMove: (frameId: string, delta: GridPoint) => void;
+  /** Vista general (ADR 0028): cambiar zoom y cámara juntos, restablecer y seleccionar por área. */
+  readonly onZoom: (zoom: number) => void;
+  readonly onView: (zoom: number, pan: Point) => void;
+  readonly onResetView: () => void;
+  readonly onAreaSelect: (cardIds: readonly CardId[]) => void;
+  /** Fecha de creación en el pie de las fichas (ADR 0029). */
+  readonly showDates: boolean;
   readonly connectSource: CardId | null;
   readonly onCardPress: (cardId: CardId) => void;
   readonly onBackgroundPress: () => void;
@@ -128,6 +144,12 @@ export function Canvas(props: CanvasProps) {
   const colors = theme.colors;
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  // Minimapa abierto (ADR 0028): estado de la sesión, cerrado por defecto.
+  const [minimapOpen, setMinimapOpen] = useState(false);
+  // Rectángulo de selección por área, en píxeles de la ventana del lienzo.
+  const [marquee, setMarquee] = useState<{ readonly x: number; readonly y: number; readonly dx: number; readonly dy: number } | null>(null);
+  // Arrastre del título de un marco (ADR 0027).
+  const [frameDrag, setFrameDrag] = useState<{ readonly frameId: string; readonly dx: number; readonly dy: number } | null>(null);
   // Tarjeta estrecha cuyo menú «⋯» está abierto.
   const [menuFor, setMenuFor] = useState<CardId | null>(null);
   const cards = useMemo(() => new Map(workspace.cards.map((card) => [card.id, card])), [workspace.cards]);
@@ -316,6 +338,84 @@ export function Canvas(props: CanvasProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [gesture, controller]);
 
+  // Título de un marco: tocar lo selecciona; arrastrar mueve el marco con sus tarjetas (ADR 0027).
+  const [frameGestures] = useState<FrameGestures>(() => {
+    let active: string | null = null;
+    const evaluateFrame = (frameId: string, dx: number, dy: number) => {
+      const { props: current } = latest.current;
+      const frame = current.layout?.frames?.find((candidate) => candidate.id === frameId);
+      if (!current.layout || !frame) return null;
+      const to = dragTarget(frame.rect, dx, dy, current.zoom, current.metrics);
+      const delta = { x: to.x - frame.rect.x, y: to.y - frame.rect.y };
+      return { delta, check: checkFrameMove(current.layout, frameId, delta) };
+    };
+    return {
+      canDrag: () => latest.current.props.tool === 'select' && active === null,
+      press: (frameId) => { if (latest.current.props.tool === 'select') latest.current.props.onFramePress(frameId); },
+      begin: (frameId) => { active = frameId; setFrameDrag({ frameId, dx: 0, dy: 0 }); },
+      update: (dx, dy) => { if (active) setFrameDrag((current) => (current ? { ...current, dx, dy } : current)); },
+      abort: () => { active = null; setFrameDrag(null); },
+      finish: (dx, dy) => {
+        const frameId = active;
+        active = null;
+        setFrameDrag(null);
+        if (!frameId) return;
+        const result = evaluateFrame(frameId, dx, dy);
+        if (!result || (result.delta.x === 0 && result.delta.y === 0)) return;
+        if (!result.check.ok) {
+          latest.current.props.onRejected(`No se guardó el cambio. ${rejection(result.check, latest.current.names)}`);
+          return;
+        }
+        latest.current.props.onFrameMove(frameId, result.delta);
+      },
+    };
+  });
+  // Escape cancela el arrastre del marco sin guardar.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !frameDrag) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') frameGestures.abort(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [frameDrag, frameGestures]);
+
+  // Fondo con Seleccionar (ADR 0028): un toque cierra el editor o la selección; arrastrar dibuja un
+  // rectángulo y, al soltar, las tarjetas que toca pasan a la selección múltiple.
+  const [areaSelect] = useState(() => {
+    let start = { x: 0, y: 0 };
+    let area = false;
+    return {
+      active: () => latest.current.props.tool === 'select',
+      grant: (x: number, y: number) => { start = { x, y }; area = false; },
+      move: (dx: number, dy: number) => {
+        if (!area && isDrag(dx, dy)) area = true;
+        if (area) setMarquee({ ...start, dx, dy });
+      },
+      release: (dx: number, dy: number) => {
+        setMarquee(null);
+        const { props: current } = latest.current;
+        if (!area) {
+          current.onBackgroundPress();
+          return;
+        }
+        area = false;
+        // De la ventana al mundo: (pantalla − desplazamiento) / zoom.
+        const ids = cardsInArea(current.layout, current.metrics, {
+          left: (start.x - current.pan.x) / current.zoom, top: (start.y - current.pan.y) / current.zoom,
+          width: dx / current.zoom, height: dy / current.zoom,
+        });
+        if (ids.length > 0) current.onAreaSelect(ids);
+      },
+      cancel: () => { area = false; setMarquee(null); },
+    };
+  });
+  const [background] = useState(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => areaSelect.active(),
+    onPanResponderGrant: (event) => areaSelect.grant(event.nativeEvent.locationX, event.nativeEvent.locationY),
+    onPanResponderMove: (_event, state) => areaSelect.move(state.dx, state.dy),
+    onPanResponderRelease: (_event, state) => areaSelect.release(state.dx, state.dy),
+    onPanResponderTerminate: () => areaSelect.cancel(),
+  }).panHandlers);
+
   // Herramienta Mano: todo el lienzo se desplaza y ninguna tarjeta recibe el gesto.
   const [panner] = useState(() => {
     let origin: Point = { x: 0, y: 0 };
@@ -339,8 +439,17 @@ export function Canvas(props: CanvasProps) {
   const active = gesture ? placements.find((placement) => placement.cardId === gesture.cardId) : undefined;
   const preview = gesture && active && layout ? evaluate(layout, active, gesture, zoom, metrics) : null;
   const colliding = new Set(preview && !preview.check.ok ? preview.check.colliding : []);
-  const groupMoving = new Set(gesture?.group ?? []);
-  const groupDelta = preview && 'delta' in preview && preview.delta ? preview.delta : null;
+  const draggedFrame = frameDrag ? layout?.frames?.find((frame) => frame.id === frameDrag.frameId) : undefined;
+  const framePreview = frameDrag && draggedFrame && layout ? (() => {
+    const to = dragTarget(draggedFrame.rect, frameDrag.dx, frameDrag.dy, zoom, metrics);
+    const delta = { x: to.x - draggedFrame.rect.x, y: to.y - draggedFrame.rect.y };
+    return { delta, check: checkFrameMove(layout, draggedFrame.id, delta), members: frameMembers(layout, draggedFrame.id) };
+  })() : null;
+  for (const cardId of framePreview && !framePreview.check.ok ? framePreview.check.colliding : []) colliding.add(cardId);
+  const groupMoving = new Set(framePreview ? framePreview.members : gesture?.group ?? []);
+  const groupDelta = framePreview ? framePreview.delta : preview && 'delta' in preview && preview.delta ? preview.delta : null;
+  // Píxeles del puntero del arrastre que mueve varias (sin imán, las fichas lo siguen).
+  const pointer = frameDrag ?? gesture;
   // Lo que se pinta dentro de la capa escalada se dibuja respecto a una base cerca de la cámara: así los
   // números pintados son pequeños aunque las tarjetas estén a un millón de celdas (ADR 0017).
   const base = renderBase(pan, zoom);
@@ -372,11 +481,25 @@ export function Canvas(props: CanvasProps) {
     const next = panToRevealWorld(current.props.pan, cardBox(footprint(placement), current.props.metrics), current.props.zoom, current.viewport);
     if (next.x !== current.props.pan.x || next.y !== current.props.pan.y) current.props.onPan(next);
   }, [selectedId, selectedRect, viewport.width, viewport.height]);
+  // Marco seleccionado (ADR 0027): se revela su título, que es donde se toca y se agarra.
+  const selectedFrameRect = (() => {
+    const found = layout?.frames?.find((frame) => frame.id === props.selectedFrameId);
+    return found ? `${found.rect.x},${found.rect.y},${found.rect.w}` : '';
+  })();
+  useEffect(() => {
+    if (selectedFrameRect === '' || viewport.width <= 0 || viewport.height <= 0) return;
+    const current = latest.current;
+    const frame = current.props.layout?.frames?.find((candidate) => candidate.id === current.props.selectedFrameId);
+    if (!frame) return;
+    const title = cardBox({ x: frame.rect.x, y: frame.rect.y, w: Math.min(frame.rect.w, 3), h: 1 }, current.props.metrics);
+    const next = panToRevealWorld(current.props.pan, title, current.props.zoom, current.viewport);
+    if (next.x !== current.props.pan.x || next.y !== current.props.pan.y) current.props.onPan(next);
+  }, [selectedFrameRect, viewport.width, viewport.height]);
   // Controles de cabecera (ADR 0016): en píxeles de pantalla, fuera de la escala del zoom.
   const chrome = new Map<CardId, Chrome>();
   if (tool === 'select') {
     for (const placement of placements) {
-      if (gesture?.cardId === placement.cardId || gesture?.group?.includes(placement.cardId)) continue;
+      if (gesture?.cardId === placement.cardId || gesture?.group?.includes(placement.cardId) || (framePreview && groupMoving.has(placement.cardId))) continue;
       // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
       if (cards.get(placement.cardId)?.typeId === FLOATING_TITLE && placement.cardId !== selectedId) continue;
       const box = cardBox(footprint(placement), metrics);
@@ -399,7 +522,11 @@ export function Canvas(props: CanvasProps) {
     if (next !== current.props.pan) current.props.onPan(next);
   };
   const menuPlacement = menuFor ? placements.find((placement) => placement.cardId === menuFor) : undefined;
-  const status = preview
+  const status = framePreview && draggedFrame
+    ? framePreview.check.ok
+      ? `Mover el marco «${draggedFrame.title}» con ${framePreview.members.length === 1 ? '1 tarjeta' : `${framePreview.members.length} tarjetas`}: ${framePreview.delta.x >= 0 ? '+' : ''}${framePreview.delta.x} columnas, ${framePreview.delta.y >= 0 ? '+' : ''}${framePreview.delta.y} filas. Escape cancela.`
+      : rejection(framePreview.check, names)
+    : preview
     ? preview.check.ok
       ? gesture?.group ? `Mover ${gesture.group.length} tarjetas: ${groupDelta ? `${groupDelta.x >= 0 ? '+' : ''}${groupDelta.x} columnas, ${groupDelta.y >= 0 ? '+' : ''}${groupDelta.y} filas` : ''}. Escape cancela.`
       : `${gesture?.kind === 'move' ? 'Soltar en' : 'Nuevo tamaño:'} ${gesture?.kind === 'move'
@@ -423,7 +550,7 @@ export function Canvas(props: CanvasProps) {
       {...panHandlers}
     >
       {/* El papel y la grilla pertenecen al viewport: nunca terminan en la última tarjeta. */}
-      <View style={StyleSheet.absoluteFill} onStartShouldSetResponder={() => tool === 'select'} onResponderRelease={props.onBackgroundPress} />
+      <View testID="canvas-background" style={StyleSheet.absoluteFill} {...background} />
       {showGrid ? (
         <View testID="canvas-grid" style={styles.overlay} pointerEvents="none">
           {visibleGridLines(pan.x, zoom, metrics.cell / 4, viewport.width).map((left) => (
@@ -448,6 +575,26 @@ export function Canvas(props: CanvasProps) {
           transform: [{ translateX: pan.x + base.x * zoom }, { translateY: pan.y + base.y * zoom }, { scale: zoom }],
         }]}
       >
+        {(layout?.frames ?? []).map((frame) => {
+          const moving = framePreview && frame.id === draggedFrame?.id;
+          const rect = moving ? { ...frame.rect, x: frame.rect.x + framePreview.delta.x, y: frame.rect.y + framePreview.delta.y } : frame.rect;
+          const box = local(moving && !snap && frameDrag
+            ? { ...cardBox(frame.rect, metrics), left: cardBox(frame.rect, metrics).left + frameDrag.dx / zoom, top: cardBox(frame.rect, metrics).top + frameDrag.dy / zoom }
+            : cardBox(rect, metrics));
+          return (
+            <CanvasFrame
+              key={frame.id}
+              frame={frame}
+              box={box}
+              headerHeight={metrics.row - metrics.gap}
+              members={layout ? frameMembers(layout, frame.id).length : 0}
+              selected={props.selectedFrameId === frame.id}
+              dragging={Boolean(moving)}
+              colliding={Boolean(moving && framePreview && !framePreview.check.ok)}
+              gestures={frameGestures}
+            />
+          );
+        })}
         {segments.map((segment) => {
           const highlighted = selectedId !== null && workspace.relations.some((relation) => relation.id === segment.relationId
             && (relation.from === selectedId || relation.to === selectedId));
@@ -470,8 +617,8 @@ export function Canvas(props: CanvasProps) {
           const index = numbers.get(card.id) ?? 0;
           const cell = footprint(placement);
           const dragging = gesture?.cardId === card.id || groupMoving.has(card.id);
-          const box = local(dragging && preview && gesture && groupDelta
-            ? previewBox(cell, { x: placement.rect.x + groupDelta.x, y: placement.rect.y + groupDelta.y }, gesture.dx, gesture.dy, zoom, snap, metrics)
+          const box = local(dragging && pointer && groupDelta && (framePreview || preview)
+            ? previewBox(cell, { x: placement.rect.x + groupDelta.x, y: placement.rect.y + groupDelta.y }, pointer.dx, pointer.dy, zoom, snap, metrics)
             : dragging && preview && gesture
             ? gesture.kind === 'move'
               ? previewBox(cell, { x: preview.rect.x, y: preview.rect.y }, gesture.dx, gesture.dy, zoom, snap, metrics)
@@ -487,6 +634,7 @@ export function Canvas(props: CanvasProps) {
               box={box}
               display={placement.display}
               selected={selected}
+              createdLabel={props.showDates && card.createdAt ? formatDay(card.createdAt, new Date(card.createdAt).getTimezoneOffset()) : undefined}
               dragging={dragging}
               colliding={colliding.has(card.id)}
               connectRole={tool === 'connect' ? connectTarget(connectSource, card.id, workspace.relations) : 'none'}
@@ -578,11 +726,43 @@ export function Canvas(props: CanvasProps) {
           onClose={() => setMenuFor(null)}
         />
       ) : null}
+      {marquee ? (
+        <View testID="selection-area" pointerEvents="none" style={[styles.marquee, {
+          left: Math.min(marquee.x, marquee.x + marquee.dx), top: Math.min(marquee.y, marquee.y + marquee.dy),
+          width: Math.abs(marquee.dx), height: Math.abs(marquee.dy), borderColor: colors.selection,
+        }]} />
+      ) : null}
+      {tool !== 'connect' && viewport.width > 0 ? (
+        <CanvasOverview
+          layout={layout}
+          metrics={metrics}
+          zoom={zoom}
+          pan={pan}
+          viewport={viewport}
+          showZoom={props.compact}
+          minimapOpen={minimapOpen}
+          onToggleMinimap={() => setMinimapOpen((open) => !open)}
+          onZoomIn={() => props.onZoom(zoomIn(zoom))}
+          onZoomOut={() => props.onZoom(zoomOut(zoom))}
+          onZoomReset={props.onResetView}
+          onFit={() => {
+            const bounds = contentBounds(layout, metrics);
+            if (!bounds) {
+              props.onResetView();
+              return;
+            }
+            // Los controles inferiores ocupan unos 64 px de la esquina de abajo: se deja ese alto libre.
+            const fitted = fitView(bounds, viewport, 64);
+            props.onView(fitted.zoom, fitted.pan);
+          }}
+          onPan={props.onPan}
+        />
+      ) : null}
       {status ? (
         <Text
           testID="drag-status"
           accessibilityLiveRegion="polite"
-          style={[styles.status, { color: preview?.check.ok ? colors.textPrimary : colors.danger, backgroundColor: colors.surface, borderColor: preview?.check.ok ? colors.border : colors.danger }]}
+          style={[styles.status, { color: (framePreview ?? preview)?.check.ok ? colors.textPrimary : colors.danger, backgroundColor: colors.surface, borderColor: (framePreview ?? preview)?.check.ok ? colors.border : colors.danger }]}
         >
           {status}
         </Text>
@@ -607,5 +787,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 20, lineHeight: 25, fontWeight: '900' },
   emptyText: { fontSize: 15, lineHeight: 22 },
   unplaced: { position: 'absolute', left: 12, right: 12, top: 12, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19 },
-  status: { position: 'absolute', left: 12, right: 12, bottom: 12, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19, fontWeight: '700' },
+  marquee: { position: 'absolute', borderWidth: 2, borderStyle: 'dashed' },
+  // Encima de los controles inferiores (ADR 0028), que ocupan la esquina de abajo.
+  status: { position: 'absolute', left: 12, right: 12, bottom: 72, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19, fontWeight: '700' },
 });

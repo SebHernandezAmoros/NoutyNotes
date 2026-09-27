@@ -45,6 +45,16 @@ Controles de tarjeta y proyectos (ADR 0016):
 - `src/workspace/canvas/cardChrome.ts` (puro): acciones y posición de los controles en píxeles de pantalla. `CardControls.tsx` los dibuja fuera de la escala del zoom, junto con el menú `⋯`, y `CardIcon.tsx` dibuja los iconos de nota e imagen;
 - `src/workspace/ProjectTabs.tsx`: pestañas verticales de proyectos (≥ 800 px) y hoja «Proyectos» en móvil. Cambiar de proyecto guarda antes el borrador.
 
+Configuración y fechas (ADR 0029):
+- `ThemeProvider` (`@noutynotes/ui`) recibe `load` y `save`; la app los implementa en `session/viewPreferencesStore(.android).ts`. Se lee con `useSyncExternalStore`: al hidratar el export estático vale «system» y después lo guardado, sin errores de hidratación.
+- `src/workspace/dates.ts`: «26 sep 2026» y «Creada el …, HH:MM» con `localDay`/`localTime`, sin `Intl`.
+
+Vista general (ADR 0028):
+- `src/workspace/canvas/overview.ts` (puro): límites del contenido, `fitView` (reserva el alto de los controles), minimapa ↔ mundo y `cardsInArea`. `CanvasOverview.tsx` dibuja los controles y el minimapa con `zIndex` por encima de los controles de tarjeta. El fondo del lienzo usa un PanResponder: toque → cerrar; arrastre → rectángulo.
+
+Marcos (ADR 0027):
+- `src/workspace/canvas/CanvasFrame.tsx`: marco bajo las tarjetas; su título selecciona (toque) o mueve (arrastre, `FrameGestures` en `Canvas`, con `checkFrameMove` para la vista previa). `FrameInspector.tsx` ocupa el sitio del editor de la tarjeta (panel o hoja). Al seleccionar un marco, el lienzo revela su título.
+
 Deshacer y rehacer (ADR 0026):
 - `useWorkspaceEditor`: el último workspace leído es el «antes» de la siguiente acción; tras el éxito, el recargado es el «después». `run(action, success, { history: 'clear' | 'record', mergeKey })`. `undo`/`redo` usan `revertWorkspace`, que no toca nada si lo guardado cambió. `revision` vuelve a montar el editor de la tarjeta tras deshacer, para que su borrador local muestre lo guardado.
 
