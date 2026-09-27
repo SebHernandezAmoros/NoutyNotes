@@ -6,7 +6,7 @@ import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutyno
 import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
 import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -107,7 +107,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [archiveMessage, setArchiveMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(
     notice !== '' ? { tone: 'success', text: notice } : null,
   );
-  const { view, feedback, saving, run, setFeedback } = useWorkspaceEditor(id);
+  const { view, feedback, saving, run, setFeedback, undo, redo, revision, undoLabel, redoLabel } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
   // Selección múltiple (ADR 0025): null fuera del modo; en el modo, tocar una tarjeta la añade o la quita.
   const [multi, setMulti] = useState<readonly CardId[] | null>(null);
@@ -314,6 +314,26 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setMulti(null);
   };
 
+  // Deshacer y rehacer (ADR 0026): antes se guarda el borrador, que es un paso más.
+  const undoLast = async () => { if (await flushPendingText()) await undo(); };
+  const redoLast = async () => { if (await flushPendingText()) await redo(); };
+  const shortcuts = useRef({ undoLast, redoLast });
+  useLayoutEffect(() => { shortcuts.current = { undoLast, redoLast }; });
+  // Ctrl/⌘ + Z, Ctrl/⌘ + Mayús + Z y Ctrl + Y fuera de los campos de texto; dentro deshacen el texto del campo.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) { event.preventDefault(); void shortcuts.current.undoLast(); }
+      else if ((key === 'z' && event.shiftKey) || (key === 'y' && event.ctrlKey)) { event.preventDefault(); void shortcuts.current.redoLast(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Escape sale de la selección múltiple (web).
   useEffect(() => {
     if (Platform.OS !== 'web' || multi === null) return;
@@ -389,7 +409,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const purge = async (cardId: CardId) => {
     const assets = assetsOf(session.storage);
-    const result = await run((storage, workspaceId) => purgeCardFromTrash(storage, assets, workspaceId, cardId), 'Tarjeta eliminada definitivamente. Guardado en memoria.');
+    const result = await run((storage, workspaceId) => purgeCardFromTrash(storage, assets, workspaceId, cardId), 'Tarjeta eliminada definitivamente. Guardado en memoria.', { history: 'clear' });
     if (result.ok && result.value.failedAssets.length > 0) {
       setFeedback({ tone: 'error', text: `La tarjeta se eliminó, pero no se pudo borrar ${result.value.failedAssets.join(', ')}; queda como archivo sin usar.` });
     }
@@ -472,7 +492,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const inspector = workspace && board && selected ? (
     <CardInspector
-      key={selected.id}
+      key={`${selected.id}-${revision}`}
       workspace={workspace}
       boardId={board.id}
       card={selected}
@@ -570,7 +590,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     </View>
   ) : null;
 
-  const feedbackLine = workspace ? (
+  const feedbackText = workspace ? (
     <Text
       testID="workspace-feedback"
       accessibilityLiveRegion="polite"
@@ -585,6 +605,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       {connectSource !== null ? hint : feedback ? feedback.text : hint}
     </Text>
   ) : null;
+  const feedbackLine = workspace && compact ? (
+    <View style={styles.feedbackRow}>
+      <View style={styles.feedbackGrow}>{feedbackText}</View>
+      <ActionButton label="↶" accessibilityLabel={undoLabel ? `Deshacer: ${undoLabel}` : 'Deshacer'} disabled={undoLabel === null} onPress={() => void undoLast()} />
+      <ActionButton label="↷" accessibilityLabel={redoLabel ? `Rehacer: ${redoLabel}` : 'Rehacer'} disabled={redoLabel === null} onPress={() => void redoLast()} />
+    </View>
+  ) : feedbackText;
 
   const toolbar = workspace ? (
     <Toolbar
@@ -611,6 +638,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       archiveCount={archiveCount}
       onOpenMore={() => setMoreOpen(true)}
       onOpenSearch={() => setSearchOpen(true)}
+      undoLabel={undoLabel}
+      redoLabel={redoLabel}
+      onUndo={() => void undoLast()}
+      onRedo={() => void redoLast()}
       navInSidebar={sidebar}
       trailing={sidebar ? feedbackLine : undefined}
     />
@@ -918,7 +949,7 @@ function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run'], stora
       if (!draft) return true;
       const task: Promise<boolean> = run((storage, workspaceId) => editCardContent(storage, workspaceId, draft.cardId, {
         title: draft.title, content: draft.content,
-      }), 'Texto guardado en la carpeta.').then((result) => {
+      }), 'Texto guardado en la carpeta.', { mergeKey: `text:${draft.cardId}` }).then((result) => {
         if (result.ok && pendingText.current === draft) pendingText.current = null;
         return result.ok;
       }).finally(() => { if (pendingSave.current === task) pendingSave.current = null; });
@@ -974,6 +1005,8 @@ const styles = StyleSheet.create({
   multiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   multiGap: { flexGrow: 1, minWidth: 4 },
   // En la barra de herramientas (escritorio): mismo aviso, sin fondo propio que compita con la barra.
+  feedbackRow: { flexDirection: 'row', alignItems: 'stretch', gap: 4 },
+  feedbackGrow: { flex: 1, minWidth: 0 },
   feedbackInline: { fontSize: 13, lineHeight: 18, paddingVertical: 4 },
   feedbackCompact: { fontSize: 13, lineHeight: 17, paddingVertical: 5 },
   exportBarCompact: { padding: 6, gap: 6 },

@@ -10,6 +10,9 @@ export {
   addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
 } from './workspace-editing';
 export { assetsOf } from './workspace-assets';
+export { EMPTY_HISTORY, HISTORY_LIMIT, recordStep, redoStep, sameWorkspace, undoStep } from './history';
+export type { HistoryStep, UndoHistory } from './history';
+export { revertWorkspace } from './revert';
 export { MAX_IMAGE_BYTES, addNoteImage, importImageCard, inspectImage } from './images';
 export type { AddNoteImageInput, ImageKind, ImportImageInput } from './images';
 export {

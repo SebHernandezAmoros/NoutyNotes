@@ -8,9 +8,9 @@ import { Platform, StyleSheet, Text, View } from 'react-native';
 import { ActionButton, TextField } from '../components/controls';
 import { Dialog } from '../components/Dialog';
 import { markdownExcerpt } from './markdownLists';
-import type { WorkspaceAction } from './useWorkspaceEditor';
+import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
-type Run = <T>(action: WorkspaceAction<T>, success: string) => Promise<WorkspaceStorageResult<T>>;
+type Run = <T>(action: WorkspaceAction<T>, success: string, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
 interface DailyLogPanelProps {
   readonly visible: boolean;

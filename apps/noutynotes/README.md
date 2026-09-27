@@ -45,6 +45,9 @@ Controles de tarjeta y proyectos (ADR 0016):
 - `src/workspace/canvas/cardChrome.ts` (puro): acciones y posición de los controles en píxeles de pantalla. `CardControls.tsx` los dibuja fuera de la escala del zoom, junto con el menú `⋯`, y `CardIcon.tsx` dibuja los iconos de nota e imagen;
 - `src/workspace/ProjectTabs.tsx`: pestañas verticales de proyectos (≥ 800 px) y hoja «Proyectos» en móvil. Cambiar de proyecto guarda antes el borrador.
 
+Deshacer y rehacer (ADR 0026):
+- `useWorkspaceEditor`: el último workspace leído es el «antes» de la siguiente acción; tras el éxito, el recargado es el «después». `run(action, success, { history: 'clear' | 'record', mergeKey })`. `undo`/`redo` usan `revertWorkspace`, que no toca nada si lo guardado cambió. `revision` vuelve a montar el editor de la tarjeta tras deshacer, para que su borrador local muestre lo guardado.
+
 Selección múltiple (ADR 0025):
 - `WorkspaceScreen`: estado `multi` y barra `multi-bar`; `Canvas` arrastra el conjunto (`Gesture.group`, `checkMoveMany`) y atiende Ctrl + clic con un `click` nativo en captura, porque el sistema de respuesta de RN Web descarta las pulsaciones con Ctrl o Alt.
 

@@ -711,3 +711,30 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   await button('Abrir Grupo').click();
   expect([await where(1), await where(2)]).toEqual(before.map(lower));
 });
+
+test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al recargar; el historial no sobrevive a la recarga (ADR 0026)', async ({ page }) => {
+  const geometry = page.getByTestId('card-geometry');
+  const button = (name: string) => page.getByRole('button', { name, exact: true });
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await button('Abrir una carpeta').click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Vuelta');
+  await button('Crear un espacio').click();
+  await button('Añadir nota').click();
+  const start = await geometry.innerText();
+  await button('Mover abajo').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta movida. Guardado en la carpeta.');
+  await expect(geometry).not.toHaveText(start);
+  await button('Deshacer: Tarjeta movida').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Deshecho: Tarjeta movida. Guardado en la carpeta.');
+  await expect(geometry).toHaveText(start);
+
+  await page.reload();
+  await button('Volver a mis espacios').click();
+  await button('Abrir una carpeta').click();
+  await button('Abrir Vuelta').click();
+  await page.getByTestId('card-tarjeta-1').focus();
+  await page.keyboard.press('Enter');
+  await expect(geometry).toHaveText(start);
+  await expect(page.getByRole('button', { name: /^Deshacer/ })).toHaveAttribute('aria-disabled', 'true');
+});

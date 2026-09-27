@@ -29,6 +29,10 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 - **Archivar:** saca una tarjeta de los tableros y de las búsquedas sin destruirla (con su sitio, conexiones y fecha), y se guarda en `.nouty/archive.yaml`.
 - **Panel Archivo:** busca, filtra por tipo y ordena. «Restaurar» la devuelve a su sitio, o al primer hueco libre si está ocupado. «Enviar a la Papelera» es la única forma de eliminar, y solo la Papelera borra.
 
+**Deshacer y rehacer (ADR 0026):**
+- «Deshacer» y «Rehacer» en la barra (en móvil, ↶ y ↷ junto al aviso), y Ctrl/⌘ + Z, Ctrl/⌘ + Mayús + Z o Ctrl + Y fuera de los campos de texto. Cubre todo lo que cambia el proyecto en esta sesión: crear, texto, mover, tamaño, conexiones, Papelera, Archivo, Diario… Los textos seguidos de una tarjeta son un paso.
+- **Límites:** 50 pasos, solo mientras el proyecto está abierto. Eliminar definitivamente o borrar assets vacía el historial. Si otra app cambió la carpeta, no se deshace nada y se avisa. Deshacer no borra el archivo de una imagen añadida: queda «sin usar» en Assets.
+
 **Selección múltiple (ADR 0025):**
 - **Entrar:** Ctrl, ⌘ o Mayús + clic sobre una tarjeta en escritorio; «Seleccionar varias» en el editor de la tarjeta (táctil y teclado). En el modo, tocar una tarjeta la añade o la quita.
 - **Barra de selección:** recuento, mover con flechas, «Todas», archivar y enviar a la Papelera el conjunto, y cancelar (también con Escape o tocando el fondo). Arrastrar una tarjeta seleccionada mueve todas; si una chocara con otra de fuera, no se mueve ninguna.

@@ -15,9 +15,9 @@ import { applyListCommand, normalizeListChange, toggleChecklistLine } from './ma
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
 import type { ListKind, TextSelection } from './markdownLists';
-import type { WorkspaceAction } from './useWorkspaceEditor';
+import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
-type Run = <T>(action: WorkspaceAction<T>, success: string) => Promise<WorkspaceStorageResult<T>>;
+type Run = <T>(action: WorkspaceAction<T>, success: string, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
 interface CardInspectorProps {
   readonly workspace: Workspace;
@@ -274,7 +274,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton
             label="Guardar texto"
             tone="primary"
-            onPress={() => { void (mode === 'folder' ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en memoria.')); }}
+            onPress={() => { void (mode === 'folder' ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en memoria.', { mergeKey: `text:${card.id}` })); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? 'Cambios sin guardar' : 'Sin cambios pendientes'}</Text>
         </View>

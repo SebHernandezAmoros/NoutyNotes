@@ -14,10 +14,11 @@ interface ActionButtonProps {
   readonly testID?: string;
   readonly style?: StyleProp<ViewStyle>;
   readonly pressed?: boolean;
+  readonly disabled?: boolean;
 }
 
 /** Botón táctil de al menos 44 × 44 con foco visible (borde con el token `selection`). */
-export function ActionButton({ label, accessibilityLabel, onPress, tone = 'default', testID, style, pressed }: ActionButtonProps) {
+export function ActionButton({ label, accessibilityLabel, onPress, tone = 'default', testID, style, pressed, disabled = false }: ActionButtonProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
@@ -26,7 +27,8 @@ export function ActionButton({ label, accessibilityLabel, onPress, tone = 'defau
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      {...(pressed === undefined ? {} : { accessibilityState: { selected: pressed } })}
+      {...(pressed === undefined ? (disabled ? { accessibilityState: { disabled } } : {}) : { accessibilityState: { selected: pressed, disabled } })}
+      disabled={disabled}
       {...(Platform.OS === 'web' && pressed !== undefined ? { 'aria-pressed': pressed } : {})}
       {...(testID === undefined ? {} : { testID })}
       onPress={onPress}
@@ -34,7 +36,7 @@ export function ActionButton({ label, accessibilityLabel, onPress, tone = 'defau
       onBlur={() => setFocused(false)}
       style={[
         styles.button,
-        { backgroundColor: primary ? colors.accent : colors.surface, borderColor: focused ? colors.selection : colors.border },
+        { backgroundColor: primary ? colors.accent : colors.surface, borderColor: focused && !disabled ? colors.selection : colors.border, opacity: disabled ? 0.5 : 1 },
         style,
       ]}
     >

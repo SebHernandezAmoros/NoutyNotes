@@ -738,3 +738,60 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
   await expect(page.getByTestId('board-empty')).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
+
+test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en móvil) y con el teclado; una acción nueva vacía rehacer (ADR 0026)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Historial');
+  const undoButton = page.getByRole('button', { name: /^Deshacer/ });
+  const redoButton = page.getByRole('button', { name: /^Rehacer/ });
+  await expect(undoButton).toHaveAttribute('aria-disabled', 'true');
+  await addCards(page, ['nota']);
+  await expect(undoButton).toHaveAccessibleName('Deshacer: Nota añadida');
+  await button(page, 'Mover a la derecha').click();
+  await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
+  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
+
+  // Deshacer con el editor abierto: vuelve a su sitio y el editor muestra lo guardado.
+  await button(page, 'Deshacer: Tarjeta movida').click();
+  await expect(feedback(page)).toHaveText('Deshecho: Tarjeta movida. Guardado en memoria.');
+  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
+  await page.screenshot({ path: testInfo.outputPath('undo.png') });
+  await button(page, 'Rehacer: Tarjeta movida').click();
+  await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
+  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
+  await expect(redoButton).toHaveAttribute('aria-disabled', 'true');
+
+  // Archivar y deshacer: la tarjeta vuelve al tablero y sale del Archivo.
+  await button(page, 'Archivar la tarjeta Nueva nota').click();
+  await expect(feedback(page)).toHaveText('Tarjeta archivada. Guardado en memoria.');
+  await expect(card(page, 1)).toHaveCount(0);
+  await button(page, 'Deshacer: Tarjeta archivada').click();
+  await expect(card(page, 1)).toBeVisible();
+  await expect(feedback(page)).toHaveText('Deshecho: Tarjeta archivada. Guardado en memoria.');
+
+  // Teclado (escritorio): Ctrl + Z deshace fuera de los campos; dentro de un campo no toca el proyecto.
+  if (!isCompact(page)) {
+    await page.getByTestId('board-canvas').focus();
+    await page.keyboard.press('Control+z');
+    await expect(feedback(page)).toHaveText('Deshecho: Tarjeta movida. Guardado en memoria.');
+    await page.keyboard.press('Control+Shift+z');
+    await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
+    await card(page, 1).click();
+    await page.getByLabel('Título de la tarjeta').focus();
+    await page.keyboard.press('Control+z');
+    await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
+    await closeEditor(page);
+    await button(page, 'Deshacer: Tarjeta movida').click();
+    await expect(feedback(page)).toHaveText('Deshecho: Tarjeta movida. Guardado en memoria.');
+  } else {
+    await button(page, 'Deshacer: Tarjeta movida').click();
+  }
+
+  // Tras deshacer, una acción nueva vacía rehacer.
+  await expect(redoButton).toHaveAccessibleName('Rehacer: Tarjeta movida');
+  await addCards(page, ['nota']);
+  await expect(redoButton).toHaveAttribute('aria-disabled', 'true');
+  expect(runtimeErrors).toEqual([]);
+});

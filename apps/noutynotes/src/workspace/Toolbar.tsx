@@ -33,6 +33,11 @@ interface ToolbarProps {
   /** Móvil: «Más» abre la hoja de secciones (Assets, Configuración…; ADR 0022). */
   readonly onOpenMore: () => void;
   readonly onOpenSearch: () => void;
+  /** Deshacer y rehacer (ADR 0026): el nombre de la acción, o null si no hay. En móvil van en la línea de aviso. */
+  readonly undoLabel: string | null;
+  readonly redoLabel: string | null;
+  readonly onUndo: () => void;
+  readonly onRedo: () => void;
   /** Con barra lateral (≥ 1100 px), Papelera y Configuración están en ella y no se repiten aquí. */
   readonly navInSidebar: boolean;
   /** Contenido al final de la fila en escritorio (el aviso del workspace): ahorra una fila al lienzo. */
@@ -81,6 +86,14 @@ export function Toolbar(props: ToolbarProps) {
       ) : null}
     </View>
   );
+  const history = props.compact ? null : (
+    <View style={styles.group}>
+      <ToolButton glyph="↶" label="Deshacer" accessibilityLabel={props.undoLabel ? `Deshacer: ${props.undoLabel}` : 'Deshacer'}
+        accessibilityHint="Ctrl + Z" disabled={props.undoLabel === null} onPress={props.onUndo} style={cell} />
+      <ToolButton glyph="↷" label="Rehacer" accessibilityLabel={props.redoLabel ? `Rehacer: ${props.redoLabel}` : 'Rehacer'}
+        accessibilityHint="Ctrl + Mayús + Z" disabled={props.redoLabel === null} onPress={props.onRedo} style={cell} />
+    </View>
+  );
   const view = props.compact ? null : (
     <View style={styles.group}>
       <ToolButton glyph="−" label="Alejar" accessibilityLabel="Alejar" disabled={!onCanvas || props.zoom <= MIN_ZOOM} onPress={props.onZoomOut} style={cell} />
@@ -114,6 +127,8 @@ export function Toolbar(props: ToolbarProps) {
       ) : (
         <>
           {tools}
+          <View style={[styles.divider, { backgroundColor: colors.gridLine }]} />
+          {history}
           <View style={[styles.divider, { backgroundColor: colors.gridLine }]} />
           {create}
           <View style={[styles.divider, { backgroundColor: colors.gridLine }]} />

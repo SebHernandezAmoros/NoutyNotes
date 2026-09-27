@@ -236,6 +236,9 @@ export function Canvas(props: CanvasProps) {
     const press = (event: PointerEvent) => {
       pointerDown.current = true;
       modifierDown.current = event.ctrlKey || event.metaKey || event.shiftKey;
+      // Con el lienzo enfocado, pulsar una tarjeta le quita el foco al lienzo y RN Web termina el
+      // responder de la tarjeta («ancestor blur»): el toque no seleccionaba. Se suelta antes del mousedown.
+      if (document.activeElement === node && event.target !== node) node.blur();
     };
     const release = () => { pointerDown.current = false; };
     // Un arrastre nativo del navegador (de una selección de texto que quedó en la página o de una

@@ -12,9 +12,9 @@ import { ActionButton, TextField } from '../components/controls';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { dataUri } from './dataUri';
-import type { WorkspaceAction } from './useWorkspaceEditor';
+import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
-type Run = <T>(action: WorkspaceAction<T>, success: string) => Promise<WorkspaceStorageResult<T>>;
+type Run = <T>(action: WorkspaceAction<T>, success: string, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 type Tab = 'all' | AssetKind;
 
 interface AssetsPanelProps {
@@ -162,7 +162,7 @@ export function AssetsPanel({ visible, compact, workspace, run, placement, onAdd
   };
   const remove = async (refs: readonly string[]) => {
     if (!assets) return;
-    const result = await run((store, id) => deleteUnusedAssets(store, assets, id, refs), `${plural(refs.length, 'archivo sin usar eliminado', 'archivos sin usar eliminados')}. Guardado en memoria.`);
+    const result = await run((store, id) => deleteUnusedAssets(store, assets, id, refs), `${plural(refs.length, 'archivo sin usar eliminado', 'archivos sin usar eliminados')}. Guardado en memoria.`, { history: 'clear' });
     setConfirm(null);
     if (result.ok) {
       if (result.value.failed.length > 0) setProblem(`No se pudo borrar: ${result.value.failed.join(', ')}.`);
