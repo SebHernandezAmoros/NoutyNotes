@@ -78,13 +78,13 @@ export function CanvasCard(props: CanvasCardProps) {
         if (dragging) controller.update(state.dx, state.dy);
       },
       onPanResponderRelease: (_event, state) => {
-        controller.gestureEnded();
+        controller.gestureEnded(card.id);
         if (dragging) controller.finish(state.dx, state.dy);
         else controller.tapCard(card.id);
         dragging = false;
       },
       onPanResponderTerminate: () => {
-        controller.gestureEnded();
+        controller.gestureEnded(card.id);
         if (dragging) controller.abort();
         dragging = false;
       },
@@ -130,7 +130,7 @@ export function CanvasCard(props: CanvasCardProps) {
         accessibilityHint={accessibilityHint}
         accessibilityState={{ selected }}
         {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
-        onPress={() => { if (!controller.justEndedGesture()) onPress(); }}
+        onPress={() => { if (!controller.justEndedGesture(card.id)) onPress(); }}
         onFocus={() => { setFocused(true); props.onFocus(); }}
         onBlur={() => setFocused(false)}
         style={[styles.card, {

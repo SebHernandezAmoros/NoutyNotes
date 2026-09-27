@@ -124,6 +124,28 @@ export function moveCard(layout: BoardLayout, cardId: CardId, to: GridPoint, con
   return issues.length > 0 ? fail(layout, issues) : resultOf(replaceAt(layout, located.value.index, candidate), []);
 }
 
+/**
+ * Mueve un conjunto de tarjetas con el mismo desplazamiento en celdas (ADR 0025). Las del conjunto no
+ * chocan entre sí; cada una debe caber en los límites y no pisar ninguna tarjeta de fuera. O todas o ninguna.
+ */
+export function moveCards(layout: BoardLayout, cardIds: readonly CardId[], delta: GridPoint, config: GridConfig): ValidationResult<BoardLayout> {
+  const checked = validateGridLayout(layout, config);
+  if (!checked.ok) return fail(layout, [...checked.issues]);
+  if (!Array.isArray(cardIds) || cardIds.length === 0) return fail(layout, [issue('invalid-value', 'cardIds', 'Debe haber al menos una tarjeta.')]);
+  const deltaIssues = checkIntegers(delta, ['x', 'y'], 'delta', Number.MIN_SAFE_INTEGER);
+  if (deltaIssues.length > 0) return fail(layout, deltaIssues);
+  const members = new Set(cardIds);
+  const missing = [...members].filter((cardId) => !layout.placements.some((placement) => placement.cardId === cardId));
+  if (missing.length > 0) return fail(layout, missing.map((cardId) => issue('missing-reference', 'cardIds', `No hay colocación para "${String(cardId)}".`)));
+  const moved = layout.placements.map((placement) => (members.has(placement.cardId)
+    ? withCorner(placement, { x: placement.rect.x + delta.x, y: placement.rect.y + delta.y }) : placement));
+  // Cada movida frente a las de fuera: las del conjunto se desplazan igual y no pueden solaparse entre sí.
+  const outside: BoardLayout = { ...layout, placements: layout.placements.filter((placement) => !members.has(placement.cardId)) };
+  const issues = moved.filter((placement) => members.has(placement.cardId))
+    .flatMap((candidate) => fitIssues(outside, -1, candidate, config, 'delta'));
+  return issues.length > 0 ? fail(layout, issues) : resultOf({ ...layout, placements: moved }, []);
+}
+
 /** Cambia el tamaño expandido (`rect.w`, `rect.h`) y valida la huella resultante en cualquier modo. */
 export function resizeCard(layout: BoardLayout, cardId: CardId, size: GridSize, config: GridConfig): ValidationResult<BoardLayout> {
   const located = locate(layout, cardId, config);

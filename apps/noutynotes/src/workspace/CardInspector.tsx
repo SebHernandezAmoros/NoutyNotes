@@ -33,6 +33,8 @@ interface CardInspectorProps {
   readonly onTrash: () => void;
   /** Archivar (ADR 0023): sale de los tableros sin destruirse. */
   readonly onArchive: () => void;
+  /** Selección múltiple (ADR 0025): empieza con esta tarjeta; en táctil es la única entrada. */
+  readonly onSelectMany?: (() => void) | undefined;
   /** En la hoja móvil, la barra de la hoja ya muestra el título y «Cerrar»: no se repiten aquí. */
   readonly inSheet?: boolean;
   /** Imágenes intercaladas en notas, por ruta (ADR 0021). */
@@ -66,7 +68,7 @@ const resizes = [
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, inSheet = false, noteImages, focused = false, onToggleFocus }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, focused = false, onToggleFocus }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -199,6 +201,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       )}
 
+      {onSelectMany ? (
+        <View style={styles.row}>
+          <ActionButton label="Seleccionar varias" accessibilityLabel="Seleccionar varias tarjetas empezando por esta" onPress={onSelectMany} />
+        </View>
+      ) : null}
       <View style={styles.section}>
         <TextField label="Título de la tarjeta" value={title} onChangeText={changeTitle} placeholder="Sin título" />
         {linkKey ? (

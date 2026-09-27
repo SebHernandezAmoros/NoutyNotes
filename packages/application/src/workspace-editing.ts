@@ -1,5 +1,5 @@
 import {
-  WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setDisplay, trashCard,
+  WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setDisplay, trashCard,
   isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
@@ -288,6 +288,14 @@ export function moveCardOnBoard(
     changeBoardLayout(workspace, boardId, (layout) => moveCard(layout, cardId, to, CANONICAL_GRID)));
 }
 
+/** Mueve un conjunto de tarjetas con el mismo desplazamiento (ADR 0025): o todas o ninguna, un guardado. */
+export function moveCardsOnBoard(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, { boardId, cardIds, delta }: { readonly boardId: BoardId; readonly cardIds: readonly CardId[]; readonly delta: GridPoint },
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) =>
+    changeBoardLayout(workspace, boardId, (layout) => moveCards(layout, cardIds, delta, CANONICAL_GRID)));
+}
+
 /** Cambia el tamaño expandido de una tarjeta con las mismas reglas del motor. */
 export function resizeCardOnBoard(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, { boardId, cardId, size }: BoardCardTarget & { readonly size: GridSize },
@@ -340,6 +348,30 @@ export function setCardDisplay(
 /** Envía una tarjeta a la Papelera (ADR 0015): una sola transformación y un solo guardado. */
 export function moveCardToTrash(storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
   return modifyWorkspace(storage, workspaceId, (workspace) => trashCard(workspace, cardId));
+}
+
+/** Aplica una operación a cada tarjeta del conjunto sobre el mismo workspace: si una falla, no se guarda ninguna. */
+function eachCard(workspace: Workspace, cardIds: readonly CardId[], apply: (current: Workspace, cardId: CardId) => ValidationResult<Workspace>): ValidationResult<Workspace> {
+  if (cardIds.length === 0) return { ok: false, issues: [{ code: 'invalid-value', path: 'cardIds', message: 'Debe haber al menos una tarjeta.' }] };
+  let current = workspace;
+  for (const cardId of new Set(cardIds)) {
+    const next = apply(current, cardId);
+    if (!next.ok) return next;
+    current = next.value;
+  }
+  return { ok: true, value: current };
+}
+
+/** Envía un conjunto a la Papelera (ADR 0025): cada tarjeta con su instantánea, una sola escritura. */
+export function moveCardsToTrash(storage: WorkspaceStorage, workspaceId: WorkspaceId, cardIds: readonly CardId[]): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => eachCard(workspace, cardIds, trashCard));
+}
+
+/** Archiva un conjunto (ADR 0025) con la misma hora, puesta por la interfaz. */
+export function moveCardsToArchive(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, cardIds: readonly CardId[], archivedAt: string,
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => eachCard(workspace, cardIds, (current, cardId) => archiveCard(current, cardId, archivedAt)));
 }
 
 /** Restaura una tarjeta de la Papelera y devuelve qué no pudo quedar igual. */

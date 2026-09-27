@@ -1,5 +1,5 @@
 import { CANONICAL_GRID } from '@noutynotes/application';
-import { cellsOverlap, footprint, moveCard, resizeCard } from '@noutynotes/domain';
+import { cellsOverlap, footprint, moveCard, moveCards, resizeCard } from '@noutynotes/domain';
 import type { BoardLayout, CardId, GridCell, GridPoint, GridSize, ValidationResult } from '@noutynotes/domain';
 
 /**
@@ -91,6 +91,21 @@ function checked(layout: BoardLayout, cardId: CardId, result: ValidationResult<B
 export function checkMove(layout: BoardLayout, cardId: CardId, to: GridPoint): PlacementCheck {
   return checked(layout, cardId, moveCard(layout, cardId, to, CANONICAL_GRID),
     (placement) => footprint({ ...placement, rect: { ...placement.rect, ...to } }));
+}
+
+/** ¿Se puede mover el conjunto con ese desplazamiento? Mismas reglas que `moveCardsOnBoard` (ADR 0025). */
+export function checkMoveMany(layout: BoardLayout, cardIds: readonly CardId[], delta: GridPoint): PlacementCheck {
+  const result = moveCards(layout, cardIds, delta, CANONICAL_GRID);
+  if (result.ok) return { ok: true };
+  const code = result.issues[0]?.code ?? 'invalid-layout';
+  if (code !== 'grid-collision') return { ok: false, code, colliding: [] };
+  const members = new Set(cardIds);
+  const moved = layout.placements.filter((placement) => members.has(placement.cardId))
+    .map((placement) => footprint({ ...placement, rect: { ...placement.rect, x: placement.rect.x + delta.x, y: placement.rect.y + delta.y } }));
+  const colliding = layout.placements
+    .filter((other) => !members.has(other.cardId) && moved.some((area) => cellsOverlap(area, footprint(other))))
+    .map((other) => other.cardId);
+  return { ok: false, code, colliding };
 }
 
 export function checkResize(layout: BoardLayout, cardId: CardId, size: GridSize): PlacementCheck {

@@ -29,6 +29,10 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 - **Archivar:** saca una tarjeta de los tableros y de las búsquedas sin destruirla (con su sitio, conexiones y fecha), y se guarda en `.nouty/archive.yaml`.
 - **Panel Archivo:** busca, filtra por tipo y ordena. «Restaurar» la devuelve a su sitio, o al primer hueco libre si está ocupado. «Enviar a la Papelera» es la única forma de eliminar, y solo la Papelera borra.
 
+**Selección múltiple (ADR 0025):**
+- **Entrar:** Ctrl, ⌘ o Mayús + clic sobre una tarjeta en escritorio; «Seleccionar varias» en el editor de la tarjeta (táctil y teclado). En el modo, tocar una tarjeta la añade o la quita.
+- **Barra de selección:** recuento, mover con flechas, «Todas», archivar y enviar a la Papelera el conjunto, y cancelar (también con Escape o tocando el fondo). Arrastrar una tarjeta seleccionada mueve todas; si una chocara con otra de fuera, no se mueve ninguna.
+
 **Diario (ADR 0024):**
 - **Diario** (barra lateral, barra o «Más» en móvil): «Escribir la nota de hoy» abre la del día sin duplicarla; «Nueva entrada» añade otra. Las entradas son tarjetas de tipo `diario` fuera de los tableros.
 - **Cronología del día:** tarjetas creadas y archivadas con su hora local, resumen y etiquetas del día, días anterior y siguiente, fecha exacta y calendario del mes. Solo cuenta fechas reales: las tarjetas anteriores a esta versión no tienen fecha y no aparecen.

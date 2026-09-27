@@ -32,7 +32,7 @@ export {
   cellsOverlap, compareReadingOrder, footprint, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,
 } from './layouts/grid';
 export type { GridCell, GridConfig, GridPoint, GridSize } from './layouts/grid';
-export { compactLayout, findFreeSpace, moveCard, resizeCard, setDisplay } from './layouts/operations';
+export { compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './layouts/operations';
 export type { FindFreeSpaceOptions, SetDisplayOptions } from './layouts/operations';
 export { projectLayout } from './layouts/projection';
 export type { ProjectedItem, ProjectedLayout } from './layouts/projection';

@@ -1,6 +1,6 @@
 import {
   PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  moveCardOnBoard, moveCardToArchive, moveCardToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
+  moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
@@ -109,6 +109,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   );
   const { view, feedback, saving, run, setFeedback } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
+  // Selección múltiple (ADR 0025): null fuera del modo; en el modo, tocar una tarjeta la añade o la quita.
+  const [multi, setMulti] = useState<readonly CardId[] | null>(null);
   const [boardId, setBoardId] = useState<BoardId | null>(null);
   const [tool, setTool] = useState<CanvasTool>('select');
   const [connectSource, setConnectSource] = useState<CardId | null>(null);
@@ -141,11 +143,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const select = async (cardId: CardId | null) => {
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
+    setMulti(null);
     setSheetHidden(false);
     if (cardId === null) setFocus(false);
   };
-  // Doble toque o doble clic: selecciona y abre el editor enfocado.
+  // Doble toque o doble clic: selecciona y abre el editor enfocado. En selección múltiple solo alterna.
   const openCard = async (cardId: CardId) => {
+    if (multi !== null) {
+      void toggleCard(cardId);
+      return;
+    }
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
     setSheetHidden(false);
@@ -158,11 +165,47 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const unplaced = unplacedCardIds(board, layout).map((cardId) => workspace?.cards.find((card) => card.id === cardId)?.title ?? 'Sin título');
   const boardCount = board?.cardIds.length ?? 0;
   const selected = workspace?.cards.find((card) => card.id === selectedId && visibleIds.has(card.id));
+  const multiIds = (multi ?? []).filter((cardId) => visibleIds.has(cardId));
+  const multiSet = new Set(multiIds);
+
+  // Ctrl/⌘/Mayús + clic, o tocar en el modo: la tarjeta entra o sale. La que estaba abierta entra en el conjunto.
+  const toggleCard = async (cardId: CardId) => {
+    if (!await flushPendingText()) return;
+    const base = multi ?? (selectedId && visibleIds.has(selectedId) ? [selectedId] : []);
+    setMulti(base.includes(cardId) ? base.filter((current) => current !== cardId) : [...base, cardId]);
+    setSelectedId(null);
+    setFocus(false);
+  };
+  const startMulti = async (cardId: CardId) => {
+    if (!await flushPendingText()) return;
+    setMulti([cardId]);
+    setSelectedId(null);
+    setFocus(false);
+  };
+  const plural = (count: number, one: string, many: string) => (count === 1 ? one : many.replace('#', String(count)));
+  const moveMany = (cardIds: readonly CardId[], delta: GridPoint) => {
+    if (!board || cardIds.length === 0) return;
+    void run((storage, workspaceId) => moveCardsOnBoard(storage, workspaceId, { boardId: board.id, cardIds, delta }),
+      plural(cardIds.length, 'Tarjeta movida. Guardado en memoria.', '# tarjetas movidas. Guardado en memoria.'));
+  };
+  const archiveMany = async () => {
+    if (multiIds.length === 0) return;
+    const result = await run((storage, workspaceId) => moveCardsToArchive(storage, workspaceId, multiIds, new Date().toISOString()),
+      plural(multiIds.length, 'Tarjeta archivada. Guardado en memoria.', '# tarjetas archivadas. Guardado en memoria.'));
+    if (result.ok) setMulti(null);
+  };
+  const trashMany = async () => {
+    if (multiIds.length === 0) return;
+    const result = await run((storage, workspaceId) => moveCardsToTrash(storage, workspaceId, multiIds),
+      plural(multiIds.length, 'Tarjeta enviada a la Papelera. Guardado en memoria.', '# tarjetas enviadas a la Papelera. Guardado en memoria.'));
+    if (result.ok) setMulti(null);
+  };
 
   const chooseBoard = async (next: BoardId) => {
     if (!await flushPendingText()) return;
     setBoardId(next);
     setSelectedId(null);
+    setMulti(null);
     setConnectSource(null);
     setPan(START_PAN);
   };
@@ -251,7 +294,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const pressCard = (cardId: CardId) => {
     if (tool === 'pan') return;
     if (tool === 'select') {
-      void select(cardId);
+      void (multi !== null ? toggleCard(cardId) : select(cardId));
       return;
     }
     const step = connectTap(connectSource, cardId, workspace?.relations ?? []);
@@ -268,7 +311,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const changeTool = (next: CanvasTool) => {
     setTool(next);
     setConnectSource(null);
+    setMulti(null);
   };
+
+  // Escape sale de la selección múltiple (web).
+  useEffect(() => {
+    if (Platform.OS !== 'web' || multi === null) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMulti(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [multi]);
 
   // Escape abandona la conexión a medias (el lienzo cancela aparte un arrastre en curso).
   useEffect(() => {
@@ -432,6 +484,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
       onArchive={() => void archiveSelected(selected.id)}
+      onSelectMany={boardView === 'canvas' && tool === 'select' ? () => void startMulti(selected.id) : undefined}
       inSheet={compact}
       noteImages={previews.refs}
       focused={focus}
@@ -548,7 +601,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onZoomOut={() => setZoom(zoomOut)}
       onZoomReset={() => { setZoom(1); setPan(START_PAN); }}
       view={boardView}
-      onToggleView={() => setBoardView((current) => (current === 'canvas' ? 'list' : 'canvas'))}
+      onToggleView={() => { setMulti(null); setBoardView((current) => (current === 'canvas' ? 'list' : 'canvas')); }}
       trashCount={workspace.trash?.length ?? 0}
       onOpenTrash={() => setTrashOpen(true)}
       onOpenSettings={() => setSettingsOpen(true)}
@@ -568,6 +621,32 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       <Text style={[styles.offerText, { color: colors.textPrimary }]}>{`«${placeOffer.title}» está en este tablero pero no tiene posición. Sus datos no cambian hasta que la coloques.`}</Text>
       <ActionButton label="Colocar en un hueco libre" tone="primary" accessibilityLabel={`Colocar ${placeOffer.title} en un hueco libre`} onPress={placeCard} />
       <ActionButton label="Ahora no" accessibilityLabel="No colocar la tarjeta" onPress={() => setPlaceOffer(null)} />
+    </View>
+  ) : null;
+
+  // Barra de la selección múltiple (ADR 0025): recuento, mover, todas, archivar, Papelera y cancelar.
+  const multiBar = workspace && multi !== null ? (
+    <View testID="multi-bar" accessibilityRole="toolbar" accessibilityLabel="Selección múltiple" style={[styles.multiBar, { borderColor: colors.selection, backgroundColor: colors.surface }]}>
+      {/* Dos filas también en 390 px: recuento, «Todas» y «Cancelar»; debajo, mover y las acciones del conjunto. */}
+      <View style={styles.multiRow}>
+        <Text testID="multi-count" accessibilityLiveRegion="polite" style={[styles.multiCount, { color: colors.textPrimary }]}>
+          {multiIds.length === 0 ? 'NINGUNA · toca tarjetas para añadirlas' : plural(multiIds.length, '1 SELECCIONADA', '# SELECCIONADAS')}
+        </Text>
+        <ActionButton label="Todas" accessibilityLabel="Seleccionar todas las tarjetas del tablero" onPress={() => setMulti(layout?.placements.map((placement) => placement.cardId) ?? [])} />
+        <ActionButton label="Cancelar" accessibilityLabel="Cancelar la selección" onPress={() => setMulti(null)} />
+      </View>
+      {multiIds.length > 0 ? (
+        <View style={styles.multiRow}>
+          <ActionButton label="←" accessibilityLabel="Mover la selección a la izquierda" onPress={() => moveMany(multiIds, { x: -1, y: 0 })} />
+          <ActionButton label="↑" accessibilityLabel="Mover la selección hacia arriba" onPress={() => moveMany(multiIds, { x: 0, y: -1 })} />
+          <ActionButton label="↓" accessibilityLabel="Mover la selección hacia abajo" onPress={() => moveMany(multiIds, { x: 0, y: 1 })} />
+          <ActionButton label="→" accessibilityLabel="Mover la selección a la derecha" onPress={() => moveMany(multiIds, { x: 1, y: 0 })} />
+          <View style={styles.multiGap} />
+          {/* En móvil, los glifos de la navegación (▤ Archivo, 🗑 Papelera) con su nombre accesible completo. */}
+          <ActionButton label={compact ? '▤' : 'Archivar'} accessibilityLabel={plural(multiIds.length, 'Archivar la seleccionada', 'Archivar las # seleccionadas')} onPress={() => void archiveMany()} />
+          <ActionButton label={compact ? '🗑' : 'Papelera'} accessibilityLabel={plural(multiIds.length, 'Enviar la seleccionada a la Papelera', 'Enviar las # seleccionadas a la Papelera')} onPress={() => void trashMany()} />
+        </View>
+      ) : null}
     </View>
   ) : null;
 
@@ -592,9 +671,12 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         snap={snap}
         showGrid={showGrid}
         selectedId={selected?.id ?? null}
+        selectedIds={multiSet}
+        onCardToggle={(cardId) => void toggleCard(cardId)}
+        onMoveMany={moveMany}
         connectSource={connectSource}
         onCardPress={pressCard}
-        onBackgroundPress={() => { if (selectedId) void select(null); }}
+        onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (selectedId) void select(null); }}
         onMove={move}
         onResize={resize}
         onRejected={(message) => setFeedback({ tone: 'error', text: message })}
@@ -667,6 +749,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               {compact && focusing ? null : exportBar}
               {compact ? null : toolbar}
               {sidebar ? null : feedbackLine}
+              {multiBar}
               {relocateBar}
               {placeBar}
               <View style={[styles.stage, compact ? null : styles.stageRow, compact && focusing ? styles.hidden : null]}>
@@ -886,6 +969,10 @@ const styles = StyleSheet.create({
   feedback: { fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   offer: { borderWidth: 2, padding: 8, gap: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   offerText: { flexBasis: 220, flexGrow: 1, fontSize: 14, lineHeight: 19 },
+  multiCount: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  multiBar: { borderWidth: 2, padding: 6, gap: 6 },
+  multiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  multiGap: { flexGrow: 1, minWidth: 4 },
   // En la barra de herramientas (escritorio): mismo aviso, sin fondo propio que compita con la barra.
   feedbackInline: { fontSize: 13, lineHeight: 18, paddingVertical: 4 },
   feedbackCompact: { fontSize: 13, lineHeight: 17, paddingVertical: 5 },

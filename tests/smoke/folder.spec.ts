@@ -670,3 +670,44 @@ test('carpeta: la entrada del diario y la fecha de creación se guardan en el Ma
   await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 1 TARJETA CREADA · 0 ARCHIVADAS');
   await expect(page.getByTestId('log-entry-tarjeta-2')).toContainText('Guardado en disco.');
 });
+
+test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserva al recargar (ADR 0025)', async ({ page }) => {
+  const geometry = page.getByTestId('card-geometry');
+  const button = (name: string) => page.getByRole('button', { name, exact: true });
+  // «Columna 1, fila 1 · 4 × 3» → fila + 1.
+  const lower = (text: string) => text.replace(/fila (\d+)/, (_all, row: string) => `fila ${Number(row) + 1}`);
+  const where = async (id: number) => {
+    await page.getByTestId(`card-tarjeta-${id}`).focus();
+    await page.keyboard.press('Enter');
+    const text = await geometry.innerText();
+    await button('Cerrar el editor de la tarjeta').click();
+    return text;
+  };
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await button('Abrir una carpeta').click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Grupo');
+  await button('Crear un espacio').click();
+  await button('Añadir nota').click();
+  await button('Cerrar el editor de la tarjeta').click();
+  await button('Añadir nota').click();
+  await button('Seleccionar varias tarjetas empezando por esta').click();
+  await page.getByTestId('card-tarjeta-1').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('multi-count')).toHaveText('2 SELECCIONADAS');
+  await button('Cancelar la selección').click();
+  const before = [await where(1), await where(2)];
+
+  await page.getByTestId('card-tarjeta-1').focus();
+  await page.keyboard.press('Enter');
+  await button('Seleccionar varias tarjetas empezando por esta').click();
+  await button('Seleccionar todas las tarjetas del tablero').click();
+  await button('Mover la selección hacia abajo').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('2 tarjetas movidas. Guardado en la carpeta.');
+
+  await page.reload();
+  await button('Volver a mis espacios').click();
+  await button('Abrir una carpeta').click();
+  await button('Abrir Grupo').click();
+  expect([await where(1), await where(2)]).toEqual(before.map(lower));
+});

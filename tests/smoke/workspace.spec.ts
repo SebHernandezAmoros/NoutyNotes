@@ -672,3 +672,69 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   expect(handle.height).toBeGreaterThanOrEqual(44);
   expect(await hasHorizontalOverflow(page)).toBe(false);
 });
+
+test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y con flechas, Escape, Todas y archivar (ADR 0025)', async ({ page, browserName }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Conjunto');
+  await sideBySide(page);
+  const cell = cellSize(page);
+  const count = page.getByTestId('multi-count');
+
+  // Táctil y teclado: «Seleccionar varias» desde el editor; tocar otra la añade y tocarla de nuevo la quita.
+  await tapCard(page, 1);
+  await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
+  await expect(count).toHaveText('1 SELECCIONADA');
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+  await tapCard(page, 2);
+  await expect(count).toHaveText('2 SELECCIONADAS');
+  await tapCard(page, 2);
+  await expect(count).toHaveText('1 SELECCIONADA');
+  await tapCard(page, 2);
+  await expect(count).toHaveText('2 SELECCIONADAS');
+  await expect(page.getByTestId('resize-s-tarjeta-1')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('multi-select.png') });
+
+  // Arrastrar una mueve todas, con vista previa; un solo guardado. Se arrastra la 2: tocarla la trajo a la vista.
+  if (isCompact(page)) {
+    if (browserName === 'chromium' && testInfo.project.use.hasTouch) await touchDrag(page, card(page, 2), 0, 4 * cell.y);
+    else await mouseDrag(page, card(page, 2), 0, 4 * cell.y);
+  } else {
+    await mouseDrag(page, card(page, 2), 0, 4 * cell.y, { release: false });
+    await expect(page.getByTestId('drag-status')).toHaveText('Mover 2 tarjetas: +0 columnas, +4 filas. Escape cancela.');
+    await page.mouse.up();
+  }
+  await expect(feedback(page)).toHaveText('2 tarjetas movidas. Guardado en memoria.');
+  await button(page, 'Mover la selección hacia abajo').click();
+  await expect(feedback(page)).toHaveText('2 tarjetas movidas. Guardado en memoria.');
+  await expect(count).toHaveText('2 SELECCIONADAS');
+  await button(page, 'Cancelar la selección').click();
+  await expect(page.getByTestId('multi-bar')).toHaveCount(0);
+  await expectGeometry(page, 1, 'Columna 1, fila 6 · 4 × 3');
+  await closeEditor(page);
+  await expectGeometry(page, 2, 'Columna 5, fila 6 · 4 × 3');
+  await closeEditor(page);
+
+  // Escritorio: Ctrl + clic añade; la que estaba abierta entra en el conjunto. Escape sale.
+  if (!isCompact(page)) {
+    await card(page, 1).click();
+    await card(page, 2).click({ modifiers: ['Control'] });
+    await expect(count).toHaveText('2 SELECCIONADAS');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('multi-bar')).toHaveCount(0);
+  }
+
+  // «Todas» y archivar el conjunto de una vez: el tablero queda vacío y el Archivo cuenta 2.
+  // Con ratón se abre con un clic: un Espacio sobre la tarjeta recién soltada se descartaría como el «click» del gesto.
+  if (isCompact(page)) await tapCard(page, 1);
+  else await card(page, 1).click();
+  await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
+  await button(page, 'Seleccionar todas las tarjetas del tablero').click();
+  await expect(count).toHaveText('2 SELECCIONADAS');
+  await button(page, 'Archivar las 2 seleccionadas').click();
+  await expect(feedback(page)).toHaveText('2 tarjetas archivadas. Guardado en memoria.');
+  await expect(page.getByTestId('multi-bar')).toHaveCount(0);
+  await expect(page.getByTestId('board-empty')).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});

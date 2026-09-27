@@ -14,7 +14,7 @@ import { CONTROL_SIZE, chromeFor } from './cardChrome';
 import type { CardAction, Chrome } from './cardChrome';
 import { CardControls, CardMenu } from './CardControls';
 import { connectTarget } from './connect';
-import { cardBox, checkMove, checkResize, dragTarget, previewBox, resizeTarget } from './geometry';
+import { cardBox, checkMove, checkMoveMany, checkResize, dragTarget, previewBox, resizeTarget } from './geometry';
 import type { CanvasMetrics, PlacementCheck, ResizeHandle } from './geometry';
 import { panToRevealWorld, renderBase, visibleGridLines, worldPan } from './viewport';
 import type { Point, Size } from './viewport';
@@ -29,8 +29,9 @@ export interface GestureController {
    * En web, soltar sobre la misma tarjeta genera además un «click» que Pressable convierte en onPress.
    * El gesto ya se atendió: la tarjeta ignora ese onPress si llega justo después.
    */
-  gestureEnded(): void;
-  justEndedGesture(): boolean;
+  gestureEnded(cardId: CardId): void;
+  /** Solo para esa tarjeta: una pulsación de teclado en otra no se descarta. */
+  justEndedGesture(cardId: CardId): boolean;
   canResize(): boolean;
   begin(gesture: { readonly cardId: CardId; readonly kind: 'move' | 'resize'; readonly handle: ResizeHandle }): void;
   update(dx: number, dy: number): void;
@@ -45,6 +46,8 @@ interface Gesture {
   readonly handle: ResizeHandle;
   readonly dx: number;
   readonly dy: number;
+  /** Mover el conjunto seleccionado (ADR 0025): todas las tarjetas con el desplazamiento de la arrastrada. */
+  readonly group?: readonly CardId[];
 }
 
 interface CanvasProps {
@@ -58,6 +61,11 @@ interface CanvasProps {
   readonly snap: boolean;
   readonly showGrid: boolean;
   readonly selectedId: CardId | null;
+  /** Selección múltiple (ADR 0025): se resaltan y se arrastran juntas. */
+  readonly selectedIds: ReadonlySet<CardId>;
+  /** Ctrl, ⌘ o Mayús + clic: añade o quita la tarjeta de la selección. */
+  readonly onCardToggle: (cardId: CardId) => void;
+  readonly onMoveMany: (cardIds: readonly CardId[], delta: GridPoint) => void;
   readonly connectSource: CardId | null;
   readonly onCardPress: (cardId: CardId) => void;
   readonly onBackgroundPress: () => void;
@@ -89,6 +97,11 @@ const FLOATING_TITLE = 'titulo-flotante';
 
 /** Destino de un gesto en curso y su validez según el motor de grilla, antes de guardar nada. */
 function evaluate(layout: BoardLayout, placement: CardPlacement, gesture: Gesture, zoom: number, metrics: CanvasMetrics) {
+  if (gesture.kind === 'move' && gesture.group) {
+    const to = dragTarget(placement.rect, gesture.dx, gesture.dy, zoom, metrics);
+    const delta = { x: to.x - placement.rect.x, y: to.y - placement.rect.y };
+    return { rect: { ...placement.rect, ...to }, delta, changed: delta.x !== 0 || delta.y !== 0, check: checkMoveMany(layout, gesture.group, delta) };
+  }
   if (gesture.kind === 'move') {
     const to = dragTarget(placement.rect, gesture.dx, gesture.dy, zoom, metrics);
     return { rect: { ...placement.rect, ...to }, changed: to.x !== placement.rect.x || to.y !== placement.rect.y, check: checkMove(layout, placement.cardId, to) };
@@ -127,12 +140,14 @@ export function Canvas(props: CanvasProps) {
     latest.current = { props, viewport, names };
   });
 
+  // Ctrl, ⌘ o Mayús pulsadas al empezar el último puntero (web): el toque añade o quita de la selección.
+  const modifierDown = useRef(false);
   // Controlador estable de gestos: las tarjetas y las asas crean sus PanResponder con él.
   const [controller] = useState<GestureController>(() => {
     // Identidad del gesto en curso, síncrona: no depende de que React haya vuelto a renderizar.
     let active: Omit<Gesture, 'dx' | 'dy'> | null = null;
     let cancelled = false;
-    let endedAt = -Infinity;
+    let ended: { cardId: CardId; at: number } | null = null;
     // Doble toque o doble clic con Seleccionar (ADR 0021): el primero selecciona y el segundo, sobre la
     // misma tarjeta en menos de 400 ms, abre el editor enfocado.
     let lastTap: { cardId: CardId; at: number } | null = null;
@@ -140,8 +155,8 @@ export function Canvas(props: CanvasProps) {
     // limpio. Selecciona como siempre, pero no cuenta para el doble toque.
     let swallowTap = false;
     return {
-      gestureEnded: () => { endedAt = Date.now(); },
-      justEndedGesture: () => Date.now() - endedAt < 400,
+      gestureEnded: (cardId) => { ended = { cardId, at: Date.now() }; },
+      justEndedGesture: (cardId) => ended !== null && ended.cardId === cardId && Date.now() - ended.at < 400,
       canDragCard: () => latest.current.props.tool === 'select' && active === null,
       tapCard: (cardId) => {
         if (swallowTap) {
@@ -149,6 +164,11 @@ export function Canvas(props: CanvasProps) {
           swallowTap = false;
           lastTap = null;
           latest.current.props.onCardPress(cardId);
+          return;
+        }
+        if (modifierDown.current) {
+          lastTap = null;
+          latest.current.props.onCardToggle(cardId);
           return;
         }
         const now = Date.now();
@@ -161,8 +181,10 @@ export function Canvas(props: CanvasProps) {
       begin: (next) => {
         cancelled = false;
         swallowTap = false;
-        active = next;
-        setGesture({ ...next, dx: 0, dy: 0 });
+        const { selectedIds } = latest.current.props;
+        const group = next.kind === 'move' && selectedIds.size > 1 && selectedIds.has(next.cardId) ? [...selectedIds] : undefined;
+        active = group ? { ...next, group } : next;
+        setGesture({ ...active, dx: 0, dy: 0 });
       },
       update: (dx, dy) => {
         if (!cancelled) setGesture((current) => (current ? { ...current, dx, dy } : current));
@@ -188,7 +210,8 @@ export function Canvas(props: CanvasProps) {
           current.props.onRejected(`No se guardó el cambio. ${rejection(result.check, current.names)}`);
           return;
         }
-        if (done.kind === 'move') current.props.onMove(done.cardId, { x: result.rect.x, y: result.rect.y });
+        if (done.group && 'delta' in result && result.delta) current.props.onMoveMany(done.group, result.delta);
+        else if (done.kind === 'move') current.props.onMove(done.cardId, { x: result.rect.x, y: result.rect.y });
         else current.props.onResize(done.cardId, { w: result.rect.w, h: result.rect.h });
       },
     };
@@ -210,21 +233,43 @@ export function Canvas(props: CanvasProps) {
       if (node.scrollLeft !== 0) node.scrollLeft = 0;
       if (node.scrollTop !== 0) node.scrollTop = 0;
     };
-    const press = () => { pointerDown.current = true; };
+    const press = (event: PointerEvent) => {
+      pointerDown.current = true;
+      modifierDown.current = event.ctrlKey || event.metaKey || event.shiftKey;
+    };
     const release = () => { pointerDown.current = false; };
     // Un arrastre nativo del navegador (de una selección de texto que quedó en la página o de una
     // <img> de tarjeta) cancela el puntero con `pointercancel` y deja la Mano o el arrastre de la
     // tarjeta a medias. En el lienzo nunca se quiere: se anula.
     const noNativeDrag = (event: Event) => event.preventDefault();
+    // Ctrl + clic (ADR 0025): el sistema de respuesta de RN Web descarta las pulsaciones con Ctrl o Alt
+    // (en macOS abren el menú contextual), así que no llega a `tapCard`. Se atiende aquí y no sigue:
+    // el onPress de la tarjeta no debe seleccionarla además.
+    const ctrlClick = (event: MouseEvent) => {
+      if (!event.ctrlKey || event.button !== 0) return;
+      const ids = new Set(latest.current.props.layout?.placements.map((placement) => placement.cardId) ?? []);
+      for (let element = event.target as HTMLElement | null; element && element !== node; element = element.parentElement) {
+        const testId = element.getAttribute('data-testid') ?? '';
+        const cardId = testId.startsWith('card-') ? (testId.slice(5) as CardId) : null;
+        if (cardId && ids.has(cardId)) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (latest.current.props.tool === 'select') latest.current.props.onCardToggle(cardId);
+          return;
+        }
+      }
+    };
+    node.addEventListener('click', ctrlClick, true);
     node.addEventListener('dragstart', noNativeDrag, true);
     node.addEventListener('scroll', reset);
-    node.addEventListener('pointerdown', press, true);
+    node.addEventListener('pointerdown', press as EventListener, true);
     window.addEventListener('pointerup', release, true);
     window.addEventListener('pointercancel', release, true);
     return () => {
       node.removeEventListener('dragstart', noNativeDrag, true);
+      node.removeEventListener('click', ctrlClick, true);
       node.removeEventListener('scroll', reset);
-      node.removeEventListener('pointerdown', press, true);
+      node.removeEventListener('pointerdown', press as EventListener, true);
       window.removeEventListener('pointerup', release, true);
       window.removeEventListener('pointercancel', release, true);
     };
@@ -291,6 +336,8 @@ export function Canvas(props: CanvasProps) {
   const active = gesture ? placements.find((placement) => placement.cardId === gesture.cardId) : undefined;
   const preview = gesture && active && layout ? evaluate(layout, active, gesture, zoom, metrics) : null;
   const colliding = new Set(preview && !preview.check.ok ? preview.check.colliding : []);
+  const groupMoving = new Set(gesture?.group ?? []);
+  const groupDelta = preview && 'delta' in preview && preview.delta ? preview.delta : null;
   // Lo que se pinta dentro de la capa escalada se dibuja respecto a una base cerca de la cámara: así los
   // números pintados son pequeños aunque las tarjetas estén a un millón de celdas (ADR 0017).
   const base = renderBase(pan, zoom);
@@ -326,7 +373,7 @@ export function Canvas(props: CanvasProps) {
   const chrome = new Map<CardId, Chrome>();
   if (tool === 'select') {
     for (const placement of placements) {
-      if (gesture?.cardId === placement.cardId) continue;
+      if (gesture?.cardId === placement.cardId || gesture?.group?.includes(placement.cardId)) continue;
       // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
       if (cards.get(placement.cardId)?.typeId === FLOATING_TITLE && placement.cardId !== selectedId) continue;
       const box = cardBox(footprint(placement), metrics);
@@ -351,7 +398,8 @@ export function Canvas(props: CanvasProps) {
   const menuPlacement = menuFor ? placements.find((placement) => placement.cardId === menuFor) : undefined;
   const status = preview
     ? preview.check.ok
-      ? `${gesture?.kind === 'move' ? 'Soltar en' : 'Nuevo tamaño:'} ${gesture?.kind === 'move'
+      ? gesture?.group ? `Mover ${gesture.group.length} tarjetas: ${groupDelta ? `${groupDelta.x >= 0 ? '+' : ''}${groupDelta.x} columnas, ${groupDelta.y >= 0 ? '+' : ''}${groupDelta.y} filas` : ''}. Escape cancela.`
+      : `${gesture?.kind === 'move' ? 'Soltar en' : 'Nuevo tamaño:'} ${gesture?.kind === 'move'
         ? preview.rect.x < 0 || preview.rect.y < 0 ? `X ${preview.rect.x}, Y ${preview.rect.y}` : `columna ${preview.rect.x + 1}, fila ${preview.rect.y + 1}`
         : `${preview.rect.w} × ${preview.rect.h}`}. Escape cancela.`
       : rejection(preview.check, names)
@@ -418,13 +466,15 @@ export function Canvas(props: CanvasProps) {
           if (!card) return null;
           const index = numbers.get(card.id) ?? 0;
           const cell = footprint(placement);
-          const dragging = gesture?.cardId === card.id;
-          const box = local(dragging && preview
+          const dragging = gesture?.cardId === card.id || groupMoving.has(card.id);
+          const box = local(dragging && preview && gesture && groupDelta
+            ? previewBox(cell, { x: placement.rect.x + groupDelta.x, y: placement.rect.y + groupDelta.y }, gesture.dx, gesture.dy, zoom, snap, metrics)
+            : dragging && preview && gesture
             ? gesture.kind === 'move'
               ? previewBox(cell, { x: preview.rect.x, y: preview.rect.y }, gesture.dx, gesture.dy, zoom, snap, metrics)
               : cardBox(footprint({ ...placement, rect: preview.rect }), metrics)
             : cardBox(cell, metrics));
-          const selected = selectedId === card.id;
+          const selected = selectedId === card.id || props.selectedIds.has(card.id);
           return (
             <CanvasCard
               key={card.id}
@@ -452,6 +502,15 @@ export function Canvas(props: CanvasProps) {
           );
         })}
         {/* El destino va encima de las tarjetas: su color (válido o no) siempre se ve. */}
+        {preview && groupDelta ? placements.filter((placement) => groupMoving.has(placement.cardId) && placement.cardId !== active?.cardId).map((placement) => (
+          <View
+            key={`target-${placement.cardId}`}
+            pointerEvents="none"
+            style={[styles.target, local(cardBox(footprint({ ...placement, rect: { ...placement.rect, x: placement.rect.x + groupDelta.x, y: placement.rect.y + groupDelta.y } }), metrics)), {
+              borderColor: preview.check.ok ? colors.selection : colors.danger,
+            }]}
+          />
+        )) : null}
         {preview && active ? (
           <View
             testID="drag-target"

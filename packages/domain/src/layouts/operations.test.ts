@@ -6,7 +6,7 @@ import type { CardId } from '../ids';
 import { DESKTOP_GRID, cellsOverlap, footprint, validateGridLayout } from './grid';
 import type { GridConfig, GridPoint } from './grid';
 import type { BoardLayout, CardPlacement } from './layout';
-import { compactLayout, findFreeSpace, moveCard, resizeCard, setDisplay } from './operations';
+import { compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './operations';
 
 const card = (value: string) => value as CardId;
 const at = (layout: BoardLayout, cardId: string): CardPlacement | undefined =>
@@ -358,5 +358,28 @@ describe('findFreeSpace dentro de una zona (P2: colocar donde se está mirando)'
   it('rechaza una zona mal formada sin buscar', () => {
     expect(problems(findFreeSpace(layoutOf(), { w: 1, h: 1 }, world, { columns: 0 }))).toEqual(['invalid-value@options.columns']);
     expect(problems(findFreeSpace(layoutOf(), { w: 1, h: 1 }, world, { from: { x: 0.5, y: 0 } }))).toEqual(['invalid-value@options.from']);
+  });
+});
+
+describe('mover un conjunto (ADR 0025)', () => {
+  // a y b se tocan: moverlas juntas no choca entre ellas; c queda fuera del conjunto.
+  const layout = deepFreeze(layoutOf(place('a', 0, 0, 2, 1), place('b', 2, 0, 2, 1), place('c', 0, 3, 4, 1)));
+
+  const codes = (result: ReturnType<typeof moveCards>) => (result.ok ? [] : result.issues.map((found) => found.code));
+
+  it('desplaza todas por igual; solo choca con tarjetas de fuera o con los límites, y si falla no cambia nada', () => {
+    const moved = value(moveCards(layout, [card('a'), card('b')], { x: 1, y: 1 }, DESKTOP_GRID));
+    expect([at(moved, 'a')?.rect, at(moved, 'b')?.rect, at(moved, 'c')?.rect]).toEqual([
+      { x: 1, y: 1, w: 2, h: 1 }, { x: 3, y: 1, w: 2, h: 1 }, { x: 0, y: 3, w: 4, h: 1 },
+    ]);
+    // a pasa a la antigua posición de b: permitido, b también se va.
+    expect(moveCards(layout, [card('a'), card('b')], { x: 2, y: 0 }, DESKTOP_GRID).ok).toBe(true);
+    const blocked = moveCards(layout, [card('a'), card('b')], { x: 0, y: 3 }, DESKTOP_GRID);
+    expect(blocked.ok).toBe(false);
+    expect(codes(blocked)).toContain('grid-collision');
+    expect(codes(moveCards(layout, [card('a'), card('b')], { x: 9, y: 0 }, DESKTOP_GRID))).toContain('out-of-bounds');
+    expect(codes(moveCards(layout, [card('a'), card('zzz')], { x: 1, y: 0 }, DESKTOP_GRID))).toContain('missing-reference');
+    expect(codes(moveCards(layout, [], { x: 1, y: 0 }, DESKTOP_GRID))).toContain('invalid-value');
+    expect(codes(moveCards(layout, [card('a')], { x: 0.5, y: 0 }, DESKTOP_GRID))).toContain('invalid-layout');
   });
 });
