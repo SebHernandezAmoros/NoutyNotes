@@ -5,7 +5,7 @@ import type { Card } from '../cards/card';
 import { collectCardTypeIssues } from '../cards/card-type';
 import type { CardTypeDefinition } from '../cards/card-type';
 import { collectTrashIssues } from '../cards/trashed-card';
-import type { TrashedCard } from '../cards/trashed-card';
+import type { ArchivedCard, TrashedCard } from '../cards/trashed-card';
 import { checkOptionalText, checkRequiredText, isRecord, issue, listAt, resultOf } from '../errors';
 import type { DomainIssue, ValidationResult } from '../errors';
 import { checkId, checkUniqueIds, isValidId } from '../ids';
@@ -37,6 +37,8 @@ export interface Workspace {
   readonly relations: readonly Relation[];
   /** Tarjetas enviadas a la Papelera, en orden de envío (ADR 0015). Opcional: sin Papelera, ausente. */
   readonly trash?: readonly TrashedCard[];
+  /** Tarjetas archivadas (ADR 0023). Opcional: sin archivadas, ausente. */
+  readonly archive?: readonly ArchivedCard[];
 }
 
 /** Índice de elementos que existen por ID; ignora IDs inválidos o repetidos, ya informados. */
@@ -165,6 +167,9 @@ export function validateWorkspace(workspace: Workspace): ValidationResult<Worksp
   });
 
   collectDuplicateRelationIssues(relations, 'relations', issues);
-  collectTrashIssues(input.trash, usableCardTypes, new Set(cardIndex.keys()), issues);
+  // Un ID sigue reservado mientras la tarjeta esté en la Papelera o en el Archivo (ADR 0015, ADR 0023).
+  const setAsideIds = (value: unknown) => (Array.isArray(value) ? value.flatMap((entry) => (isRecord(entry) && isRecord(entry.card) && typeof entry.card.id === 'string' ? [entry.card.id] : [])) : []);
+  collectTrashIssues(input.trash, usableCardTypes, new Set([...cardIndex.keys(), ...setAsideIds(input.archive)]), issues);
+  collectTrashIssues(input.archive, usableCardTypes, new Set([...cardIndex.keys(), ...setAsideIds(input.trash)]), issues, { key: 'archive', name: 'el Archivo' });
   return resultOf(workspace, issues);
 }

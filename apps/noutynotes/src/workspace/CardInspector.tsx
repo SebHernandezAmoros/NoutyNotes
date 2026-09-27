@@ -1,4 +1,4 @@
-import { addCardTag, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
 import { linkUrlField } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
@@ -7,9 +7,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { describeFailure } from '../session/messages';
+import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { cardTitle } from './Board';
 import { applyListCommand, normalizeListChange, toggleChecklistLine } from './markdownLists';
+import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
 import type { ListKind, TextSelection } from './markdownLists';
 import type { WorkspaceAction } from './useWorkspaceEditor';
@@ -28,8 +31,15 @@ interface CardInspectorProps {
   /** Representación y Papelera (ADR 0014, ADR 0015); los mismos caminos que la barra de la tarjeta. */
   readonly onDisplay: (display: CardDisplayMode) => void;
   readonly onTrash: () => void;
+  /** Archivar (ADR 0023): sale de los tableros sin destruirse. */
+  readonly onArchive: () => void;
   /** En la hoja móvil, la barra de la hoja ya muestra el título y «Cerrar»: no se repiten aquí. */
   readonly inSheet?: boolean;
+  /** Imágenes intercaladas en notas, por ruta (ADR 0021). */
+  readonly noteImages: ReadonlyMap<string, string>;
+  /** Editor enfocado (ADR 0021): ampliar o volver al tablero. En la hoja móvil lo ofrece su barra. */
+  readonly focused?: boolean;
+  readonly onToggleFocus?: () => void;
 }
 
 const displays: readonly { display: CardDisplayMode; label: string }[] = [
@@ -56,7 +66,7 @@ const resizes = [
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, inSheet = false }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, inSheet = false, noteImages, focused = false, onToggleFocus }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -116,6 +126,40 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       if (!opened) setLinkProblem('No se pudo abrir el enlace con este dispositivo. La dirección sigue guardada.');
     });
   };
+  // Contenido en orden (ADR 0021): mover, quitar o el texto alternativo cambian el borrador, como escribir.
+  const changeBlocks = (next: string) => {
+    setContent(next);
+    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
+  };
+  const blocksType = workspace.cardTypes.find((type) => type.id === card.typeId)?.base;
+  const withBlocks = blocksType !== 'image' && blocksType !== 'section';
+  const [imageProblem, setImageProblem] = useState<string | null>(null);
+  // Insertar o reemplazar guarda enseguida el contenido del editor con la imagen (y el asset nuevo).
+  const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }) => {
+    setImageProblem(null);
+    if (!supportsImageImport()) return setImageProblem('Este entorno no permite elegir imágenes.');
+    let picked;
+    try {
+      picked = await pickImageFile();
+    } catch {
+      return setImageProblem('No se pudo leer la imagen elegida. Comprueba el permiso y vuelve a intentarlo.');
+    }
+    if (!picked) return undefined;
+    const file = picked;
+    const draft = content;
+    const result = await run((storage, id) => {
+      const assets = assetsOf(storage);
+      if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
+      return addNoteImage(storage, assets, id, card.id, { bytes: file.bytes, fileName: file.name, content: draft, place });
+    }, place.kind === 'insert' ? `Imagen «${file.name}» insertada en la nota. Guardado en memoria.` : `Imagen reemplazada por «${file.name}». Guardado en memoria.`);
+    if (result.ok) {
+      setContent(result.value.content);
+      if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: result.value.content });
+    } else {
+      setImageProblem(describeFailure(result.issues, mode));
+    }
+    return undefined;
+  };
   const toggleCheck = (line: number) => {
     const next = toggleChecklistLine(content, line);
     if (next !== null) {
@@ -148,6 +192,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>TARJETA SELECCIONADA</Text>
             <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card)}</Text>
           </View>
+          {onToggleFocus ? (
+            <ActionButton label={focused ? 'Volver al tablero' : 'Ampliar'} accessibilityLabel={focused ? 'Volver al tablero' : 'Ampliar el editor'} onPress={onToggleFocus} />
+          ) : null}
           <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
         </View>
       )}
@@ -195,6 +242,12 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             selectionRef.current = selection;
             if (forcedSelection && selection.start === forcedSelection.start && selection.end === forcedSelection.end) setForcedSelection(undefined);
           }} />
+        {withBlocks ? (
+          <NoteBlocksEditor content={content} onChange={changeBlocks} images={noteImages} canPickImages={supportsImageImport()}
+            onInsert={() => void placeImage({ kind: 'insert', caret: selectionRef.current.start })}
+            onReplace={(index) => void placeImage({ kind: 'replace', index })} />
+        ) : null}
+        {imageProblem ? <Text testID="note-image-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{imageProblem}</Text> : null}
         {content.split('\n').some((line) => /^\s*[-*+]\s+\[[ xX]\]/.test(line)) ? (
           <View testID="checklist-preview" style={styles.preview}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>VISTA DE TAREAS</Text>
@@ -315,6 +368,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       </View>
       <View style={styles.section}>
+        <ActionButton label="Archivar" accessibilityLabel={`Archivar la tarjeta ${cardTitle(card)}`} onPress={onArchive} />
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>Archivar la aparta de los tableros y de las búsquedas sin eliminarla; se restaura desde el Archivo.</Text>
         <ActionButton label="Enviar a la Papelera" accessibilityLabel={`Enviar la tarjeta ${cardTitle(card)} a la Papelera`} onPress={onTrash} />
         <Text style={[styles.hint, { color: colors.textSecondary }]}>No se borra: podrás restaurarla desde la Papelera.</Text>
       </View>

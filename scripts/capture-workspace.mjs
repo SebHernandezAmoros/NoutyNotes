@@ -5,6 +5,7 @@
 // Requiere el servidor correspondiente en marcha; no publica ni modifica datos del proyecto.
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
 const base = process.argv[2] ?? 'http://localhost:8081';
@@ -33,6 +34,21 @@ try {
       await page.getByTestId('search-panel').waitFor({ state: 'detached' });
     }
   };
+  // Biblioteca de assets (ADR 0022): en móvil se abre desde «Más».
+  const assetsShots = async (theme) => {
+    for (const [size, width, height] of [['mobile', 390, 844], ['tablet', 900, 900], ['desktop', 1366, 900]]) {
+      await page.setViewportSize({ width, height });
+      // Se decide por el ancho y se espera a que el diseño cambie: justo tras redimensionar aún está la barra anterior.
+      const more = button('Más secciones');
+      if (width < 800) await more.click();
+      else await more.waitFor({ state: 'detached' });
+      await button('Abrir los assets').click();
+      await page.getByTestId('assets-count').filter({ hasText: 'ARCHIVO' }).waitFor();
+      await shot(page, `assets-${size}-${theme}`);
+      await page.keyboard.press('Escape');
+      await page.getByTestId('assets-panel').waitFor({ state: 'detached' });
+    }
+  };
   await page.goto(base);
   await button('Tema claro').click();
 
@@ -53,6 +69,12 @@ try {
   await page.getByLabel('Título de la tarjeta').fill('Próximos pasos');
   await page.getByLabel('Contenido Markdown').fill('- [x] Definir el concepto\n- [ ] Reunir referencias\n- [ ] Preparar la primera versión');
   await button('Guardar texto').click();
+  // Imagen intercalada en la nota (ADR 0021): la ficha muestra texto e imagen en orden.
+  await page.getByLabel('Contenido Markdown').press('Control+End');
+  const chooser = page.waitForEvent('filechooser');
+  await button('Insertar una imagen en la nota').click();
+  await (await chooser).setFiles(fileURLToPath(new URL('../apps/noutynotes/assets/branding/app-icon.png', import.meta.url)));
+  await page.getByText('insertada en la nota').waitFor();
   for (const tag of ['plan', 'Ideas']) {
     await page.getByTestId('tag-input').fill(tag);
     await button('Añadir la etiqueta').click();
@@ -72,6 +94,7 @@ try {
     await shot(page, name);
   }
   await searchShots('light');
+  await assetsShots('light');
 
   // Oscuro explícito y Sistema (sigue al sistema operativo, aquí oscuro).
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -83,6 +106,7 @@ try {
     await shot(page, name);
   }
   await searchShots('dark');
+  await assetsShots('dark');
   await page.setViewportSize({ width: 1366, height: 900 });
   await button('Volver a mis espacios').click();
   await button('Tema sistema').click();

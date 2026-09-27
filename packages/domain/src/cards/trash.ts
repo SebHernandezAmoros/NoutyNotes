@@ -18,10 +18,13 @@ import type { TrashedCard } from './trashed-card';
  * devuelve un workspace a medias.
  */
 
-/** Envía una tarjeta a la Papelera con su pertenencia, colocación y relaciones. */
-export function trashCard(workspace: Workspace, cardId: CardId): ValidationResult<Workspace> {
+/**
+ * Retira una tarjeta activa guardando todo lo necesario para restaurarla (pertenencia, colocación y
+ * relaciones). Común a la Papelera y al Archivo (ADR 0023).
+ */
+export function setAsideCard(workspace: Workspace, cardId: CardId): ValidationResult<{ readonly workspace: Workspace; readonly entry: TrashedCard }> {
   const source = validateWorkspace(workspace);
-  if (!source.ok) return source;
+  if (!source.ok) return failure([...source.issues]);
   const card = workspace.cards.find((candidate) => candidate.id === cardId);
   if (!isValidId(cardId) || !card) return failure([issue('missing-reference', 'cardId', 'La tarjeta no existe en el workspace.')]);
   const entry: TrashedCard = {
@@ -36,8 +39,15 @@ export function trashCard(workspace: Workspace, cardId: CardId): ValidationResul
     relations: workspace.relations.filter((relation) => relation.from === cardId || relation.to === cardId),
   };
   const removed = deleteCard(workspace, cardId, { relations: 'cascade' });
-  if (!removed.ok) return removed;
-  return validateWorkspace({ ...removed.value, trash: [...(workspace.trash ?? []), entry] });
+  if (!removed.ok) return failure([...removed.issues]);
+  return resultOf({ workspace: removed.value, entry }, []);
+}
+
+/** Envía una tarjeta a la Papelera con su pertenencia, colocación y relaciones. */
+export function trashCard(workspace: Workspace, cardId: CardId): ValidationResult<Workspace> {
+  const aside = setAsideCard(workspace, cardId);
+  if (!aside.ok) return failure([...aside.issues]);
+  return validateWorkspace({ ...aside.value.workspace, trash: [...(workspace.trash ?? []), aside.value.entry] });
 }
 
 export interface RestoreOptions {
@@ -73,6 +83,17 @@ export function restoreTrashedCard(
   if (!source.ok) return failure([...source.issues]);
   const entry = workspace.trash?.find((candidate) => candidate.card.id === cardId);
   if (!entry) return failure([issue('missing-reference', 'cardId', 'La tarjeta no está en la Papelera.')]);
+  return restoreSnapshot({ ...workspace, trash: (workspace.trash ?? []).filter((candidate) => candidate !== entry) }, entry, options);
+}
+
+/**
+ * Devuelve una instantánea al workspace (que ya no la contiene en su colección): tableros, posición o
+ * primer hueco libre, tablero de reserva y relaciones cuyo otro extremo sigue activo.
+ */
+export function restoreSnapshot(
+  workspace: Workspace, entry: TrashedCard, options: RestoreOptions,
+): ValidationResult<{ readonly workspace: Workspace; readonly report: RestoreReport }> {
+  const cardId = entry.card.id;
   const boardIds = new Set(workspace.boards.map((board) => board.id));
   let memberships = entry.boards.filter((membership) => boardIds.has(membership.boardId));
   let placements = entry.placements.filter((placement) => boardIds.has(placement.boardId));
@@ -115,7 +136,6 @@ export function restoreTrashedCard(
     boards,
     layouts,
     relations: [...workspace.relations, ...relations],
-    trash: (workspace.trash ?? []).filter((candidate) => candidate !== entry),
   });
   if (!restored.ok) return failure([...restored.issues]);
   return resultOf({
@@ -148,6 +168,7 @@ export function purgeTrashedCard(
   const stillUsed = new Set([
     ...workspace.cards.flatMap((card) => assetsOf(workspace, card)),
     ...trash.flatMap((other) => assetsOf(workspace, other.card)),
+    ...(workspace.archive ?? []).flatMap((other) => assetsOf(workspace, other.card)),
   ]);
   const releasedAssets = [...new Set(assetsOf(workspace, entry.card))].filter((ref) => !stillUsed.has(ref)) as AssetRef[];
   const purged = validateWorkspace({ ...workspace, trash });

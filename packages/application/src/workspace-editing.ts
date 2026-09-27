@@ -1,6 +1,6 @@
 import {
-  WORLD_GRID, addCard, createRelation, deleteRelation, findFreeSpace, moveCard, purgeTrashedCard, resizeCard, restoreTrashedCard, setDisplay, trashCard,
-  linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, validateWorkspace,
+  WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setDisplay, trashCard,
+  isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
   AssetRef, BoardId, BoardLayout, Card, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, GridConfig, GridPoint, GridSize, RestoreReport,
@@ -9,6 +9,7 @@ import type {
 
 import { nextSequentialId, workspaceIdFromName } from './ids';
 import { LINK_CARD_TYPE, linkCardTypeFor } from './links';
+import { syncNoteAssetRefs } from './note-blocks';
 import type { WorkspaceAssets } from './workspace-assets';
 import { describeUntrustedValue, storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageIssue, WorkspaceStorageResult, WorkspaceSummary } from './workspace-storage';
@@ -50,6 +51,10 @@ export interface AddCardInput {
   readonly title?: string;
   /** Solo para `link`: la dirección tal como la escribe la persona; se normaliza (ADR 0020). */
   readonly url?: string;
+  /** Solo para `image`: un asset que ya existe (biblioteca, ADR 0022); sin él, es la imagen de ejemplo. */
+  readonly assetRef?: string;
+  /** Creación real (ADR 0024): la pone la interfaz; application no usa el reloj. */
+  readonly createdAt?: string;
   /** Tablero destino; por defecto, el primero (o el del prototipo si no hay ninguno). */
   readonly boardId?: BoardId;
   /**
@@ -97,7 +102,11 @@ export async function createEmptyWorkspaceNamed(storage: WorkspaceStorage, name:
 
 /** IDs de tarjeta ocupados: los activos y los reservados por la Papelera (ADR 0015). */
 export function takenCardIds(workspace: Workspace): string[] {
-  return [...workspace.cards.map((card) => card.id), ...(workspace.trash ?? []).map((entry) => entry.card.id)];
+  return [
+    ...workspace.cards.map((card) => card.id),
+    ...(workspace.trash ?? []).map((entry) => entry.card.id),
+    ...(workspace.archive ?? []).map((entry) => entry.card.id),
+  ];
 }
 
 function takenRelationIds(workspace: Workspace): string[] {
@@ -125,6 +134,9 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const requestedBoard = isObject(input) ? ownValue(input, 'boardId') : undefined;
   const near = isObject(input) ? ownValue(input, 'near') : undefined;
   const rawUrl = isObject(input) ? ownValue(input, 'url') : undefined;
+  const assetRef = isObject(input) ? ownValue(input, 'assetRef') : undefined;
+  const createdAt = isObject(input) ? ownValue(input, 'createdAt') : undefined;
+  if (createdAt !== undefined && !isArchiveInstant(createdAt)) return storageFailure('invalid-workspace', 'createdAt', 'La fecha de creación debe ser ISO 8601 en UTC.');
   const validNear = near === undefined || (isObject(near) && Number.isSafeInteger(ownValue(near, 'x')) && Number.isSafeInteger(ownValue(near, 'y'))
     && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
   if ((kind !== 'note' && kind !== 'image' && kind !== 'title' && kind !== 'link') || (title !== undefined && typeof title !== 'string')
@@ -134,6 +146,9 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const zone = near === undefined ? undefined : near as NonNullable<AddCardInput['near']>;
   const url = kind === 'link' ? normalizeLinkUrl(typeof rawUrl === 'string' ? rawUrl : '') : undefined;
   if (url && !url.ok) return storageFailure('invalid-workspace', 'input', 'El enlace no es válido.', url.issues);
+  if (assetRef !== undefined && (kind !== 'image' || typeof assetRef !== 'string' || !isValidAssetRef(assetRef) || !assetRef.startsWith('assets/'))) {
+    return storageFailure('invalid-asset', 'assetRef', 'Solo una imagen del proyecto (bajo assets/) puede añadirse como tarjeta de imagen.');
+  }
   const preset = PROTOTYPE_CARD_PRESETS[kind];
   let created: CardId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
@@ -146,6 +161,9 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       id: cardId, typeId: type.id,
       title: title ?? (url?.ok ? linkDisplay(url.value).host : preset.title),
       fields: url?.ok ? { [linkUrlField(type) ?? 'url']: url.value } : {},
+      // Imagen de la biblioteca: la tarjeta referencia el mismo archivo, sin copiarlo (ADR 0022).
+      ...(typeof assetRef === 'string' ? { assetRefs: [assetRef as AssetRef] } : {}),
+      ...(typeof createdAt === 'string' ? { createdAt } : {}),
       ...(preset.content === undefined ? {} : { content: preset.content }),
     };
     const result = addCard(target, card, { boardId, size: preset.size ?? DEFAULT_CARD_SIZE, config: CANONICAL_GRID });
@@ -233,7 +251,20 @@ export async function addBoardToWorkspace(storage: WorkspaceStorage, workspaceId
 export function editCardContent(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId, changes: CardContentChanges,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
-  return modifyWorkspace(storage, workspaceId, (workspace) => updateCard(workspace, cardId, changes));
+  return modifyWorkspace(storage, workspaceId, (workspace) => {
+    const updated = updateCard(workspace, cardId, changes);
+    const before = workspace.cards.find((card) => card.id === cardId);
+    const content = typeof changes?.content === 'string' ? changes.content : undefined;
+    const base = workspace.cardTypes.find((type) => type.id === before?.typeId)?.base;
+    if (!updated.ok || !before || content === undefined || base === 'image') return updated;
+    // Imágenes de la nota (ADR 0021): assetRefs sigue al Markdown sin tocar las referencias ajenas.
+    const refs = syncNoteAssetRefs(before.assetRefs, before.content ?? '', content);
+    return validateWorkspace({ ...updated.value, cards: updated.value.cards.map((card) => {
+      if (card.id !== cardId) return card;
+      const { assetRefs: _previous, ...rest } = card;
+      return refs.length > 0 ? { ...rest, assetRefs: refs } : rest;
+    }) });
+  });
 }
 
 /** Aplica una operación del motor de grilla al layout canónico de un board. */
@@ -312,15 +343,41 @@ export function moveCardToTrash(storage: WorkspaceStorage, workspaceId: Workspac
 }
 
 /** Restaura una tarjeta de la Papelera y devuelve qué no pudo quedar igual. */
-export async function restoreCardFromTrash(
+export function restoreCardFromTrash(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, input: { readonly cardId: CardId; readonly fallbackBoardId: BoardId },
+): Promise<WorkspaceStorageResult<RestoreReport>> {
+  return restoreSetAside(storage, workspaceId, input, restoreTrashedCard);
+}
+
+/** Archiva una tarjeta (ADR 0023). `archivedAt` (ISO 8601 en UTC) lo pone la interfaz: application no usa el reloj. */
+export function moveCardToArchive(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId, archivedAt: string,
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => archiveCard(workspace, cardId, archivedAt));
+}
+
+/** Restaura una tarjeta archivada y devuelve qué no pudo quedar igual. */
+export function restoreCardFromArchive(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, input: { readonly cardId: CardId; readonly fallbackBoardId: BoardId },
+): Promise<WorkspaceStorageResult<RestoreReport>> {
+  return restoreSetAside(storage, workspaceId, input, restoreArchivedCard);
+}
+
+/** «Eliminar» desde el Archivo: la tarjeta pasa a la Papelera; solo la Papelera borra (ADR 0023). */
+export function sendArchivedToTrash(storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => archivedToTrash(workspace, cardId));
+}
+
+async function restoreSetAside(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, { cardId, fallbackBoardId }: { readonly cardId: CardId; readonly fallbackBoardId: BoardId },
+  restore: typeof restoreTrashedCard,
 ): Promise<WorkspaceStorageResult<RestoreReport>> {
   let report: RestoreReport | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
     // Sin tableros se crea el del prototipo para que la tarjeta restaurada sea visible.
     const { workspace: target, boardId } = workspace.boards.some((board) => board.id === fallbackBoardId)
       ? { workspace, boardId: fallbackBoardId } : withBoard(workspace);
-    const restored = restoreTrashedCard(target, cardId, { fallbackBoardId: boardId, config: CANONICAL_GRID });
+    const restored = restore(target, cardId, { fallbackBoardId: boardId, config: CANONICAL_GRID });
     if (!restored.ok) return restored;
     report = restored.value.report;
     return { ok: true, value: restored.value.workspace };

@@ -1,6 +1,8 @@
 
 import { expect, test } from '@playwright/test';
 
+import { openMore, openSettings } from './support';
+
 const fakeFolder = `
 (() => {
   const storeKey = 'nouty-test-folder';
@@ -358,7 +360,7 @@ test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ning�
   await expect(page.getByTestId('card-geometry')).toHaveText('Columna 5, fila 1 · 4 × 3');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta', exact: true }).click();
   if ((page.viewportSize()?.width ?? 0) < 800) {
-    await press('Abrir la configuración');
+    await openSettings(page);
     await press('Restablecer la vista del lienzo');
     await press('Cerrar configuración');
   } else {
@@ -470,11 +472,12 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     return ['rutas/cards/tarjeta-1.md', 'rutas/cards/tarjeta-2.md'].map((path) => new TextDecoder().decode(new Uint8Array(files[path] ?? [])));
   });
-  // Solo la tarjeta con etiquetas pasa a v2; la otra conserva sus bytes v1.
+  // Las tarjetas nuevas llevan fecha de creación (v3, ADR 0024); solo la que tiene etiquetas las guarda.
   await expect.poll(cards).toEqual([
-    expect.stringMatching(/schemaVersion: 2[\s\S]*tags:\s*\n\s*- japón/),
-    expect.stringContaining('schemaVersion: 1'),
+    expect.stringMatching(/schemaVersion: 3[\s\S]*tags:\s*\n\s*- japón/),
+    expect.stringMatching(/createdAt: /),
   ]);
+  expect((await cards())[1]).toContain('schemaVersion: 3');
   expect((await cards())[1]).not.toContain('tags');
 
   await page.reload();
@@ -488,11 +491,12 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   await page.getByRole('button', { name: 'Quitar la etiqueta japón de todas las tarjetas' }).click();
   await page.getByRole('button', { name: 'Confirmar quitar japón de todas' }).click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Etiqueta quitada de todas las tarjetas. Guardado en la carpeta.');
-  await expect.poll(async () => (await cards())[0]).toContain('schemaVersion: 1');
-  expect((await cards())[0]).not.toContain('tags');
+  await expect.poll(async () => (await cards())[0]).not.toContain('tags');
+  // Sin etiquetas sigue en v3 por su fecha de creación.
+  expect((await cards())[0]).toContain('schemaVersion: 3');
 });
 
-test('carpeta: el enlace se guarda en fields de una tarjeta v1 y la búsqueda global lee los proyectos de la carpeta (ADR 0020)', async ({ page }) => {
+test('carpeta: el enlace se guarda en fields de la tarjeta y la búsqueda global lee los proyectos de la carpeta (ADR 0020)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
@@ -508,7 +512,7 @@ test('carpeta: el enlace se guarda en fields de una tarjeta v1 y la búsqueda gl
     return new TextDecoder().decode(new Uint8Array(files['fuentes/cards/tarjeta-1.md'] ?? []));
   });
   await expect.poll(file).toContain('url: https://archivo.example.org/mapa');
-  expect(await file()).toContain('schemaVersion: 1');
+  expect(await file()).toContain('schemaVersion: 3');
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByLabel('Nombre del nuevo espacio').fill('Notas');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
@@ -528,4 +532,141 @@ test('carpeta: el enlace se guarda en fields de una tarjeta v1 y la búsqueda gl
   await expect(page.getByRole('heading', { name: 'Fuentes', exact: true })).toBeVisible();
   await expect(page.getByTestId('card-link-tarjeta-1')).toHaveText('↗ archivo.example.org/mapa');
   await expect(page.getByTestId('link-input')).toHaveValue('https://archivo.example.org/mapa');
+});
+
+test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs y el binario, y reaparece al recargar (ADR 0021)', async ({ page }) => {
+  // PNG real de 1 × 1 (la carpeta simulada guarda cada byte en localStorage: se evita el icono grande).
+  const png = (name: string) => ({ name, mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
+  const files = () => page.evaluate(() => JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>);
+  const text = async (path: string) => new TextDecoder().decode(new Uint8Array((await files())[path] ?? []));
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Diario');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
+  const editor = page.getByLabel('Contenido Markdown');
+  await editor.fill('Primera parte.');
+  await editor.press('End');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Insertar una imagen en la nota' }).click();
+  await (await chooser).setFiles(png('plano.png'));
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Imagen «plano.png» insertada en la nota. Guardado en la carpeta.');
+  await expect.poll(() => text('diario/cards/tarjeta-1.md')).toContain('Primera parte.\n\n![plano](assets/images/tarjeta-1-1.png)');
+  expect(await text('diario/cards/tarjeta-1.md')).toMatch(/assetRefs:\s*\n\s*- assets\/images\/tarjeta-1-1\.png/);
+  expect(await text('diario/cards/tarjeta-1.md')).toContain('schemaVersion: 3');
+  expect((await files())['diario/assets/images/tarjeta-1-1.png']).toEqual([...png('x').buffer]);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Diario' }).click();
+  await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'plano' }).first()).toBeVisible();
+  // Quitar la imagen de la nota la saca de assetRefs, pero el archivo sigue en la carpeta (ADR 0021).
+  await page.getByTestId('card-tarjeta-1').focus();
+  await page.keyboard.press('Space');
+  await page.getByRole('button', { name: 'Quitar la imagen plano de la nota' }).click();
+  await expect.poll(() => text('diario/cards/tarjeta-1.md')).not.toContain('assets/images/tarjeta-1-1.png');
+  expect((await files())['diario/assets/images/tarjeta-1-1.png']).toBeDefined();
+});
+
+test('carpeta: la biblioteca lista lo que hay en assets/ (también lo que nada usa) y eliminar los sin usar lo borra de la carpeta (ADR 0022)', async ({ page }) => {
+  const png = { name: 'Foto Suelta.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') };
+  const files = () => page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>));
+  const button = (name: string) => page.getByRole('button', { name, exact: true });
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await button('Abrir una carpeta').click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Material');
+  await button('Crear un espacio').click();
+  await expect(page.getByRole('heading', { name: 'Material', exact: true })).toBeVisible();
+  await openMore(page);
+  await button('Abrir los assets').click();
+  await expect(page.getByTestId('assets-empty')).toBeVisible();
+  const chooser = page.waitForEvent('filechooser');
+  await button('Importar una imagen a la biblioteca').click();
+  await (await chooser).setFiles(png);
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Imagen «Foto Suelta.png» añadida a la biblioteca. Guardado en la carpeta.');
+  await expect.poll(files).toContain('material/assets/images/foto-suelta.png');
+
+  // Otra sesión: tras recargar y reconectar, el archivo sigue listado (sin tarjeta que lo use).
+  await page.reload();
+  await button('Volver a mis espacios').click();
+  await button('Abrir una carpeta').click();
+  await button('Abrir Material').click();
+  await openMore(page);
+  await button('Abrir los assets').click();
+  await expect(page.getByTestId('assets-count')).toHaveText('1 ARCHIVO');
+  await button('Eliminar los sin usar (1)').click();
+  await button('Confirmar eliminar 1 archivo sin usar').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('1 archivo sin usar eliminado. Guardado en la carpeta.');
+  await expect.poll(files).not.toContain('material/assets/images/foto-suelta.png');
+  await expect(page.getByTestId('assets-empty')).toBeVisible();
+});
+
+test('carpeta: archivar crea .nouty/archive.yaml, sobrevive a recargar y restaurar lo quita (ADR 0023)', async ({ page }) => {
+  const files = () => page.evaluate(() => JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>);
+  const button = (name: string) => page.getByRole('button', { name, exact: true });
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await button('Abrir una carpeta').click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Cajón');
+  await button('Crear un espacio').click();
+  await button('Añadir nota').click();
+  await page.getByLabel('Título de la tarjeta').fill('Idea aparcada');
+  await button('Archivar la tarjeta Idea aparcada').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta archivada. Guardado en la carpeta.');
+  await expect.poll(async () => Object.keys(await files())).toContain('cajon/.nouty/archive.yaml');
+  const archived = new TextDecoder().decode(new Uint8Array((await files())['cajon/.nouty/archive.yaml'] ?? []));
+  expect(archived).toContain('title: Idea aparcada');
+  expect(archived).toMatch(/archivedAt: "\d{4}-\d{2}-\d{2}T/);
+  expect(Object.keys(await files())).not.toContain('cajon/cards/tarjeta-1.md');
+
+  await page.reload();
+  await button('Volver a mis espacios').click();
+  await button('Abrir una carpeta').click();
+  await button('Abrir Cajón').click();
+  await openMore(page);
+  await button('Abrir el Archivo (1)').click();
+  await button('Restaurar Idea aparcada del Archivo').click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta restaurada del Archivo. Guardado en la carpeta.');
+  await expect.poll(async () => Object.keys(await files())).not.toContain('cajon/.nouty/archive.yaml');
+  expect(Object.keys(await files())).toContain('cajon/cards/tarjeta-1.md');
+});
+
+test('carpeta: la entrada del diario y la fecha de creación se guardan en el Markdown y el Diario las recupera al recargar (ADR 0024)', async ({ page }) => {
+  const files = () => page.evaluate(() => JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>);
+  const text = async (path: string) => new TextDecoder().decode(new Uint8Array((await files())[path] ?? []));
+  const openDiary = async () => {
+    await openMore(page);
+    await page.getByRole('button', { name: 'Abrir el diario', exact: true }).click();
+    await expect(page.getByTestId('daily-log-panel')).toBeVisible();
+  };
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Bitácora');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await expect.poll(() => text('bitacora/cards/tarjeta-1.md')).toMatch(/createdAt: "?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z/);
+
+  await openDiary();
+  await page.getByRole('button', { name: 'Escribir la nota de hoy' }).click();
+  await page.getByLabel('Texto de la entrada').fill('Guardado en disco.');
+  await page.getByRole('button', { name: 'Guardar entrada' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Entrada del diario guardada. Guardado en la carpeta.');
+  const entry = await text('bitacora/cards/tarjeta-2.md');
+  expect(entry).toContain('typeId: diario');
+  expect(entry).toMatch(/fields:\s*\n\s*fecha: "?\d{4}-\d{2}-\d{2}/);
+  expect(entry).toContain('schemaVersion: 3');
+  expect(entry).toContain('Guardado en disco.');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Bitácora' }).click();
+  await openDiary();
+  await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 1 TARJETA CREADA · 0 ARCHIVADAS');
+  await expect(page.getByTestId('log-entry-tarjeta-2')).toContainText('Guardado en disco.');
 });

@@ -24,3 +24,16 @@ export const activeLabel = (page: Page) =>
 
 export const hasHorizontalOverflow = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+
+/** Móvil (< 800 px): las secciones están en «Más». Se decide por el ancho, no por lo que ya se ve: justo tras abrir un proyecto la barra puede no estar pintada. */
+export const isCompactWidth = (page: Page) => (page.viewportSize()?.width ?? 0) < 800;
+
+export async function openMore(page: Page) {
+  if (isCompactWidth(page)) await page.getByRole('button', { name: 'Más secciones', exact: true }).click();
+}
+
+/** Configuración: en móvil está dentro de «Más» (ADR 0022); en escritorio, en la barra o la barra lateral. */
+export async function openSettings(page: Page) {
+  await openMore(page);
+  await page.getByRole('button', { name: 'Abrir la configuración', exact: true }).click();
+}

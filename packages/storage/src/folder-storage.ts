@@ -26,7 +26,7 @@ const DELETED = '.nouty-deleted';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const managedPath = (path: string): boolean => path === MANIFEST || path === '.nouty/layout.yaml'
-  || path === '.nouty/relations.yaml' || path === '.nouty/trash.yaml' || /^cards\/[a-z0-9_-]+\.md$/.test(path)
+  || path === '.nouty/relations.yaml' || path === '.nouty/trash.yaml' || path === '.nouty/archive.yaml' || /^cards\/[a-z0-9_-]+\.md$/.test(path)
   || /^boards\/[a-z0-9_-]+\.md$/.test(path);
 
 interface Transaction {
@@ -186,7 +186,20 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     } catch { return error('io-failure', 'ref', 'No se pudo leer la imagen.'); }
   }
 
-  /** Borra un asset; solo se usa con los liberados al eliminar definitivamente una tarjeta. */
+  /** Rutas bajo assets/ de la carpeta del espacio (ADR 0022), en orden; no lee los binarios. */
+  async listAssets(id: WorkspaceId): Promise<WorkspaceStorageResult<readonly string[]>> {
+    if (!isValidId(id)) return invalidWorkspaceIdFailure(id, 'id');
+    const denied = await this.#allowed<readonly string[]>();
+    if (denied) return denied;
+    try {
+      const found = (await this.#packages()).find((item) => item.workspace.id === id);
+      if (!found) return storageFailure('workspace-not-found', 'id', `No existe el workspace "${id}".`);
+      const paths = await found.folder.listPaths();
+      return { ok: true, value: paths.filter((path) => path.startsWith('assets/') && isValidAssetRef(path)).sort() };
+    } catch { return error('io-failure', 'id', 'No se pudo listar la carpeta assets.'); }
+  }
+
+  /** Borra un asset: los liberados al purgar de la Papelera o los que la biblioteca confirma sin uso (ADR 0022). */
   async removeAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<null>> {
     const folder = await this.#assetFolder(id, ref);
     if (!folder.ok) return { ok: false, issues: folder.issues };

@@ -1,5 +1,6 @@
 import { linkDisplay, linkUrlField } from '@noutynotes/domain';
 import type { Card, CardDisplayMode, Workspace } from '@noutynotes/domain';
+import { parseNoteBlocks } from '@noutynotes/application';
 import { useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -10,6 +11,7 @@ import { markdownExcerpt } from '../markdownLists';
 import type { GestureController } from './Canvas';
 import { miniIcon } from './cardChrome';
 import { CardIcon } from './CardIcon';
+import { NotePreview } from './NotePreview';
 import type { ConnectRole } from './connect';
 import { isDrag } from './geometry';
 import type { PixelBox, ResizeHandle } from './geometry';
@@ -37,6 +39,7 @@ interface CanvasCardProps {
   readonly controller: GestureController;
   /** Vista previa de una imagen importada; sin ella, una tarjeta de imagen es de ejemplo. */
   readonly imageUri: string | undefined;
+  readonly noteImages: ReadonlyMap<string, string>;
   /** Ancho, en unidades del lienzo, que ocupan los controles de la cabecera (dibujados fuera del zoom). */
   readonly reserveRight: number;
   /** Con el zoom alejado, los controles de 44 px bajan sobre el cuerpo: el título les deja sitio. */
@@ -89,6 +92,9 @@ export function CanvasCard(props: CanvasCardProps) {
     }).panHandlers;
   });
   const image = isImageCard(workspace, card);
+  // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden.
+  const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
+  const mixed = blocks.some((block) => block.kind === 'image');
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const floatingTitle = card.typeId === 'titulo-flotante';
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
@@ -179,7 +185,11 @@ export function CanvasCard(props: CanvasCardProps) {
                   {`↗ ${link.host}${link.rest}`}
                 </Text>
               ) : null}
-              {!image && bodyLines > 0 ? (
+              {mixed ? (
+                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages}
+                  height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
+              ) : null}
+              {!image && !mixed && bodyLines > 0 ? (
                 <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }]}>{markdownExcerpt(card.content ?? '')}</Text>
               ) : null}
               {tags.length > 0 ? (

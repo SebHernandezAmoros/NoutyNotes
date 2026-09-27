@@ -26,6 +26,12 @@ interface ToolbarProps {
   readonly trashCount: number;
   readonly onOpenTrash: () => void;
   readonly onOpenSettings: () => void;
+  readonly onOpenAssets: () => void;
+  readonly onOpenArchive: () => void;
+  readonly onOpenDiary: () => void;
+  readonly archiveCount: number;
+  /** Móvil: «Más» abre la hoja de secciones (Assets, Configuración…; ADR 0022). */
+  readonly onOpenMore: () => void;
   readonly onOpenSearch: () => void;
   /** Con barra lateral (≥ 1100 px), Papelera y Configuración están en ella y no se repiten aquí. */
   readonly navInSidebar: boolean;
@@ -56,7 +62,7 @@ export function Toolbar(props: ToolbarProps) {
       {props.compact ? (
         <>
           <ToolButton glyph="≡" label="Lista" accessibilityLabel="Vista de lista" active={!onCanvas} onPress={props.onToggleView} style={cell} />
-          <ToolButton glyph="⚙" label="Ajustes" accessibilityLabel="Abrir la configuración" onPress={props.onOpenSettings} style={cell} />
+          <ToolButton glyph="☰" label="Más" accessibilityLabel="Más secciones" accessibilityHint="Diario, Archivo, Assets y Configuración" onPress={props.onOpenMore} style={cell} />
         </>
       ) : null}
     </View>
@@ -85,6 +91,9 @@ export function Toolbar(props: ToolbarProps) {
       {props.navInSidebar ? null : (
         <>
           <ToolButton glyph="🗑" label={props.trashCount > 0 ? `Papelera ${props.trashCount}` : 'Papelera'} accessibilityLabel={`Abrir la Papelera (${props.trashCount})`} onPress={props.onOpenTrash} style={cell} />
+          <ToolButton glyph="◷" label="Diario" accessibilityLabel="Abrir el diario" onPress={props.onOpenDiary} style={cell} />
+          <ToolButton glyph="▤" label={props.archiveCount > 0 ? `Archivo ${props.archiveCount}` : 'Archivo'} accessibilityLabel={`Abrir el Archivo (${props.archiveCount})`} onPress={props.onOpenArchive} style={cell} />
+          <ToolButton glyph="▦" label="Assets" accessibilityLabel="Abrir los assets" onPress={props.onOpenAssets} style={cell} />
           <ToolButton glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={props.onOpenSettings} style={cell} />
         </>
       )}

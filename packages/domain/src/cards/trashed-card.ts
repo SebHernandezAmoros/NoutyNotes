@@ -29,20 +29,43 @@ export interface TrashedCard {
  * tipo existente y relaciones que tocan a la tarjeta. Los tableros guardados pueden haber
  * desaparecido: eso se resuelve al restaurar.
  */
+/** Tarjeta archivada (ADR 0023): la misma instantánea que la Papelera y la fecha de archivo (ISO 8601 en UTC). */
+export interface ArchivedCard extends TrashedCard {
+  readonly archivedAt: string;
+}
+
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+
+/** Fecha y hora de archivo válida: ISO 8601 en UTC (la da la aplicación; el dominio no tiene reloj). */
+export function isArchiveInstant(value: unknown): value is string {
+  return typeof value === 'string' && ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+interface SetAsideKind {
+  /** Clave en el workspace: `trash` o `archive`. */
+  readonly key: 'trash' | 'archive';
+  /** Para los mensajes: «la Papelera», «el Archivo». */
+  readonly name: string;
+}
+
 export function collectTrashIssues(
   trash: unknown,
   types: ReadonlyMap<string, CardTypeDefinition>,
   activeCardIds: ReadonlySet<string>,
   issues: DomainIssue[],
+  kind: SetAsideKind = { key: 'trash', name: 'la Papelera' },
 ): void {
   if (trash === undefined) return;
-  const entries = listAt(trash, 'trash', issues);
+  const entries = listAt(trash, kind.key, issues);
   const ids: unknown[] = [];
   entries.forEach((entry, i) => {
-    const path = `trash[${i}]`;
+    const path = `${kind.key}[${i}]`;
     if (!isRecord(entry) || !isRecord(entry.card)) {
-      issues.push(issue('invalid-value', path, 'Debe ser una tarjeta en la Papelera con su instantánea.'));
+      issues.push(issue('invalid-value', path, `Debe ser una tarjeta en ${kind.name} con su instantánea.`));
       return;
+    }
+    if (kind.key === 'archive' && !isArchiveInstant(entry.archivedAt)) {
+      issues.push(issue('invalid-value', `${path}.archivedAt`, 'Debe ser una fecha y hora ISO 8601 en UTC.'));
     }
     const card = entry.card;
     ids.push(card.id);
@@ -71,9 +94,9 @@ export function collectTrashIssues(
       const at = `${path}.relations[${j}]`;
       collectRelationIssues(relation, at, issues);
       if (isRecord(relation) && relation.from !== card.id && relation.to !== card.id) {
-        issues.push(issue('invalid-value', at, 'La relación no toca a la tarjeta de la Papelera.'));
+        issues.push(issue('invalid-value', at, `La relación no toca a la tarjeta de ${kind.name}.`));
       }
     });
   });
-  checkUniqueIds(ids, 'trash', 'las tarjetas de la Papelera', issues);
+  checkUniqueIds(ids, kind.key, `las tarjetas de ${kind.name}`, issues);
 }

@@ -23,7 +23,7 @@ export const metadataSchema = z.strictObject({ name: text, description: text.opt
 
 export const cardSchema = z.strictObject({
   id: text, typeId: text, title: text.optional(), content: text.optional(),
-  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(),
+  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
 });
 export const boardSchema = z.strictObject({ id: text, title: text, description: text.optional(), cardIds: z.array(text) });
 
@@ -35,6 +35,9 @@ export const trashItemSchema = z.strictObject({
   relations: z.array(relationSchema),
 });
 
+/** Tarjeta archivada (ADR 0023): la instantánea de la Papelera y la fecha de archivo. */
+export const archiveItemSchema = trashItemSchema.extend({ archivedAt: text });
+
 /** Forma del Workspace del dominio que el serializador sabe escribir sin perder claves. */
 export const workspaceSchema = z.strictObject({
   schemaVersion: z.number(), id: text, metadata: metadataSchema,
@@ -42,6 +45,7 @@ export const workspaceSchema = z.strictObject({
   cards: z.array(cardSchema), boards: z.array(boardSchema),
   layouts: z.array(layoutSchema), relations: z.array(relationSchema),
   trash: z.array(trashItemSchema).optional(),
+  archive: z.array(archiveItemSchema).optional(),
 });
 
 // Documentos del formato v1.
@@ -52,15 +56,16 @@ export const workspaceManifestSchema = z.strictObject({
   cardTypes: z.array(cardTypeSchema), relationTypes: z.array(relationTypeSchema),
   cards: z.array(text), boards: z.array(text),
 });
-/** v1: sin etiquetas. v2: con `tags` no vacío (ADR 0019); la coherencia se comprueba al leer. */
+/** v1: sin etiquetas ni fecha. v2: con `tags` (ADR 0019). v3: con `createdAt`, con o sin `tags` (ADR 0024). */
 export const cardFrontmatterSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2)]), id: text, typeId: text, title: text.optional(),
-  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), contentPresent: z.boolean(),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), id: text, typeId: text, title: text.optional(),
+  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(), contentPresent: z.boolean(),
 });
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),
 });
-export const trashFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2)]), items: z.array(trashItemSchema) });
+export const trashFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), items: z.array(trashItemSchema) });
+export const archiveFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), items: z.array(archiveItemSchema) });
 export const templateFileSchema = z.strictObject({
   schemaVersion: z.literal(1), definition: z.record(text, z.unknown()), readmeFile: z.literal('README.md').optional(),
 });

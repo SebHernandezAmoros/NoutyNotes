@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { hasHorizontalOverflow, rgb, trackProblems } from './support';
+import { hasHorizontalOverflow, isCompactWidth, rgb, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -66,7 +67,7 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await closeEditor(page);
   const initial = await box(card(page, 1));
 
-  await button(page, 'Abrir la configuración').click();
+  await openSettings(page);
   const panel = page.getByTestId('settings-panel');
   await expect(panel).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Configuración' })).toBeVisible();
@@ -109,7 +110,7 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await page.reload();
   await button(page, 'Volver a mis espacios').click();
   await createWorkspace(page, 'Otro');
-  await button(page, 'Abrir la configuración').click();
+  await openSettings(page);
   await expect(page.getByTestId('settings-panel')).toContainText('72 px');
   await expect(page.getByRole('switch', { name: 'Mostrar grilla' })).toHaveAttribute('aria-checked', 'false');
   await button(page, 'Restablecer los valores de lienzo y grilla').click();
@@ -391,7 +392,7 @@ test('regresión: enfocar una tarjeta fuera del lienzo la trae con el pan, nunca
 
   // El desplazamiento vive en el pan: restablecer la vista vuelve al origen.
   if ((page.viewportSize()?.width ?? 0) < 800) {
-    await button(page, 'Abrir la configuración').click();
+    await openSettings(page);
     await button(page, 'Restablecer la vista del lienzo').click();
     await button(page, 'Cerrar configuración').click();
   } else {
@@ -418,7 +419,7 @@ test('regresión: «Restablecer vista» vuelve al origen aunque haya una tarjeta
   await expect.poll(async () => (await offset())[0]).toBeLessThan(origin[0] ?? 0);
   // Acercar y restablecer: vuelve al origen y a 100 %, sin que la selección vuelva a mover la cámara.
   if (compact) {
-    await button(page, 'Abrir la configuración').click();
+    await openSettings(page);
     await button(page, 'Acercar el lienzo').click();
     await button(page, 'Restablecer la vista del lienzo').click();
     await button(page, 'Cerrar configuración').click();
@@ -709,4 +710,274 @@ test('búsqueda en todos los proyectos: explícita, agrupada, con aviso de consu
   await expect(page.getByRole('heading', { name: 'Alfa', exact: true })).toBeVisible();
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Mapa del río');
+});
+
+test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reordenar, texto alternativo, reemplazar, quitar y editor enfocado (ADR 0021)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Cuaderno');
+  await addNote(page, 'Viaje');
+  const editor = page.getByLabel('Contenido Markdown');
+  await editor.fill('Llegada.\n\nTemplos y <b>jardines</b>.');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  const pick = async (name: string) => {
+    const chooser = page.waitForEvent('filechooser');
+    return (await chooser).setFiles({ name, mimeType: 'image/png', buffer: readFileSync(image) });
+  };
+  // Con el cursor al final del texto, la imagen va al final.
+  await editor.press('Control+End');
+  const first = pick('portada.png');
+  await button(page, 'Insertar una imagen en la nota').click();
+  await first;
+  await expect(feedback(page)).toHaveText('Imagen «portada.png» insertada en la nota. Guardado en memoria.');
+  await expect(editor).toHaveValue('Llegada.\n\nTemplos y <b>jardines</b>.\n\n![portada](assets/images/tarjeta-1-1.png)');
+  // Con el cursor en el primer párrafo, la segunda va justo después de él.
+  await editor.focus();
+  await editor.press('Control+Home');
+  await editor.press('ArrowRight');
+  await editor.press('ArrowRight');
+  const second = pick('mapa.png');
+  await button(page, 'Insertar una imagen en la nota').click();
+  await second;
+  await expect(editor).toHaveValue('Llegada.\n\n![mapa](assets/images/tarjeta-1-2.png)\n\nTemplos y <b>jardines</b>.\n\n![portada](assets/images/tarjeta-1-1.png)');
+  // La ficha muestra los bloques en orden: el HTML sigue siendo texto.
+  const preview = page.getByTestId('note-preview-tarjeta-1');
+  // En una ficha de tamaño inicial caben el primer párrafo y la primera imagen; el resto se indica.
+  // (RN Web dibuja dentro un <img> accesible: se busca por nombre, no por número de roles.)
+  await expect(preview.getByRole('img', { name: 'mapa' }).first()).toBeVisible();
+  await expect(preview.getByRole('img', { name: 'portada' })).toHaveCount(0);
+  await expect(preview).toContainText('+2 bloques más');
+  await page.screenshot({ path: testInfo.outputPath('note-images.png') });
+
+  // Reordenar y texto alternativo: van al borrador y se guardan con «Guardar texto».
+  await button(page, 'Subir la imagen portada').click();
+  await expect(editor).toHaveValue('Llegada.\n\n![mapa](assets/images/tarjeta-1-2.png)\n\n![portada](assets/images/tarjeta-1-1.png)\n\nTemplos y <b>jardines</b>.');
+  await page.getByLabel('Texto alternativo de la imagen 2').fill('Portada del viaje');
+  await expect(editor).toHaveValue(/!\[Portada del viaje\]\(assets\/images\/tarjeta-1-1\.png\)/);
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+
+  // Reemplazar conserva la posición con un archivo nuevo; quitar saca la línea.
+  const third = pick('mapa-nuevo.png');
+  await button(page, 'Reemplazar la imagen mapa').click();
+  await third;
+  await expect(feedback(page)).toHaveText('Imagen reemplazada por «mapa-nuevo.png». Guardado en memoria.');
+  await expect(editor).toHaveValue(/^Llegada\.\n\n!\[mapa\]\(assets\/images\/tarjeta-1-3\.png\)\n\n!\[Portada del viaje\]/);
+  await button(page, 'Quitar la imagen Portada del viaje de la nota').click();
+  await button(page, 'Guardar texto').click();
+  await expect(page.getByTestId('note-block-3')).toHaveCount(0);
+  await expect(editor).not.toHaveValue(/Portada/);
+  await expect(page.getByTestId('note-blocks')).toContainText('Quitar o reemplazar una imagen no borra su archivo');
+
+  // Editor enfocado: ocupa el sitio del lienzo y vuelve sin perder el borrador.
+  await editor.fill(`${await editor.inputValue()}\n\nBorrador sin guardar`);
+  await button(page, 'Ampliar el editor').click();
+  await expect(page.getByTestId('board-canvas')).toBeHidden();
+  await expect(editor).toHaveValue(/Borrador sin guardar$/);
+  await page.screenshot({ path: testInfo.outputPath('note-focus.png') });
+  await button(page, 'Volver al tablero').click();
+  await expect(page.getByTestId('board-canvas')).toBeVisible();
+  await expect(editor).toHaveValue(/Borrador sin guardar$/);
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+  // Doble toque o doble clic en la ficha: selecciona y abre el editor enfocado.
+  await card(page, 1).dblclick();
+  await expect(page.getByTestId('board-canvas')).toBeHidden();
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Viaje');
+  await button(page, 'Volver al tablero').click();
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, añadir al tablero sin copiar, reemplazar y eliminar los sin usar (ADR 0022)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Archivo visual');
+  const pick = async (name: string) => {
+    const chooser = page.waitForEvent('filechooser');
+    return (await chooser).setFiles({ name, mimeType: 'image/png', buffer: readFileSync(image) });
+  };
+  // Una nota con una imagen intercalada: el archivo está en uso.
+  await addNote(page, 'Ruta');
+  await page.getByLabel('Contenido Markdown').press('Control+End');
+  const inNote = pick('mapa.png');
+  await button(page, 'Insertar una imagen en la nota').click();
+  await inNote;
+  await expect(feedback(page)).toHaveText('Imagen «mapa.png» insertada en la nota. Guardado en memoria.');
+  await closeEditor(page);
+
+  const openAssets = async () => {
+    if (isCompactWidth(page)) {
+      await button(page, 'Más secciones').click();
+      await expect(page.getByTestId('more-sheet')).toBeVisible();
+    }
+    await button(page, 'Abrir los assets').click();
+    await expect(page.getByTestId('assets-panel')).toBeVisible();
+  };
+  await openAssets();
+  await expect(page.getByTestId('assets-count')).toHaveText('1 ARCHIVO');
+  // Importar sin crear tarjeta: el nombre del archivo se vuelve portable.
+  const imported = pick('Plano del Río.png');
+  await button(page, 'Importar una imagen a la biblioteca').click();
+  await imported;
+  await expect(feedback(page)).toHaveText('Imagen «Plano del Río.png» añadida a la biblioteca. Guardado en memoria.');
+  await expect(page.getByTestId('assets-count')).toHaveText('2 ARCHIVOS');
+  await expect(button(page, 'Imágenes (2)')).toBeVisible();
+  await expect(button(page, 'Documentos (0)')).toBeVisible();
+  await expect(button(page, 'Solo sin usar (1)')).toBeVisible();
+  // Recién importada queda seleccionada: nadie la usa.
+  await expect(page.getByTestId('asset-detail')).toContainText('Ninguna tarjeta lo usa');
+  await expect(page.getByTestId('asset-path')).toHaveText('assets/images/plano-del-rio.png');
+  // Búsqueda por nombre de archivo, sin mayúsculas.
+  await page.getByTestId('assets-search').fill('TARJETA');
+  await expect(page.getByTestId('assets-count')).toHaveText('1 ARCHIVO');
+  await button(page, 'Ver tarjeta-1-1.png').click();
+  await expect(page.getByTestId('asset-detail')).toContainText('Ruta · Tablero principal');
+  await page.screenshot({ path: testInfo.outputPath('assets.png') });
+  // Un archivo en uso no se puede eliminar; «Ir» lleva a la tarjeta.
+  await expect(button(page, 'Eliminar tarjeta-1-1.png')).toHaveCount(0);
+  await button(page, 'Ir a Ruta').click();
+  await expect(page.getByTestId('assets-panel')).toHaveCount(0);
+  await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+
+  // Añadir al tablero: tarjeta de imagen que usa el mismo archivo (sin copia).
+  await openAssets();
+  // El panel conserva la búsqueda anterior: se vacía para ver todo.
+  await page.getByTestId('assets-search').fill('');
+  await button(page, 'Ver plano-del-rio.png').click();
+  await button(page, 'Añadir plano-del-rio.png al tablero').click();
+  await expect(feedback(page)).toHaveText('«plano-del-rio.png» añadido al tablero sin copiar el archivo. Guardado en memoria.');
+  await expect(page.getByTestId('image-preview-tarjeta-2')).toBeVisible();
+  await closeEditor(page);
+  await openAssets();
+  await expect(page.getByTestId('assets-count')).toHaveText('2 ARCHIVOS');
+  await expect(button(page, 'Solo sin usar (0)')).toBeVisible();
+
+  // Reemplazar cambia la referencia de la nota; el anterior queda sin usar y se puede eliminar.
+  await button(page, 'Ver tarjeta-1-1.png').click();
+  const replacement = pick('mapa nuevo.png');
+  await button(page, 'Reemplazar tarjeta-1-1.png').click();
+  await replacement;
+  await expect(feedback(page)).toHaveText('«tarjeta-1-1.png» reemplazado por «mapa nuevo.png» en 1 tarjeta; el archivo anterior queda sin usar. Guardado en memoria.');
+  await expect(button(page, 'Solo sin usar (1)')).toBeVisible();
+  await button(page, 'Eliminar los sin usar (1)').click();
+  await expect(page.getByTestId('assets-confirm-unused')).toContainText('¿Eliminar 1 archivo sin usar?');
+  await button(page, 'Confirmar eliminar 1 archivo sin usar').click();
+  await expect(feedback(page)).toHaveText('1 archivo sin usar eliminado. Guardado en memoria.');
+  await expect(page.getByTestId('assets-count')).toHaveText('2 ARCHIVOS');
+  await expect(page.getByTestId('asset-tarjeta-1-1.png')).toHaveCount(0);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'mapa' }).first()).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar en su sitio, y enviar a la Papelera con confirmación (ADR 0023)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Estudio');
+  await addNote(page, 'Borrador viejo');
+  await addNote(page, 'Plan');
+  await tapCard(page, 1);
+  await button(page, 'Conectar con Plan').click();
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
+  await button(page, 'Archivar la tarjeta Borrador viejo').click();
+  await expect(feedback(page)).toHaveText('Tarjeta archivada. Guardado en memoria.');
+  await expect(card(page, 1)).toHaveCount(0);
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(0);
+
+  // Fuera de la búsqueda del proyecto.
+  await button(page, 'Abrir la búsqueda').click();
+  await page.getByTestId('search-input').fill('borrador');
+  await expect(page.getByTestId('search-empty')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  const openArchive = async (count: number) => {
+    if (isCompactWidth(page)) {
+      await button(page, 'Más secciones').click();
+      await expect(page.getByTestId('more-sheet')).toBeVisible();
+    }
+    await button(page, `Abrir el Archivo (${count})`).click();
+    await expect(page.getByTestId('archive-panel')).toBeVisible();
+  };
+  await openArchive(1);
+  await expect(page.getByTestId('archive-item-tarjeta-1')).toContainText('NOTA · ARCHIVADA');
+  await expect(page.getByTestId('archive-item-tarjeta-1')).toContainText('Estaba en Tablero principal');
+  await page.getByTestId('archive-search').fill('BORRADOR');
+  await expect(page.getByTestId('archive-count')).toHaveText('1 TARJETA');
+  await page.getByTestId('archive-search').fill('nada');
+  await expect(page.getByTestId('archive-count')).toHaveText('0 TARJETAS');
+  await page.getByTestId('archive-search').fill('');
+  await page.screenshot({ path: testInfo.outputPath('archive.png') });
+  await button(page, 'Restaurar Borrador viejo del Archivo').click();
+  await expect(feedback(page)).toHaveText('Tarjeta restaurada del Archivo. Guardado en memoria.');
+  await expect(page.getByTestId('archive-empty')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card(page, 1)).toBeVisible();
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
+
+  // «Eliminar» desde el Archivo = enviar a la Papelera, con confirmación; solo la Papelera borra.
+  await tapCard(page, 1);
+  await button(page, 'Archivar la tarjeta Borrador viejo').click();
+  await openArchive(1);
+  await button(page, 'Enviar Borrador viejo a la Papelera desde el Archivo').click();
+  await expect(page.getByTestId('archive-trash-confirmation')).toContainText('Desde allí aún podrás restaurarla o eliminarla definitivamente.');
+  await button(page, 'Confirmar enviar Borrador viejo a la Papelera').click();
+  await expect(feedback(page)).toHaveText('Tarjeta enviada del Archivo a la Papelera. Guardado en memoria.');
+  await expect(page.getByTestId('archive-empty')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivadas, cambiar de día y estado vacío sin cifras (ADR 0024)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Bitácora');
+  await addNote(page, 'Idea del día');
+  await closeEditor(page);
+  const openDiary = async () => {
+    if (isCompactWidth(page)) {
+      await button(page, 'Más secciones').click();
+      await expect(page.getByTestId('more-sheet')).toBeVisible();
+    }
+    await button(page, 'Abrir el diario').click();
+    await expect(page.getByTestId('daily-log-panel')).toBeVisible();
+  };
+  await openDiary();
+  await expect(page.getByTestId('log-day')).toContainText('· hoy');
+  await expect(page.getByTestId('log-summary')).toHaveText('0 ENTRADAS · 1 TARJETA CREADA · 0 ARCHIVADAS');
+  await expect(page.getByTestId('log-created-tarjeta-1')).toContainText('CREADA · NOTA');
+  await button(page, 'Escribir la nota de hoy').click();
+  await expect(feedback(page)).toHaveText('Entrada del diario lista. Guardado en memoria.');
+  await page.getByLabel('Texto de la entrada').fill('Hoy empecé el plan.');
+  await button(page, 'Guardar entrada').click();
+  await expect(feedback(page)).toHaveText('Entrada del diario guardada. Guardado en memoria.');
+  await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 1 TARJETA CREADA · 0 ARCHIVADAS');
+  // «Escribir la nota de hoy» no crea otra.
+  await button(page, 'Escribir la nota de hoy').click();
+  await expect(page.getByLabel('Texto de la entrada')).toHaveValue('Hoy empecé el plan.');
+  await button(page, 'Cancelar la edición de la entrada').click();
+  await page.screenshot({ path: testInfo.outputPath('daily-log.png') });
+
+  // Un día sin datos no muestra cifras inventadas.
+  await button(page, 'Día anterior').click();
+  await expect(page.getByTestId('log-summary')).toHaveText('SIN ACTIVIDAD REGISTRADA');
+  await button(page, 'Ir a hoy').click();
+  await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 1 TARJETA CREADA · 0 ARCHIVADAS');
+  await button(page, 'Ir a Idea del día').click();
+  await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Archivar la tarjeta Idea del día').click();
+  await openDiary();
+  await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 0 TARJETAS CREADAS · 1 ARCHIVADA');
+  await expect(page.getByTestId('log-archived-tarjeta-1')).toContainText('ARCHIVADA · NOTA');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
 });

@@ -45,6 +45,14 @@ Controles de tarjeta y proyectos (ADR 0016):
 - `src/workspace/canvas/cardChrome.ts` (puro): acciones y posición de los controles en píxeles de pantalla. `CardControls.tsx` los dibuja fuera de la escala del zoom, junto con el menú `⋯`, y `CardIcon.tsx` dibuja los iconos de nota e imagen;
 - `src/workspace/ProjectTabs.tsx`: pestañas verticales de proyectos (≥ 800 px) y hoja «Proyectos» en móvil. Cambiar de proyecto guarda antes el borrador.
 
+Diario (ADR 0024):
+- `src/workspace/DailyLogPanel.tsx`: día con ←, Hoy y →, fecha exacta, resumen, entradas editables, cronología de creadas y archivadas con «Ir» y calendario del mes. `WorkspaceScreen` pasa la hora actual y el desfase de la zona; `application` no usa el reloj.
+
+Notas con imágenes y editor enfocado (ADR 0021):
+- `src/workspace/NoteBlocksEditor.tsx` («Contenido en orden») dentro de `CardInspector`; insertar y reemplazar usan `addNoteImage`;
+- `src/workspace/canvas/NotePreview.tsx`: bloques de la nota en la ficha; `useImagePreviews` devuelve `{ cards, refs }`;
+- el doble toque lo detecta el controlador de `Canvas` (`tapCard`); el modo enfocado es el estado `focus` de `WorkspaceScreen`.
+
 Búsqueda global y enlaces (ADR 0020):
 - `src/workspace/LinkDialog.tsx` (nuevo enlace) y `openLink.ts` (abre con `Linking` solo direcciones admitidas);
 - `SearchPanel.tsx`: alcance «Este proyecto» o «Todos»; la búsqueda global se lanza con Enter o con el botón;

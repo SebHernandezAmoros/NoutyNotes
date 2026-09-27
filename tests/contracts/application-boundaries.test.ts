@@ -14,7 +14,7 @@ const imports = (source: string): string[] => [...source.matchAll(/(?:from|impor
 
 describe('fronteras de application', () => {
   it('existen el puerto y los casos de uso', () => {
-    expect(files.map(({ path }) => path).sort()).toEqual(['ids.ts', 'images.ts', 'index.ts', 'links.ts', 'search.ts', 'tags.ts', 'workspace-assets.ts', 'workspace-editing.ts', 'workspace-storage.ts', 'workspace-use-cases.ts']);
+    expect(files.map(({ path }) => path).sort()).toEqual(['assets-catalog.ts', 'assets-library.ts', 'daily-log.ts', 'diary.ts', 'ids.ts', 'images.ts', 'index.ts', 'links.ts', 'note-blocks.ts', 'search.ts', 'tags.ts', 'workspace-assets.ts', 'workspace-editing.ts', 'workspace-storage.ts', 'workspace-use-cases.ts']);
   });
 
   it('solo depende del API público del dominio: nunca de storage, UI ni plataforma', () => {

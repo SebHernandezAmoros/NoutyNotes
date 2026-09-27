@@ -111,7 +111,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   expect(archive.value.assets).toEqual({ 'assets/images/pixel.png': binary, 'assets/notes/lista de ideas.txt': source['assets/notes/lista de ideas.txt'] });
   const card = archive.value.workspace.cards.find((candidate) => candidate.id === 'tarjeta-1');
   expect(card).toMatchObject({ title: 'Nota del ZIP', content: '## Desde el navegador\n\n- conservar **todo**', tags: ['exportable'] });
-  expect(archive.value.files['cards/tarjeta-1.md']).toContain('schemaVersion: 2');
+  expect(archive.value.files['cards/tarjeta-1.md']).toContain('schemaVersion: 3');
   expect(archive.value.workspace.relations.map(({ from, to }) => `${from}→${to}`)).toEqual(['idea-a→idea-b', 'tarjeta-1→idea-a']);
   expect(archive.value.workspace.layouts[0]?.placements.find((placement) => placement.cardId === 'tarjeta-1')?.rect.y).toBe(bornRow);
 

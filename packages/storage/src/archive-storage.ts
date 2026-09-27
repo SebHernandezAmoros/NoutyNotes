@@ -98,6 +98,14 @@ export class ArchiveStorage implements WorkspaceStorage, WorkspaceAssets {
     return bytes ? { ok: true, value: bytes.slice() } : storageFailure('io-failure', 'ref', `No existe ${ref}.`);
   }
 
+  /** Rutas de los assets del espacio (ADR 0022), en orden. */
+  async listAssets(id: WorkspaceId): Promise<WorkspaceStorageResult<readonly string[]>> {
+    if (!isValidId(id)) return invalidWorkspaceIdFailure(id, 'id');
+    const opened = await this.#memory.open(id);
+    if (!opened.ok) return { ok: false, issues: opened.issues };
+    return { ok: true, value: Object.keys(this.#assets.get(id) ?? {}).filter((ref) => ref.startsWith('assets/')).sort() };
+  }
+
   async removeAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<null>> {
     const target = await this.#assetTarget(id, ref);
     if (!target.ok) return { ok: false, issues: target.issues };

@@ -35,7 +35,8 @@ export interface GestureController {
   begin(gesture: { readonly cardId: CardId; readonly kind: 'move' | 'resize'; readonly handle: ResizeHandle }): void;
   update(dx: number, dy: number): void;
   finish(dx: number, dy: number): void;
-  abort(): void;
+  /** `fromEscape`: el botón sigue pulsado y su soltar no debe contar como toque. */
+  abort(fromEscape?: boolean): void;
 }
 
 interface Gesture {
@@ -69,6 +70,10 @@ interface CanvasProps {
   readonly unplaced: readonly string[];
   /** Vistas previas de imágenes importadas por tarjeta. */
   readonly imageUris: ReadonlyMap<CardId, string>;
+  /** Imágenes intercaladas en notas, por ruta (ADR 0021). */
+  readonly noteImages: ReadonlyMap<string, string>;
+  /** Doble toque o doble clic en una tarjeta: editor enfocado (ADR 0021). */
+  readonly onCardOpen: (cardId: CardId) => void;
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
@@ -128,22 +133,43 @@ export function Canvas(props: CanvasProps) {
     let active: Omit<Gesture, 'dx' | 'dy'> | null = null;
     let cancelled = false;
     let endedAt = -Infinity;
+    // Doble toque o doble clic con Seleccionar (ADR 0021): el primero selecciona y el segundo, sobre la
+    // misma tarjeta en menos de 400 ms, abre el editor enfocado.
+    let lastTap: { cardId: CardId; at: number } | null = null;
+    // Escape cancela un arrastre con el botón aún pulsado: al soltar, esa pulsación llega como un toque
+    // limpio. Selecciona como siempre, pero no cuenta para el doble toque.
+    let swallowTap = false;
     return {
       gestureEnded: () => { endedAt = Date.now(); },
       justEndedGesture: () => Date.now() - endedAt < 400,
       canDragCard: () => latest.current.props.tool === 'select' && active === null,
-      tapCard: (cardId) => latest.current.props.onCardPress(cardId),
+      tapCard: (cardId) => {
+        if (swallowTap) {
+          // Como antes, selecciona la tarjeta; pero no cuenta para el doble toque.
+          swallowTap = false;
+          lastTap = null;
+          latest.current.props.onCardPress(cardId);
+          return;
+        }
+        const now = Date.now();
+        const double = lastTap !== null && lastTap.cardId === cardId && now - lastTap.at < 400;
+        lastTap = double ? null : { cardId, at: now };
+        if (double) latest.current.props.onCardOpen(cardId);
+        else latest.current.props.onCardPress(cardId);
+      },
       canResize: () => latest.current.props.tool === 'select',
       begin: (next) => {
         cancelled = false;
+        swallowTap = false;
         active = next;
         setGesture({ ...next, dx: 0, dy: 0 });
       },
       update: (dx, dy) => {
         if (!cancelled) setGesture((current) => (current ? { ...current, dx, dy } : current));
       },
-      abort: () => {
+      abort: (fromEscape = false) => {
         cancelled = true;
+        if (fromEscape) swallowTap = true;
         active = null;
         setGesture(null);
       },
@@ -237,7 +263,7 @@ export function Canvas(props: CanvasProps) {
   // Escape cancela el gesto en curso sin guardar (en web; en táctil, soltar en el origen cancela).
   useEffect(() => {
     if (Platform.OS !== 'web' || !gesture) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') controller.abort(); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') controller.abort(true); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [gesture, controller]);
@@ -413,6 +439,7 @@ export function Canvas(props: CanvasProps) {
               connectRole={tool === 'connect' ? connectTarget(connectSource, card.id, workspace.relations) : 'none'}
               connectSourceName={connectSource ? names.get(connectSource) ?? '' : ''}
               imageUri={props.imageUris.get(card.id)}
+              noteImages={props.noteImages}
               onPress={() => props.onCardPress(card.id)}
               onFocus={() => reveal(card.id)}
               reserveRight={(() => {

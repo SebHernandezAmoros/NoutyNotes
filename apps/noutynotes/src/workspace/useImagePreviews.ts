@@ -1,23 +1,33 @@
-import { assetsOf, inspectImage } from '@noutynotes/application';
+import { assetsOf, inspectImage, noteImageRefs } from '@noutynotes/application';
 import type { WorkspaceStorage } from '@noutynotes/application';
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
 import { useEffect, useState } from 'react';
 
 import { dataUri } from './dataUri';
 
+export interface ImagePreviews {
+  /** Tarjetas de imagen: su primera imagen (ADR 0015). */
+  readonly cards: ReadonlyMap<CardId, string>;
+  /** Imágenes dentro de notas, por ruta (ADR 0021). */
+  readonly refs: ReadonlyMap<string, string>;
+}
+
+const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
+
 /**
- * Vista previa de las tarjetas de imagen importadas (ADR 0015): lee cada asset por el puerto y lo
- * convierte en `data:` URI, sin red. Una tarjeta de ejemplo (sin asset) no tiene vista previa.
+ * Vistas previas sin red: lee cada asset por el puerto y lo convierte en `data:` URI. Incluye la imagen
+ * de las tarjetas de imagen y las imágenes intercaladas en las notas. Una tarjeta de ejemplo (sin asset)
+ * no tiene vista previa.
  */
-export function useImagePreviews(storage: WorkspaceStorage, workspace: Workspace | null): ReadonlyMap<CardId, string> {
+export function useImagePreviews(storage: WorkspaceStorage, workspace: Workspace | null): ImagePreviews {
   const [previews, setPreviews] = useState<ReadonlyMap<string, string>>(new Map());
-  const wanted = workspace
-    ? workspace.cards.flatMap((card) => {
-      const [ref] = card.assetRefs ?? [];
-      return ref && /\.(png|jpe?g|gif|webp)$/i.test(ref) ? [{ cardId: card.id, ref }] : [];
-    })
-    : [];
-  const key = wanted.map(({ ref }) => ref).join('|');
+  const types = new Map((workspace?.cardTypes ?? []).map((type) => [type.id, type.base]));
+  const cardRefs = (workspace?.cards ?? []).flatMap((card) => {
+    const [ref] = card.assetRefs ?? [];
+    return types.get(card.typeId) === 'image' && ref && IMAGE.test(ref) ? [{ cardId: card.id, ref }] : [];
+  });
+  const noteRefs = (workspace?.cards ?? []).flatMap((card) => (types.get(card.typeId) === 'image' ? [] : noteImageRefs(card.content ?? '')));
+  const key = [...new Set([...cardRefs.map(({ ref }) => ref), ...noteRefs])].filter((ref) => IMAGE.test(ref)).sort().join('|');
   const workspaceId = workspace?.id;
 
   useEffect(() => {
@@ -37,8 +47,11 @@ export function useImagePreviews(storage: WorkspaceStorage, workspace: Workspace
     return () => { active = false; };
   }, [storage, workspaceId, key]);
 
-  return new Map(wanted.flatMap(({ cardId, ref }) => {
-    const uri = previews.get(ref);
-    return uri ? [[cardId, uri] as const] : [];
-  }));
+  return {
+    cards: new Map(cardRefs.flatMap(({ cardId, ref }) => {
+      const uri = previews.get(ref);
+      return uri ? [[cardId, uri] as const] : [];
+    })),
+    refs: previews,
+  };
 }

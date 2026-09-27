@@ -11,11 +11,14 @@ export interface WorkspaceAssets {
   writeAsset(id: WorkspaceId, ref: AssetRef, bytes: Uint8Array): Promise<WorkspaceStorageResult<null>>;
   readAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<Uint8Array>>;
   removeAsset(id: WorkspaceId, ref: AssetRef): Promise<WorkspaceStorageResult<null>>;
+  /** Rutas bajo `assets/` que existen, también las que nada usa (ADR 0022). Sin leer los binarios. */
+  listAssets(id: WorkspaceId): Promise<WorkspaceStorageResult<readonly string[]>>;
 }
 
 /** ¿El almacenamiento también guarda assets? */
 export function assetsOf(storage: WorkspaceStorage): WorkspaceAssets | null {
   const candidate = storage as Partial<WorkspaceAssets>;
   return typeof candidate.writeAsset === 'function' && typeof candidate.readAsset === 'function' && typeof candidate.removeAsset === 'function'
+    && typeof candidate.listAssets === 'function'
     ? (candidate as WorkspaceAssets) : null;
 }

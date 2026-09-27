@@ -1,6 +1,6 @@
 import {
   PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  moveCardOnBoard, moveCardToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromTrash, searchAllWorkspaces, setCardDisplay,
+  moveCardOnBoard, moveCardToArchive, moveCardToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
@@ -11,6 +11,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '../components/BrandMark';
+import { Dialog } from '../components/Dialog';
 import { ActionButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
 import { describeFailure } from '../session/messages';
@@ -30,6 +31,9 @@ import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
 import { ProjectRail, ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
+import { ArchivePanel } from './ArchivePanel';
+import { DailyLogPanel } from './DailyLogPanel';
+import { AssetsPanel } from './AssetsPanel';
 import { LinkDialog } from './LinkDialog';
 import { SearchPanel } from './SearchPanel';
 import { TrashPanel } from './TrashPanel';
@@ -89,6 +93,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const { showGrid, snap } = preferences;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [diaryOpen, setDiaryOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   // Tarjeta del tablero sin posición a la que se llegó desde la búsqueda: se ofrece colocarla (ADR 0020).
@@ -109,9 +117,12 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [boardView, setBoardView] = useState<BoardView>('canvas');
   // Móvil: el editor puede ocultarse para usar el lienzo (y las asas) sin perder el borrador.
   const [sheetHidden, setSheetHidden] = useState(false);
+  // Editor enfocado (ADR 0021): el mismo editor ocupa el sitio del lienzo; el borrador no se pierde.
+  const [focus, setFocus] = useState(false);
   const workspace = view.kind === 'ready' ? view.workspace : null;
+  const archiveCount = workspace?.archive?.length ?? 0;
   const summaries = useSessionSummaries(workspace);
-  const imageUris = useImagePreviews(session.storage, workspace);
+  const previews = useImagePreviews(session.storage, workspace);
   const saved = (text: string) => (storageMode === 'folder' ? text.replace('Guardado en memoria.', 'Guardado en la carpeta.') : text);
 
   const { flushPendingText, setPendingText } = usePendingText(run, storageMode);
@@ -131,6 +142,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
     setSheetHidden(false);
+    if (cardId === null) setFocus(false);
+  };
+  // Doble toque o doble clic: selecciona y abre el editor enfocado.
+  const openCard = async (cardId: CardId) => {
+    if (!await flushPendingText()) return;
+    setSelectedId(cardId);
+    setSheetHidden(false);
+    setFocus(true);
   };
 
   const board = workspace ? workspace.boards.find((candidate) => candidate.id === boardId) ?? workspace.boards[0] : undefined;
@@ -211,7 +230,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
   const add = (kind: PrototypeCardKind, extra: { readonly url?: string; readonly title?: string } = {}) => {
     const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
-    return run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...extra, ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
+    // La fecha de creación la pone la interfaz (ADR 0024): application no usa el reloj.
+    return run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...extra, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
       .then((result) => {
         if (result.ok) void select(result.value);
         return result;
@@ -278,6 +298,31 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     }
   };
 
+  // Archivo (ADR 0023). La hora la pone la interfaz: application no usa el reloj.
+  const archiveSelected = async (cardId: CardId) => {
+    if (!await flushPendingText()) return;
+    const result = await run((storage, workspaceId) => moveCardToArchive(storage, workspaceId, cardId, new Date().toISOString()), 'Tarjeta archivada. Guardado en memoria.');
+    if (result.ok) {
+      setSelectedId(null);
+      setConnectSource(null);
+      setFocus(false);
+    }
+  };
+  const restoreArchived = async (cardId: CardId) => {
+    const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
+    const result = await run((storage, workspaceId) => restoreCardFromArchive(storage, workspaceId, { cardId, fallbackBoardId }), 'Tarjeta restaurada del Archivo. Guardado en memoria.');
+    if (!result.ok) return;
+    const notes = [
+      result.value.relocated.length > 0 ? 'Su sitio estaba ocupado: se colocó en el primer hueco libre.' : '',
+      result.value.addedToFallback ? `Su tablero ya no existe: se añadió a «${board?.title ?? 'Tablero principal'}».` : '',
+      result.value.skippedRelations > 0 ? `${result.value.skippedRelations === 1 ? '1 conexión no se restauró' : `${result.value.skippedRelations} conexiones no se restauraron`} porque la otra tarjeta ya no está.` : '',
+    ].filter(Boolean);
+    if (notes.length > 0) setFeedback({ tone: 'success', text: saved(`Tarjeta restaurada del Archivo. ${notes.join(' ')} Guardado en memoria.`) });
+  };
+  const archivedToTrash = (cardId: CardId) => {
+    void run((storage, workspaceId) => sendArchivedToTrash(storage, workspaceId, cardId), 'Tarjeta enviada del Archivo a la Papelera. Guardado en memoria.');
+  };
+
   const restore = async (cardId: CardId) => {
     const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
     const result = await run((storage, workspaceId) => restoreCardFromTrash(storage, workspaceId, { cardId, fallbackBoardId }), 'Tarjeta restaurada. Guardado en memoria.');
@@ -321,7 +366,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     }
     const file = picked;
     const result = await run((storage, workspaceId) => importImageCard(storage, assets, workspaceId, {
-      bytes: file.bytes, fileName: file.name, ...(board ? { boardId: board.id } : {}),
+      bytes: file.bytes, fileName: file.name, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}),
     }), `Imagen «${file.name}» importada. Guardado en memoria.`);
     if (result.ok) void select(result.value);
   };
@@ -386,11 +431,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onClose={() => { setSelectedId(null); }}
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
+      onArchive={() => void archiveSelected(selected.id)}
       inSheet={compact}
+      noteImages={previews.refs}
+      focused={focus}
+      onToggleFocus={() => setFocus((current) => !current)}
     />
   ) : null;
+  const focusing = focus && inspector !== null;
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
-  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) setSelectedId(null); }); };
+  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setSelectedId(null); setFocus(false); } }); };
 
   // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
   // y el lienzo recupera la fila de la barra; en móvil siguen en su barra compacta.
@@ -502,6 +552,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       trashCount={workspace.trash?.length ?? 0}
       onOpenTrash={() => setTrashOpen(true)}
       onOpenSettings={() => setSettingsOpen(true)}
+      onOpenAssets={() => setAssetsOpen(true)}
+      onOpenArchive={() => setArchiveOpen(true)}
+      onOpenDiary={() => setDiaryOpen(true)}
+      archiveCount={archiveCount}
+      onOpenMore={() => setMoreOpen(true)}
       onOpenSearch={() => setSearchOpen(true)}
       navInSidebar={sidebar}
       trailing={sidebar ? feedbackLine : undefined}
@@ -546,7 +601,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCreateFirst={() => void add('note')}
         boardTitle={board?.title ?? 'sin tableros'}
         unplaced={unplaced}
-        imageUris={imageUris}
+        imageUris={previews.cards}
+        noteImages={previews.refs}
+        onCardOpen={(cardId) => void openCard(cardId)}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onTrash={(cardId) => void sendToTrash(cardId)}
         compact={compact}
@@ -586,6 +643,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical />
                 <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
                 <NavItem glyph="🗑" label="Papelera" count={trashCount} accessibilityLabel={`Abrir la Papelera (${trashCount})`} onPress={() => setTrashOpen(true)} />
+                <NavItem glyph="◷" label="Diario" accessibilityLabel="Abrir el diario" onPress={() => setDiaryOpen(true)} />
+                <NavItem glyph="▤" label="Archivo" count={archiveCount} accessibilityLabel={`Abrir el Archivo (${archiveCount})`} onPress={() => setArchiveOpen(true)} />
+                <NavItem glyph="▦" label="Assets" accessibilityLabel="Abrir los assets" onPress={() => setAssetsOpen(true)} />
                 <NavItem glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={() => setSettingsOpen(true)} />
               </>
             ) : null}
@@ -602,38 +662,48 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           ) : null}
           {workspace ? (
             <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide]}>
-              {tabs}
-              {exportBar}
+              {/* Enfocado en móvil: el editor usa todo el alto (sin pestañas ni barra del ZIP). */}
+              {compact && focusing ? null : tabs}
+              {compact && focusing ? null : exportBar}
               {compact ? null : toolbar}
               {sidebar ? null : feedbackLine}
               {relocateBar}
               {placeBar}
-              <View style={[styles.stage, compact ? null : styles.stageRow]}>
-                <View style={styles.boardSlot}>{boardArea}</View>
+              <View style={[styles.stage, compact ? null : styles.stageRow, compact && focusing ? styles.hidden : null]}>
+                {/* Enfocado: el lienzo se oculta sin desmontarse y el editor ocupa su sitio. */}
+                <View style={[styles.boardSlot, focusing ? styles.hidden : null]}>{boardArea}</View>
                 {!compact && inspector ? (
-                  <ScrollView testID="inspector-panel" style={[styles.sidePanel, { borderColor: colors.gridLine }]} contentContainerStyle={styles.sidePanelContent}>
+                  <ScrollView testID="inspector-panel" style={[styles.sidePanel, focusing ? styles.sidePanelFocus : null, { borderColor: colors.gridLine }]}
+                    contentContainerStyle={[styles.sidePanelContent, focusing ? styles.focusContent : null]}>
                     {inspector}
                   </ScrollView>
                 ) : null}
               </View>
               {/* Móvil: el editor ocupa la parte baja sin tapar la barra de herramientas. */}
               {compact && inspector ? (
-                <View testID="inspector-sheet" style={[styles.sheet, typing ? styles.sheetTyping : null, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <View testID="inspector-sheet" style={[styles.sheet, typing ? styles.sheetTyping : null, focusing ? styles.sheetFocus : null, { backgroundColor: colors.background, borderColor: colors.border }]}>
                   <View style={styles.sheetBar}>
                     {/* Una sola barra: título, mostrar/ocultar y cerrar (sin repetir la cabecera del inspector). */}
                     <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{selected?.title ?? 'Sin título'}</Text>
-                    <ActionButton
-                      label={sheetHidden ? 'Mostrar' : 'Ocultar'}
-                      accessibilityLabel={sheetHidden ? 'Mostrar el editor de la tarjeta' : 'Ocultar el editor de la tarjeta'}
-                      onPress={() => setSheetHidden((current) => !current)}
-                    />
+                    {focusing ? (
+                      <ActionButton label="Volver" accessibilityLabel="Volver al tablero" onPress={() => setFocus(false)} />
+                    ) : (
+                      <>
+                        <ActionButton label="⤢" accessibilityLabel="Ampliar el editor" onPress={() => { setSheetHidden(false); setFocus(true); }} />
+                        <ActionButton
+                          label={sheetHidden ? 'Mostrar' : 'Ocultar'}
+                          accessibilityLabel={sheetHidden ? 'Mostrar el editor de la tarjeta' : 'Ocultar el editor de la tarjeta'}
+                          onPress={() => setSheetHidden((current) => !current)}
+                        />
+                      </>
+                    )}
                     <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={closeInspector} />
                   </View>
                   {/* Oculto, sigue montado: el texto sin guardar no se pierde. */}
                   <ScrollView ref={sheetScroll} onScroll={onSheetScroll} scrollEventThrottle={32} style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>
                 </View>
               ) : null}
-              {compact && !typing ? toolbar : null}
+              {compact && !typing && !focusing ? toolbar : null}
             </View>
           ) : null}
         </View>
@@ -653,6 +723,43 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onZoomOut={() => setZoom(zoomOut)}
             onResetView={() => { setZoom(1); setPan(START_PAN); }}
             onClose={() => setSettingsOpen(false)}
+          />
+          <AssetsPanel
+            visible={assetsOpen}
+            compact={compact}
+            workspace={workspace}
+            run={run}
+            placement={() => {
+              const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+              return { createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) };
+            }}
+            onAdded={(cardId) => void select(cardId)}
+            onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
+            onClose={() => setAssetsOpen(false)}
+          />
+          {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
+          <Dialog visible={moreOpen} title="Más" compact={compact} onClose={() => setMoreOpen(false)} testID="more-sheet">
+            <NavItem glyph="◷" label="Diario" accessibilityLabel="Abrir el diario" onPress={() => { setMoreOpen(false); setDiaryOpen(true); }} />
+            <NavItem glyph="▤" label="Archivo" count={archiveCount} accessibilityLabel={`Abrir el Archivo (${archiveCount})`} onPress={() => { setMoreOpen(false); setArchiveOpen(true); }} />
+            <NavItem glyph="▦" label="Assets" accessibilityLabel="Abrir los assets" onPress={() => { setMoreOpen(false); setAssetsOpen(true); }} />
+            <NavItem glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
+          </Dialog>
+          <DailyLogPanel
+            visible={diaryOpen}
+            compact={compact}
+            workspace={workspace}
+            run={run}
+            onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
+            onClose={() => setDiaryOpen(false)}
+          />
+          <ArchivePanel
+            visible={archiveOpen}
+            compact={compact}
+            workspace={workspace}
+            busy={saving}
+            onRestore={(cardId) => void restoreArchived(cardId)}
+            onSendToTrash={archivedToTrash}
+            onClose={() => setArchiveOpen(false)}
           />
           <TrashPanel
             visible={trashOpen}
@@ -789,10 +896,14 @@ const styles = StyleSheet.create({
   boardSlot: { flex: 1, minWidth: 0, minHeight: 0 },
   listPage: { paddingBottom: 16 },
   sidePanel: { width: 280, flexGrow: 0, borderWidth: 1 },
+  // Enfocado en escritorio: el editor ocupa el ancho del lienzo, con una columna de lectura cómoda.
+  sidePanelFocus: { width: 'auto', flexGrow: 1 },
+  focusContent: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   sidePanelContent: { padding: 0 },
   sheet: { maxHeight: '32%', flexShrink: 0, borderTopWidth: 3, paddingTop: 6 },
   // Escribiendo: la hoja crece, pero cede alto antes que desbordar por debajo del teclado.
   sheetTyping: { maxHeight: '65%', flexShrink: 1 },
+  sheetFocus: { maxHeight: '100%', flexGrow: 1, flexShrink: 1 },
   sheetBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, paddingBottom: 6 },
   sheetTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800' },
   hidden: { display: 'none' },

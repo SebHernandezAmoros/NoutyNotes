@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, hasHorizontalOverflow, rgb, trackProblems } from './support';
+import { activeLabel, borderColor, hasHorizontalOverflow, rgb, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
 // 56 × 56 px; desde 800 px: barra sobre el lienzo, inspector a la derecha y celdas de 96 × 64 px;
@@ -115,7 +115,7 @@ async function sideBySide(page: Page) {
 
 /** Abre la Configuración, ejecuta `action` y la cierra (ADR 0014: grilla, imán y, en móvil, zoom). */
 async function inSettings(page: Page, action: () => Promise<void>) {
-  await button(page, 'Abrir la configuración').click();
+  await openSettings(page);
   await expect(page.getByTestId('settings-panel')).toBeVisible();
   await action();
   await button(page, 'Cerrar configuración').click();

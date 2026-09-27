@@ -9,7 +9,7 @@ import { joinFrontmatter, splitFrontmatter } from './frontmatter';
 import { fail, storageIssue, succeed } from './issues';
 import type { StorageIssue, StorageResult } from './issues';
 import { isPortableAssetRef } from './paths';
-import { boardFrontmatterSchema, cardFrontmatterSchema, trashFileSchema, workspaceManifestSchema, workspaceSchema } from './schemas';
+import { archiveFileSchema, boardFrontmatterSchema, cardFrontmatterSchema, trashFileSchema, workspaceManifestSchema, workspaceSchema } from './schemas';
 import { validateTextFiles } from './text-files';
 import type { TextFiles } from './text-files';
 import { parseYaml, stringifyYaml } from './yaml';
@@ -17,6 +17,8 @@ import { parseYaml, stringifyYaml } from './yaml';
 export const WORKSPACE_FILE = '.nouty/workspace.yaml';
 /** Papelera de tarjetas (ADR 0015): documento administrado opcional, solo si no está vacía. */
 export const TRASH_FILE = '.nouty/trash.yaml';
+/** Archivo (ADR 0023): solo existe si hay tarjetas archivadas. */
+export const ARCHIVE_FILE = '.nouty/archive.yaml';
 export const WORKSPACE_README = 'README.md';
 export const ASSETS_DIRECTORY = 'assets/';
 
@@ -41,9 +43,10 @@ function markdownDocument(frontmatter: unknown, body: string): GeneratedDocument
 /** Una tarjeta con etiquetas se escribe en v2 (ADR 0019); sin ellas, v1 con los mismos bytes de siempre. */
 function cardDocument(card: Card): GeneratedDocument {
   const tags = card.tags !== undefined && card.tags.length > 0 ? card.tags : undefined;
+  // Versión selectiva: v3 con fecha de creación (ADR 0024), v2 con solo etiquetas (ADR 0019), v1 sin nada.
   return markdownDocument(compact({
-    schemaVersion: tags ? 2 : 1, id: card.id, typeId: card.typeId, title: card.title,
-    fields: card.fields, assetRefs: card.assetRefs, tags, contentPresent: card.content !== undefined,
+    schemaVersion: card.createdAt ? 3 : tags ? 2 : 1, id: card.id, typeId: card.typeId, title: card.title,
+    fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, contentPresent: card.content !== undefined,
   }), card.content ?? '');
 }
 
@@ -51,14 +54,15 @@ function cardDocument(card: Card): GeneratedDocument {
 function trashData(entry: TrashedCard): unknown {
   const { card } = entry;
   return compact({
-    card: { id: card.id, typeId: card.typeId, title: card.title, fields: card.fields, assetRefs: card.assetRefs, tags: card.tags?.length ? card.tags : undefined, content: card.content },
+    card: { id: card.id, typeId: card.typeId, title: card.title, fields: card.fields, assetRefs: card.assetRefs, tags: card.tags?.length ? card.tags : undefined, createdAt: card.createdAt, content: card.content },
     boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
     placements: entry.placements.map(({ boardId, rect, display }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
     relations: entry.relations.map(relationData),
   });
 }
 
-function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 {
+function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 {
+  if (entries.some((entry) => entry.card.createdAt !== undefined)) return 3;
   return entries.some((entry) => (entry.card.tags?.length ?? 0) > 0
     || entry.placements.some((placement) => placement.rect.x < 0 || placement.rect.y < 0)) ? 2 : 1;
 }
@@ -88,6 +92,12 @@ function workspaceDocuments(workspace: Workspace): Map<string, GeneratedDocument
   if (workspace.trash && workspace.trash.length > 0) {
     documents.set(TRASH_FILE, yamlDocument({ schemaVersion: trashSchemaVersion(workspace.trash), items: workspace.trash.map(trashData) }));
   }
+  if (workspace.archive && workspace.archive.length > 0) {
+    documents.set(ARCHIVE_FILE, yamlDocument({
+      schemaVersion: trashSchemaVersion(workspace.archive),
+      items: workspace.archive.map((entry) => ({ ...(trashData(entry) as object), archivedAt: entry.archivedAt })),
+    }));
+  }
   return documents;
 }
 
@@ -96,7 +106,7 @@ function assetPathIssues(workspace: Workspace, locate: (cardIndex: number, rest:
   const kinds = new Map(workspace.cardTypes.map((type) => [type.id, new Map(type.fields.map((field) => [field.key as string, field.kind]))]));
   const issues: StorageIssue[] = [];
   const message = 'Las referencias a assets deben ser rutas portables.';
-  const cards = [...workspace.cards, ...(workspace.trash ?? []).map((entry) => entry.card)];
+  const cards = [...workspace.cards, ...(workspace.trash ?? []).map((entry) => entry.card), ...(workspace.archive ?? []).map((entry) => entry.card)];
   cards.forEach((card, index) => {
     card.assetRefs?.forEach((ref, j) => {
       if (!isPortableAssetRef(ref)) issues.push(storageIssue('invalid-path', locate(index, `assetRefs[${j}]`), message));
@@ -123,6 +133,7 @@ function locateWorkspaceIssue(issue: DomainIssue | StorageIssue, workspace: Work
   }
   if (/^layouts(\[|$)/.test(issue.path)) return { ...issue, path: `${LAYOUT_FILE}#${issue.path}` };
   if (/^trash(\[|$)/.test(issue.path)) return { ...issue, path: `${TRASH_FILE}#${issue.path}` };
+  if (/^archive(\[|$)/.test(issue.path)) return { ...issue, path: `${ARCHIVE_FILE}#${issue.path}` };
   if (/^relations(\[|$)/.test(issue.path)) return { ...issue, path: `${RELATIONS_FILE}#${issue.path}` };
   return { ...issue, path: issue.path ? `${WORKSPACE_FILE}#${issue.path}` : WORKSPACE_FILE };
 }
@@ -182,10 +193,11 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const managed = new Set([WORKSPACE_FILE, LAYOUT_FILE, RELATIONS_FILE, ...cardIds.map(cardPath), ...boardIds.map(boardPath)]);
   // La Papelera es opcional: se administra si existe, pero su ausencia no es un error.
   const hasTrash = files[TRASH_FILE] !== undefined;
+  const hasArchive = files[ARCHIVE_FILE] !== undefined;
   const issues: StorageIssue[] = [];
   const extras = new Map<string, string>();
   for (const [path, text] of Object.entries(files)) {
-    if (managed.has(path) || path === TRASH_FILE) continue;
+    if (managed.has(path) || path === TRASH_FILE || path === ARCHIVE_FILE) continue;
     if (isWorkspaceExtra(path)) extras.set(path, text);
     else issues.push(storageIssue('unexpected-file', path, 'Archivo no declarado en el manifiesto ni admitido como extra (README.md o assets/).'));
   }
@@ -197,7 +209,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -209,13 +221,15 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     }
     // v1 no admite etiquetas y v2 existe para ellas: una etiqueta en v1 o una v2 sin etiquetas es incoherente.
     const hasTags = front.tags !== undefined && front.tags.length > 0;
-    if (hasTags !== (front.schemaVersion === 2) || (front.tags !== undefined && !hasTags)) {
-      issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'Las etiquetas requieren schemaVersion: 2, y una tarjeta v2 debe tener etiquetas (ADR 0019).'));
+    const hasDate = front.createdAt !== undefined;
+    const expected = hasDate ? 3 : hasTags ? 2 : 1;
+    if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
+      issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
     }
     // El marcador distingue contenido ausente de contenido vacío; el cuerpo se toma literal.
     cards.push(compact({
-      id, typeId: front.typeId, title: front.title, fields: front.fields, assetRefs: front.assetRefs, tags: front.tags,
+      id, typeId: front.typeId, title: front.title, fields: front.fields, assetRefs: front.assetRefs, tags: front.tags, createdAt: front.createdAt,
       content: front.contentPresent ? body : undefined,
     }) as unknown as Card);
   }
@@ -240,7 +254,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (!layouts.ok) issues.push(...layouts.issues);
   const relations = parseRelations(files[RELATIONS_FILE] ?? '');
   if (!relations.ok) issues.push(...relations.issues);
-  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2]) : null;
+  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2, 3]) : null;
   if (trash && !trash.ok) issues.push(...trash.issues);
   if (trash?.ok && trash.value.schemaVersion === 1) {
     trash.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -251,13 +265,25 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       }
     }));
   }
-  if (issues.length > 0 || !layouts.ok || !relations.ok || (trash && !trash.ok)) return fail(issues);
+  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3]) : null;
+  if (archive && !archive.ok) issues.push(...archive.issues);
+  if (archive?.ok && archive.value.schemaVersion === 1) {
+    archive.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
+      for (const axis of ['x', 'y'] as const) {
+        if (placement.rect[axis] < 0) issues.push(storageIssue('invalid-layout',
+          `${ARCHIVE_FILE}#items[${itemIndex}].placements[${placementIndex}].rect.${axis}`,
+          'La versión 1 no admite posiciones negativas.'));
+      }
+    }));
+  }
+  if (issues.length > 0 || !layouts.ok || !relations.ok || (trash && !trash.ok) || (archive && !archive.ok)) return fail(issues);
 
   const { id, metadata, cardTypes, relationTypes } = manifest.value;
   // Datos con la forma comprobada; `validateWorkspace` decide si cumplen las invariantes.
   const workspace = compact({
     schemaVersion: 1, id, metadata, cardTypes, relationTypes, cards, boards, layouts: layouts.value, relations: relations.value,
     trash: trash?.ok ? trash.value.items : undefined,
+    archive: archive?.ok ? archive.value.items : undefined,
   }) as unknown as Workspace;
   const semantic = validateWorkspace(workspace);
   const located = [

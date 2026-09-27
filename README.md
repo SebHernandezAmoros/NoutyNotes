@@ -25,6 +25,26 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 - **Formato:** una tarjeta con etiquetas se guarda con `schemaVersion: 2`; sin ellas, sigue siendo v1 byte a byte.
 - **Buscar en este proyecto:** busca palabras y `#etiqueta` en títulos, textos, etiquetas y tipos, sin distinguir mayúsculas ni acentos. «Ir» abre el tablero de la tarjeta y la selecciona. Desde el mismo panel se renombra una etiqueta (se fusiona si el nombre ya existe) o se quita de todas las tarjetas, con confirmación y recuento. La Papelera no se busca.
 
+**Archivo (ADR 0023):**
+- **Archivar:** saca una tarjeta de los tableros y de las búsquedas sin destruirla (con su sitio, conexiones y fecha), y se guarda en `.nouty/archive.yaml`.
+- **Panel Archivo:** busca, filtra por tipo y ordena. «Restaurar» la devuelve a su sitio, o al primer hueco libre si está ocupado. «Enviar a la Papelera» es la única forma de eliminar, y solo la Papelera borra.
+
+**Diario (ADR 0024):**
+- **Diario** (barra lateral, barra o «Más» en móvil): «Escribir la nota de hoy» abre la del día sin duplicarla; «Nueva entrada» añade otra. Las entradas son tarjetas de tipo `diario` fuera de los tableros.
+- **Cronología del día:** tarjetas creadas y archivadas con su hora local, resumen y etiquetas del día, días anterior y siguiente, fecha exacta y calendario del mes. Solo cuenta fechas reales: las tarjetas anteriores a esta versión no tienen fecha y no aparecen.
+- **Formato:** una tarjeta nueva guarda `createdAt` y se escribe con `schemaVersion: 3`; una versión anterior de la app la rechaza con un aviso y no modifica nada.
+
+**Biblioteca de Assets (ADR 0022):**
+- **Assets** (barra lateral, barra o «Más» en móvil) muestra todos los archivos del proyecto, también los que nada usa. Tiene pestañas por tipo con recuento, filtro «Sin usar», búsqueda y cuadrícula o lista.
+- **Detalle:** vista previa, tamaño, ruta portable y «Usado en» con «Ir».
+- **Acciones:** importar una imagen sin crear tarjeta, añadirla al tablero sin copiar el archivo y reemplazarla en todas las tarjetas a la vez.
+- **Eliminar:** solo los archivos sin usar, con confirmación.
+
+**Notas con imágenes y editor enfocado (ADR 0021):**
+- **Imágenes dentro de la nota:** «Insertar imagen» la coloca después del párrafo donde está el cursor. Cada imagen es una línea `![texto](assets/images/…)` del Markdown, así que su posición es su orden y cualquier editor Markdown la ve igual.
+- **«Contenido en orden»:** permite subir, bajar, reemplazar y quitar imágenes y editar su texto alternativo. La ficha muestra texto e imágenes en orden hasta llenar su alto. Quitar o reemplazar no borra el archivo: queda sin usar hasta la Papelera o la biblioteca de Assets.
+- **Editor enfocado:** con «Ampliar» (⤢ en móvil) o con doble toque o doble clic en la tarjeta, el editor ocupa el sitio del lienzo sin perder el borrador.
+
 **Búsqueda global y enlaces (ADR 0020):**
 - **Buscar en todos los proyectos:** desde el mismo panel, con el alcance «Todos». Se lanza a mano porque lee cada proyecto, agrupa los resultados por proyecto, avisa de los que no se pudieron leer, e «Ir» abre el proyecto en esa tarjeta. En «Este proyecto» hay además filtro por tipo.
 - **Tarjetas de enlace:** botón «Enlace» con dirección web o de correo y título opcional. Se rechazan `javascript:`, `data:` y `file:`. La ficha muestra dominio y ruta sin descargar nada, y «Abrir enlace» usa el navegador o la app del sistema. El formato no cambia: la dirección va en `fields` de la tarjeta v1.

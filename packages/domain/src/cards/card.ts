@@ -9,6 +9,7 @@ import type { CardTypeDefinition } from './card-type';
 import { collectFieldValueIssues } from './field-values';
 import type { FieldValue } from './field-values';
 import { collectTagIssues } from './tags';
+import { isArchiveInstant } from './trashed-card';
 
 /**
  * Unidad de contenido. Pertenece al workspace, no a un board: los boards la referencian por ID
@@ -25,6 +26,8 @@ export interface Card {
   readonly assetRefs?: readonly AssetRef[];
   /** Etiquetas `#` normalizadas, únicas y ordenadas (ADR 0019); ausentes si no tiene ninguna. */
   readonly tags?: readonly string[];
+  /** Creación real (ADR 0024): instante ISO 8601 en UTC puesto al crearla. Ausente en las anteriores. */
+  readonly createdAt?: string;
 }
 
 /**
@@ -48,6 +51,9 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
     issues.push(issue('invalid-value', `${path}.fields`, 'Debe ser un objeto de campos.'));
   }
   collectTagIssues(card.tags, `${path}.tags`, issues);
+  if (card.createdAt !== undefined && !isArchiveInstant(card.createdAt)) {
+    issues.push(issue('invalid-value', `${path}.createdAt`, 'Debe ser una fecha y hora ISO 8601 en UTC.'));
+  }
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);
     refs.forEach((ref, index) => checkAssetRef(ref, `${path}.assetRefs[${index}]`, issues));

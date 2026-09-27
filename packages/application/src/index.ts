@@ -7,11 +7,15 @@ export type { CreateEmptyWorkspaceInput, CreateFromTemplateInput, WorkspaceTrans
 export { nextSequentialId, workspaceIdFromName } from './ids';
 export {
   CANONICAL_GRID, DEFAULT_CARD_SIZE, PROTOTYPE_BOARD, PROTOTYPE_CARD_PRESETS, RELATED_RELATION_TYPE,
-  addBoardToWorkspace, addCardToBoard, connectCards, moveCardToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
+  addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, restoreCardFromArchive, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
 } from './workspace-editing';
 export { assetsOf } from './workspace-assets';
-export { MAX_IMAGE_BYTES, importImageCard, inspectImage } from './images';
-export type { ImageKind, ImportImageInput } from './images';
+export { MAX_IMAGE_BYTES, addNoteImage, importImageCard, inspectImage } from './images';
+export type { AddNoteImageInput, ImageKind, ImportImageInput } from './images';
+export {
+  insertImageBlock, moveNoteBlock, noteImageRefs, parseNoteBlocks, removeNoteBlock, replaceNoteImage, serializeNoteBlocks, setNoteImageAlt, syncNoteAssetRefs,
+} from './note-blocks';
+export type { NoteBlock } from './note-blocks';
 export type { WorkspaceAssets } from './workspace-assets';
 export type { PurgeResult, SetCardDisplayInput } from './workspace-editing';
 export type { AddBoardInput, AddCardInput, BoardCardTarget, ConnectCardsInput, PlaceCardInput, PrototypeCardKind } from './workspace-editing';
@@ -19,3 +23,11 @@ export { addCardTag, removeCardTag, removeTagEverywhere, renameTag, workspaceTag
 export { fold, searchAllWorkspaces, searchWorkspace } from './search';
 export type { GlobalSearch, ProjectResults, SearchResult } from './search';
 export { LINK_CARD_TYPE, linkCardTypeFor, setCardLink } from './links';
+export { assetKind, buildAssetCatalog, cardAssetRefs, replaceAssetReferences } from './assets-catalog';
+export type { AssetEntry, AssetKind, AssetUse } from './assets-catalog';
+export { addAssetToBoard, assetBaseName, deleteUnusedAssets, importAssetImage, replaceAsset } from './assets-library';
+export { DIARY_CARD_TYPE, activeDays, dailyLog, isDay, isDiaryEntry, localDay, localTime, shiftDay } from './daily-log';
+export type { DailyLog, TimedCard } from './daily-log';
+export { openDiaryEntry } from './diary';
+export type { DiaryEntryInput } from './diary';
+export type { DeleteAssetsResult } from './assets-library';
