@@ -660,6 +660,27 @@ export const TRANSLATIONS = {
     es: 'El navegador no pudo activar esta fuente. El archivo sigue guardado; puedes volver a intentarlo.',
     en: 'The browser could not activate this font. The file is still saved; you can try again.',
   },
+
+  // Google Fonts (E7d, ADR 0042): descarga explícita, misma tubería que una fuente local (E7c).
+  'assets.google.button': { es: 'Buscar en Google Fonts', en: 'Search Google Fonts' },
+  'assets.google.button.accessibilityLabel': { es: 'Buscar una fuente en Google Fonts', en: 'Search for a font on Google Fonts' },
+  'assets.google.input.label': { es: 'Nombre de la familia', en: 'Family name' },
+  'assets.google.input.placeholder': { es: 'p. ej. Roboto', en: 'e.g. Roboto' },
+  'assets.google.hint': { es: 'Escribe el nombre exacto como aparece en fonts.google.com.', en: 'Type the exact name as shown on fonts.google.com.' },
+  'assets.google.search': { es: 'Buscar', en: 'Search' },
+  'assets.google.searching': { es: 'Buscando…', en: 'Searching…' },
+  'assets.google.cancel.accessibilityLabel': { es: 'Cancelar la búsqueda en Google Fonts', en: 'Cancel the Google Fonts search' },
+  'assets.google.error.empty': { es: 'Escribe el nombre de una familia de Google Fonts.', en: 'Type the name of a Google Fonts family.' },
+  'assets.google.error.network': { es: 'No se pudo descargar la fuente. Comprueba la conexión.', en: 'Could not download the font. Check the connection.' },
+  'assets.google.error.notFound': {
+    es: 'No se encontró una fuente de Google llamada «{name}». Comprueba el nombre exacto en fonts.google.com.',
+    en: 'No Google font named “{name}” was found. Check the exact name on fonts.google.com.',
+  },
+  'assets.google.error.parse': { es: 'No se pudo leer la fuente descargada.', en: 'Could not read the downloaded font.' },
+  'assets.google.license.note': {
+    es: 'La mayoría de las familias de Google Fonts usan la licencia SIL Open Font License (OFL) 1.1; algunas usan Apache License 2.0. Comprueba la licencia exacta de «{name}» en fonts.google.com.',
+    en: 'Most Google Fonts families use the SIL Open Font License (OFL) 1.1; some use the Apache License 2.0. Check the exact license for “{name}” on fonts.google.com.',
+  },
 } as const satisfies Record<string, { readonly es: string; readonly en: string }>;
 
 export type TranslationKey = keyof typeof TRANSLATIONS;

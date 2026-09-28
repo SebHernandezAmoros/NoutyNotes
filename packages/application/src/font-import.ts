@@ -1,7 +1,8 @@
 /**
- * Fuentes locales en la biblioteca (ADR 0041): validación por firma binaria (TTF/OTF), nunca por la
- * extensión del nombre, igual que una imagen (ADR 0015). La licencia no se puede verificar: se guarda
- * como nota de buena fe, no como prueba.
+ * Fuentes en la biblioteca (ADR 0041, ADR 0042): validación por firma binaria (TTF, OTF, WOFF2 —esta
+ * última es el formato que sirve Google Fonts, confirmado contra el servidor real antes de programar—),
+ * nunca por la extensión del nombre, igual que una imagen (ADR 0015). La licencia no se puede verificar:
+ * se guarda como nota de buena fe, no como prueba.
  */
 import { isValidAssetRef } from '@noutynotes/domain';
 import type { AssetRef, WorkspaceId } from '@noutynotes/domain';
@@ -11,23 +12,24 @@ import { storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageResult } from './workspace-storage';
 import type { WorkspaceAssets } from './workspace-assets';
 
-/** Una fuente TTF/OTF completa rara vez pasa de unos pocos MB; margen entre imágenes (5 MB) y documentos (20 MB). */
+/** Una fuente completa rara vez pasa de unos pocos MB; margen entre imágenes (5 MB) y documentos (20 MB). */
 export const MAX_FONT_BYTES = 10 * 1024 * 1024;
 
 export interface FontKind {
-  readonly extension: 'ttf' | 'otf';
+  readonly extension: 'ttf' | 'otf' | 'woff2';
 }
 
 const startsWith = (bytes: Uint8Array, prefix: readonly number[]) => prefix.every((value, index) => bytes[index] === value);
 const ascii = (text: string) => [...text].map((char) => char.charCodeAt(0));
 
-/** Firma binaria: TrueType empieza por `00 01 00 00`; OpenType/CFF por `OTTO`. Sin TTC ni WOFF/WOFF2. */
+/** Firma binaria: TrueType `00 01 00 00`; OpenType/CFF `OTTO`; WOFF2 `wOF2` (ADR 0042). Sin TTC ni WOFF. */
 export function inspectFont(bytes: Uint8Array): WorkspaceStorageResult<FontKind> {
   if (!(bytes instanceof Uint8Array) || bytes.length === 0) return storageFailure('invalid-asset', 'archivo', 'El archivo está vacío.');
   if (bytes.length > MAX_FONT_BYTES) return storageFailure('invalid-asset', 'archivo', 'La fuente supera 10 MB.');
   if (startsWith(bytes, [0x00, 0x01, 0x00, 0x00])) return { ok: true, value: { extension: 'ttf' } };
   if (startsWith(bytes, ascii('OTTO'))) return { ok: true, value: { extension: 'otf' } };
-  return storageFailure('invalid-asset', 'archivo', 'Formato no admitido. Usa una fuente TTF u OTF.');
+  if (startsWith(bytes, ascii('wOF2'))) return { ok: true, value: { extension: 'woff2' } };
+  return storageFailure('invalid-asset', 'archivo', 'Formato no admitido. Usa una fuente TTF, OTF o WOFF2.');
 }
 
 export interface LibraryFontInput {

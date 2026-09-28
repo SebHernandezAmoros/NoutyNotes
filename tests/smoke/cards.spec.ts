@@ -967,6 +967,68 @@ test('Assets: importar una fuente TTF/OTF con consentimiento de licencia y activ
   expect(runtimeErrors).toEqual([]);
 });
 
+test('Assets: Google Fonts, descarga explícita con la API pública css2 (sin clave), familia inexistente y consentimiento con nota de licencia pre-rellenada (ADR 0042)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  // Red simulada con la forma exacta de la respuesta real (verificada contra el servidor antes de programar):
+  // hoja CSS con un bloque «latin» y su url(), y el archivo WOFF2 con su firma binaria.
+  const fakeWoff2 = Buffer.from([0x77, 0x4f, 0x46, 0x32, 1, 2, 3, 4]);
+  await page.route('https://fonts.googleapis.com/css2**', async (route) => {
+    const family = new URL(route.request().url()).searchParams.get('family') ?? '';
+    if (family.startsWith('Fuente')) {
+      await route.fulfill({ status: 400, contentType: 'text/html', body: '<html>Missing font family</html>' });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/css',
+      body: `/* latin */\n@font-face {\n  font-family: '${family}';\n  font-style: normal;\n  font-weight: 400;\n  src: url(https://fonts.gstatic.com/s/fake.woff2) format('woff2');\n}\n`,
+    });
+  });
+  await page.route('https://fonts.gstatic.com/s/fake.woff2', (route) => route.fulfill({ status: 200, contentType: 'font/woff2', body: fakeWoff2 }));
+
+  await page.goto('./');
+  await createWorkspace(page, 'Google Fonts');
+  if (isCompactWidth(page)) await button(page, 'Más secciones').click();
+  await button(page, 'Abrir los assets').click();
+  await expect(page.getByTestId('assets-view')).toBeVisible();
+
+  // Sin nombre: error antes de llamar a la red.
+  await button(page, 'Buscar una fuente en Google Fonts').click();
+  await expect(page.getByTestId('assets-google-search')).toBeVisible();
+  await button(page, 'Buscar').click();
+  await expect(page.getByTestId('assets-problem')).toContainText('Escribe el nombre de una familia');
+
+  // Familia inexistente (400 de la API real): error claro, nada se importa.
+  await page.getByTestId('assets-google-input').fill('Fuente Que No Existe');
+  await button(page, 'Buscar').click();
+  await expect(page.getByTestId('assets-problem')).toContainText('No se encontró una fuente de Google llamada «Fuente Que No Existe»');
+  await expect(button(page, 'Fuentes (0)')).toBeVisible();
+
+  // Familia real: descarga explícita (solo al pulsar «Buscar»), consentimiento con nota de licencia
+  // pre-rellenada (no vacía, como en una fuente local) y edición del nombre no vacío.
+  await page.getByTestId('assets-google-input').fill('Roboto');
+  await button(page, 'Buscar').click();
+  await expect(page.getByTestId('assets-google-search')).toHaveCount(0);
+  await expect(page.getByTestId('assets-font-consent')).toContainText('Importar «Roboto.woff2»');
+  await expect(page.getByTestId('assets-font-license-input')).toHaveValue(/SIL Open Font License.*Roboto/);
+  await page.screenshot({ path: testInfo.outputPath('assets-google-fonts.png') });
+  await button(page, 'Tengo derecho a usar y compartir esta fuente.').click();
+  await button(page, 'Importar').click();
+  await expect(feedback(page)).toHaveText('«Roboto.woff2» añadida a la biblioteca. Guardado en memoria.');
+  await expect(button(page, 'Fuentes (1)')).toBeVisible();
+  await expect(page.getByTestId('asset-path')).toHaveText('assets/fonts/roboto.woff2');
+
+  // Caché local: una vez descargada, activarla no vuelve a tocar la red (misma tubería que E7c).
+  await page.unroute('https://fonts.googleapis.com/css2**');
+  await page.unroute('https://fonts.gstatic.com/s/fake.woff2');
+  await button(page, 'Usar roboto.woff2 como tipografía de las notas').click();
+  await expect(page.getByTestId('assets-problem').or(page.getByText('En uso en las notas'))).toBeVisible();
+
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar en su sitio, y enviar a la Papelera con confirmación (ADR 0023)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);

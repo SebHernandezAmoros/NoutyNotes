@@ -131,5 +131,11 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
 
     const catalog = buildAssetCatalog(ok(await storage.open(id)), ok(await storage.listAssets(id)));
     expect(catalog.find((entry) => entry.ref === font.ref)).toMatchObject({ kind: 'font', unused: true });
+
+    // WOFF2 (ADR 0042): mismo mecanismo, es el formato que sirve Google Fonts.
+    const woff2Bytes = Uint8Array.from([0x77, 0x4f, 0x46, 0x32, 5, 6, 7, 8]);
+    const google = ok(await importLibraryFont(storage, storage, id, { bytes: woff2Bytes, fileName: 'Roboto.woff2' }));
+    expect(google).toEqual({ ref: 'assets/fonts/roboto.woff2' });
+    expect(buildAssetCatalog(ok(await storage.open(id)), ok(await storage.listAssets(id))).find((entry) => entry.ref === google.ref)?.kind).toBe('font');
   });
 });

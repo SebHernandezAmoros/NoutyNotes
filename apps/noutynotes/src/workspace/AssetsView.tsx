@@ -10,9 +10,10 @@ import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-nativ
 
 import { ActionButton, TextField } from '../components/controls';
 import { t } from '../i18n';
-import { activateCustomFont } from '../session/customFont';
+import { activateCustomFont, supportsCustomFont } from '../session/customFont';
 import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
 import { pickFontFile, supportsFontImport } from '../session/fontImport';
+import { fetchGoogleFont, supportsGoogleFonts } from '../session/googleFonts';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { openAssetFile, supportsOpenAsset } from '../session/openAsset';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
@@ -83,6 +84,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const [fontDraft, setFontDraft] = useState<{ readonly bytes: Uint8Array; readonly name: string } | null>(null);
   const [fontConsent, setFontConsent] = useState(false);
   const [licenseNote, setLicenseNote] = useState('');
+  const [googleSearchOpen, setGoogleSearchOpen] = useState(false);
+  const [googleQuery, setGoogleQuery] = useState('');
+  const [googleSearching, setGoogleSearching] = useState(false);
 
   // Al entrar (y tras cada cambio), se lista la carpeta assets/ y se leen las miniaturas de las imágenes.
   useEffect(() => {
@@ -206,6 +210,30 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     setFontDraft(null);
     setFontConsent(false);
     setLicenseNote('');
+  };
+  const searchGoogleFont = async () => {
+    const name = googleQuery.trim();
+    if (name === '') {
+      setProblem(t('assets.google.error.empty', locale));
+      return;
+    }
+    setGoogleSearching(true);
+    const outcome = await fetchGoogleFont(name);
+    setGoogleSearching(false);
+    if (!outcome.ok) {
+      setProblem(t(`assets.google.error.${outcome.reason}`, locale, { name }));
+      return;
+    }
+    const kind = inspectFont(outcome.value.bytes);
+    if (!kind.ok) {
+      setProblem(kind.issues[0]?.message ?? t('assets.google.error.parse', locale));
+      return;
+    }
+    setProblem(null);
+    setGoogleSearchOpen(false);
+    setGoogleQuery('');
+    setFontDraft({ bytes: outcome.value.bytes, name: outcome.value.fileName });
+    setLicenseNote(t('assets.google.license.note', locale, { name }));
   };
   const confirmFontImport = async () => {
     if (!assets || !fontDraft || !fontConsent) return;
@@ -379,6 +407,10 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
             <ActionButton label={t('assets.import.image', locale)} tone="primary" accessibilityLabel={t('assets.import.image.accessibilityLabel', locale)} onPress={() => void importImage()} />
             {supportsFileImport() ? <ActionButton label={t('assets.import.file', locale)} accessibilityLabel={t('assets.import.file.accessibilityLabel', locale)} onPress={() => void importFile()} /> : null}
             {supportsFontImport() ? <ActionButton label={t('assets.import.font', locale)} accessibilityLabel={t('assets.import.font.accessibilityLabel', locale)} onPress={() => void pickFont()} /> : null}
+            {/* Solo donde ya se puede activar una fuente (ADR 0042): no tiene sentido descargar lo que no se puede usar todavía. */}
+            {supportsGoogleFonts() && supportsCustomFont() ? (
+              <ActionButton label={t('assets.google.button', locale)} accessibilityLabel={t('assets.google.button.accessibilityLabel', locale)} onPress={() => setGoogleSearchOpen(true)} />
+            ) : null}
             <ActionButton label={grid ? t('assets.view.list', locale) : t('assets.view.grid', locale)} accessibilityLabel={grid ? t('assets.view.list.accessibilityLabel', locale) : t('assets.view.grid.accessibilityLabel', locale)} onPress={() => setGridChoice(!grid)} />
             {tabs.map(({ tab: key, label }) => (
               <ActionButton key={key} label={`${label} · ${counts.get(key) ?? 0}`} pressed={tab === key}
@@ -390,6 +422,18 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
             <View style={compact ? styles.column : styles.mainColumn}>
               <TextField label={t('assets.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('assets.search.placeholder', locale)} testID="assets-search" />
               {problem ? <Text testID="assets-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{problem}</Text> : null}
+              {googleSearchOpen ? (
+                <View testID="assets-google-search" style={[styles.confirm, { borderColor: colors.border }]}>
+                  <TextField label={t('assets.google.input.label', locale)} value={googleQuery} onChangeText={setGoogleQuery} placeholder={t('assets.google.input.placeholder', locale)}
+                    onSubmitEditing={() => void searchGoogleFont()} testID="assets-google-input" />
+                  <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.google.hint', locale)}</Text>
+                  <View style={styles.row}>
+                    <ActionButton label={googleSearching ? t('assets.google.searching', locale) : t('assets.google.search', locale)} tone="primary"
+                      disabled={googleSearching} onPress={() => void searchGoogleFont()} />
+                    <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('assets.google.cancel.accessibilityLabel', locale)} onPress={() => { setGoogleSearchOpen(false); setGoogleQuery(''); }} />
+                  </View>
+                </View>
+              ) : null}
               {fontDraft ? (
                 <View testID="assets-font-consent" style={[styles.confirm, { borderColor: colors.border }]}>
                   <Text style={[styles.body, { color: colors.textPrimary }]}>{t('assets.font.import.title', locale, { name: fontDraft.name })}</Text>

@@ -13,7 +13,7 @@ const KINDS: readonly [AssetKind, RegExp][] = [
   ['image', /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i],
   ['document', /\.(pdf|txt|md|markdown|docx?|odt|rtf|csv|xlsx?|ods|pptx?|odp|json|ya?ml)$/i],
   ['audio', /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i],
-  ['font', /\.(ttf|otf)$/i],
+  ['font', /\.(ttf|otf|woff2)$/i],
 ];
 
 export function assetKind(ref: string): AssetKind {
