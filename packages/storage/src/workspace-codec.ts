@@ -2,7 +2,7 @@ import { isValidId, validateWorkspace } from '@noutynotes/domain';
 import type { Board, Card, DomainIssue, TrashedCard, Workspace } from '@noutynotes/domain';
 import type { z } from 'zod';
 
-import { LAYOUT_FILE, RELATIONS_FILE, layoutData, layoutSchemaVersion, parseLayouts, parseRelations, relationData } from './codecs';
+import { LAYOUT_FILE, RELATIONS_FILE, layoutData, layoutSchemaVersion, parseLayouts, parseRelations, relationData, relationsSchemaVersion } from './codecs';
 import { checkShape, checkVersionedData, compact, duplicateIdIssues, mergeWithPrevious, plainDataIssues, previousFilesIssues, readVersionedYaml, yamlDocument } from './documents';
 import type { GeneratedDocument, PreviousPackage } from './documents';
 import { joinFrontmatter, splitFrontmatter } from './frontmatter';
@@ -86,7 +86,7 @@ function workspaceDocuments(workspace: Workspace): Map<string, GeneratedDocument
     cards: workspace.cards.map((card) => card.id), boards: workspace.boards.map((board) => board.id),
   })));
   documents.set(LAYOUT_FILE, yamlDocument({ schemaVersion: layoutSchemaVersion(workspace.layouts), layouts: workspace.layouts.map(layoutData) }));
-  documents.set(RELATIONS_FILE, yamlDocument({ schemaVersion: 1, relations: workspace.relations.map(relationData) }));
+  documents.set(RELATIONS_FILE, yamlDocument({ schemaVersion: relationsSchemaVersion(workspace.relations), relations: workspace.relations.map(relationData) }));
   for (const card of workspace.cards) documents.set(cardPath(card.id), cardDocument(card));
   for (const board of workspace.boards) documents.set(boardPath(board.id), boardDocument(board));
   if (workspace.trash && workspace.trash.length > 0) {

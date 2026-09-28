@@ -82,7 +82,7 @@ describe('codec de relaciones', () => {
   });
 
   it.each([
-    ['versión posterior', 'schemaVersion: 2\nrelations: []\n', 'unsupported-schema-version@.nouty/relations.yaml#schemaVersion'],
+    ['versión posterior', 'schemaVersion: 3\nrelations: []\n', 'unsupported-schema-version@.nouty/relations.yaml#schemaVersion'],
     ['sin versión', 'relations: []\n', 'unsupported-schema-version@.nouty/relations.yaml#schemaVersion'],
     ['versión como texto', 'schemaVersion: "1"\nrelations: []\n', 'unsupported-schema-version@.nouty/relations.yaml#schemaVersion'],
     ['no es un objeto', '- a\n', 'invalid-document@.nouty/relations.yaml'],

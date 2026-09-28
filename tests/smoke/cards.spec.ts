@@ -556,6 +556,8 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   await closeEditor(page);
 
   // Otro tablero con una tarjeta etiquetada sin acento: «japon» y «japón» son etiquetas distintas.
+  // Por debajo de 800 px, «Crear un tablero» está en el selector de pestañas «+» (ADR 0035).
+  if (isCompactWidth(page)) await button(page, 'Abrir un tablero').click();
   await button(page, 'Crear un tablero').click();
   await button(page, 'Crear la primera nota').click();
   await page.getByLabel('Título de la tarjeta').fill('Osaka');
@@ -1178,5 +1180,48 @@ test('Configuración: idioma de la interfaz (ES/EN) traduce la barra, la navegac
   await expect(page.getByRole('heading', { name: 'Configuración' })).toBeVisible();
   await button(page, 'Cerrar configuración').click();
   await expect(page.getByRole('button', { name: 'Añadir nota' })).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Conexiones: tipo y rótulo al crear, editarlos después, elegir el estilo de flecha y verlo en el lienzo (ADR 0034)', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Mapa');
+  await addNote(page, 'A');
+  await closeEditor(page);
+  await addNote(page, 'B');
+  await closeEditor(page);
+
+  // Crear con un tipo nuevo y conectar.
+  await tapCard(page, 1);
+  await page.getByTestId('connect-type-input').fill('Bloquea');
+  await button(page, 'Conectar con B').click();
+  await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+  const connections = page.getByTestId('card-connections');
+  await expect(connections).toContainText('→ B (Bloquea)');
+
+  // Editar tipo y rótulo de la conexión ya creada.
+  await button(page, 'Editar el tipo y el rótulo de la conexión con B').click();
+  await page.getByLabel('Rótulo sobre la línea').fill('hasta el jueves');
+  await button(page, 'Guardar los cambios de la conexión').click();
+  await expect(feedback(page)).toHaveText('Conexión actualizada. Guardado en memoria.');
+  await expect(connections).toContainText('→ B (Bloquea: hasta el jueves)');
+
+  // Estilo de flecha: se aplica al instante y se ve en el lienzo (rótulo como texto, no solo color).
+  await expect(page.getByTestId(/^relation-label-/)).toHaveText('hasta el jueves');
+  await button(page, 'Usar doble flecha en esta conexión').click();
+  await expect(feedback(page)).toHaveText('Estilo de la conexión cambiado. Guardado en memoria.');
+  await expect(button(page, 'Usar doble flecha en esta conexión')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+  await page.screenshot({ path: testInfo.outputPath('connection.png') });
+
+  // Minimizada, la línea y el rótulo siguen visibles (la huella se reduce a 1 × 1, no desaparece).
+  await tapCard(page, 1);
+  await button(page, 'Mostrar minimizada').click();
+  await closeEditor(page);
+  await expect(page.getByTestId(/^relation-line-/)).toBeVisible();
+  await expect(page.getByTestId(/^relation-label-/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('connection-minimized.png') });
   expect(runtimeErrors).toEqual([]);
 });

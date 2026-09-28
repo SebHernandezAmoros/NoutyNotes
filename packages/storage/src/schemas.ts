@@ -13,7 +13,7 @@ export const rectSchema = z.strictObject({ x: z.number(), y: z.number(), w: z.nu
 export const placementSchema = z.strictObject({ cardId: text, rect: rectSchema, display: text });
 export const frameSchema = z.strictObject({ id: text, title: text, rect: rectSchema });
 export const layoutSchema = z.strictObject({ boardId: text, placements: z.array(placementSchema), frames: z.array(frameSchema).optional() });
-export const relationSchema = z.strictObject({ id: text, typeId: text, from: text, to: text, label: text.optional() });
+export const relationSchema = z.strictObject({ id: text, typeId: text, from: text, to: text, label: text.optional(), arrow: text.optional() });
 
 export const fieldDefinitionSchema = z.strictObject({
   key: text, kind: text, label: text.optional(), required: z.boolean().optional(), options: z.array(text).optional(),
@@ -50,7 +50,8 @@ export const workspaceSchema = z.strictObject({
 });
 
 // Documentos del formato v1.
-export const relationsFileSchema = z.strictObject({ schemaVersion: z.literal(1), relations: z.array(relationSchema) });
+// v1: sin flecha. v2: con `arrow` distinto de «forward» (ADR 0034).
+export const relationsFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2)]), relations: z.array(relationSchema) });
 export const layoutFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), layouts: z.array(layoutSchema) });
 export const workspaceManifestSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, metadata: metadataSchema,

@@ -4,7 +4,7 @@ import { id, ideaA, ideaB, problems, unsafe, validWorkspace } from '../__fixture
 import { assertValid } from '../errors';
 import type { CardId, RelationId, RelationTypeId } from '../ids';
 import { validateWorkspace } from '../workspace/workspace';
-import { createRelation, deleteRelation, getIncomingRelations, getOutgoingRelations, getRelatedCards } from './operations';
+import { createRelation, deleteRelation, getIncomingRelations, getOutgoingRelations, getRelatedCards, updateRelation } from './operations';
 import { validateRelation } from './relation';
 import type { Relation } from './relation';
 
@@ -109,5 +109,25 @@ describe('consultas semánticas', () => {
     expect(problems(query(base, unsafe(null)))).toEqual(['invalid-id@cardId']);
     expect(query(unsafe(null), ideaA.id).ok).toBe(false);
     expect(query({ ...base, relations: [{ ...original, to: missing }] }, ideaA.id).ok).toBe(false);
+  });
+});
+
+describe('editar tipo, rótulo y flecha (ADR 0034)', () => {
+  it('cambia solo lo indicado, en una relación existente; falla si el tipo no existe o la relación no existe', () => {
+    const workspace = validWorkspace();
+    const otherType = id<RelationTypeId>('extends');
+    const withType = { ...workspace, relationTypes: [...workspace.relationTypes, { id: otherType, label: 'Amplía' }] };
+    const updated = assertValid(updateRelation(withType, original.id, { typeId: otherType, label: 'Nueva etiqueta', arrow: 'both' }));
+    const relation = updated.relations.find((candidate) => candidate.id === original.id);
+    expect(relation).toMatchObject({ typeId: otherType, label: 'Nueva etiqueta', arrow: 'both', from: original.from, to: original.to });
+    // Solo la flecha: el resto no cambia (original no tiene rótulo, y sigue sin tenerlo).
+    const onlyArrow = assertValid(updateRelation(workspace, original.id, { arrow: 'none' }));
+    const found = onlyArrow.relations.find((candidate) => candidate.id === original.id);
+    expect(found).toMatchObject({ typeId: original.typeId, arrow: 'none' });
+    expect(found).not.toHaveProperty('label');
+    expect(problems(updateRelation(workspace, original.id, { typeId: id<RelationTypeId>('no-existe') }))).toContain('missing-reference@relations[0].typeId');
+    expect(problems(updateRelation(workspace, id<RelationId>('no-existe'), { arrow: 'none' }))).toContain('missing-reference@relationId');
+    expect(problems(updateRelation(workspace, original.id, unsafe({ arrow: 'diagonal' })))).toContain('invalid-value@changes.arrow');
+    expect(problems(updateRelation(workspace, original.id, unsafe({ from: id<CardId>('otra') })))).toContain('unknown-property@changes.from');
   });
 });

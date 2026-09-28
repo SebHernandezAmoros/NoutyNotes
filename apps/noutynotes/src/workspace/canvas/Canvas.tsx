@@ -9,6 +9,7 @@ import { ActionButton } from '../../components/controls';
 import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
 import { relationSegments } from '../board-geometry';
+import { RelationLine } from './RelationLine';
 import { CanvasCard, ResizeHandles } from './CanvasCard';
 import { CanvasFrame } from './CanvasFrame';
 import { CanvasOverview } from './CanvasOverview';
@@ -156,6 +157,8 @@ export function Canvas(props: CanvasProps) {
   const [menuFor, setMenuFor] = useState<CardId | null>(null);
   const cards = useMemo(() => new Map(workspace.cards.map((card) => [card.id, card])), [workspace.cards]);
   const names = useMemo(() => new Map(workspace.cards.map((card) => [card.id, cardTitle(card)])), [workspace.cards]);
+  const relationById = useMemo(() => new Map(workspace.relations.map((relation) => [relation.id, relation])), [workspace.relations]);
+  const relationTypeLabel = useMemo(() => new Map(workspace.relationTypes.map((type) => [type.id, type.label])), [workspace.relationTypes]);
   const placements = layout?.placements ?? [];
 
   // Lo que leen los gestores de gestos (creados una vez); se actualiza tras cada render.
@@ -597,22 +600,6 @@ export function Canvas(props: CanvasProps) {
             />
           );
         })}
-        {segments.map((segment) => {
-          const highlighted = selectedId !== null && workspace.relations.some((relation) => relation.id === segment.relationId
-            && (relation.from === selectedId || relation.to === selectedId));
-          return (
-            <View key={segment.relationId} style={styles.overlay}>
-              <View
-                testID={`relation-line-${segment.relationId}`}
-                style={[styles.relationLine, {
-                  left: segment.left, top: segment.top - 1, width: segment.length, height: highlighted ? 3 : 2,
-                  backgroundColor: highlighted ? colors.selection : colors.relationLine, transform: [{ rotate: `${segment.angle}deg` }],
-                }]}
-              />
-              <View style={[styles.relationEnd, { left: segment.endX - 6, top: segment.endY - 6, backgroundColor: highlighted ? colors.selection : colors.relationLine }]} />
-            </View>
-          );
-        })}
         {placements.map((placement) => {
           const card = cards.get(placement.cardId);
           if (!card) return null;
@@ -654,6 +641,22 @@ export function Canvas(props: CanvasProps) {
               controller={controller}
             />
           );
+        })}
+        {/* Encima de las tarjetas: si dos fichas conectadas quedan pegadas, la línea y el rótulo
+            igual se ven, en vez de quedar tapados por el fondo opaco de la tarjeta (ADR 0034). */}
+        {segments.flatMap((segment) => {
+          const relation = relationById.get(segment.relationId);
+          if (!relation) return [];
+          const highlighted = selectedId !== null && (relation.from === selectedId || relation.to === selectedId);
+          return [
+            <RelationLine
+              key={segment.relationId}
+              segment={segment}
+              relation={relation}
+              typeLabel={relationTypeLabel.get(relation.typeId) ?? ''}
+              highlighted={highlighted}
+            />,
+          ];
         })}
         {/* El destino va encima de las tarjetas: su color (válido o no) siempre se ve. */}
         {preview && groupDelta ? placements.filter((placement) => groupMoving.has(placement.cardId) && placement.cardId !== active?.cardId).map((placement) => (
@@ -782,8 +785,6 @@ const styles = StyleSheet.create({
   overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, pointerEvents: 'none' },
   gridColumn: { position: 'absolute', top: 0, bottom: 0, width: 1 },
   gridRow: { position: 'absolute', left: 0, right: 0, height: 1 },
-  relationLine: { position: 'absolute' },
-  relationEnd: { position: 'absolute', width: 12, height: 12, borderRadius: 6 },
   target: { position: 'absolute', borderWidth: 3, borderStyle: 'dashed', pointerEvents: 'none' },
   emptyWrap: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', padding: 16 },
   empty: { maxWidth: 360, width: '100%', borderWidth: 2, padding: 20, gap: 12, alignItems: 'flex-start' },

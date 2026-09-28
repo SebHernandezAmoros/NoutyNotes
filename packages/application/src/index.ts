@@ -11,6 +11,8 @@ export {
 } from './workspace-editing';
 export { assetsOf } from './workspace-assets';
 export { printableDocument } from './print';
+export { resolveRelationType, updateConnection } from './relations';
+export type { UpdateConnectionInput } from './relations';
 export type { PrintConnection, PrintEntry } from './print';
 export { addNoteToFrame, groupCardsInFrame, moveFrameOnBoard, removeFrameFromBoard, renameFrameOnBoard, resizeFrameOnBoard } from './frames';
 export type { FrameTarget } from './frames';

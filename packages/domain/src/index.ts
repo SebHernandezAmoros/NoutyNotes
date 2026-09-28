@@ -38,8 +38,10 @@ export type { FindFreeSpaceOptions, SetDisplayOptions } from './layouts/operatio
 export { projectLayout } from './layouts/projection';
 export type { ProjectedItem, ProjectedLayout } from './layouts/projection';
 export { validateRelation } from './relations/relation';
-export type { Relation, RelationTypeDefinition } from './relations/relation';
-export { createRelation, deleteRelation, getIncomingRelations, getOutgoingRelations, getRelatedCards } from './relations/operations';
+export { relationArrows } from './relations/relation';
+export type { Relation, RelationArrow, RelationTypeDefinition } from './relations/relation';
+export { createRelation, deleteRelation, getIncomingRelations, getOutgoingRelations, getRelatedCards, updateRelation } from './relations/operations';
+export type { RelationChanges } from './relations/operations';
 export { validateTemplate } from './templates/template';
 // Guarda de datos inertes (JSON/YAML): sin getters, funciones, ciclos ni arrays dispersos; profundidad 64.
 export { collectExecutableContentIssues as collectPlainDataIssues } from './templates/template';

@@ -25,3 +25,11 @@ describe('relaciones', () => {
     expect(problems(validateRelation(unsafe<Relation>({ ...relation, ...change })))).toContain(expected);
   });
 });
+
+describe('estilo de flecha (ADR 0034)', () => {
+  it('es opcional, independiente de from/to; sin ella se dibuja como antes (forward)', () => {
+    expect(validateRelation(relation).ok).toBe(true);
+    expect((['none', 'forward', 'both'] as const).every((arrow) => validateRelation({ ...relation, arrow }).ok)).toBe(true);
+    expect(problems(validateRelation(unsafe({ ...relation, arrow: 'double' })))).toContain('invalid-value@relation.arrow');
+  });
+});

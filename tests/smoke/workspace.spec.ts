@@ -483,24 +483,45 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
   await createWorkspace(page, 'Primero');
   await button(page, 'Volver a mis espacios').click();
   await createWorkspace(page, 'Guion');
-  await button(page, 'Crear un tablero').click();
+  // Desde 800 px, «Crear un tablero» está siempre visible en la barra lateral. Por debajo, las
+  // pestañas de sesión (ADR 0035) reemplazan esa franja: «+» abre el selector, que ofrece crear.
+  const tab = (name: string) => page.getByTestId(isCompact(page) ? 'open-tabs' : 'board-tabs').getByRole('button', { name, exact: true });
+  const createBoard = async () => {
+    if (isCompact(page)) await button(page, 'Abrir un tablero').click();
+    await button(page, 'Crear un tablero').click();
+  };
+  await createBoard();
   await expect(feedback(page)).toHaveText('Tablero creado. Guardado en memoria.');
-  await expect(button(page, 'Tablero Tablero 1')).toHaveAttribute('aria-pressed', 'true');
+  await expect(tab('Tablero Tablero 1')).toHaveAttribute('aria-pressed', 'true');
   await addCards(page, ['nota']);
-  await button(page, 'Crear un tablero').click();
-  await expect(button(page, 'Tablero Tablero 2')).toHaveAttribute('aria-pressed', 'true');
+  await createBoard();
+  await expect(tab('Tablero Tablero 2')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('board-empty')).toBeVisible();
   await button(page, 'Crear la primera nota').click();
   await expect(card(page, 2)).toBeVisible();
   await expect(card(page, 1)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Guion', exact: true })).toBeVisible();
   // El tablero y su número de tarjetas: en la cabecera desde 800 px; en móvil, en su pestaña.
-  if (isCompact(page)) await expect(button(page, 'Tablero Tablero 2')).toContainText('1');
+  if (isCompact(page)) await expect(tab('Tablero Tablero 2')).toContainText('1');
   else await expect(page.getByText('TABLERO 2 · 1 TARJETA')).toBeVisible();
-  await button(page, 'Tablero Tablero 1').click();
+  await tab('Tablero Tablero 1').click();
   await expect(card(page, 1)).toBeVisible();
   await expect(card(page, 2)).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('boards.png') });
+
+  // Pestañas de sesión (ADR 0035): cerrar una no borra el tablero; se reabre desde el selector; no
+  // se puede cerrar la última pestaña abierta.
+  if (isCompact(page)) {
+    await button(page, 'Cerrar la pestaña de Tablero 2').click();
+    await expect(tab('Tablero Tablero 2')).toHaveCount(0);
+    await button(page, 'Abrir un tablero').click();
+    await button(page, 'Abrir el tablero Tablero 2').click();
+    await expect(tab('Tablero Tablero 2')).toHaveAttribute('aria-pressed', 'true');
+    await expect(card(page, 2)).toBeVisible();
+    await button(page, 'Cerrar la pestaña de Tablero 1').click();
+    await expect(tab('Tablero Tablero 1')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Cerrar la pestaña de Tablero 2' })).toHaveCount(0);
+  }
 
   // Proyectos (ADR 0016): pestañas a la derecha desde 800 px; en móvil, la lista desde la cabecera.
   // Son los espacios reales de la sesión y cambiar de uno a otro es navegación real.

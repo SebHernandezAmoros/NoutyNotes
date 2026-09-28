@@ -25,6 +25,7 @@ import { loadViewPreferences, saveViewPreferences } from '../session/viewPrefere
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { Board } from './Board';
 import { BoardTabs } from './BoardTabs';
+import { OpenTabs } from './OpenTabs';
 import { Canvas } from './canvas/Canvas';
 import type { CanvasTool } from './canvas/Canvas';
 import { unplacedCardIds } from './canvas/boardCards';
@@ -122,6 +123,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Marco seleccionado (ADR 0027): excluye la tarjeta abierta y la selección múltiple.
   const [frameId, setFrameId] = useState<string | null>(null);
   const [boardId, setBoardId] = useState<BoardId | null>(null);
+  const [openBoardIds, setOpenBoardIds] = useState<readonly BoardId[]>([]);
   const [tool, setTool] = useState<CanvasTool>('select');
   const [connectSource, setConnectSource] = useState<CardId | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -179,6 +181,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const board = workspace ? workspace.boards.find((candidate) => candidate.id === boardId) ?? workspace.boards[0] : undefined;
+  // Pestañas de sesión (ADR 0035): el tablero activo siempre está abierto; los IDs de un proyecto
+  // anterior se descartan solos porque ya no coinciden con ningún tablero del workspace vigente.
+  const openBoards = workspace
+    ? (() => {
+        const open = openBoardIds.filter((id) => workspace.boards.some((candidate) => candidate.id === id));
+        return board && !open.includes(board.id) ? [...open, board.id] : open;
+      })()
+    : [];
+  const openBoardList = workspace ? openBoards.map((id) => workspace.boards.find((candidate) => candidate.id === id)).filter((candidate) => candidate !== undefined) : [];
+  const closedBoardList = workspace ? workspace.boards.filter((candidate) => !openBoards.includes(candidate.id)) : [];
   const layout = board ? workspace?.layouts.find((candidate) => candidate.boardId === board.id) : undefined;
   const visibleIds = new Set(layout?.placements.map((placement) => placement.cardId) ?? []);
   const unplaced = unplacedCardIds(board, layout).map((cardId) => workspace?.cards.find((card) => card.id === cardId)?.title ?? 'Sin título');
@@ -233,14 +245,35 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (result.ok) setMulti(null);
   };
 
+  const openBoard = (next: BoardId) => {
+    setBoardId(next);
+    // A partir de `openBoards` (derivado), no de `openBoardIds` (estado crudo): el tablero mostrado
+    // por defecto solo existe en la derivación hasta que se abre o cierra algo por primera vez; partir
+    // del estado crudo lo perdería en ese primer cambio.
+    setOpenBoardIds(openBoards.includes(next) ? openBoards : [...openBoards, next]);
+  };
+
   const chooseBoard = async (next: BoardId) => {
     if (!await flushPendingText()) return;
-    setBoardId(next);
+    openBoard(next);
     setSelectedId(null);
     setMulti(null);
     setFrameId(null);
     setConnectSource(null);
     setPan(START_PAN);
+  };
+
+  // Cerrar una pestaña no borra el tablero (ADR 0035): no se permite cerrar la última abierta, y si
+  // se cierra la activa, se activa la vecina inmediata a su izquierda (o la primera restante).
+  const closeBoardTab = (target: BoardId) => {
+    if (openBoards.length <= 1) return;
+    const index = openBoards.indexOf(target);
+    const remaining = openBoards.filter((id) => id !== target);
+    setOpenBoardIds(remaining);
+    if (board?.id === target) {
+      const neighbor = remaining[Math.max(0, index - 1)] ?? remaining[0];
+      if (neighbor) void chooseBoard(neighbor);
+    }
   };
 
   // «Ir» desde la búsqueda: el tablero actual si contiene la tarjeta; si no, el primero que la tenga.
@@ -260,7 +293,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       return;
     }
     if (target.id !== board?.id) {
-      setBoardId(target.id);
+      openBoard(target.id);
       setConnectSource(null);
       setPan(START_PAN);
     }
@@ -807,8 +840,21 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     )
   ) : null;
 
+  // Pestañas de sesión (ADR 0035): reemplaza la franja horizontal de todos los tableros en los anchos
+  // sin barra lateral, donde era la única forma de cambiar de tablero. En escritorio la barra lateral ya
+  // es una lista completa y siempre visible; no se duplica aquí con las mismas etiquetas.
   const tabs = workspace && !sidebar ? (
-    <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical={false} scroll={compact} />
+    <OpenTabs
+      boards={openBoardList}
+      current={board?.id}
+      onSelect={(next) => void chooseBoard(next)}
+      onClose={closeBoardTab}
+      closed={closedBoardList}
+      onOpen={(next) => void chooseBoard(next)}
+      onCreate={createBoard}
+      compact={compact}
+      scroll={compact}
+    />
   ) : null;
   const trashCount = workspace?.trash?.length ?? 0;
   // Teclado abierto (nativo): se reserva su alto (menos la barra del sistema, ya reservada), la barra

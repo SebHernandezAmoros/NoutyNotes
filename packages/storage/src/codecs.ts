@@ -16,7 +16,14 @@ export function relationData(relation: Relation): Relation {
   return {
     id: relation.id, typeId: relation.typeId, from: relation.from, to: relation.to,
     ...(relation.label === undefined ? {} : { label: relation.label }),
+    // «forward» es el valor por defecto (ADR 0034): no se escribe, para no forzar v2 sin necesidad.
+    ...(relation.arrow === undefined || relation.arrow === 'forward' ? {} : { arrow: relation.arrow }),
   };
+}
+
+/** Solo una flecha distinta de «forward» necesita el esquema 2; los archivos viejos conservan v1. */
+export function relationsSchemaVersion(relations: readonly Relation[]): 1 | 2 {
+  return relations.some((relation) => relation.arrow !== undefined && relation.arrow !== 'forward') ? 2 : 1;
 }
 
 export function layoutData(layout: BoardLayout): BoardLayout {
@@ -29,11 +36,14 @@ export function layoutData(layout: BoardLayout): BoardLayout {
 }
 
 /** Invariantes del dominio para cada relación y unicidad de IDs dentro del documento. */
-export function relationIssues(relations: readonly Relation[], path: string): (StorageIssue | DomainIssue)[] {
+export function relationIssues(relations: readonly Relation[], path: string, version: 1 | 2 = 1): (StorageIssue | DomainIssue)[] {
   const issues: (StorageIssue | DomainIssue)[] = [];
   relations.forEach((relation, index) => {
     const checked = validateRelation(relation);
     if (!checked.ok) issues.push(...reprefix(checked.issues, 'relation', `${path}[${index}]`));
+    if (version === 1 && relation.arrow !== undefined) {
+      issues.push({ code: 'invalid-value', path: `${path}[${index}].arrow`, message: 'La versión 1 no admite estilo de flecha.' });
+    }
   });
   return [...issues, ...duplicateIdIssues(relations.map((relation) => relation.id), path, 'las relaciones')];
 }
@@ -73,17 +83,18 @@ function checkInput<T>(value: unknown, root: string, schema: z.ZodType<T>): Stor
 export function serializeRelations(relations: readonly Relation[]): StorageResult<string> {
   const shaped = checkInput(relations, 'relations', z.array(relationSchema));
   if (!shaped.ok) return shaped;
-  const issues = relationIssues(relations, 'relations');
+  const version = relationsSchemaVersion(relations);
+  const issues = relationIssues(relations, 'relations', version);
   if (issues.length > 0) return fail(issues);
-  return succeed(stringifyYaml({ schemaVersion: 1, relations: relations.map(relationData) }));
+  return succeed(stringifyYaml({ schemaVersion: version, relations: relations.map(relationData) }));
 }
 
 export function parseRelations(text: string, file = RELATIONS_FILE): StorageResult<Relation[]> {
-  const read = readVersionedYaml(text, file, relationsFileSchema);
+  const read = readVersionedYaml(text, file, relationsFileSchema, [1, 2]);
   if (!read.ok) return read;
   // Forma comprobada por Zod; las invariantes (IDs, autoenlaces, unicidad) se validan a continuación.
   const relations = read.value.relations.map((relation) => relationData(relation as unknown as Relation));
-  const issues = relationIssues(relations, 'relations');
+  const issues = relationIssues(relations, 'relations', read.value.schemaVersion);
   return issues.length > 0 ? fail(located(issues, file)) : succeed(relations);
 }
 

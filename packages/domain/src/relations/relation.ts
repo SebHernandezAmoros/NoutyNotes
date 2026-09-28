@@ -8,6 +8,10 @@ export interface RelationTypeDefinition {
   readonly label: string;
 }
 
+/** Estilo visual de la punta de flecha (ADR 0034): independiente de `from`/`to`. Sin ella, «forward». */
+export const relationArrows = ['none', 'forward', 'both'] as const;
+export type RelationArrow = (typeof relationArrows)[number];
+
 /**
  * Vínculo semántico dirigido entre dos tarjetas del workspace. No depende de boards, posiciones
  * ni modo de visualización; la línea dibujada es solo una representación.
@@ -18,6 +22,8 @@ export interface Relation {
   readonly from: CardId;
   readonly to: CardId;
   readonly label?: string;
+  /** Sin ella, se dibuja como una única punta en `to` (comportamiento anterior a esta versión). */
+  readonly arrow?: RelationArrow;
 }
 
 export function collectRelationTypeIssues(type: unknown, path: string, issues: DomainIssue[]): void {
@@ -40,6 +46,9 @@ export function collectRelationIssues(relation: unknown, path: string, issues: D
   checkId(relation.from, `${path}.from`, issues);
   checkId(relation.to, `${path}.to`, issues);
   checkOptionalText(relation.label, `${path}.label`, issues);
+  if (relation.arrow !== undefined && !relationArrows.includes(relation.arrow as RelationArrow)) {
+    issues.push(issue('invalid-value', `${path}.arrow`, `Debe ser una de: ${relationArrows.join(', ')}.`));
+  }
   if (isValidId(relation.from) && relation.from === relation.to) {
     issues.push(issue('self-relation', `${path}.to`, 'Una relación debe conectar dos tarjetas distintas.'));
   }

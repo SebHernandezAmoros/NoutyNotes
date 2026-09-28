@@ -4,10 +4,11 @@ import {
 } from '@noutynotes/domain';
 import type {
   AssetRef, BoardId, BoardLayout, Card, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, GridConfig, GridPoint, GridSize, RestoreReport,
-  RelationId, RelationTypeDefinition, RelationTypeId, ValidationResult, Workspace, WorkspaceId,
+  RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, ValidationResult, Workspace, WorkspaceId,
 } from '@noutynotes/domain';
 
 import { nextSequentialId, workspaceIdFromName } from './ids';
+import { resolveRelationType } from './relations';
 import { LINK_CARD_TYPE, linkCardTypeFor } from './links';
 import { syncNoteAssetRefs } from './note-blocks';
 import type { WorkspaceAssets } from './workspace-assets';
@@ -79,6 +80,10 @@ export interface BoardCardTarget {
 export interface ConnectCardsInput {
   readonly from: CardId;
   readonly to: CardId;
+  /** Nombre del tipo (ADR 0034): uno existente se reutiliza; uno nuevo se crea. Sin él, «Relacionada con». */
+  readonly typeLabel?: string;
+  readonly label?: string;
+  readonly arrow?: RelationArrow;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -313,14 +318,21 @@ export function resizeCardOnBoard(
 
 /** Conecta dos tarjetas con el tipo «Relacionada con», que se añade si no existe. Devuelve el ID. */
 export async function connectCards(
-  storage: WorkspaceStorage, workspaceId: WorkspaceId, { from, to }: ConnectCardsInput,
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, { from, to, typeLabel, label, arrow }: ConnectCardsInput,
 ): Promise<WorkspaceStorageResult<RelationId>> {
   let created: RelationId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
-    const typed = workspace.relationTypes.some((type) => type.id === RELATED_RELATION_TYPE.id)
-      ? workspace : { ...workspace, relationTypes: [...workspace.relationTypes, RELATED_RELATION_TYPE] };
+    const { workspace: typed, typeId } = typeLabel === undefined
+      ? {
+        workspace: workspace.relationTypes.some((type) => type.id === RELATED_RELATION_TYPE.id)
+          ? workspace : { ...workspace, relationTypes: [...workspace.relationTypes, RELATED_RELATION_TYPE] },
+        typeId: RELATED_RELATION_TYPE.id,
+      }
+      : resolveRelationType(workspace, typeLabel);
     const relationId = nextSequentialId('relacion', takenRelationIds(workspace)) as RelationId;
-    const result = createRelation(typed, { id: relationId, typeId: RELATED_RELATION_TYPE.id, from, to });
+    const result = createRelation(typed, {
+      id: relationId, typeId, from, to, ...(label === undefined ? {} : { label }), ...(arrow === undefined ? {} : { arrow }),
+    });
     if (result.ok) created = relationId;
     return result;
   });

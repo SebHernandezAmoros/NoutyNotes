@@ -304,7 +304,14 @@ test('fixture v1 con dos tableros: navegar y avisar de tarjetas sin posición en
   await expect(button(page, 'Tablero Resumen')).toHaveAttribute('aria-pressed', 'true');
 
   // «Investigación» declara idea-a pero su layout no la coloca: v1 válido, no un tablero vacío.
-  await button(page, 'Tablero Investigación').click();
+  // Por debajo de 800 px, «Investigación» aún no está en una pestaña abierta (ADR 0035): se abre
+  // desde el selector «+» en vez de tocarlo directo, como en la barra lateral de escritorio.
+  if ((page.viewportSize()?.width ?? 0) < 800) {
+    await button(page, 'Abrir un tablero').click();
+    await button(page, 'Abrir el tablero Investigación').click();
+  } else {
+    await button(page, 'Tablero Investigación').click();
+  }
   await expect(button(page, 'Tablero Investigación')).toHaveAttribute('aria-pressed', 'true');
   await expect(button(page, 'Tablero Investigación')).toContainText('1');
   await expect(page.getByTestId('board-unplaced')).toContainText('1 tarjeta de este tablero no tiene posición en la grilla: «Idea A».');

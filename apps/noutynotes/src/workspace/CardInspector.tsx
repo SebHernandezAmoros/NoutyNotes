@@ -1,7 +1,7 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
 import { linkUrlField } from '@noutynotes/domain';
-import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, Workspace } from '@noutynotes/domain';
+import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
@@ -184,9 +184,24 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     return () => window.removeEventListener('beforeunload', warn);
   }, [mode, dirty]);
   const titles = new Map(workspace.cards.map((other) => [other.id, cardTitle(other)]));
+  const typeLabels = new Map(workspace.relationTypes.map((type) => [type.id, type.label]));
   const connected = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id);
   const targets = workspace.cards.filter((other) => other.id !== card.id
     && !workspace.relations.some((relation) => relation.from === card.id && relation.to === other.id));
+  // Tipo, rótulo y flecha (ADR 0034): una conexión a la vez en edición; la flecha se aplica al instante.
+  const [editingRelation, setEditingRelation] = useState<{ readonly id: RelationId; readonly typeLabel: string; readonly label: string } | null>(null);
+  const [connectTypeDraft, setConnectTypeDraft] = useState('');
+  const arrowOptions: readonly { readonly value: RelationArrow; readonly label: string }[] = [
+    { value: 'none', label: 'Sin flecha' }, { value: 'forward', label: 'Flecha' }, { value: 'both', label: 'Doble flecha' },
+  ];
+  const saveRelationEdit = () => {
+    if (!editingRelation) return;
+    const { id: relationId, typeLabel, label } = editingRelation;
+    void run((storage, id) => updateConnection(storage, id, relationId, {
+      ...(typeLabel.trim() === '' ? {} : { typeLabel: typeLabel.trim() }),
+      ...(label.trim() === '' ? {} : { label: label.trim() }),
+    }), 'Conexión actualizada. Guardado en memoria.').then((result) => { if (result.ok) setEditingRelation(null); });
+  };
   const rect = placement?.rect;
 
   return (
@@ -356,27 +371,66 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         ) : connected.map((relation) => {
           const outgoing = relation.from === card.id;
           const other = titles.get(outgoing ? relation.to : relation.from) ?? 'Sin título';
+          const typeLabel = typeLabels.get(relation.typeId) ?? '';
+          const arrow = relation.arrow ?? 'forward';
+          const editingThis = editingRelation?.id === relation.id;
           return (
-            <View key={relation.id} style={styles.connection}>
-              <Text style={[styles.body, styles.connectionText, { color: colors.textPrimary }]}>
-                {outgoing ? `→ ${other}` : `← ${other}`}
-              </Text>
-              <ActionButton
-                label="Desconectar"
-                accessibilityLabel={outgoing ? `Desconectar de ${other}` : `Desconectar desde ${other}`}
-                onPress={() => void run((storage, id) => disconnectCards(storage, id, relation.id), 'Conexión eliminada. Guardado en memoria.')}
-              />
+            <View key={relation.id} testID={`connection-${relation.id}`} style={styles.connectionBlock}>
+              <View style={styles.connection}>
+                <Text style={[styles.body, styles.connectionText, { color: colors.textPrimary }]}>
+                  {`${outgoing ? '→' : '←'} ${other} (${typeLabel}${relation.label ? `: ${relation.label}` : ''})`}
+                </Text>
+              </View>
+              {editingThis ? (
+                <>
+                  <TextField label="Tipo de la conexión" value={editingRelation.typeLabel} onChangeText={(value) => setEditingRelation({ ...editingRelation, typeLabel: value })} />
+                  <TextField label="Rótulo sobre la línea" value={editingRelation.label} onChangeText={(value) => setEditingRelation({ ...editingRelation, label: value })} placeholder="Sin rótulo" />
+                  <View style={styles.row}>
+                    <ActionButton label="Guardar" tone="primary" accessibilityLabel="Guardar los cambios de la conexión" onPress={saveRelationEdit} />
+                    <ActionButton label="Cancelar" accessibilityLabel="Cancelar la edición de la conexión" onPress={() => setEditingRelation(null)} />
+                  </View>
+                </>
+              ) : (
+                <View style={styles.row}>
+                  {arrowOptions.map((option) => (
+                    <ActionButton
+                      key={option.value}
+                      label={option.label}
+                      accessibilityLabel={`Usar ${option.label.toLowerCase()} en esta conexión`}
+                      pressed={arrow === option.value}
+                      onPress={() => void run((storage, id) => updateConnection(storage, id, relation.id, { arrow: option.value }), 'Estilo de la conexión cambiado. Guardado en memoria.')}
+                    />
+                  ))}
+                  <ActionButton
+                    label="Editar"
+                    accessibilityLabel={`Editar el tipo y el rótulo de la conexión con ${other}`}
+                    onPress={() => setEditingRelation({ id: relation.id, typeLabel, label: relation.label ?? '' })}
+                  />
+                  <ActionButton
+                    label="Desconectar"
+                    accessibilityLabel={outgoing ? `Desconectar de ${other}` : `Desconectar desde ${other}`}
+                    onPress={() => void run((storage, id) => disconnectCards(storage, id, relation.id), 'Conexión eliminada. Guardado en memoria.')}
+                  />
+                </View>
+              )}
             </View>
           );
         })}
-        {targets.length > 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>Conectar con:</Text> : null}
+        {targets.length > 0 ? (
+          <>
+            <TextField label="Tipo de la nueva conexión" value={connectTypeDraft} onChangeText={setConnectTypeDraft} placeholder="Relacionada con" testID="connect-type-input" />
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>Conectar con:</Text>
+          </>
+        ) : null}
         <View style={styles.row}>
           {targets.map((target) => (
             <ActionButton
               key={target.id}
               label={cardTitle(target)}
               accessibilityLabel={`Conectar con ${cardTitle(target)}`}
-              onPress={() => void run((storage, id) => connectCards(storage, id, { from: card.id, to: target.id }), 'Tarjetas conectadas. Guardado en memoria.')}
+              onPress={() => void run((storage, id) => connectCards(storage, id, {
+                from: card.id, to: target.id, ...(connectTypeDraft.trim() === '' ? {} : { typeLabel: connectTypeDraft.trim() }),
+              }), 'Tarjetas conectadas. Guardado en memoria.')}
             />
           ))}
         </View>
@@ -406,6 +460,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   body: { fontSize: 15, lineHeight: 21 },
   hint: { fontSize: 13, lineHeight: 18 },
+  connectionBlock: { gap: 6 },
   connection: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   connectionText: { flex: 1, minWidth: 0 },
   preview: { gap: 6 },
