@@ -1,9 +1,10 @@
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Dialog } from '../components/Dialog';
 import { ActionButton, TextField } from '../components/controls';
+import { t } from '../i18n';
 
 interface LinkDialogProps {
   readonly visible: boolean;
@@ -19,6 +20,7 @@ interface LinkDialogProps {
  */
 export function LinkDialog({ visible, compact, onCreate, onClose }: LinkDialogProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
@@ -40,21 +42,21 @@ export function LinkDialog({ visible, compact, onCreate, onClose }: LinkDialogPr
   };
 
   return (
-    <Dialog visible={visible} title="Nuevo enlace" compact={compact} onClose={close} testID="link-dialog">
-      <TextField label="Dirección" value={url} onChangeText={(value) => { setUrl(value); setProblem(null); }} placeholder="https://ejemplo.com" testID="link-url-input"
+    <Dialog visible={visible} title={t('link.dialog.title', locale)} compact={compact} onClose={close} testID="link-dialog">
+      <TextField label={t('link.url.label', locale)} value={url} onChangeText={(value) => { setUrl(value); setProblem(null); }} placeholder={t('link.url.placeholder', locale)} testID="link-url-input"
         onSubmitEditing={() => void create()} />
-      <TextField label="Título (opcional)" value={title} onChangeText={setTitle} placeholder="Sin título se usa el dominio" testID="link-title-input"
+      <TextField label={t('link.title.label', locale)} value={title} onChangeText={setTitle} placeholder={t('link.title.placeholder', locale)} testID="link-title-input"
         onSubmitEditing={() => void create()} />
       {problem ? (
         <Text testID="link-problem" accessibilityLiveRegion="assertive" style={[styles.problem, { color: colors.danger, borderColor: colors.danger }]}>{problem}</Text>
       ) : null}
       <Text style={[styles.hint, { color: colors.textSecondary }]}>
-        Se admiten direcciones web (https://…) y de correo (mailto:…). NoutyNotes no descarga nada de la página: la tarjeta guarda solo la dirección y el título.
+        {t('link.hint', locale)}
       </Text>
       <View style={styles.actions}>
         {/* En una carpeta Android, guardar puede tardar unos segundos: se muestra, y un segundo toque no duplica. */}
-        <ActionButton label={busy ? 'Creando…' : 'Crear enlace'} accessibilityLabel="Crear enlace" tone="primary" onPress={() => void create()} />
-        <ActionButton label="Cancelar" accessibilityLabel="Cancelar el nuevo enlace" onPress={close} />
+        <ActionButton label={busy ? t('link.create.creating', locale) : t('link.create', locale)} accessibilityLabel={t('link.create', locale)} tone="primary" onPress={() => void create()} />
+        <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('link.cancel.accessibilityLabel', locale)} onPress={close} />
       </View>
     </Dialog>
   );

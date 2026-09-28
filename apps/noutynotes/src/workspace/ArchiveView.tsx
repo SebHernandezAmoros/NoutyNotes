@@ -1,10 +1,11 @@
 import { fold } from '@noutynotes/application';
 import type { ArchivedBoard, ArchivedCard, BoardId, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { t } from '../i18n';
 import { markdownExcerpt } from './markdownLists';
 import { useEscapeBack } from './useEscapeBack';
 
@@ -25,8 +26,6 @@ interface ArchiveViewProps {
 }
 
 type Order = 'recent' | 'title';
-const plural = (count: number, one: string, many: string) => (count === 1 ? one : many.replace('#', String(count)));
-const titleOf = (entry: ArchivedCard) => entry.card.title ?? 'Sin título';
 const pad = (value: number) => String(value).padStart(2, '0');
 /** Fecha local legible sin depender de Intl (igual en web y en Android). */
 function when(iso: string): string {
@@ -43,6 +42,7 @@ export function ArchiveView({
   active, compact, workspace, busy, onRestore, onSendToTrash, onRestoreSelection, onSendSelectionToTrash, onExportSelection, onRestoreBoard, onBack,
 }: ArchiveViewProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   useEscapeBack(active, onBack);
   const [confirming, setConfirming] = useState<CardId | null>(null);
@@ -53,6 +53,9 @@ export function ArchiveView({
   const [confirmingSelection, setConfirmingSelection] = useState(false);
   const archivedBoards = workspace.archivedBoards ?? [];
   const archive = workspace.archive ?? [];
+  const titleOf = (entry: ArchivedCard) => entry.card.title ?? t('trash.item.untitled', locale);
+  const cardsUnit = (count: number) => t(count === 1 ? 'unit.card.one' : 'unit.card.many', locale, { count: String(count) });
+  const countUnit = (base: 'archive.count' | 'archive.selected', count: number) => t(count === 1 ? `${base}.one` : `${base}.many`, locale, { count: String(count) });
   const toggleSelected = (cardId: CardId) => setSelected((current) => {
     const next = new Set(current);
     if (next.has(cardId)) next.delete(cardId); else next.add(cardId);
@@ -65,7 +68,7 @@ export function ArchiveView({
     setConfirmingSelection(false);
     if (await onSendSelectionToTrash([...selected])) setSelected(new Set());
   };
-  const typeLabel = (id: CardTypeId) => workspace.cardTypes.find((type) => type.id === id)?.label ?? 'Tarjeta';
+  const typeLabel = (id: CardTypeId) => workspace.cardTypes.find((type) => type.id === id)?.label ?? t('trash.item.type.fallback', locale);
   const types = [...new Set(archive.map((entry) => entry.card.typeId))].map((id) => ({ id, count: archive.filter((entry) => entry.card.typeId === id).length }));
   const text = fold(query.trim());
   const shown = archive
@@ -74,45 +77,44 @@ export function ArchiveView({
     .sort((a, b) => (order === 'recent' ? (a.archivedAt < b.archivedAt ? 1 : a.archivedAt > b.archivedAt ? -1 : 0)
       : fold(titleOf(a)) < fold(titleOf(b)) ? -1 : fold(titleOf(a)) > fold(titleOf(b)) ? 1 : 0));
   const boardTitles = (entry: ArchivedCard) => entry.boards
-    .map((membership) => workspace.boards.find((board) => board.id === membership.boardId)?.title ?? 'un tablero que ya no existe');
+    .map((membership) => workspace.boards.find((board) => board.id === membership.boardId)?.title ?? t('archive.board.deleted', locale));
 
   return (
     <View testID="archive-view" style={styles.screen}>
       <View style={[styles.header, { borderColor: colors.gridLine }]}>
-        <ActionButton label="←" accessibilityLabel="Volver al tablero" onPress={onBack} />
-        <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>Archivo</Text>
+        <ActionButton label="←" accessibilityLabel={t('workview.back', locale)} onPress={onBack} />
+        <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>{t('nav.archive', locale)}</Text>
       </View>
       {archive.length === 0 && archivedBoards.length === 0 ? (
         <View style={styles.pad}>
           <Text style={[styles.intro, { color: colors.textSecondary }]}>
-            Lo archivado sale de los tableros y de las búsquedas sin destruirse, y se guarda con el espacio (también en la carpeta y en el ZIP).
-            Restaurar lo devuelve a su sitio. Para eliminarlo, envíalo a la Papelera.
+            {t('archive.intro', locale)}
           </Text>
-          <Text testID="archive-empty" style={[styles.empty, { color: colors.textSecondary, borderColor: colors.gridLine }]}>No hay nada archivado.</Text>
+          <Text testID="archive-empty" style={[styles.empty, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('archive.empty', locale)}</Text>
         </View>
       ) : (
         <>
           {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
           <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
-            <ActionButton label={`Todos · ${archive.length}`} pressed={typeId === null} accessibilityLabel={`Todos los tipos (${archive.length})`} onPress={() => setTypeId(null)} />
+            <ActionButton label={t('archive.filter.all', locale, { count: String(archive.length) })} pressed={typeId === null} accessibilityLabel={t('archive.filter.all.accessibilityLabel', locale, { count: String(archive.length) })} onPress={() => setTypeId(null)} />
             {types.map(({ id, count }) => (
-              <ActionButton key={id} label={`${typeLabel(id)} · ${count}`} pressed={typeId === id} accessibilityLabel={`Solo ${typeLabel(id)} (${count})`} onPress={() => setTypeId(id)} />
+              <ActionButton key={id} label={`${typeLabel(id)} · ${count}`} pressed={typeId === id} accessibilityLabel={t('archive.filter.type.accessibilityLabel', locale, { label: typeLabel(id), count: String(count) })} onPress={() => setTypeId(id)} />
             ))}
-            <ActionButton label="Más recientes" pressed={order === 'recent'} accessibilityLabel="Ordenar por fecha de archivo" onPress={() => setOrder('recent')} />
-            <ActionButton label="Por título" pressed={order === 'title'} accessibilityLabel="Ordenar por título" onPress={() => setOrder('title')} />
+            <ActionButton label={t('archive.order.recent', locale)} pressed={order === 'recent'} accessibilityLabel={t('archive.order.recent.accessibilityLabel', locale)} onPress={() => setOrder('recent')} />
+            <ActionButton label={t('archive.order.title', locale)} pressed={order === 'title'} accessibilityLabel={t('archive.order.title.accessibilityLabel', locale)} onPress={() => setOrder('title')} />
           </View>
           <ScrollView contentContainerStyle={styles.content}>
             {archivedBoards.length > 0 ? (
               <>
-                <Text style={[styles.section, { color: colors.textSecondary }]}>TABLEROS ARCHIVADOS</Text>
+                <Text style={[styles.section, { color: colors.textSecondary }]}>{t('archive.section.boards', locale)}</Text>
                 <View style={compact ? styles.list : styles.grid}>
                   {archivedBoards.map((entry: ArchivedBoard) => (
                     <View key={entry.board.id} testID={`archive-board-${entry.board.id}`} style={[styles.item, compact ? null : styles.itemCol, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                      <Text style={[styles.kind, { color: colors.textSecondary }]}>{`TABLERO · ARCHIVADO ${when(entry.archivedAt)}`}</Text>
+                      <Text style={[styles.kind, { color: colors.textSecondary }]}>{t('archive.board.kind', locale, { when: when(entry.archivedAt) })}</Text>
                       <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.board.title}</Text>
-                      <Text style={[styles.meta, { color: colors.textSecondary }]}>{plural(entry.cardIds.length, '1 tarjeta', `${entry.cardIds.length} tarjetas`)}</Text>
+                      <Text style={[styles.meta, { color: colors.textSecondary }]}>{cardsUnit(entry.cardIds.length)}</Text>
                       <View style={styles.actions}>
-                        <ActionButton label="Restaurar tablero" tone="primary" accessibilityLabel={`Restaurar el tablero ${entry.board.title} con sus tarjetas`}
+                        <ActionButton label={t('archive.board.restore', locale)} tone="primary" accessibilityLabel={t('archive.board.restore.accessibilityLabel', locale, { title: entry.board.title })}
                           onPress={() => { if (!busy) onRestoreBoard(entry.board.id, entry.board.title); }} />
                       </View>
                     </View>
@@ -120,31 +122,31 @@ export function ArchiveView({
                 </View>
               </>
             ) : null}
-            {archive.length > 0 ? <Text style={[styles.section, { color: colors.textSecondary }]}>TARJETAS</Text> : null}
-            <TextField label="Buscar en el Archivo" value={query} onChangeText={setQuery} placeholder="título, texto o etiqueta" testID="archive-search" />
+            {archive.length > 0 ? <Text style={[styles.section, { color: colors.textSecondary }]}>{t('archive.section.cards', locale)}</Text> : null}
+            <TextField label={t('archive.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('archive.search.placeholder', locale)} testID="archive-search" />
             <Text testID="archive-count" accessibilityLiveRegion="polite" style={[styles.count, { color: colors.textSecondary }]}>
-              {shown.length === 1 ? '1 TARJETA' : `${shown.length} TARJETAS`}
+              {countUnit('archive.count', shown.length)}
             </Text>
-            {shown.length === 0 ? <Text style={[styles.intro, { color: colors.textSecondary }]}>{`Sin resultados para «${query.trim()}».`}</Text> : null}
+            {shown.length === 0 ? <Text style={[styles.intro, { color: colors.textSecondary }]}>{t('search.empty.query', locale, { query: query.trim() })}</Text> : null}
             {selected.size > 0 ? (
               <View testID="archive-selection-bar" style={[styles.item, { borderColor: colors.selection, backgroundColor: colors.surface }]}>
-                <Text style={[styles.meta, { color: colors.textSecondary }]}>{plural(selected.size, '1 SELECCIONADA', '# SELECCIONADAS')}</Text>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>{countUnit('archive.selected', selected.size)}</Text>
                 {confirmingSelection ? (
                   <View testID="archive-selection-confirm" style={[styles.confirm, { borderColor: colors.danger }]}>
                     <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>
-                      {`¿Enviar ${plural(selected.size, 'la seleccionada', 'las # seleccionadas')} a la Papelera? Desde allí aún podrás restaurarlas o eliminarlas definitivamente.`}
+                      {t(selected.size === 1 ? 'archive.trashSelection.confirm.one' : 'archive.trashSelection.confirm.many', locale, { count: String(selected.size) })}
                     </Text>
                     <View style={styles.actions}>
-                      <ActionButton label="Enviar a la Papelera" tone="primary" accessibilityLabel="Confirmar enviar la selección a la Papelera" onPress={() => void trashSelection()} />
-                      <ActionButton label="Cancelar" accessibilityLabel="Cancelar el envío de la selección a la Papelera" onPress={() => setConfirmingSelection(false)} />
+                      <ActionButton label={t('archive.trash.label', locale)} tone="primary" accessibilityLabel={t('archive.trash.selection.accessibilityLabel', locale)} onPress={() => void trashSelection()} />
+                      <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('archive.trash.selection.cancel.accessibilityLabel', locale)} onPress={() => setConfirmingSelection(false)} />
                     </View>
                   </View>
                 ) : (
                   <View style={styles.actions}>
-                    <ActionButton label="Restaurar seleccionadas" tone="primary" accessibilityLabel="Restaurar las tarjetas seleccionadas" onPress={() => void restoreSelection()} />
-                    <ActionButton label="Enviar seleccionadas a la Papelera…" accessibilityLabel="Enviar las tarjetas seleccionadas a la Papelera" onPress={() => setConfirmingSelection(true)} />
-                    <ActionButton label="Exportar selección" accessibilityLabel="Exportar la selección como ZIP con sus assets" onPress={() => onExportSelection([...selected])} />
-                    <ActionButton label="Cancelar selección" accessibilityLabel="Cancelar la selección" onPress={() => setSelected(new Set())} />
+                    <ActionButton label={t('archive.selection.restore', locale)} tone="primary" accessibilityLabel={t('archive.selection.restore.accessibilityLabel', locale)} onPress={() => void restoreSelection()} />
+                    <ActionButton label={t('archive.selection.trash', locale)} accessibilityLabel={t('archive.selection.trash.accessibilityLabel', locale)} onPress={() => setConfirmingSelection(true)} />
+                    <ActionButton label={t('archive.selection.export', locale)} accessibilityLabel={t('archive.selection.export.accessibilityLabel', locale)} onPress={() => onExportSelection([...selected])} />
+                    <ActionButton label={t('archive.selection.cancel', locale)} accessibilityLabel={t('archive.selection.cancel.accessibilityLabel', locale)} onPress={() => setSelected(new Set())} />
                   </View>
                 )}
               </View>
@@ -157,28 +159,28 @@ export function ArchiveView({
                 const origin = boardTitles(entry);
                 return (
                   <View key={entry.card.id} testID={`archive-item-${entry.card.id}`} style={[styles.item, compact ? null : styles.itemCol, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                    <Text style={[styles.kind, { color: colors.textSecondary }]}>{`${typeLabel(entry.card.typeId).toUpperCase()} · ARCHIVADA ${when(entry.archivedAt)}`}</Text>
+                    <Text style={[styles.kind, { color: colors.textSecondary }]}>{t('archive.item.kind', locale, { type: typeLabel(entry.card.typeId).toUpperCase(), when: when(entry.archivedAt) })}</Text>
                     <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-                    <Text style={[styles.meta, { color: colors.textSecondary }]}>{origin.length > 0 ? `Estaba en ${origin.join(', ')}` : 'No estaba en ningún tablero'}</Text>
+                    <Text style={[styles.meta, { color: colors.textSecondary }]}>{origin.length > 0 ? t('archive.item.origin.some', locale, { boards: origin.join(', ') }) : t('archive.item.origin.none', locale)}</Text>
                     {(entry.card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(entry.card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
                     {excerpt !== '' ? <Text numberOfLines={2} style={[styles.excerpt, { color: colors.textPrimary }]}>{excerpt}</Text> : null}
                     {confirming === entry.card.id ? (
                       <View testID="archive-trash-confirmation" style={[styles.confirm, { borderColor: colors.danger }]}>
                         <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>
-                          {`¿Enviar «${title}» a la Papelera? Desde allí aún podrás restaurarla o eliminarla definitivamente.`}
+                          {t('archive.item.trashConfirm.body', locale, { title })}
                         </Text>
                         <View style={styles.actions}>
-                          <ActionButton label="Enviar a la Papelera" tone="primary" accessibilityLabel={`Confirmar enviar ${title} a la Papelera`}
+                          <ActionButton label={t('archive.trash.label', locale)} tone="primary" accessibilityLabel={t('archive.item.trashConfirm.accessibilityLabel', locale, { title })}
                             onPress={() => { setConfirming(null); onSendToTrash(entry.card.id); }} />
-                          <ActionButton label="Cancelar" accessibilityLabel="Cancelar el envío a la Papelera" onPress={() => setConfirming(null)} />
+                          <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('archive.item.trashCancel.accessibilityLabel', locale)} onPress={() => setConfirming(null)} />
                         </View>
                       </View>
                     ) : (
                       <View style={styles.actions}>
-                        <ActionButton label="Restaurar" tone="primary" accessibilityLabel={`Restaurar ${title} del Archivo`} onPress={() => { if (!busy) onRestore(entry.card.id); }} />
-                        <ActionButton label="Enviar a la Papelera…" accessibilityLabel={`Enviar ${title} a la Papelera desde el Archivo`} onPress={() => setConfirming(entry.card.id)} />
-                        <ActionButton label={selected.has(entry.card.id) ? 'Seleccionada' : 'Seleccionar'} pressed={selected.has(entry.card.id)}
-                          accessibilityLabel={`${selected.has(entry.card.id) ? 'Quitar de' : 'Añadir a'} la selección a ${title}`} onPress={() => toggleSelected(entry.card.id)} />
+                        <ActionButton label={t('trash.restore', locale)} tone="primary" accessibilityLabel={t('archive.item.restore.accessibilityLabel', locale, { title })} onPress={() => { if (!busy) onRestore(entry.card.id); }} />
+                        <ActionButton label={t('archive.item.trash', locale)} accessibilityLabel={t('archive.item.trash.accessibilityLabel', locale, { title })} onPress={() => setConfirming(entry.card.id)} />
+                        <ActionButton label={selected.has(entry.card.id) ? t('archive.item.selected', locale) : t('archive.item.select', locale)} pressed={selected.has(entry.card.id)}
+                          accessibilityLabel={t(selected.has(entry.card.id) ? 'archive.item.select.remove.accessibilityLabel' : 'archive.item.select.add.accessibilityLabel', locale, { title })} onPress={() => toggleSelected(entry.card.id)} />
                       </View>
                     )}
                   </View>

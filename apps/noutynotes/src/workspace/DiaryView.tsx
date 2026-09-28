@@ -1,11 +1,13 @@
 import { activeDays, dailyLog, dailyLogRange, diaryExportText, editCardContent, fold, isDay, localDay, openDiaryEntry, shiftDay } from '@noutynotes/application';
 import type { RangeLogItem, TimedCard, WorkspaceStorageResult } from '@noutynotes/application';
 import type { BoardId, Card, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import type { Locale } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { t } from '../i18n';
 import { downloadTextFile, supportsTextDownload } from '../session/textDownload';
 import { markdownExcerpt } from './markdownLists';
 import { useEscapeBack } from './useEscapeBack';
@@ -22,12 +24,26 @@ interface DiaryViewProps {
   readonly onBack: () => void;
 }
 
-const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const weekdays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+const monthsByLocale: Readonly<Record<Locale, readonly string[]>> = {
+  es: ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'],
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+};
+const weekdaysByLocale: Readonly<Record<Locale, readonly string[]>> = {
+  es: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
+  en: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
+};
 const offset = () => new Date().getTimezoneOffset();
 const today = () => localDay(new Date().toISOString(), offset());
-const plural = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
-const longDay = (day: string) => `${Number(day.slice(8, 10))} de ${months[Number(day.slice(5, 7)) - 1]} de ${day.slice(0, 4)}`;
+const longDay = (day: string, locale: Locale) => {
+  const dayNumber = Number(day.slice(8, 10));
+  const month = monthsByLocale[locale][Number(day.slice(5, 7)) - 1];
+  const year = day.slice(0, 4);
+  return locale === 'es' ? `${dayNumber} de ${month} de ${year}` : `${month} ${dayNumber}, ${year}`;
+};
+type SummaryUnit = 'entries' | 'created' | 'archived';
+const summaryUnit = (base: SummaryUnit, count: number, locale: Locale) =>
+  t(count === 1 ? `diary.summary.${base}.one` : `diary.summary.${base}.many`, locale, { count: String(count) });
+const resultUnit = (count: number, locale: Locale) => t(count === 1 ? 'unit.resultUpper.one' : 'unit.resultUpper.many', locale, { count: String(count) });
 
 /**
  * Diario (ADR 0024, ADR 0036): vista de trabajo real a pantalla completa, no un diálogo estrecho.
@@ -36,6 +52,7 @@ const longDay = (day: string) => `${Number(day.slice(8, 10))} de ${months[Number
  */
 export function DiaryView({ active, compact, workspace, run, onGo, onBack }: DiaryViewProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   useEscapeBack(active, onBack);
   const [day, setDay] = useState(today);
@@ -50,14 +67,14 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const [searchText, setSearchText] = useState('');
   const [exportError, setExportError] = useState<string | null>(null);
   const log = dailyLog(workspace, day, offset());
-  const typeLabel = (card: Card) => workspace.cardTypes.find((type) => type.id === card.typeId)?.label ?? 'Tarjeta';
+  const typeLabel = (card: Card) => workspace.cardTypes.find((type) => type.id === card.typeId)?.label ?? t('trash.item.type.fallback', locale);
   const onBoard = (cardId: CardId) => workspace.boards.some((board) => board.cardIds.includes(cardId));
 
   // Modo «Buscar» (ADR 0037): filtro y búsqueda del rango, en la vista, como ya hacen Assets/Archivo.
   const rangeValid = isDay(rangeFrom) && isDay(rangeTo) && rangeFrom <= rangeTo;
   const range = rangeValid ? dailyLogRange(workspace, rangeFrom, rangeTo, offset()) : null;
   const rangeItems = range?.ok ? range.items : [];
-  const rangeError = range && !range.ok ? range.reason : !rangeValid ? 'Escribe dos fechas reales, con la inicial antes o igual que la final.' : null;
+  const rangeError = range && !range.ok ? range.reason : !rangeValid ? t('diary.search.range.invalid', locale) : null;
   const availableTypes = [...new Map(rangeItems.map((item) => [item.card.typeId, typeLabel(item.card)])).entries()];
   const availableTags = [...new Set(rangeItems.flatMap((item) => item.card.tags ?? []))].sort();
   const searchFold = fold(searchText.trim());
@@ -65,7 +82,9 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
     && (searchTag === null || (item.card.tags ?? []).includes(searchTag))
     && (searchBoardId === null || item.boardIds.includes(searchBoardId))
     && (searchFold === '' || fold([item.card.title ?? '', item.card.content ?? '', (item.card.tags ?? []).join(' ')].join('\n')).includes(searchFold)));
-  const rangeVerb: Readonly<Record<RangeLogItem['kind'], string>> = { entry: 'ENTRADA', created: 'CREADA', archived: 'ARCHIVADA' };
+  const rangeVerb: Readonly<Record<RangeLogItem['kind'], string>> = {
+    entry: t('diary.verb.entry', locale), created: t('diary.verb.created', locale), archived: t('diary.verb.archived', locale),
+  };
   const exportRange = () => {
     setExportError(null);
     const result = diaryExportText(workspace, rangeFrom, rangeTo, offset());
@@ -102,142 +121,142 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const timeline = (items: readonly TimedCard[], verb: string, testID: string) => items.map(({ card, time }) => (
     <View key={`${testID}-${card.id}`} testID={`${testID}-${card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${time} · ${verb} · ${typeLabel(card).toUpperCase()}`}</Text>
-      <Text style={[styles.title, { color: colors.textPrimary }]}>{card.title ?? 'Sin título'}</Text>
+      <Text style={[styles.title, { color: colors.textPrimary }]}>{card.title ?? t('trash.item.untitled', locale)}</Text>
       {(card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
       {card.content ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(card.content).replace(/\s+/g, ' ').trim()}</Text> : null}
-      {testID === 'log-created' && onBoard(card.id) ? <ActionButton label="Ir" accessibilityLabel={`Ir a ${card.title ?? 'Sin título'}`} onPress={() => { onBack(); onGo(card.id); }} /> : null}
+      {testID === 'log-created' && onBoard(card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: card.title ?? t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(card.id); }} /> : null}
     </View>
   ));
 
   return (
     <View testID="diary-view" style={styles.screen}>
       <View style={[styles.header, { borderColor: colors.gridLine }]}>
-        <ActionButton label="←" accessibilityLabel="Volver al tablero" onPress={onBack} />
-        <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>Diario</Text>
+        <ActionButton label="←" accessibilityLabel={t('workview.back', locale)} onPress={onBack} />
+        <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>{t('nav.diary', locale)}</Text>
       </View>
       {/* Barra contextual: navegación de fecha y escritura, propias de esta vista (ADR 0036). */}
       <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
-        <ActionButton label="Día" pressed={mode === 'day'} accessibilityLabel="Ver un día" onPress={() => setMode('day')} />
-        <ActionButton label="Buscar" pressed={mode === 'search'} accessibilityLabel="Buscar por fecha, tipo, etiqueta o tablero (ADR 0037)" onPress={() => setMode('search')} />
+        <ActionButton label={t('diary.mode.day', locale)} pressed={mode === 'day'} accessibilityLabel={t('diary.mode.day.accessibilityLabel', locale)} onPress={() => setMode('day')} />
+        <ActionButton label={t('tool.search', locale)} pressed={mode === 'search'} accessibilityLabel={t('diary.mode.search.accessibilityLabel', locale)} onPress={() => setMode('search')} />
         {mode === 'day' ? (
           <>
-            <ActionButton label="←" accessibilityLabel="Día anterior" onPress={() => go(shiftDay(day, -1))} />
-            <ActionButton label="Hoy" pressed={isToday} accessibilityLabel="Ir a hoy" onPress={() => go(today())} />
-            <ActionButton label="→" accessibilityLabel="Día siguiente" onPress={() => go(shiftDay(day, 1))} />
-            <ActionButton label={isToday ? 'Escribir la nota de hoy' : 'Escribir en este día'} tone="primary"
-              accessibilityLabel={isToday ? 'Escribir la nota de hoy' : `Escribir en el diario del ${longDay(day)}`} onPress={() => void write(true)} />
-            {log.entries.length > 0 ? <ActionButton label="Nueva entrada" accessibilityLabel="Nueva entrada del diario" onPress={() => void write(false)} /> : null}
+            <ActionButton label="←" accessibilityLabel={t('diary.day.prev.accessibilityLabel', locale)} onPress={() => go(shiftDay(day, -1))} />
+            <ActionButton label={t('diary.day.today', locale)} pressed={isToday} accessibilityLabel={t('diary.day.today.accessibilityLabel', locale)} onPress={() => go(today())} />
+            <ActionButton label="→" accessibilityLabel={t('diary.day.next.accessibilityLabel', locale)} onPress={() => go(shiftDay(day, 1))} />
+            <ActionButton label={isToday ? t('diary.write.today', locale) : t('diary.write.day', locale)} tone="primary"
+              accessibilityLabel={isToday ? t('diary.write.today', locale) : t('diary.write.day.accessibilityLabel', locale, { day: longDay(day, locale) })} onPress={() => void write(true)} />
+            {log.entries.length > 0 ? <ActionButton label={t('diary.write.new', locale)} accessibilityLabel={t('diary.write.new.accessibilityLabel', locale)} onPress={() => void write(false)} /> : null}
           </>
         ) : (
-          supportsTextDownload() ? <ActionButton label="Exportar" accessibilityLabel="Exportar este rango como Markdown" onPress={exportRange} /> : null
+          supportsTextDownload() ? <ActionButton label={t('diary.export', locale)} accessibilityLabel={t('diary.export.accessibilityLabel', locale)} onPress={exportRange} /> : null
         )}
       </View>
       {mode === 'search' ? (
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.row}>
-            <TextField label="Desde (AAAA-MM-DD)" value={rangeFrom} onChangeText={setRangeFrom} testID="diary-search-from" placeholder="2026-09-01" />
-            <TextField label="Hasta (AAAA-MM-DD)" value={rangeTo} onChangeText={setRangeTo} testID="diary-search-to" placeholder="2026-09-28" />
+            <TextField label={t('diary.search.from.label', locale)} value={rangeFrom} onChangeText={setRangeFrom} testID="diary-search-from" placeholder="2026-09-01" />
+            <TextField label={t('diary.search.to.label', locale)} value={rangeTo} onChangeText={setRangeTo} testID="diary-search-to" placeholder="2026-09-28" />
           </View>
           {rangeError ? <Text style={[styles.hint, { color: colors.danger }]}>{rangeError}</Text> : null}
-          <TextField label="Buscar texto" value={searchText} onChangeText={setSearchText} placeholder="palabras del título o del texto" testID="diary-search-text" />
+          <TextField label={t('diary.search.text.label', locale)} value={searchText} onChangeText={setSearchText} placeholder={t('diary.search.text.placeholder', locale)} testID="diary-search-text" />
           {exportError ? <Text testID="diary-export-error" style={[styles.hint, { color: colors.danger }]}>{exportError}</Text> : null}
           {availableTypes.length > 0 ? (
-            <View style={styles.row} accessibilityLabel="Filtrar por tipo">
-              <ActionButton label="Todos los tipos" pressed={searchTypeId === null} accessibilityLabel="Todos los tipos" onPress={() => setSearchTypeId(null)} />
+            <View style={styles.row} accessibilityLabel={t('diary.filter.type.label', locale)}>
+              <ActionButton label={t('diary.filter.type.all', locale)} pressed={searchTypeId === null} accessibilityLabel={t('diary.filter.type.all', locale)} onPress={() => setSearchTypeId(null)} />
               {availableTypes.map(([id, label]) => (
-                <ActionButton key={id} label={label} pressed={searchTypeId === id} accessibilityLabel={`Solo ${label}`} onPress={() => setSearchTypeId(id)} />
+                <ActionButton key={id} label={label} pressed={searchTypeId === id} accessibilityLabel={t('diary.filter.type.only', locale, { label })} onPress={() => setSearchTypeId(id)} />
               ))}
             </View>
           ) : null}
           {availableTags.length > 0 ? (
-            <View style={styles.row} accessibilityLabel="Filtrar por etiqueta">
-              <ActionButton label="Todas las etiquetas" pressed={searchTag === null} accessibilityLabel="Todas las etiquetas" onPress={() => setSearchTag(null)} />
+            <View style={styles.row} accessibilityLabel={t('diary.filter.tag.label', locale)}>
+              <ActionButton label={t('diary.filter.tag.all', locale)} pressed={searchTag === null} accessibilityLabel={t('diary.filter.tag.all', locale)} onPress={() => setSearchTag(null)} />
               {availableTags.map((tag) => (
-                <ActionButton key={tag} label={`#${tag}`} pressed={searchTag === tag} accessibilityLabel={`Solo #${tag}`} onPress={() => setSearchTag(tag)} />
+                <ActionButton key={tag} label={`#${tag}`} pressed={searchTag === tag} accessibilityLabel={t('diary.filter.tag.only', locale, { tag })} onPress={() => setSearchTag(tag)} />
               ))}
             </View>
           ) : null}
           {workspace.boards.length > 1 ? (
-            <View style={styles.row} accessibilityLabel="Filtrar por tablero">
-              <ActionButton label="Todos los tableros" pressed={searchBoardId === null} accessibilityLabel="Todos los tableros" onPress={() => setSearchBoardId(null)} />
+            <View style={styles.row} accessibilityLabel={t('diary.filter.board.label', locale)}>
+              <ActionButton label={t('diary.filter.board.all', locale)} pressed={searchBoardId === null} accessibilityLabel={t('diary.filter.board.all', locale)} onPress={() => setSearchBoardId(null)} />
               {workspace.boards.map((board) => (
-                <ActionButton key={board.id} label={board.title} pressed={searchBoardId === board.id} accessibilityLabel={`Solo el tablero ${board.title}`} onPress={() => setSearchBoardId(board.id)} />
+                <ActionButton key={board.id} label={board.title} pressed={searchBoardId === board.id} accessibilityLabel={t('diary.filter.board.only', locale, { title: board.title })} onPress={() => setSearchBoardId(board.id)} />
               ))}
             </View>
           ) : null}
           <Text testID="diary-search-count" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
-            {rangeError ? 'SIN RESULTADOS' : plural(filteredItems.length, 'RESULTADO', 'RESULTADOS')}
+            {rangeError ? t('diary.search.count.none', locale) : resultUnit(filteredItems.length, locale)}
           </Text>
-          {!rangeError && filteredItems.length === 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>Nada en este rango con esos filtros.</Text> : null}
+          {!rangeError && filteredItems.length === 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.search.empty', locale)}</Text> : null}
           {filteredItems.map((item) => (
             <View key={`${item.kind}-${item.card.id}`} testID={`diary-search-result-${item.card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${item.day} ${item.time} · ${rangeVerb[item.kind]} · ${typeLabel(item.card).toUpperCase()}`}</Text>
-              <Text style={[styles.title, { color: colors.textPrimary }]}>{item.card.title ?? 'Sin título'}</Text>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>{item.card.title ?? t('trash.item.untitled', locale)}</Text>
               {(item.card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(item.card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
               {item.card.content ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(item.card.content).replace(/\s+/g, ' ').trim()}</Text> : null}
-              {item.kind === 'created' && onBoard(item.card.id) ? <ActionButton label="Ir" accessibilityLabel={`Ir a ${item.card.title ?? 'Sin título'}`} onPress={() => { onBack(); onGo(item.card.id); }} /> : null}
+              {item.kind === 'created' && onBoard(item.card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: item.card.title ?? t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(item.card.id); }} /> : null}
             </View>
           ))}
         </ScrollView>
       ) : (
       <ScrollView contentContainerStyle={[styles.content, compact ? null : styles.contentWide]}>
         <View style={compact ? styles.column : styles.mainColumn}>
-          <Text accessibilityRole="header" testID="log-day" style={[styles.day, { color: colors.textPrimary }]}>{`${longDay(day)}${isToday ? ' · hoy' : ''}`}</Text>
-          <TextField label="Ir a la fecha (AAAA-MM-DD)" value={dayDraft} onChangeText={setDayDraft} testID="log-date-input"
+          <Text accessibilityRole="header" testID="log-day" style={[styles.day, { color: colors.textPrimary }]}>{`${longDay(day, locale)}${isToday ? t('diary.day.todaySuffix', locale) : ''}`}</Text>
+          <TextField label={t('diary.day.goto.label', locale)} value={dayDraft} onChangeText={setDayDraft} testID="log-date-input"
             onSubmitEditing={() => { if (isDay(dayDraft.trim())) go(dayDraft.trim()); }} placeholder="2026-09-26" />
           {dayDraft.trim() !== day && !isDay(dayDraft.trim()) && dayDraft.trim().length >= 10 ? (
-            <Text style={[styles.hint, { color: colors.danger }]}>Escribe una fecha real con la forma AAAA-MM-DD.</Text>
+            <Text style={[styles.hint, { color: colors.danger }]}>{t('diary.day.invalid', locale)}</Text>
           ) : null}
 
           <Text testID="log-summary" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
             {log.summary.entries + log.summary.created + log.summary.archived === 0
-              ? 'SIN ACTIVIDAD REGISTRADA'
-              : [plural(log.summary.entries, 'ENTRADA', 'ENTRADAS'), plural(log.summary.created, 'TARJETA CREADA', 'TARJETAS CREADAS'), plural(log.summary.archived, 'ARCHIVADA', 'ARCHIVADAS')].join(' · ')}
+              ? t('diary.summary.none', locale)
+              : [summaryUnit('entries', log.summary.entries, locale), summaryUnit('created', log.summary.created, locale), summaryUnit('archived', log.summary.archived, locale)].join(' · ')}
           </Text>
           {log.summary.tags.length > 0 ? (
             <Text testID="log-tags" style={[styles.meta, { color: colors.selection }]}>{log.summary.tags.slice(0, 5).map(({ tag, count }) => `#${tag} ${count}`).join('   ')}</Text>
           ) : null}
 
-          <Text style={[styles.section, { color: colors.textSecondary }]}>ENTRADAS</Text>
-          {log.entries.length === 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>No hay entradas este día.</Text> : log.entries.map((entry) => (
+          <Text style={[styles.section, { color: colors.textSecondary }]}>{t('diary.section.entries', locale)}</Text>
+          {log.entries.length === 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entries.empty', locale)}</Text> : log.entries.map((entry) => (
             <View key={entry.id} testID={`log-entry-${entry.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               {editing?.id === entry.id ? (
                 <>
-                  <TextField label="Título de la entrada" value={editing.title} onChangeText={(title) => setEditing({ ...editing, title })} />
-                  <TextField label="Texto de la entrada" value={editing.content} multiline onChangeText={(content) => setEditing({ ...editing, content })} placeholder="¿Qué pasó hoy?" />
+                  <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => setEditing({ ...editing, title })} />
+                  <TextField label={t('diary.entry.content.label', locale)} value={editing.content} multiline onChangeText={(content) => setEditing({ ...editing, content })} placeholder={t('diary.entry.content.placeholder', locale)} />
                   <View style={styles.row}>
-                    <ActionButton label="Guardar entrada" tone="primary" onPress={save} />
-                    <ActionButton label="Cancelar" accessibilityLabel="Cancelar la edición de la entrada" onPress={() => setEditing(null)} />
+                    <ActionButton label={t('diary.entry.save', locale)} tone="primary" onPress={save} />
+                    <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('diary.entry.cancel.accessibilityLabel', locale)} onPress={() => setEditing(null)} />
                   </View>
                 </>
               ) : (
                 <>
-                  <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.title ?? 'Sin título'}</Text>
-                  {entry.content ? <Text numberOfLines={4} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(entry.content)}</Text> : <Text style={[styles.hint, { color: colors.textSecondary }]}>Vacía.</Text>}
-                  <ActionButton label="Editar" accessibilityLabel={`Editar ${entry.title ?? 'la entrada'}`} onPress={() => setEditing({ id: entry.id, title: entry.title ?? '', content: entry.content ?? '' })} />
+                  <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.title ?? t('trash.item.untitled', locale)}</Text>
+                  {entry.content ? <Text numberOfLines={4} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(entry.content)}</Text> : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entry.empty', locale)}</Text>}
+                  <ActionButton label={t('diary.entry.edit', locale)} accessibilityLabel={t('diary.entry.edit.accessibilityLabel', locale, { title: entry.title ?? t('diary.entry.fallback', locale) })} onPress={() => setEditing({ id: entry.id, title: entry.title ?? '', content: entry.content ?? '' })} />
                 </>
               )}
             </View>
           ))}
 
-          <Text style={[styles.section, { color: colors.textSecondary }]}>CRONOLOGÍA</Text>
+          <Text style={[styles.section, { color: colors.textSecondary }]}>{t('diary.section.timeline', locale)}</Text>
           {log.created.length + log.archived.length === 0 ? (
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>Nada creado ni archivado este día.</Text>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.timeline.empty', locale)}</Text>
           ) : (
             <>
-              {timeline(log.created, 'CREADA', 'log-created')}
-              {timeline(log.archived, 'ARCHIVADA', 'log-archived')}
+              {timeline(log.created, t('diary.verb.created', locale), 'log-created')}
+              {timeline(log.archived, t('diary.verb.archived', locale), 'log-archived')}
             </>
           )}
           <Text style={[styles.hint, { color: colors.textSecondary }]}>
-            Solo se registran fechas reales: entradas del diario, tarjetas creadas desde esta versión y archivadas. Las tarjetas anteriores no tienen fecha y no aparecen; las casillas marcadas y las ediciones no se registran.
+            {t('diary.footnote', locale)}
           </Text>
         </View>
 
         <View style={compact ? styles.column : styles.sideColumn}>
-          <Text style={[styles.section, { color: colors.textSecondary }]}>{`${months[Number(month.slice(5, 7)) - 1]?.toUpperCase()} ${month.slice(0, 4)}`}</Text>
-          <View style={styles.calendar} accessibilityLabel="Calendario del mes">
-            {weekdays.map((weekday) => <Text key={weekday} style={[styles.cell, styles.weekday, { color: colors.textSecondary }]}>{weekday}</Text>)}
+          <Text style={[styles.section, { color: colors.textSecondary }]}>{`${monthsByLocale[locale][Number(month.slice(5, 7)) - 1]?.toUpperCase()} ${month.slice(0, 4)}`}</Text>
+          <View style={styles.calendar} accessibilityLabel={t('diary.calendar.label', locale)}>
+            {weekdaysByLocale[locale].map((weekday, index) => <Text key={`${weekday}-${index}`} style={[styles.cell, styles.weekday, { color: colors.textSecondary }]}>{weekday}</Text>)}
             {Array.from({ length: firstWeekday }, (_, index) => <View key={`blank-${index}`} style={styles.cell} />)}
             {Array.from({ length: monthDays }, (_, index) => {
               const value = `${month}-${String(index + 1).padStart(2, '0')}`;
@@ -245,7 +264,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
               return (
                 <View key={value} style={styles.cell}>
                   <ActionButton label={`${index + 1}${has ? '•' : ''}`} pressed={value === day}
-                    accessibilityLabel={`${longDay(value)}${has ? ', con actividad' : ''}`} onPress={() => go(value)} style={styles.dayButton} />
+                    accessibilityLabel={`${longDay(value, locale)}${has ? t('diary.calendar.day.activity', locale) : ''}`} onPress={() => go(value)} style={styles.dayButton} />
                 </View>
               );
             })}

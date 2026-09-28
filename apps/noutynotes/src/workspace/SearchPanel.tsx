@@ -1,12 +1,14 @@
 import { searchWorkspace, workspaceTags } from '@noutynotes/application';
 import type { GlobalSearch, SearchResult } from '@noutynotes/application';
 import type { CardId, CardTypeId, Workspace, WorkspaceId } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import type { Locale } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { Dialog } from '../components/Dialog';
+import { t } from '../i18n';
 
 interface SearchPanelProps {
   readonly visible: boolean;
@@ -28,7 +30,9 @@ type Scope = 'project' | 'all';
 type Pending = { readonly kind: 'rename' | 'remove'; readonly tag: string; readonly count: number } | null;
 type Global = { readonly query: string; readonly found: GlobalSearch } | 'searching' | null;
 
-const plural = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
+type PluralUnit = 'card' | 'project' | 'resultUpper' | 'projectUpper';
+const unit = (base: PluralUnit, count: number, locale: Locale) =>
+  t(count === 1 ? `unit.${base}.one` : `unit.${base}.many`, locale, { count: String(count) });
 
 /**
  * Búsqueda en el proyecto abierto (ADR 0019) o en todos los proyectos (ADR 0020). La local es en vivo;
@@ -38,6 +42,7 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? `1 $
 export function SearchPanel(props: SearchPanelProps) {
   const { visible, compact, workspace, busy, onGo, onRenameTag, onRemoveTag, onClose } = props;
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [scope, setScope] = useState<Scope>('project');
   const [query, setQuery] = useState('');
@@ -51,7 +56,7 @@ export function SearchPanel(props: SearchPanelProps) {
     .map((type) => ({ type, count: workspace.cards.filter((card) => card.typeId === type.id).length }))
     .filter(({ count }) => count > 0);
   const hasQuery = query.trim() !== '' || typeId !== undefined;
-  const projects = plural(props.projectCount, 'proyecto', 'proyectos');
+  const projects = unit('project', props.projectCount, locale);
   const toggleTag = (tag: string) => {
     const token = `#${tag}`;
     const words = query.trim().split(/\s+/).filter(Boolean);
@@ -77,55 +82,55 @@ export function SearchPanel(props: SearchPanelProps) {
     <View key={key} testID={`search-result-${key}`} style={[styles.result, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text numberOfLines={2} style={[styles.resultTitle, { color: colors.textPrimary }]}>{result.title}</Text>
       <Text numberOfLines={1} style={[styles.meta, { color: colors.textSecondary }]}>
-        {`${result.typeLabel.toUpperCase()} · ${result.boards.length > 0 ? result.boards.map((board) => board.title).join(', ') : 'sin tablero'}`}
+        {`${result.typeLabel.toUpperCase()} · ${result.boards.length > 0 ? result.boards.map((board) => board.title).join(', ') : t('search.noBoard', locale)}`}
       </Text>
       {result.tags.length > 0 ? <Text numberOfLines={1} style={[styles.meta, { color: colors.selection }]}>{result.tags.map((tag) => `#${tag}`).join('  ')}</Text> : null}
       {result.excerpt !== '' ? <Text numberOfLines={2} style={[styles.excerpt, { color: colors.textPrimary }]}>{result.excerpt}</Text> : null}
-      <ActionButton label="Ir" accessibilityLabel={`Ir a ${result.title}`} onPress={go} />
+      <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: result.title })} onPress={go} />
     </View>
   );
 
   return (
-    <Dialog visible={visible} title="Buscar" compact={compact} onClose={close} testID="search-panel">
-      <View style={styles.row} accessibilityLabel="Dónde buscar">
-        <ActionButton label="Este proyecto" accessibilityLabel="Buscar solo en este proyecto" pressed={scope === 'project'} onPress={() => setScope('project')} />
-        <ActionButton label={`Todos · ${props.projectCount}`} accessibilityLabel={`Buscar en todos los proyectos (${props.projectCount})`} pressed={scope === 'all'} onPress={() => setScope('all')} />
+    <Dialog visible={visible} title={t('tool.search', locale)} compact={compact} onClose={close} testID="search-panel">
+      <View style={styles.row} accessibilityLabel={t('search.where', locale)}>
+        <ActionButton label={t('search.scope.project', locale)} accessibilityLabel={t('search.scope.project.accessibilityLabel', locale)} pressed={scope === 'project'} onPress={() => setScope('project')} />
+        <ActionButton label={t('search.scope.all.label', locale, { count: String(props.projectCount) })} accessibilityLabel={t('search.scope.all.accessibilityLabel', locale, { count: String(props.projectCount) })} pressed={scope === 'all'} onPress={() => setScope('all')} />
       </View>
-      <TextField label="Buscar" value={query} onChangeText={setQuery} placeholder="palabras o #etiqueta" testID="search-input"
+      <TextField label={t('tool.search', locale)} value={query} onChangeText={setQuery} placeholder={t('search.input.placeholder', locale)} testID="search-input"
         {...(scope === 'all' ? { onSubmitEditing: () => void searchAll() } : {})} />
 
       {scope === 'project' ? (
         <>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>
-            Busca en títulos, textos, etiquetas, enlaces y tipos de este proyecto, sin distinguir mayúsculas ni acentos. La Papelera no se incluye.
+            {t('search.hint.project', locale)}
           </Text>
 
           {types.length > 1 ? (
             <>
-              <Text style={[styles.section, { color: colors.textSecondary }]}>TIPOS</Text>
+              <Text style={[styles.section, { color: colors.textSecondary }]}>{t('search.section.types', locale)}</Text>
               <View style={styles.row}>
                 {types.map(({ type, count }) => (
                   <ActionButton key={type.id} label={`${type.label} · ${count}`} pressed={typeId === type.id}
-                    accessibilityLabel={`${typeId === type.id ? 'Quitar el filtro' : 'Solo'} ${type.label} (${plural(count, 'tarjeta', 'tarjetas')})`}
+                    accessibilityLabel={`${t(typeId === type.id ? 'search.filter.remove' : 'search.filter.only', locale)} ${type.label} (${unit('card', count, locale)})`}
                     onPress={() => setTypeId((current) => (current === type.id ? undefined : type.id))} />
                 ))}
               </View>
             </>
           ) : null}
 
-          <Text style={[styles.section, { color: colors.textSecondary }]}>ETIQUETAS DEL PROYECTO</Text>
+          <Text style={[styles.section, { color: colors.textSecondary }]}>{t('search.section.tags', locale)}</Text>
           {tags.length === 0 ? (
-            <Text testID="search-no-tags" style={[styles.hint, { color: colors.textSecondary }]}>Todavía no hay etiquetas. Añádelas desde el editor de una tarjeta.</Text>
+            <Text testID="search-no-tags" style={[styles.hint, { color: colors.textSecondary }]}>{t('search.tags.empty', locale)}</Text>
           ) : (
             <View style={styles.tags}>
               {tags.map(({ tag, count }) => {
                 const active = query.split(/\s+/).includes(`#${tag}`);
                 return (
                   <View key={tag} style={[styles.tagRow, { borderColor: colors.gridLine }]}>
-                    <ActionButton label={`#${tag} · ${count}`} accessibilityLabel={`${active ? 'Quitar el filtro' : 'Filtrar por'} #${tag} (${plural(count, 'tarjeta', 'tarjetas')})`}
+                    <ActionButton label={`#${tag} · ${count}`} accessibilityLabel={`${t(active ? 'search.filter.remove' : 'search.filter.by', locale)} #${tag} (${unit('card', count, locale)})`}
                       pressed={active} onPress={() => toggleTag(tag)} />
-                    <ActionButton label="Renombrar" accessibilityLabel={`Renombrar la etiqueta ${tag}`} onPress={() => { setNewName(tag); setPending({ kind: 'rename', tag, count }); }} />
-                    <ActionButton label="Quitar" accessibilityLabel={`Quitar la etiqueta ${tag} de todas las tarjetas`} onPress={() => setPending({ kind: 'remove', tag, count })} />
+                    <ActionButton label={t('search.tag.rename', locale)} accessibilityLabel={t('search.tag.rename.accessibilityLabel', locale, { tag })} onPress={() => { setNewName(tag); setPending({ kind: 'rename', tag, count }); }} />
+                    <ActionButton label={t('search.tag.remove', locale)} accessibilityLabel={t('search.tag.remove.accessibilityLabel', locale, { tag })} onPress={() => setPending({ kind: 'remove', tag, count })} />
                   </View>
                 );
               })}
@@ -136,26 +141,26 @@ export function SearchPanel(props: SearchPanelProps) {
             <View testID="tag-confirmation" style={[styles.confirm, { borderColor: colors.danger, backgroundColor: colors.surface }]}>
               <Text style={[styles.body, { color: colors.textPrimary }]}>
                 {pending.kind === 'rename'
-                  ? `Renombrar #${pending.tag} en ${plural(pending.count, 'tarjeta', 'tarjetas')} (y en la Papelera). Si el nombre nuevo ya existe, se fusionan.`
-                  : `¿Quitar #${pending.tag} de ${plural(pending.count, 'tarjeta', 'tarjetas')} (y de la Papelera)? El texto de las tarjetas no cambia.`}
+                  ? t('search.tag.rename.body', locale, { tag: pending.tag, count: unit('card', pending.count, locale) })
+                  : t('search.tag.remove.body', locale, { tag: pending.tag, count: unit('card', pending.count, locale) })}
               </Text>
-              {pending.kind === 'rename' ? <TextField label="Nuevo nombre" value={newName} onChangeText={setNewName} placeholder="#nombre" testID="tag-rename-input" /> : null}
+              {pending.kind === 'rename' ? <TextField label={t('search.tag.newName.label', locale)} value={newName} onChangeText={setNewName} placeholder={t('search.tag.newName.placeholder', locale)} testID="tag-rename-input" /> : null}
               <View style={styles.row}>
-                <ActionButton label={pending.kind === 'rename' ? 'Renombrar' : 'Quitar de todas'} tone="primary"
-                  accessibilityLabel={pending.kind === 'rename' ? `Confirmar renombrar ${pending.tag}` : `Confirmar quitar ${pending.tag} de todas`}
+                <ActionButton label={pending.kind === 'rename' ? t('search.tag.rename', locale) : t('search.tag.remove.confirm', locale)} tone="primary"
+                  accessibilityLabel={pending.kind === 'rename' ? t('search.tag.rename.confirm.accessibilityLabel', locale, { tag: pending.tag }) : t('search.tag.remove.confirm.accessibilityLabel', locale, { tag: pending.tag })}
                   onPress={() => void confirm()} />
-                <ActionButton label="Cancelar" accessibilityLabel="Cancelar el cambio de etiqueta" onPress={() => setPending(null)} />
+                <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('search.tag.cancel.accessibilityLabel', locale)} onPress={() => setPending(null)} />
               </View>
             </View>
           ) : null}
 
           <Text testID="search-count" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
-            {!hasQuery ? 'RESULTADOS' : plural(results.length, 'RESULTADO', 'RESULTADOS')}
+            {!hasQuery ? t('search.section.results', locale) : unit('resultUpper', results.length, locale)}
           </Text>
           {!hasQuery ? (
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>Escribe palabras, toca una etiqueta o elige un tipo.</Text>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('search.hint.empty', locale)}</Text>
           ) : results.length === 0 ? (
-            <Text testID="search-empty" style={[styles.hint, { color: colors.textSecondary }]}>{query.trim() === '' ? 'Sin resultados.' : `Sin resultados para «${query.trim()}».`}</Text>
+            <Text testID="search-empty" style={[styles.hint, { color: colors.textSecondary }]}>{query.trim() === '' ? t('search.empty.noQuery', locale) : t('search.empty.query', locale, { query: query.trim() })}</Text>
           ) : (
             <View style={styles.results}>
               {results.map((result) => resultCard(result, () => { close(); onGo(result); }, result.cardId))}
@@ -165,28 +170,31 @@ export function SearchPanel(props: SearchPanelProps) {
       ) : (
         <>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>
-            {`Lee los ${projects} cada vez que buscas; con muchos puede tardar. Busca en títulos, textos, etiquetas, enlaces y tipos. La Papelera no se incluye.`}
+            {t('search.hint.all', locale, { projects })}
           </Text>
-          <ActionButton label={`Buscar en ${projects}`} tone="primary" accessibilityLabel="Buscar ahora en todos los proyectos" onPress={() => void searchAll()} />
+          <ActionButton label={t('search.all.button', locale, { projects })} tone="primary" accessibilityLabel={t('search.all.button.accessibilityLabel', locale)} onPress={() => void searchAll()} />
           {global === 'searching' ? (
-            <Text testID="search-all-progress" accessibilityLiveRegion="polite" style={[styles.hint, { color: colors.textSecondary }]}>{`Buscando en ${projects}…`}</Text>
+            <Text testID="search-all-progress" accessibilityLiveRegion="polite" style={[styles.hint, { color: colors.textSecondary }]}>{t('search.all.progress', locale, { projects })}</Text>
           ) : global ? (
             <>
               <Text testID="search-all-count" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
-                {`${plural(global.found.projects.reduce((sum, project) => sum + project.results.length, 0), 'RESULTADO', 'RESULTADOS')} EN ${plural(global.found.projects.length, 'PROYECTO', 'PROYECTOS')}`}
+                {t('search.all.count', locale, {
+                  results: unit('resultUpper', global.found.projects.reduce((sum, project) => sum + project.results.length, 0), locale),
+                  projects: unit('projectUpper', global.found.projects.length, locale),
+                })}
               </Text>
               {global.query !== query.trim() ? (
-                <Text testID="search-all-stale" style={[styles.hint, { color: colors.textSecondary }]}>{`Resultados de «${global.query}». Pulsa «Buscar» para actualizar.`}</Text>
+                <Text testID="search-all-stale" style={[styles.hint, { color: colors.textSecondary }]}>{t('search.all.stale', locale, { query: global.query })}</Text>
               ) : null}
               {global.found.unreadable.map((entry) => (
-                <Text key={entry.workspaceId} testID="search-all-unreadable" style={[styles.hint, { color: colors.danger }]}>{`No se pudo leer «${entry.name}»: ${entry.message}`}</Text>
+                <Text key={entry.workspaceId} testID="search-all-unreadable" style={[styles.hint, { color: colors.danger }]}>{t('search.all.unreadable', locale, { name: entry.name, message: entry.message })}</Text>
               ))}
               {global.found.projects.length === 0 ? (
-                <Text testID="search-empty" style={[styles.hint, { color: colors.textSecondary }]}>{`Sin resultados para «${global.query}».`}</Text>
+                <Text testID="search-empty" style={[styles.hint, { color: colors.textSecondary }]}>{t('search.empty.query', locale, { query: global.query })}</Text>
               ) : global.found.projects.map((project) => (
                 <View key={project.workspaceId} testID={`search-project-${project.workspaceId}`} style={styles.results}>
                   <Text accessibilityRole="header" style={[styles.project, { color: colors.textPrimary }]}>
-                    {`${project.name}${project.workspaceId === workspace.id ? ' (este proyecto)' : ''}`}
+                    {`${project.name}${project.workspaceId === workspace.id ? t('search.project.current', locale) : ''}`}
                   </Text>
                   {project.results.map((result) => resultCard(result, () => {
                     close();

@@ -1,6 +1,6 @@
 import { createEmptyWorkspaceNamed } from '@noutynotes/application';
 import type { WorkspaceStorage, WorkspaceSummary } from '@noutynotes/application';
-import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
+import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import type { ThemePreference } from '@noutynotes/ui';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -10,22 +10,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandMark } from '../components/BrandMark';
 import { TextField } from '../components/controls';
 import { useHydrated } from '../components/useHydrated';
-import { MEMORY_LOSS_NOTICE, describeFailure } from '../session/messages';
+import { t } from '../i18n';
+import { describeFailure } from '../session/messages';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions, singleFlight } from './actions';
 
-const themeOptions: { value: ThemePreference; label: string }[] = [
-  { value: 'light', label: 'Claro' },
-  { value: 'dark', label: 'Oscuro' },
-  { value: 'system', label: 'Sistema' },
+const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' | 'settings.theme.dark' | 'settings.theme.system'; accessibilityLabelKey: 'home.theme.light.label' | 'home.theme.dark.label' | 'home.theme.system.label' }[] = [
+  { value: 'light', labelKey: 'settings.theme.light', accessibilityLabelKey: 'home.theme.light.label' },
+  { value: 'dark', labelKey: 'settings.theme.dark', accessibilityLabelKey: 'home.theme.dark.label' },
+  { value: 'system', labelKey: 'settings.theme.system', accessibilityLabelKey: 'home.theme.system.label' },
 ];
-
-// El selector de plantillas llegará en una fase posterior.
-const reservedActions = [
-  { key: 'template', title: 'Usar una plantilla', description: 'Un pequeño punto de partida.', symbol: '▦' },
-] as const;
-
-const untitledWorkspace = 'Espacio sin título';
 
 /** Espacios guardados en la memoria de esta sesión; se vuelven a leer al regresar a la pantalla. */
 function useSessionWorkspaces(): readonly WorkspaceSummary[] {
@@ -43,6 +37,7 @@ function useSessionWorkspaces(): readonly WorkspaceSummary[] {
 
 export function HomeScreen() {
   const { theme, preference, setPreference } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const compact = resolveLayoutMode(useWindowWidth()) === 'compact';
   const [focusedTheme, setFocusedTheme] = useState<ThemePreference | null>(null);
@@ -54,6 +49,11 @@ export function HomeScreen() {
   const hydrated = useHydrated();
   const [createError, setCreateError] = useState<string | null>(null);
   const [focusedAction, setFocusedAction] = useState<string | null>(null);
+  const untitledWorkspace = t('home.workspace.untitled', locale);
+  // El selector de plantillas llegará en una fase posterior.
+  const reservedActions = [
+    { key: 'template' as const, title: t('home.template.title', locale), description: t('home.template.description', locale), symbol: '▦' },
+  ];
 
   const openWorkspace = (id: string) => router.push({ pathname: '/workspace', params: { id } });
 
@@ -88,9 +88,10 @@ export function HomeScreen() {
     // dejarían de estar disponibles, así que nunca se descartan sin confirmación (ADR 0011).
     const pending = session.unexported.length;
     if (pending > 0 && Platform.OS === 'web') {
-      const confirmed = window.confirm(`Tienes ${pending === 1 ? '1 espacio' : `${pending} espacios`} del navegador sin exportar. Si abres una carpeta, dejarán de estar disponibles en esta sesión. ¿Abrir la carpeta de todos modos?`);
+      const pendingText = t(pending === 1 ? 'home.openFolder.pending.one' : 'home.openFolder.pending.many', locale, { count: String(pending) });
+      const confirmed = window.confirm(t('home.openFolder.confirm', locale, { pending: pendingText }));
       if (!confirmed) {
-        setCreateError('No se abrió la carpeta. Exporta antes como ZIP los espacios marcados «SIN EXPORTAR».');
+        setCreateError(t('home.openFolder.cancelled', locale));
         return;
       }
     }
@@ -138,12 +139,12 @@ export function HomeScreen() {
             <Text style={[styles.brandName, { color: colors.textPrimary }]}>NoutyNotes</Text>
           </View>
 
-          <View accessibilityLabel="Apariencia" style={[styles.themeControl, { borderColor: colors.border }]}>
-            {themeOptions.map(({ value, label }) => (
+          <View accessibilityLabel={t('home.appearance.label', locale)} style={[styles.themeControl, { borderColor: colors.border }]}>
+            {themeOptions.map(({ value, labelKey, accessibilityLabelKey }) => (
               <Pressable
                 key={value}
                 accessibilityRole="button"
-                accessibilityLabel={`Tema ${label.toLowerCase()}`}
+                accessibilityLabel={t(accessibilityLabelKey, locale)}
                 accessibilityState={{ selected: preference === value }}
                 {...(Platform.OS === 'web' ? { 'aria-pressed': preference === value } : {})}
                 onPress={() => setPreference(value)}
@@ -158,7 +159,7 @@ export function HomeScreen() {
                 ]}
               >
                 <Text style={[styles.themeLabel, { color: preference === value ? colors.accentText : colors.textPrimary }]}>
-                  {label}
+                  {t(labelKey, locale)}
                 </Text>
               </Pressable>
             ))}
@@ -166,26 +167,26 @@ export function HomeScreen() {
         </View>
 
         <View style={[styles.metaRow, { borderColor: colors.gridLine }]}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>TU MESA DE IDEAS</Text>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>EDICIÓN INICIAL / 01</Text>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('home.eyebrow.desk', locale)}</Text>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('home.eyebrow.edition', locale)}</Text>
         </View>
 
         <View style={[styles.main, { flexDirection: compact ? 'column' : 'row', gap: compact ? 36 : 56 }]}>
           <View testID="home-introduction" style={[styles.introduction, compact ? styles.stackedSection : null]}>
             <View style={[styles.label, { backgroundColor: colors.accent, borderColor: colors.border }]}>
-              <Text style={[styles.eyebrow, { color: colors.accentText }]}>MENOS RUIDO. MÁS IDEAS.</Text>
+              <Text style={[styles.eyebrow, { color: colors.accentText }]}>{t('home.eyebrow.tagline', locale)}</Text>
             </View>
             <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary, fontSize: compact ? 44 : 64 }]}>
-              Dale un lugar{ '\n' }a tus ideas.
+              {t('home.title.line1', locale)}{ '\n' }{t('home.title.line2', locale)}
             </Text>
             <Text style={[styles.description, { color: colors.textSecondary }]}>
-              Notas, imágenes y conexiones.{ '\n' }Un espacio propio para pensar con calma.
+              {t('home.description.line1', locale)}{ '\n' }{t('home.description.line2', locale)}
             </Text>
 
             <View style={[styles.note, { backgroundColor: colors.note, borderColor: colors.border }]}>
-              <Text style={[styles.eyebrow, { color: colors.noteText }]}>UNA PEQUEÑA DECLARACIÓN</Text>
+              <Text style={[styles.eyebrow, { color: colors.noteText }]}>{t('home.note.eyebrow', locale)}</Text>
               <Text style={[styles.noteText, { color: colors.noteText }]}>
-                Tus ideas merecen{ '\n' }un espacio que sea tuyo.
+                {t('home.note.line1', locale)}{ '\n' }{t('home.note.line2', locale)}
               </Text>
               <View style={[styles.noteLine, { backgroundColor: colors.noteText }]} />
             </View>
@@ -193,18 +194,18 @@ export function HomeScreen() {
 
           <View testID="home-workspace" style={[styles.workspaceSection, compact ? styles.stackedSection : null]}>
             <View style={[styles.folderTab, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.eyebrow, { color: colors.textPrimary }]}>001 / TU ESPACIO</Text>
+              <Text style={[styles.eyebrow, { color: colors.textPrimary }]}>{t('home.folderTab', locale)}</Text>
             </View>
             <View style={[styles.workspace, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text accessibilityRole="header" style={[styles.panelTitle, { color: colors.textPrimary }]}>
-                Todo empieza{ '\n' }con una idea.
+                {t('home.panelTitle.line1', locale)}{ '\n' }{t('home.panelTitle.line2', locale)}
               </Text>
               <Text style={[styles.panelDescription, { color: colors.textSecondary }]}>
-                Crea un espacio vacío y empieza a ordenar tus ideas.
+                {t('home.panelDescription', locale)}
               </Text>
               <View style={styles.createForm}>
                 <TextField
-                  label="Nombre del nuevo espacio"
+                  label={t('home.nameField.label', locale)}
                   value={draftName}
                   onChangeText={setDraftName}
                   placeholder={untitledWorkspace}
@@ -220,8 +221,8 @@ export function HomeScreen() {
               <View style={styles.actions}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Crear un espacio"
-                  accessibilityHint={session.mode === 'folder' ? 'Crea un espacio en la carpeta seleccionada' : 'Crea un espacio vacío en la memoria de esta sesión'}
+                  accessibilityLabel={t('home.create.label', locale)}
+                  accessibilityHint={session.mode === 'folder' ? t('home.create.hint.folder', locale) : t('home.create.hint.memory', locale)}
                   accessibilityState={{ busy: creating, disabled: creating }}
                   disabled={creating}
                   onPress={() => void createWorkspace()}
@@ -230,8 +231,8 @@ export function HomeScreen() {
                 >
                   <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.create}</Text>
                   <View style={styles.actionText}>
-                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{creating ? 'Creando el espacio…' : 'Crear un espacio'}</Text>
-                    <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>Una página en blanco para lo que viene.</Text>
+                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{creating ? t('home.create.title.creating', locale) : t('home.create.title', locale)}</Text>
+                    <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.create.description', locale)}</Text>
                   </View>
                   <View style={[styles.actionBadge, { backgroundColor: colors.accent, borderColor: colors.border }]}>
                     <Text style={[styles.actionSymbol, { color: colors.accentText }]}>+</Text>
@@ -241,7 +242,7 @@ export function HomeScreen() {
                   testID="open-folder"
                   disabled={!hydrated || !session.folderSupported}
                   accessibilityRole="button"
-                  accessibilityLabel={session.mode === 'folder' ? 'Cambiar carpeta' : 'Abrir una carpeta'}
+                  accessibilityLabel={session.mode === 'folder' ? t('home.folder.change.label', locale) : t('home.folder.open.label', locale)}
                   accessibilityState={{ disabled: !hydrated || !session.folderSupported }}
                   onPress={() => void openFolder()}
                   {...actionFocus('folder')}
@@ -249,9 +250,9 @@ export function HomeScreen() {
                 >
                   <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.folder}</Text>
                   <View style={styles.actionText}>
-                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{session.mode === 'folder' ? 'Cambiar carpeta' : 'Abrir una carpeta'}</Text>
+                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{session.mode === 'folder' ? t('home.folder.change.label', locale) : t('home.folder.open.label', locale)}</Text>
                     <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
-                      {session.folderSupported ? 'Elige una carpeta local para abrir y guardar espacios.' : 'Este navegador no permite abrir carpetas locales. Usa «Importar un ZIP».'}
+                      {session.folderSupported ? t('home.folder.description.supported', locale) : t('home.folder.description.unsupported', locale)}
                     </Text>
                   </View>
                   <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↗</Text>
@@ -260,16 +261,16 @@ export function HomeScreen() {
                   <Pressable
                     testID="reopen-folder"
                     accessibilityRole="button"
-                    accessibilityLabel={`Reabrir la carpeta ${session.savedFolder.name}`}
-                    accessibilityHint="Vuelve a abrir la carpeta que elegiste la última vez"
+                    accessibilityLabel={t('home.reopen.label', locale, { name: session.savedFolder.name })}
+                    accessibilityHint={t('home.reopen.hint', locale)}
                     onPress={() => void reopenFolder()}
                     {...actionFocus('reopen')}
                     style={[styles.action, actionBorder('reopen')]}
                   >
                     <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.reopen}</Text>
                     <View style={styles.actionText}>
-                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{`Reabrir «${session.savedFolder.name}»`}</Text>
-                      <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>La carpeta que usaste la última vez en este dispositivo.</Text>
+                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('home.reopen.label', locale, { name: session.savedFolder.name })}</Text>
+                      <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.reopen.description', locale)}</Text>
                     </View>
                     <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>↺</Text>
                   </Pressable>
@@ -279,8 +280,8 @@ export function HomeScreen() {
                     testID="import-zip"
                     disabled={!session.archiveSupported}
                     accessibilityRole="button"
-                    accessibilityLabel="Importar un ZIP"
-                    accessibilityHint="Elige un archivo .zip exportado desde NoutyNotes"
+                    accessibilityLabel={t('home.zip.label', locale)}
+                    accessibilityHint={t('home.zip.hint', locale)}
                     accessibilityState={{ disabled: !session.archiveSupported }}
                     onPress={() => void importZip()}
                     {...actionFocus('zip')}
@@ -288,8 +289,8 @@ export function HomeScreen() {
                   >
                     <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.zip}</Text>
                     <View style={styles.actionText}>
-                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>Importar un ZIP</Text>
-                      <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>Abre un espacio exportado. Funciona en cualquier navegador.</Text>
+                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('home.zip.label', locale)}</Text>
+                      <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.zip.description', locale)}</Text>
                     </View>
                     <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>⤓</Text>
                   </Pressable>
@@ -300,7 +301,7 @@ export function HomeScreen() {
                     disabled
                     accessibilityRole="button"
                     accessibilityLabel={action.title}
-                    accessibilityHint="Disponible en una próxima versión"
+                    accessibilityHint={t('home.reserved.hint', locale)}
                     accessibilityState={{ disabled: true }}
                     style={[styles.action, actionBorder(action.key)]}
                   >
@@ -316,32 +317,28 @@ export function HomeScreen() {
               <View testID="memory-notice" style={[styles.comingSoon, { backgroundColor: colors.surfaceRaised }]}>
                 <Text style={[styles.comingSoonText, { color: colors.textPrimary }]}>
                   {session.mode === 'folder'
-                    ? (Platform.OS === 'web'
-                      ? 'CARPETA LOCAL · Los cambios se guardan en la carpeta elegida. Al recargar, vuelve a seleccionarla para reconectar. Los espacios de memoria no se mezclan.'
-                      : 'CARPETA LOCAL · Los cambios se guardan en la carpeta elegida. Al volver a abrir la app, usa «Reabrir» para reconectar. Los espacios de memoria no se mezclan.')
-                    : Platform.OS === 'web'
-                      ? `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Exporta cada espacio como ZIP para conservarlo e impórtalo después, en cualquier navegador; o elige una carpeta compatible. Las plantillas llegarán después.`
-                      : `SOLO EN MEMORIA · ${MEMORY_LOSS_NOTICE} Elige una carpeta para guardar tus espacios en archivos. Las plantillas llegarán después.`}
+                    ? t(Platform.OS === 'web' ? 'home.notice.folder.web' : 'home.notice.folder.native', locale)
+                    : t(Platform.OS === 'web' ? 'home.notice.memory.web' : 'home.notice.memory.native', locale, { loss: t('home.notice.memoryLoss', locale) })}
                 </Text>
               </View>
               <View testID="session-workspaces" style={styles.sessionList}>
-                <Text accessibilityRole="header" style={[styles.eyebrow, { color: colors.textSecondary }]}>{session.mode === 'folder' ? 'ESPACIOS DE LA CARPETA' : 'ESPACIOS DE ESTA SESIÓN'}</Text>
+                <Text accessibilityRole="header" style={[styles.eyebrow, { color: colors.textSecondary }]}>{t(session.mode === 'folder' ? 'home.sessionList.folder' : 'home.sessionList.session', locale)}</Text>
                 {workspaces.length === 0 ? (
-                  <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>Todavía no hay espacios en esta sesión.</Text>
+                  <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.sessionList.empty', locale)}</Text>
                 ) : (
                   workspaces.map((workspace) => (
                     <Pressable
                       key={workspace.id}
                       accessibilityRole="button"
-                      accessibilityLabel={`Abrir ${workspace.name}`}
-                      {...(session.unexported.includes(workspace.id) ? { accessibilityHint: 'Tiene cambios sin exportar a ZIP' } : {})}
+                      accessibilityLabel={t('home.workspace.open.label', locale, { name: workspace.name })}
+                      {...(session.unexported.includes(workspace.id) ? { accessibilityHint: t('home.workspace.unexported.hint', locale) } : {})}
                       onPress={() => openWorkspace(workspace.id)}
                       {...actionFocus(`open:${workspace.id}`)}
                       style={[styles.sessionItem, actionBorder(`open:${workspace.id}`)]}
                     >
                       <Text style={[styles.actionTitle, styles.sessionName, { color: colors.textPrimary }]}>{workspace.name}</Text>
                       {session.unexported.includes(workspace.id) ? (
-                        <Text testID={`unexported-${workspace.id}`} style={[styles.unexported, { color: colors.noteText, backgroundColor: colors.note }]}>SIN EXPORTAR</Text>
+                        <Text testID={`unexported-${workspace.id}`} style={[styles.unexported, { color: colors.noteText, backgroundColor: colors.note }]}>{t('home.workspace.unexported.badge', locale)}</Text>
                       ) : null}
                       <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>→</Text>
                     </Pressable>
@@ -353,8 +350,8 @@ export function HomeScreen() {
         </View>
 
         <View style={[styles.footer, { borderColor: colors.border }]}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>PENSADO PARA LO LOCAL.</Text>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>NOUTYNOTES / 0.1</Text>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('home.footer.tagline', locale)}</Text>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('home.footer.version', locale)}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

@@ -1357,9 +1357,13 @@ test('Configuración: idioma de la interfaz (ES/EN) traduce la barra, la navegac
   // El contenido de la nota, en español, no cambia.
   await expect(page.getByText('Nota en español')).toBeVisible();
 
-  // Es del dispositivo: sobrevive a volver al inicio.
+  // Es del dispositivo: sobrevive a volver al inicio. Desde E7a (ADR 0040) Inicio también se traduce,
+  // así que aquí se crea el espacio con las etiquetas en inglés, no con el helper en español.
   await page.goto('./');
-  await createWorkspace(page, 'Otro idioma');
+  await expect(page.getByRole('heading', { name: /Give your ideas/ })).toBeVisible();
+  await page.getByLabel('New space name').fill('Otro idioma');
+  await button(page, 'Create a space').click();
+  await expect(page.getByRole('heading', { name: 'Otro idioma', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Add note' })).toBeVisible();
 
   // Volver a español (la interfaz sigue en inglés aquí: se abre con sus propios textos).
@@ -1369,6 +1373,86 @@ test('Configuración: idioma de la interfaz (ES/EN) traduce la barra, la navegac
   await expect(page.getByRole('heading', { name: 'Configuración' })).toBeVisible();
   await button(page, 'Cerrar configuración').click();
   await expect(page.getByRole('button', { name: 'Añadir nota' })).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Idioma (E7a, ADR 0040): Inicio, Papelera, enlaces, búsqueda, Diario, Assets y Archivo también cambian a inglés', async ({ page }) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Language extended');
+
+  await openSettings(page);
+  await button(page, 'Usar inglés').click();
+  await button(page, 'Close settings').click();
+
+  // Inicio: vuelve a mostrarse en inglés (el idioma es del dispositivo, como el tema). Recargar pierde
+  // los espacios en memoria (ADR 0011): no se reabre «Language extended», se crea uno nuevo con el
+  // formulario ya en inglés para seguir probando el resto de superficies.
+  await page.goto('./');
+  await expect(page.getByRole('heading', { name: /Give your ideas/ })).toBeVisible();
+  await expect(button(page, 'Create a space')).toBeVisible();
+  await page.getByLabel('New space name').fill('Language extended 2');
+  await button(page, 'Create a space').click();
+  await expect(page.getByRole('heading', { name: 'Language extended 2', exact: true })).toBeVisible();
+
+  const openMore = async () => {
+    if (isCompactWidth(page)) {
+      await button(page, 'More sections').click();
+      await expect(page.getByTestId('more-sheet')).toBeVisible();
+    }
+  };
+
+  // Papelera: vacía, en inglés (en compacto va directa en la barra, no dentro de «More»).
+  await button(page, 'Open Trash (0)').click();
+  await expect(page.getByRole('heading', { name: 'Trash' })).toBeVisible();
+  await expect(page.getByTestId('trash-empty')).toHaveText('The Trash is empty.');
+  await button(page, 'Close trash').click();
+  await expect(page.getByTestId('trash-panel')).toHaveCount(0);
+
+  // Enlace: título y campos del diálogo.
+  await button(page, 'Add link').click();
+  const linkDialog = page.getByTestId('link-dialog');
+  await expect(linkDialog).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New link' })).toBeVisible();
+  await expect(page.getByLabel('Address')).toBeVisible();
+  await expect(page.getByLabel('Title (optional)')).toBeVisible();
+  await button(page, 'Cancel the new link').click();
+  await expect(linkDialog).toHaveCount(0);
+
+  // Búsqueda: título del panel y ámbito.
+  await button(page, 'Open search').click();
+  await expect(page.getByRole('heading', { name: 'Search', exact: true })).toBeVisible();
+  await expect(button(page, 'Search only in this project')).toBeVisible();
+  await button(page, 'Close search').click();
+  await expect(page.getByTestId('search-panel')).toHaveCount(0);
+
+  // Diario: encabezado, modo y calendario del mes.
+  await openMore();
+  await button(page, 'Open diary').click();
+  await expect(page.getByRole('heading', { name: 'Diary' })).toBeVisible();
+  await expect(button(page, 'View a day')).toBeVisible();
+  await expect(button(page, 'Go to today')).toBeVisible();
+  await button(page, 'Back to the board').click();
+  await expect(page.getByTestId('diary-view')).toBeHidden();
+
+  // Assets: encabezado, importar y estado vacío.
+  await openMore();
+  await button(page, 'Open assets').click();
+  await expect(page.getByRole('heading', { name: 'Assets' })).toBeVisible();
+  await expect(button(page, 'Import an image to the library')).toBeVisible();
+  await expect(page.getByTestId('assets-empty')).toContainText('This project has no files yet.');
+  await button(page, 'Back to the board').click();
+  await expect(page.getByTestId('assets-view')).toBeHidden();
+
+  // Archivo: encabezado y estado vacío.
+  await openMore();
+  await button(page, 'Open Archive (0)').click();
+  await expect(page.getByRole('heading', { name: 'Archive' })).toBeVisible();
+  await expect(page.getByTestId('archive-empty')).toHaveText('Nothing is archived.');
+  await button(page, 'Back to the board').click();
+  await expect(page.getByTestId('archive-view')).toBeHidden();
+
   expect(runtimeErrors).toEqual([]);
 });
 

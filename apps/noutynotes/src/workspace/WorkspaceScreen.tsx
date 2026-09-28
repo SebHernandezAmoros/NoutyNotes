@@ -952,7 +952,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             </View>
             {workspace ? (
               <>
-                <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TABLEROS</Text>
+                <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t("workspace.sidebar.boards", locale)}</Text>
                 <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical />
                 <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
                 <NavItem glyph="🗑" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
@@ -962,7 +962,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
                 {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
                 {board && board.cardIds.length > 0 ? (
-                  <NavItem glyph="▤" label="Archivar tablero" accessibilityLabel={`Archivar el tablero ${board.title} con sus tarjetas`} onPress={() => void archiveCurrentBoard()} />
+                  <NavItem glyph="▤" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => void archiveCurrentBoard()} />
                 ) : null}
                 <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
               </>
@@ -1096,7 +1096,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
             {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
             {board && board.cardIds.length > 0 ? (
-              <NavItem glyph="▤" label="Archivar tablero" accessibilityLabel={`Archivar el tablero ${board.title} con sus tarjetas`} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
+              <NavItem glyph="▤" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
             ) : null}
             <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
           </Dialog>

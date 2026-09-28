@@ -3,11 +3,13 @@ import {
 } from '@noutynotes/application';
 import type { AssetEntry, AssetKind, WorkspaceStorageResult } from '@noutynotes/application';
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import type { Locale } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { t } from '../i18n';
 import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { openAssetFile, supportsOpenAsset } from '../session/openAsset';
@@ -31,11 +33,15 @@ interface AssetsViewProps {
   readonly onBack: () => void;
 }
 
-const tabs: readonly { tab: Tab; label: string }[] = [
-  { tab: 'all', label: 'Todos' }, { tab: 'image', label: 'Imágenes' }, { tab: 'document', label: 'Documentos' }, { tab: 'audio', label: 'Audio' }, { tab: 'other', label: 'Otros' },
+const tabKeys: readonly { tab: Tab; labelKey: 'assets.tab.all' | 'assets.tab.image' | 'assets.tab.document' | 'assets.tab.audio' | 'assets.tab.other' }[] = [
+  { tab: 'all', labelKey: 'assets.tab.all' }, { tab: 'image', labelKey: 'assets.tab.image' }, { tab: 'document', labelKey: 'assets.tab.document' }, { tab: 'audio', labelKey: 'assets.tab.audio' }, { tab: 'other', labelKey: 'assets.tab.other' },
 ];
-const kindLabel: Readonly<Record<AssetKind, string>> = { image: 'Imagen', document: 'Documento', audio: 'Audio', other: 'Otro' };
-const plural = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
+const kindLabelKey: Readonly<Record<AssetKind, 'assets.kind.image' | 'assets.kind.document' | 'assets.kind.audio' | 'assets.kind.other'>> = {
+  image: 'assets.kind.image', document: 'assets.kind.document', audio: 'assets.kind.audio', other: 'assets.kind.other',
+};
+type PluralUnit = 'unusedDeleted' | 'unused' | 'fileUpper' | 'card';
+const unit = (base: PluralUnit, count: number, locale: Locale) =>
+  t(count === 1 ? `unit.${base}.one` : `unit.${base}.many`, locale, { count: String(count) });
 const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 /**
@@ -46,7 +52,12 @@ const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round
  */
 export function AssetsView({ active, compact, workspace, run, placement, onAdded, onGo, onBack }: AssetsViewProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
+  const kindLabel: Readonly<Record<AssetKind, string>> = {
+    image: t(kindLabelKey.image, locale), document: t(kindLabelKey.document, locale), audio: t(kindLabelKey.audio, locale), other: t(kindLabelKey.other, locale),
+  };
+  const tabs: readonly { tab: Tab; label: string }[] = tabKeys.map(({ tab, labelKey }) => ({ tab, label: t(labelKey, locale) }));
   useEscapeBack(active, onBack);
   const { storage } = useWorkspaceSession();
   const [listed, setListed] = useState<readonly string[] | null>(null);
@@ -73,7 +84,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       const result = await assets.listAssets(workspace.id);
       if (!active) return;
       if (!result.ok) {
-        setProblem(result.issues[0]?.message ?? 'No se pudo listar la carpeta assets.');
+        setProblem(result.issues[0]?.message ?? t('assets.error.list', locale));
         return;
       }
       setProblem(null);
@@ -94,7 +105,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       }
     })();
     return () => { active = false; };
-  }, [storage, workspace.id, refresh]);
+  }, [storage, workspace.id, refresh, locale]);
 
   // Tamaño de un asset que no es imagen: se lee al seleccionarlo.
   useEffect(() => {
@@ -119,13 +130,13 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const reload = () => setRefresh((value) => value + 1);
   const pick = async () => {
     if (!supportsImageImport()) {
-      setProblem('Este entorno no permite elegir imágenes.');
+      setProblem(t('assets.error.noImagePicker', locale));
       return null;
     }
     try {
       return await pickImageFile();
     } catch {
-      setProblem('No se pudo leer la imagen elegida. Comprueba el permiso y vuelve a intentarlo.');
+      setProblem(t('assets.error.imageReadFailed', locale));
       return null;
     }
   };
@@ -142,14 +153,14 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const importFile = async () => {
     if (!assets) return;
     if (!supportsFileImport()) {
-      setProblem('Este entorno no permite elegir archivos.');
+      setProblem(t('assets.error.noFilePicker', locale));
       return;
     }
     let file;
     try {
       file = await pickLibraryFile();
     } catch {
-      setProblem('No se pudo leer el archivo elegido. Comprueba el permiso y vuelve a intentarlo.');
+      setProblem(t('assets.error.fileReadFailed', locale));
       return;
     }
     if (!file) return;
@@ -163,7 +174,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     if (!assets) return;
     const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
     if (!read.ok) {
-      setProblem(read.issues[0]?.message ?? 'No se pudo leer el archivo.');
+      setProblem(read.issues[0]?.message ?? t('assets.error.readFailed', locale));
       return;
     }
     openAssetFile(entry.name, read.value);
@@ -172,8 +183,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     if (!assets) return;
     const file = await pick();
     if (!file) return;
+    const cardsEs = entry.usedBy.length === 1 ? '1 tarjeta' : `${entry.usedBy.length} tarjetas`;
     const result = await run((store, id) => replaceAsset(store, assets, id, { from: entry.ref, bytes: file.bytes, fileName: file.name }),
-      `«${entry.name}» reemplazado por «${file.name}» en ${plural(entry.usedBy.length, 'tarjeta', 'tarjetas')}; el archivo anterior queda sin usar. Guardado en memoria.`);
+      `«${entry.name}» reemplazado por «${file.name}» en ${cardsEs}; el archivo anterior queda sin usar. Guardado en memoria.`);
     if (result.ok) {
       setSelected(result.value);
       reload();
@@ -189,10 +201,11 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   };
   const remove = async (refs: readonly string[]) => {
     if (!assets) return;
-    const result = await run((store, id) => deleteUnusedAssets(store, assets, id, refs), `${plural(refs.length, 'archivo sin usar eliminado', 'archivos sin usar eliminados')}. Guardado en memoria.`, { history: 'clear' });
+    const deletedEs = refs.length === 1 ? '1 archivo sin usar eliminado' : `${refs.length} archivos sin usar eliminados`;
+    const result = await run((store, id) => deleteUnusedAssets(store, assets, id, refs), `${deletedEs}. Guardado en memoria.`, { history: 'clear' });
     setConfirm(null);
     if (result.ok) {
-      if (result.value.failed.length > 0) setProblem(`No se pudo borrar: ${result.value.failed.join(', ')}.`);
+      if (result.value.failed.length > 0) setProblem(t('assets.error.deleteFailed', locale, { files: result.value.failed.join(', ') }));
       setSelected(null);
       reload();
     }
@@ -202,7 +215,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       await navigator.clipboard.writeText(ref);
       setCopied(true);
     } catch {
-      setProblem('El navegador no permitió copiar. Selecciona la ruta y cópiala a mano.');
+      setProblem(t('assets.error.copyFailed', locale));
     }
   };
 
@@ -210,49 +223,49 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     <View testID="asset-detail" style={[styles.detail, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text accessibilityRole="header" style={[styles.name, { color: colors.textPrimary }]}>{current.name}</Text>
       {thumbs.get(current.ref) ? (
-        <Image accessibilityRole="image" accessibilityLabel={`Vista previa de ${current.name}`} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
+        <Image accessibilityRole="image" accessibilityLabel={t('assets.preview.accessibilityLabel', locale, { name: current.name })} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
       ) : null}
       <Text style={[styles.meta, { color: colors.textSecondary }]}>
-        {`${kindLabel[current.kind].toUpperCase()}${bytes.has(current.ref) ? ` · ${size(bytes.get(current.ref) ?? 0)}` : ''}${current.missing ? ' · NO ESTÁ EN LA CARPETA' : ''}`}
+        {`${kindLabel[current.kind].toUpperCase()}${bytes.has(current.ref) ? ` · ${size(bytes.get(current.ref) ?? 0)}` : ''}${current.missing ? t('assets.missingSuffix', locale) : ''}`}
       </Text>
       <Text selectable testID="asset-path" style={[styles.path, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{current.ref}</Text>
       <View style={styles.row}>
         {Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard ? (
-          <ActionButton label={copied ? 'Ruta copiada' : 'Copiar ruta'} accessibilityLabel={`Copiar la ruta ${current.ref}`} onPress={() => void copy(current.ref)} />
-        ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>Mantén pulsada la ruta para copiarla.</Text>}
+          <ActionButton label={copied ? t('assets.copyPath.copied', locale) : t('assets.copyPath', locale)} accessibilityLabel={t('assets.copyPath.accessibilityLabel', locale, { ref: current.ref })} onPress={() => void copy(current.ref)} />
+        ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.copyPath.hint', locale)}</Text>}
         {current.kind === 'image' && !current.missing ? (
           <>
-            <ActionButton label="Añadir al tablero" accessibilityLabel={`Añadir ${current.name} al tablero`} onPress={() => void addToBoard(current)} />
-            <ActionButton label="Reemplazar" accessibilityLabel={`Reemplazar ${current.name}`} onPress={() => void replace(current)} />
+            <ActionButton label={t('assets.addToBoard', locale)} accessibilityLabel={t('assets.addToBoard.accessibilityLabel', locale, { name: current.name })} onPress={() => void addToBoard(current)} />
+            <ActionButton label={t('assets.replace', locale)} accessibilityLabel={t('assets.replace.accessibilityLabel', locale, { name: current.name })} onPress={() => void replace(current)} />
           </>
         ) : null}
         {(current.kind === 'document' || current.kind === 'audio') && !current.missing && supportsOpenAsset() ? (
-          <ActionButton label="Abrir" accessibilityLabel={`Abrir ${current.name}`} onPress={() => void openFile(current)} />
+          <ActionButton label={t('assets.open', locale)} accessibilityLabel={t('assets.open.accessibilityLabel', locale, { name: current.name })} onPress={() => void openFile(current)} />
         ) : null}
-        {current.unused ? <ActionButton label="Eliminar" accessibilityLabel={`Eliminar ${current.name}`} onPress={() => setConfirm('one')} /> : null}
+        {current.unused ? <ActionButton label={t('assets.delete', locale)} accessibilityLabel={t('assets.delete.accessibilityLabel', locale, { name: current.name })} onPress={() => setConfirm('one')} /> : null}
       </View>
       {confirm === 'one' ? (
         <View testID="assets-confirm-one" style={[styles.confirm, { borderColor: colors.danger }]}>
-          <Text style={[styles.body, { color: colors.textPrimary }]}>{`¿Eliminar «${current.name}»? No se puede deshacer. Ninguna tarjeta lo usa.`}</Text>
+          <Text style={[styles.body, { color: colors.textPrimary }]}>{t('assets.confirm.one.body', locale, { name: current.name })}</Text>
           <View style={styles.row}>
-            <ActionButton label="Eliminar" tone="primary" accessibilityLabel={`Confirmar eliminar ${current.name}`} onPress={() => void remove([current.ref])} />
-            <ActionButton label="Cancelar" accessibilityLabel="Cancelar la eliminación" onPress={() => setConfirm(null)} />
+            <ActionButton label={t('assets.delete', locale)} tone="primary" accessibilityLabel={t('assets.confirm.accessibilityLabel', locale, { name: current.name })} onPress={() => void remove([current.ref])} />
+            <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('trash.cancel.accessibilityLabel', locale)} onPress={() => setConfirm(null)} />
           </View>
         </View>
       ) : null}
-      <Text style={[styles.section, { color: colors.textSecondary }]}>USADO EN</Text>
+      <Text style={[styles.section, { color: colors.textSecondary }]}>{t('assets.section.usedBy', locale)}</Text>
       {current.usedBy.length === 0 ? (
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>Ninguna tarjeta lo usa. Puedes eliminarlo o añadirlo al tablero.</Text>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.usedBy.empty', locale)}</Text>
       ) : current.usedBy.map((use) => (
         <View key={use.cardId} style={styles.useRow}>
           <Text style={[styles.body, styles.useText, { color: colors.textPrimary }]}>
-            {`${use.title} · ${use.inTrash ? 'en la Papelera' : use.inArchive ? 'en el Archivo' : use.boards.map((board) => board.title).join(', ') || 'sin tablero'}`}
+            {`${use.title} · ${use.inTrash ? t('assets.use.inTrash', locale) : use.inArchive ? t('assets.use.inArchive', locale) : use.boards.map((board) => board.title).join(', ') || t('search.noBoard', locale)}`}
           </Text>
-          {use.inTrash || use.inArchive ? null : <ActionButton label="Ir" accessibilityLabel={`Ir a ${use.title}`} onPress={() => { onBack(); onGo(use.cardId); }} />}
+          {use.inTrash || use.inArchive ? null : <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: use.title })} onPress={() => { onBack(); onGo(use.cardId); }} />}
         </View>
       ))}
       {current.usedBy.length > 0 ? (
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>Para eliminarlo, quítalo antes de esas tarjetas. Reemplazar cambia todas a la vez y deja el archivo anterior sin usar.</Text>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.usedBy.hint', locale)}</Text>
       ) : null}
     </View>
   ) : null;
@@ -265,15 +278,15 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
             <Image accessibilityIgnoresInvertColors source={{ uri: thumbs.get(entry.ref) }} resizeMode="cover" style={grid ? styles.tileThumb : styles.lineThumb} />
           ) : (
             <View style={[grid ? styles.tileThumb : styles.lineThumb, styles.placeholder, { backgroundColor: colors.background }]}>
-              <Text style={[styles.meta, { color: colors.textSecondary }]}>{entry.missing ? 'FALTA' : kindLabel[entry.kind].toUpperCase()}</Text>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>{entry.missing ? t('assets.missingBadge', locale) : kindLabel[entry.kind].toUpperCase()}</Text>
             </View>
           )}
           <View style={styles.info}>
             <Text numberOfLines={2} style={[styles.name, { color: colors.textPrimary }]}>{entry.name}</Text>
             <Text numberOfLines={1} style={[styles.meta, { color: entry.missing ? colors.danger : colors.textSecondary }]}>
-              {entry.missing ? 'NO ESTÁ EN LA CARPETA' : entry.unused ? 'SIN USAR' : `USADO EN ${entry.usedBy.length}`}
+              {entry.missing ? t('assets.item.missing', locale) : entry.unused ? t('assets.item.unused', locale) : t('assets.item.usedIn', locale, { count: String(entry.usedBy.length) })}
             </Text>
-            <ActionButton label={entry.ref === selected ? 'Viendo' : 'Ver'} pressed={entry.ref === selected} accessibilityLabel={`Ver ${entry.name}`}
+            <ActionButton label={entry.ref === selected ? t('assets.viewing', locale) : t('assets.view', locale)} pressed={entry.ref === selected} accessibilityLabel={t('assets.view.accessibilityLabel', locale, { name: entry.name })}
               onPress={() => { setSelected(entry.ref); setConfirm(null); setCopied(false); }} />
           </View>
         </View>
@@ -284,45 +297,45 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   return (
     <View testID="assets-view" style={styles.screen}>
       <View style={[styles.header, { borderColor: colors.gridLine }]}>
-        <ActionButton label="←" accessibilityLabel="Volver al tablero" onPress={onBack} />
-        <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>Assets</Text>
+        <ActionButton label="←" accessibilityLabel={t('workview.back', locale)} onPress={onBack} />
+        <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>{t('nav.assets', locale)}</Text>
       </View>
       {!assets ? (
-        <Text style={[styles.hint, styles.pad, { color: colors.textSecondary }]}>Este almacenamiento no guarda archivos.</Text>
+        <Text style={[styles.hint, styles.pad, { color: colors.textSecondary }]}>{t('assets.unsupported', locale)}</Text>
       ) : (
         <>
           {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
           <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
-            <ActionButton label="Importar imagen" tone="primary" accessibilityLabel="Importar una imagen a la biblioteca" onPress={() => void importImage()} />
-            {supportsFileImport() ? <ActionButton label="Importar archivo" accessibilityLabel="Importar un documento o audio a la biblioteca" onPress={() => void importFile()} /> : null}
-            <ActionButton label={grid ? 'Ver lista' : 'Ver cuadrícula'} accessibilityLabel={grid ? 'Ver como lista' : 'Ver como cuadrícula'} onPress={() => setGridChoice(!grid)} />
+            <ActionButton label={t('assets.import.image', locale)} tone="primary" accessibilityLabel={t('assets.import.image.accessibilityLabel', locale)} onPress={() => void importImage()} />
+            {supportsFileImport() ? <ActionButton label={t('assets.import.file', locale)} accessibilityLabel={t('assets.import.file.accessibilityLabel', locale)} onPress={() => void importFile()} /> : null}
+            <ActionButton label={grid ? t('assets.view.list', locale) : t('assets.view.grid', locale)} accessibilityLabel={grid ? t('assets.view.list.accessibilityLabel', locale) : t('assets.view.grid.accessibilityLabel', locale)} onPress={() => setGridChoice(!grid)} />
             {tabs.map(({ tab: key, label }) => (
               <ActionButton key={key} label={`${label} · ${counts.get(key) ?? 0}`} pressed={tab === key}
-                accessibilityLabel={`${label} (${counts.get(key) ?? 0})`} onPress={() => setTab(key)} />
+                accessibilityLabel={t('assets.tab.accessibilityLabel', locale, { label, count: String(counts.get(key) ?? 0) })} onPress={() => setTab(key)} />
             ))}
-            <ActionButton label={`Sin usar · ${unused.length}`} pressed={unusedOnly} accessibilityLabel={`Solo sin usar (${unused.length})`} onPress={() => setUnusedOnly((value) => !value)} />
+            <ActionButton label={t('assets.tab.unused', locale, { count: String(unused.length) })} pressed={unusedOnly} accessibilityLabel={t('assets.tab.unused.accessibilityLabel', locale, { count: String(unused.length) })} onPress={() => setUnusedOnly((value) => !value)} />
           </View>
           <ScrollView contentContainerStyle={[styles.content, compact ? null : styles.contentWide]}>
             <View style={compact ? styles.column : styles.mainColumn}>
-              <TextField label="Buscar por nombre" value={query} onChangeText={setQuery} placeholder="nombre del archivo" testID="assets-search" />
+              <TextField label={t('assets.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('assets.search.placeholder', locale)} testID="assets-search" />
               {problem ? <Text testID="assets-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{problem}</Text> : null}
               {unused.length > 0 ? (
                 confirm === 'unused' ? (
                   <View testID="assets-confirm-unused" style={[styles.confirm, { borderColor: colors.danger }]}>
-                    <Text style={[styles.body, { color: colors.textPrimary }]}>{`¿Eliminar ${plural(unused.length, 'archivo sin usar', 'archivos sin usar')}? No se puede deshacer. Ninguna tarjeta, ni de la Papelera, los usa.`}</Text>
+                    <Text style={[styles.body, { color: colors.textPrimary }]}>{t('assets.confirm.unused.body', locale, { count: unit('unused', unused.length, locale) })}</Text>
                     <View style={styles.row}>
-                      <ActionButton label="Eliminar" tone="primary" accessibilityLabel={`Confirmar eliminar ${plural(unused.length, 'archivo sin usar', 'archivos sin usar')}`} onPress={() => void remove(unused.map((entry) => entry.ref))} />
-                      <ActionButton label="Cancelar" accessibilityLabel="Cancelar la eliminación" onPress={() => setConfirm(null)} />
+                      <ActionButton label={t('assets.delete', locale)} tone="primary" accessibilityLabel={t('assets.confirm.unused.accessibilityLabel', locale, { count: unit('unused', unused.length, locale) })} onPress={() => void remove(unused.map((entry) => entry.ref))} />
+                      <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('trash.cancel.accessibilityLabel', locale)} onPress={() => setConfirm(null)} />
                     </View>
                   </View>
-                ) : <ActionButton label={`Eliminar los sin usar (${unused.length})`} onPress={() => setConfirm('unused')} />
+                ) : <ActionButton label={t('assets.deleteUnused', locale, { count: String(unused.length) })} onPress={() => setConfirm('unused')} />
               ) : null}
 
               <Text testID="assets-count" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
-                {listed === null ? 'LEYENDO…' : plural(shown.length, 'ARCHIVO', 'ARCHIVOS')}
+                {listed === null ? t('assets.loading', locale) : unit('fileUpper', shown.length, locale)}
               </Text>
               {listed !== null && catalog.length === 0 ? (
-                <Text testID="assets-empty" style={[styles.hint, { color: colors.textSecondary }]}>Este proyecto aún no tiene archivos. Importa una imagen, un documento o un audio, o añade una imagen a una nota.</Text>
+                <Text testID="assets-empty" style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.empty', locale)}</Text>
               ) : null}
               {/* En móvil, el detalle va encima de la lista: con muchos archivos no hay que bajar hasta el final. */}
               {compact ? detail : null}
