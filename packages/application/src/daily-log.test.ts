@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Card, CardTypeDefinition, Workspace } from '@noutynotes/domain';
 
-import { DIARY_CARD_TYPE, activeDays, dailyLog, isDay, localDay, shiftDay } from './daily-log';
+import { DIARY_CARD_TYPE, activeDays, dailyLog, dailyLogRange, isDay, localDay, shiftDay } from './daily-log';
 
 const card = (id: string, extra: Record<string, unknown>): Card => ({ id, typeId: 'nota', title: id, fields: {}, ...extra }) as unknown as Card;
 const entry = (id: string, fecha: string, extra: Record<string, unknown> = {}): Card => card(id, { typeId: 'diario', fields: { fecha }, ...extra });
@@ -49,5 +49,23 @@ describe('Daily Log (ADR 0024)', () => {
   it('el calendario marca solo los días con datos del mes', () => {
     expect([...activeDays(workspace, '2026-09', madrid)].sort()).toEqual(['2026-09-26', '2026-09-27']);
     expect([...activeDays(workspace, '2026-10', madrid)]).toEqual([]);
+  });
+
+  it('rango de días (ADR 0037): agrupa varios días en orden cronológico y rechaza rangos inválidos', () => {
+    const range = dailyLogRange(workspace, '2026-09-25', '2026-09-27', madrid);
+    if (!range.ok) throw new Error('se esperaba un rango válido');
+    expect(range.items.map((item) => [item.day, item.time, item.kind, item.card.id, item.boardIds])).toEqual([
+      ['2026-09-26', '01:30', 'created', 'b', ['principal']],
+      ['2026-09-26', '10:30', 'created', 'a', ['principal']],
+      ['2026-09-26', '14:00', 'archived', 'vieja', []],
+      ['2026-09-26', '20:00', 'entry', 'd1', []],
+      ['2026-09-27', '00:00', 'entry', 'd2', []],
+    ]);
+    // Un solo día es un rango de un elemento; fuera de rango da una lista vacía, no un error.
+    const single = dailyLogRange(workspace, '2026-01-01', '2026-01-01', madrid);
+    expect(single.ok && single.items).toEqual([]);
+    expect(dailyLogRange(workspace, '2026-09-27', '2026-09-25', madrid)).toMatchObject({ ok: false });
+    expect(dailyLogRange(workspace, '2026-01-01', '2027-01-02', madrid)).toMatchObject({ ok: false });
+    expect(dailyLogRange(workspace, 'no-es-fecha', '2026-09-27', madrid)).toMatchObject({ ok: false });
   });
 });

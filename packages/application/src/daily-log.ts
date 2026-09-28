@@ -2,7 +2,7 @@
  * Daily Log (ADR 0024). Puro: se deriva de fechas reales (entradas del diario, `createdAt` y `archivedAt`).
  * Una tarjeta sin fecha nunca aparece; ningún recuento sale de otra cosa.
  */
-import type { Card, CardTypeDefinition, CardTypeId, FieldKey, Workspace } from '@noutynotes/domain';
+import type { BoardId, Card, CardTypeDefinition, CardTypeId, FieldKey, Workspace } from '@noutynotes/domain';
 
 import { fold } from './search';
 
@@ -107,6 +107,58 @@ export function dailyLog(workspace: Workspace, day: string, offsetMinutes: numbe
   }
   const tags = [...counts].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || (a.tag < b.tag ? -1 : 1));
   return { entries, created, archived, summary: { entries: entries.length, created: created.length, archived: archived.length, tags } };
+}
+
+export interface RangeLogItem {
+  readonly day: string;
+  /** HH:MM local. */
+  readonly time: string;
+  readonly kind: 'entry' | 'created' | 'archived';
+  readonly card: Card;
+  /** Tableros a los que pertenece (activa) o pertenecía al archivarla; vacío si nunca tuvo uno. */
+  readonly boardIds: readonly BoardId[];
+}
+
+export type DailyLogRangeResult =
+  | { readonly ok: true; readonly items: readonly RangeLogItem[] }
+  | { readonly ok: false; readonly reason: string };
+
+const MAX_RANGE_DAYS = 366;
+
+/**
+ * Días de `from` a `to`, inclusive, en una sola lista cronológica (ADR 0037). Misma lógica de
+ * pertenencia que `dailyLog`, generalizada de «es este día» a «está en este rango»: una tarjeta sin
+ * fecha real nunca aparece, igual que en un solo día.
+ */
+export function dailyLogRange(workspace: Workspace, from: string, to: string, offsetMinutes: number): DailyLogRangeResult {
+  if (!isDay(from) || !isDay(to)) return { ok: false, reason: 'Las fechas deben ser AAAA-MM-DD.' };
+  if (to < from) return { ok: false, reason: 'El día final no puede ser anterior al inicial.' };
+  const [fy, fm, fd] = from.split('-').map(Number) as [number, number, number];
+  const [ty, tm, td] = to.split('-').map(Number) as [number, number, number];
+  if (daysFromCivil(ty, tm, td) - daysFromCivil(fy, fm, fd) + 1 > MAX_RANGE_DAYS) {
+    return { ok: false, reason: `El rango no puede superar ${MAX_RANGE_DAYS} días.` };
+  }
+  // Comparación de texto válida: AAAA-MM-DD con ceros a la izquierda ordena igual que el calendario.
+  const inRange = (day: string) => day >= from && day <= to;
+  const boardsOf = (cardId: Card['id']): readonly BoardId[] => workspace.boards.filter((board) => board.cardIds.includes(cardId)).map((board) => board.id);
+  const items: RangeLogItem[] = [];
+  for (const item of workspace.cards) {
+    if (isDiaryEntry(item)) {
+      const day = item.fields.fecha as string;
+      if (!inRange(day)) continue;
+      const time = typeof item.createdAt === 'string' ? localTime(item.createdAt, offsetMinutes) : '00:00';
+      items.push({ day, time, kind: 'entry', card: item, boardIds: boardsOf(item.id) });
+    } else if (typeof item.createdAt === 'string') {
+      const day = localDay(item.createdAt, offsetMinutes);
+      if (inRange(day)) items.push({ day, time: localTime(item.createdAt, offsetMinutes), kind: 'created', card: item, boardIds: boardsOf(item.id) });
+    }
+  }
+  for (const entry of workspace.archive ?? []) {
+    const day = localDay(entry.archivedAt, offsetMinutes);
+    if (inRange(day)) items.push({ day, time: localTime(entry.archivedAt, offsetMinutes), kind: 'archived', card: entry.card, boardIds: entry.boards.map((membership) => membership.boardId) });
+  }
+  items.sort((a, b) => (a.day !== b.day ? (a.day < b.day ? -1 : 1) : a.time !== b.time ? (a.time < b.time ? -1 : 1) : 0));
+  return { ok: true, items };
 }
 
 /** Días del mes (AAAA-MM) con entradas, tarjetas creadas o archivadas. */

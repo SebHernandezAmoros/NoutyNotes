@@ -985,6 +985,53 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
   expect(runtimeErrors).toEqual([]);
 });
 
+test('Diario: buscar por rango con filtros de etiqueta y texto, y exportar como Markdown (ADR 0037)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Rango');
+  await addNote(page, 'Con etiqueta viaje');
+  await page.getByTestId('tag-input').fill('viaje');
+  await button(page, 'Añadir la etiqueta').click();
+  await closeEditor(page);
+  await addNote(page, 'Sin etiqueta');
+  await closeEditor(page);
+
+  if (isCompactWidth(page)) await button(page, 'Más secciones').click();
+  await button(page, 'Abrir el diario').click();
+  await expect(page.getByTestId('diary-view')).toBeVisible();
+  await button(page, 'Buscar por fecha, tipo, etiqueta o tablero (ADR 0037)').click();
+  await expect(page.getByTestId('diary-search-count')).toHaveText('2 RESULTADOS');
+
+  // Filtro por etiqueta.
+  await button(page, 'Solo #viaje').click();
+  await expect(page.getByTestId('diary-search-count')).toHaveText('1 RESULTADO');
+  await expect(page.getByTestId('diary-search-result-tarjeta-1')).toContainText('Con etiqueta viaje');
+  await expect(page.getByTestId('diary-search-result-tarjeta-2')).toHaveCount(0);
+  await button(page, 'Todas las etiquetas').click();
+
+  // Búsqueda de texto, sin distinguir mayúsculas.
+  await page.getByTestId('diary-search-text').fill('SIN ETIQUETA');
+  await expect(page.getByTestId('diary-search-count')).toHaveText('1 RESULTADO');
+  await page.getByTestId('diary-search-text').fill('');
+  await expect(page.getByTestId('diary-search-count')).toHaveText('2 RESULTADOS');
+
+  // Un rango con la fecha final antes que la inicial se rechaza, sin cifras inventadas.
+  await page.getByTestId('diary-search-to').fill('2000-01-01');
+  await expect(page.getByTestId('diary-search-count')).toHaveText('SIN RESULTADOS');
+  await expect(page.getByText('Escribe dos fechas reales, con la inicial antes o igual que la final.')).toBeVisible();
+  await page.getByTestId('diary-search-to').fill(await page.getByTestId('diary-search-from').inputValue());
+
+  // Exportar descarga un Markdown del rango, no un ZIP.
+  const download = page.waitForEvent('download');
+  await button(page, 'Exportar este rango como Markdown').click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^diario-\d{4}-\d{2}-\d{2}\.md$/);
+  await page.screenshot({ path: testInfo.outputPath('diary-search.png') });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('Configuración: tema desde el proyecto y fecha de creación visible en las fichas, que sobrevive a recargar (ADR 0029)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);

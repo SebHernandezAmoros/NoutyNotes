@@ -1,11 +1,12 @@
-import { activeDays, dailyLog, editCardContent, isDay, localDay, openDiaryEntry, shiftDay } from '@noutynotes/application';
-import type { TimedCard, WorkspaceStorageResult } from '@noutynotes/application';
-import type { Card, CardId, Workspace } from '@noutynotes/domain';
+import { activeDays, dailyLog, dailyLogRange, diaryExportText, editCardContent, fold, isDay, localDay, openDiaryEntry, shiftDay } from '@noutynotes/application';
+import type { RangeLogItem, TimedCard, WorkspaceStorageResult } from '@noutynotes/application';
+import type { BoardId, Card, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { downloadTextFile, supportsTextDownload } from '../session/textDownload';
 import { markdownExcerpt } from './markdownLists';
 import { useEscapeBack } from './useEscapeBack';
 import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
@@ -40,9 +41,40 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const [day, setDay] = useState(today);
   const [dayDraft, setDayDraft] = useState(day);
   const [editing, setEditing] = useState<{ id: CardId; title: string; content: string } | null>(null);
+  const [mode, setMode] = useState<'day' | 'search'>('day');
+  const [rangeFrom, setRangeFrom] = useState(today);
+  const [rangeTo, setRangeTo] = useState(today);
+  const [searchTypeId, setSearchTypeId] = useState<CardTypeId | null>(null);
+  const [searchTag, setSearchTag] = useState<string | null>(null);
+  const [searchBoardId, setSearchBoardId] = useState<BoardId | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [exportError, setExportError] = useState<string | null>(null);
   const log = dailyLog(workspace, day, offset());
   const typeLabel = (card: Card) => workspace.cardTypes.find((type) => type.id === card.typeId)?.label ?? 'Tarjeta';
   const onBoard = (cardId: CardId) => workspace.boards.some((board) => board.cardIds.includes(cardId));
+
+  // Modo «Buscar» (ADR 0037): filtro y búsqueda del rango, en la vista, como ya hacen Assets/Archivo.
+  const rangeValid = isDay(rangeFrom) && isDay(rangeTo) && rangeFrom <= rangeTo;
+  const range = rangeValid ? dailyLogRange(workspace, rangeFrom, rangeTo, offset()) : null;
+  const rangeItems = range?.ok ? range.items : [];
+  const rangeError = range && !range.ok ? range.reason : !rangeValid ? 'Escribe dos fechas reales, con la inicial antes o igual que la final.' : null;
+  const availableTypes = [...new Map(rangeItems.map((item) => [item.card.typeId, typeLabel(item.card)])).entries()];
+  const availableTags = [...new Set(rangeItems.flatMap((item) => item.card.tags ?? []))].sort();
+  const searchFold = fold(searchText.trim());
+  const filteredItems = rangeItems.filter((item) => (searchTypeId === null || item.card.typeId === searchTypeId)
+    && (searchTag === null || (item.card.tags ?? []).includes(searchTag))
+    && (searchBoardId === null || item.boardIds.includes(searchBoardId))
+    && (searchFold === '' || fold([item.card.title ?? '', item.card.content ?? '', (item.card.tags ?? []).join(' ')].join('\n')).includes(searchFold)));
+  const rangeVerb: Readonly<Record<RangeLogItem['kind'], string>> = { entry: 'ENTRADA', created: 'CREADA', archived: 'ARCHIVADA' };
+  const exportRange = () => {
+    setExportError(null);
+    const result = diaryExportText(workspace, rangeFrom, rangeTo, offset());
+    if (!result.ok) {
+      setExportError(result.reason);
+      return;
+    }
+    downloadTextFile(rangeFrom === rangeTo ? `diario-${rangeFrom}.md` : `diario-${rangeFrom}_${rangeTo}.md`, result.text);
+  };
   const isToday = day === today();
   const month = day.slice(0, 7);
   const activeDaySet = activeDays(workspace, month, offset());
@@ -85,13 +117,69 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
       </View>
       {/* Barra contextual: navegación de fecha y escritura, propias de esta vista (ADR 0036). */}
       <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
-        <ActionButton label="←" accessibilityLabel="Día anterior" onPress={() => go(shiftDay(day, -1))} />
-        <ActionButton label="Hoy" pressed={isToday} accessibilityLabel="Ir a hoy" onPress={() => go(today())} />
-        <ActionButton label="→" accessibilityLabel="Día siguiente" onPress={() => go(shiftDay(day, 1))} />
-        <ActionButton label={isToday ? 'Escribir la nota de hoy' : 'Escribir en este día'} tone="primary"
-          accessibilityLabel={isToday ? 'Escribir la nota de hoy' : `Escribir en el diario del ${longDay(day)}`} onPress={() => void write(true)} />
-        {log.entries.length > 0 ? <ActionButton label="Nueva entrada" accessibilityLabel="Nueva entrada del diario" onPress={() => void write(false)} /> : null}
+        <ActionButton label="Día" pressed={mode === 'day'} accessibilityLabel="Ver un día" onPress={() => setMode('day')} />
+        <ActionButton label="Buscar" pressed={mode === 'search'} accessibilityLabel="Buscar por fecha, tipo, etiqueta o tablero (ADR 0037)" onPress={() => setMode('search')} />
+        {mode === 'day' ? (
+          <>
+            <ActionButton label="←" accessibilityLabel="Día anterior" onPress={() => go(shiftDay(day, -1))} />
+            <ActionButton label="Hoy" pressed={isToday} accessibilityLabel="Ir a hoy" onPress={() => go(today())} />
+            <ActionButton label="→" accessibilityLabel="Día siguiente" onPress={() => go(shiftDay(day, 1))} />
+            <ActionButton label={isToday ? 'Escribir la nota de hoy' : 'Escribir en este día'} tone="primary"
+              accessibilityLabel={isToday ? 'Escribir la nota de hoy' : `Escribir en el diario del ${longDay(day)}`} onPress={() => void write(true)} />
+            {log.entries.length > 0 ? <ActionButton label="Nueva entrada" accessibilityLabel="Nueva entrada del diario" onPress={() => void write(false)} /> : null}
+          </>
+        ) : (
+          supportsTextDownload() ? <ActionButton label="Exportar" accessibilityLabel="Exportar este rango como Markdown" onPress={exportRange} /> : null
+        )}
       </View>
+      {mode === 'search' ? (
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.row}>
+            <TextField label="Desde (AAAA-MM-DD)" value={rangeFrom} onChangeText={setRangeFrom} testID="diary-search-from" placeholder="2026-09-01" />
+            <TextField label="Hasta (AAAA-MM-DD)" value={rangeTo} onChangeText={setRangeTo} testID="diary-search-to" placeholder="2026-09-28" />
+          </View>
+          {rangeError ? <Text style={[styles.hint, { color: colors.danger }]}>{rangeError}</Text> : null}
+          <TextField label="Buscar texto" value={searchText} onChangeText={setSearchText} placeholder="palabras del título o del texto" testID="diary-search-text" />
+          {exportError ? <Text testID="diary-export-error" style={[styles.hint, { color: colors.danger }]}>{exportError}</Text> : null}
+          {availableTypes.length > 0 ? (
+            <View style={styles.row} accessibilityLabel="Filtrar por tipo">
+              <ActionButton label="Todos los tipos" pressed={searchTypeId === null} accessibilityLabel="Todos los tipos" onPress={() => setSearchTypeId(null)} />
+              {availableTypes.map(([id, label]) => (
+                <ActionButton key={id} label={label} pressed={searchTypeId === id} accessibilityLabel={`Solo ${label}`} onPress={() => setSearchTypeId(id)} />
+              ))}
+            </View>
+          ) : null}
+          {availableTags.length > 0 ? (
+            <View style={styles.row} accessibilityLabel="Filtrar por etiqueta">
+              <ActionButton label="Todas las etiquetas" pressed={searchTag === null} accessibilityLabel="Todas las etiquetas" onPress={() => setSearchTag(null)} />
+              {availableTags.map((tag) => (
+                <ActionButton key={tag} label={`#${tag}`} pressed={searchTag === tag} accessibilityLabel={`Solo #${tag}`} onPress={() => setSearchTag(tag)} />
+              ))}
+            </View>
+          ) : null}
+          {workspace.boards.length > 1 ? (
+            <View style={styles.row} accessibilityLabel="Filtrar por tablero">
+              <ActionButton label="Todos los tableros" pressed={searchBoardId === null} accessibilityLabel="Todos los tableros" onPress={() => setSearchBoardId(null)} />
+              {workspace.boards.map((board) => (
+                <ActionButton key={board.id} label={board.title} pressed={searchBoardId === board.id} accessibilityLabel={`Solo el tablero ${board.title}`} onPress={() => setSearchBoardId(board.id)} />
+              ))}
+            </View>
+          ) : null}
+          <Text testID="diary-search-count" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
+            {rangeError ? 'SIN RESULTADOS' : plural(filteredItems.length, 'RESULTADO', 'RESULTADOS')}
+          </Text>
+          {!rangeError && filteredItems.length === 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>Nada en este rango con esos filtros.</Text> : null}
+          {filteredItems.map((item) => (
+            <View key={`${item.kind}-${item.card.id}`} testID={`diary-search-result-${item.card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${item.day} ${item.time} · ${rangeVerb[item.kind]} · ${typeLabel(item.card).toUpperCase()}`}</Text>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>{item.card.title ?? 'Sin título'}</Text>
+              {(item.card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(item.card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
+              {item.card.content ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(item.card.content).replace(/\s+/g, ' ').trim()}</Text> : null}
+              {item.kind === 'created' && onBoard(item.card.id) ? <ActionButton label="Ir" accessibilityLabel={`Ir a ${item.card.title ?? 'Sin título'}`} onPress={() => { onBack(); onGo(item.card.id); }} /> : null}
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
       <ScrollView contentContainerStyle={[styles.content, compact ? null : styles.contentWide]}>
         <View style={compact ? styles.column : styles.mainColumn}>
           <Text accessibilityRole="header" testID="log-day" style={[styles.day, { color: colors.textPrimary }]}>{`${longDay(day)}${isToday ? ' · hoy' : ''}`}</Text>
@@ -164,6 +252,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
           </View>
         </View>
       </ScrollView>
+      )}
     </View>
   );
 }
