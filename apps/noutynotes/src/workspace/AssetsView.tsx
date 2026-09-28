@@ -5,20 +5,20 @@ import type { AssetEntry, AssetKind, WorkspaceStorageResult } from '@noutynotes/
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
-import { Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Dialog } from '../components/Dialog';
 import { ActionButton, TextField } from '../components/controls';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { dataUri } from './dataUri';
+import { useEscapeBack } from './useEscapeBack';
 import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
 type Run = <T>(action: WorkspaceAction<T>, success: string, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 type Tab = 'all' | AssetKind;
 
-interface AssetsPanelProps {
-  readonly visible: boolean;
+interface AssetsViewProps {
+  readonly active: boolean;
   readonly compact: boolean;
   readonly workspace: Workspace;
   readonly run: Run;
@@ -26,7 +26,7 @@ interface AssetsPanelProps {
   readonly placement: () => { readonly boardId?: Workspace['boards'][number]['id']; readonly near?: { x: number; y: number; columns: number }; readonly createdAt?: string };
   readonly onAdded: (cardId: CardId) => void;
   readonly onGo: (cardId: CardId) => void;
-  readonly onClose: () => void;
+  readonly onBack: () => void;
 }
 
 const tabs: readonly { tab: Tab; label: string }[] = [
@@ -37,13 +37,15 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? `1 $
 const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 /**
- * Biblioteca de assets del proyecto (ADR 0022): el catálogo sale de los archivos bajo assets/ y de las
- * tarjetas que los usan. Importar, añadir al tablero sin copiar, reemplazar en todas las referencias y
- * eliminar solo lo que nada usa.
+ * Biblioteca de assets del proyecto (ADR 0022, ADR 0036): vista de trabajo real a pantalla completa,
+ * no un diálogo estrecho. El catálogo sale de los archivos bajo assets/ y de las tarjetas que los usan.
+ * Importar, añadir al tablero sin copiar, reemplazar en todas las referencias y eliminar solo lo que
+ * nada usa.
  */
-export function AssetsPanel({ visible, compact, workspace, run, placement, onAdded, onGo, onClose }: AssetsPanelProps) {
+export function AssetsView({ active, compact, workspace, run, placement, onAdded, onGo, onBack }: AssetsViewProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
+  useEscapeBack(active, onBack);
   const { storage } = useWorkspaceSession();
   const [listed, setListed] = useState<readonly string[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -60,9 +62,8 @@ export function AssetsPanel({ visible, compact, workspace, run, placement, onAdd
   const [confirm, setConfirm] = useState<'one' | 'unused' | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Al abrir (y tras cada cambio), se lista la carpeta assets/ y se leen las miniaturas de las imágenes.
+  // Al entrar (y tras cada cambio), se lista la carpeta assets/ y se leen las miniaturas de las imágenes.
   useEffect(() => {
-    if (!visible) return undefined;
     const assets = assetsOf(storage);
     if (!assets) return undefined;
     let active = true;
@@ -91,7 +92,7 @@ export function AssetsPanel({ visible, compact, workspace, run, placement, onAdd
       }
     })();
     return () => { active = false; };
-  }, [visible, storage, workspace.id, refresh]);
+  }, [storage, workspace.id, refresh]);
 
   // Tamaño de un asset que no es imagen: se lee al seleccionarlo.
   useEffect(() => {
@@ -113,11 +114,6 @@ export function AssetsPanel({ visible, compact, workspace, run, placement, onAdd
   const shown = catalog.filter((entry) => (tab === 'all' || entry.kind === tab) && (!unusedOnly || entry.unused) && (text === '' || fold(entry.name).includes(text)));
   const current = catalog.find((entry) => entry.ref === selected) ?? null;
 
-  const close = () => {
-    setConfirm(null);
-    setSelected(null);
-    onClose();
-  };
   const reload = () => setRefresh((value) => value + 1);
   const pick = async () => {
     if (!supportsImageImport()) {
@@ -156,7 +152,7 @@ export function AssetsPanel({ visible, compact, workspace, run, placement, onAdd
     const where = placement();
     const result = await run((store, id) => addAssetToBoard(store, id, { ref: entry.ref, ...where }), `«${entry.name}» añadido al tablero sin copiar el archivo. Guardado en memoria.`);
     if (result.ok) {
-      close();
+      onBack();
       onAdded(result.value);
     }
   };
@@ -179,122 +175,145 @@ export function AssetsPanel({ visible, compact, workspace, run, placement, onAdd
     }
   };
 
+  const detail = current ? (
+    <View testID="asset-detail" style={[styles.detail, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <Text accessibilityRole="header" style={[styles.name, { color: colors.textPrimary }]}>{current.name}</Text>
+      {thumbs.get(current.ref) ? (
+        <Image accessibilityRole="image" accessibilityLabel={`Vista previa de ${current.name}`} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
+      ) : null}
+      <Text style={[styles.meta, { color: colors.textSecondary }]}>
+        {`${kindLabel[current.kind].toUpperCase()}${bytes.has(current.ref) ? ` · ${size(bytes.get(current.ref) ?? 0)}` : ''}${current.missing ? ' · NO ESTÁ EN LA CARPETA' : ''}`}
+      </Text>
+      <Text selectable testID="asset-path" style={[styles.path, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{current.ref}</Text>
+      <View style={styles.row}>
+        {Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard ? (
+          <ActionButton label={copied ? 'Ruta copiada' : 'Copiar ruta'} accessibilityLabel={`Copiar la ruta ${current.ref}`} onPress={() => void copy(current.ref)} />
+        ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>Mantén pulsada la ruta para copiarla.</Text>}
+        {current.kind === 'image' && !current.missing ? (
+          <>
+            <ActionButton label="Añadir al tablero" accessibilityLabel={`Añadir ${current.name} al tablero`} onPress={() => void addToBoard(current)} />
+            <ActionButton label="Reemplazar" accessibilityLabel={`Reemplazar ${current.name}`} onPress={() => void replace(current)} />
+          </>
+        ) : null}
+        {current.unused ? <ActionButton label="Eliminar" accessibilityLabel={`Eliminar ${current.name}`} onPress={() => setConfirm('one')} /> : null}
+      </View>
+      {confirm === 'one' ? (
+        <View testID="assets-confirm-one" style={[styles.confirm, { borderColor: colors.danger }]}>
+          <Text style={[styles.body, { color: colors.textPrimary }]}>{`¿Eliminar «${current.name}»? No se puede deshacer. Ninguna tarjeta lo usa.`}</Text>
+          <View style={styles.row}>
+            <ActionButton label="Eliminar" tone="primary" accessibilityLabel={`Confirmar eliminar ${current.name}`} onPress={() => void remove([current.ref])} />
+            <ActionButton label="Cancelar" accessibilityLabel="Cancelar la eliminación" onPress={() => setConfirm(null)} />
+          </View>
+        </View>
+      ) : null}
+      <Text style={[styles.section, { color: colors.textSecondary }]}>USADO EN</Text>
+      {current.usedBy.length === 0 ? (
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>Ninguna tarjeta lo usa. Puedes eliminarlo o añadirlo al tablero.</Text>
+      ) : current.usedBy.map((use) => (
+        <View key={use.cardId} style={styles.useRow}>
+          <Text style={[styles.body, styles.useText, { color: colors.textPrimary }]}>
+            {`${use.title} · ${use.inTrash ? 'en la Papelera' : use.inArchive ? 'en el Archivo' : use.boards.map((board) => board.title).join(', ') || 'sin tablero'}`}
+          </Text>
+          {use.inTrash || use.inArchive ? null : <ActionButton label="Ir" accessibilityLabel={`Ir a ${use.title}`} onPress={() => { onBack(); onGo(use.cardId); }} />}
+        </View>
+      ))}
+      {current.usedBy.length > 0 ? (
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>Para eliminarlo, quítalo antes de esas tarjetas. Reemplazar cambia todas a la vez y deja el archivo anterior sin usar.</Text>
+      ) : null}
+    </View>
+  ) : null;
+
+  const list = (
+    <View style={grid ? styles.grid : styles.list}>
+      {shown.map((entry) => (
+        <View key={entry.ref} testID={`asset-${entry.name}`} style={[grid ? styles.tile : styles.line, { borderColor: entry.ref === selected ? colors.selection : colors.border, backgroundColor: colors.surface }]}>
+          {thumbs.get(entry.ref) ? (
+            <Image accessibilityIgnoresInvertColors source={{ uri: thumbs.get(entry.ref) }} resizeMode="cover" style={grid ? styles.tileThumb : styles.lineThumb} />
+          ) : (
+            <View style={[grid ? styles.tileThumb : styles.lineThumb, styles.placeholder, { backgroundColor: colors.background }]}>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>{entry.missing ? 'FALTA' : kindLabel[entry.kind].toUpperCase()}</Text>
+            </View>
+          )}
+          <View style={styles.info}>
+            <Text numberOfLines={2} style={[styles.name, { color: colors.textPrimary }]}>{entry.name}</Text>
+            <Text numberOfLines={1} style={[styles.meta, { color: entry.missing ? colors.danger : colors.textSecondary }]}>
+              {entry.missing ? 'NO ESTÁ EN LA CARPETA' : entry.unused ? 'SIN USAR' : `USADO EN ${entry.usedBy.length}`}
+            </Text>
+            <ActionButton label={entry.ref === selected ? 'Viendo' : 'Ver'} pressed={entry.ref === selected} accessibilityLabel={`Ver ${entry.name}`}
+              onPress={() => { setSelected(entry.ref); setConfirm(null); setCopied(false); }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
   return (
-    <Dialog visible={visible} title="Assets" compact={compact} onClose={close} testID="assets-panel">
+    <View testID="assets-view" style={styles.screen}>
+      <View style={[styles.header, { borderColor: colors.gridLine }]}>
+        <ActionButton label="←" accessibilityLabel="Volver al tablero" onPress={onBack} />
+        <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>Assets</Text>
+      </View>
       {!assets ? (
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>Este almacenamiento no guarda archivos.</Text>
+        <Text style={[styles.hint, styles.pad, { color: colors.textSecondary }]}>Este almacenamiento no guarda archivos.</Text>
       ) : (
         <>
-          <View style={styles.row}>
+          {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
+          <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
             <ActionButton label="Importar imagen" tone="primary" accessibilityLabel="Importar una imagen a la biblioteca" onPress={() => void importImage()} />
             <ActionButton label={grid ? 'Ver lista' : 'Ver cuadrícula'} accessibilityLabel={grid ? 'Ver como lista' : 'Ver como cuadrícula'} onPress={() => setGridChoice(!grid)} />
-          </View>
-          <View style={styles.row} accessibilityLabel="Tipos de archivo">
             {tabs.map(({ tab: key, label }) => (
               <ActionButton key={key} label={`${label} · ${counts.get(key) ?? 0}`} pressed={tab === key}
                 accessibilityLabel={`${label} (${counts.get(key) ?? 0})`} onPress={() => setTab(key)} />
             ))}
             <ActionButton label={`Sin usar · ${unused.length}`} pressed={unusedOnly} accessibilityLabel={`Solo sin usar (${unused.length})`} onPress={() => setUnusedOnly((value) => !value)} />
           </View>
-          <TextField label="Buscar por nombre" value={query} onChangeText={setQuery} placeholder="nombre del archivo" testID="assets-search" />
-          {problem ? <Text testID="assets-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{problem}</Text> : null}
-          {unused.length > 0 ? (
-            confirm === 'unused' ? (
-              <View testID="assets-confirm-unused" style={[styles.confirm, { borderColor: colors.danger }]}>
-                <Text style={[styles.body, { color: colors.textPrimary }]}>{`¿Eliminar ${plural(unused.length, 'archivo sin usar', 'archivos sin usar')}? No se puede deshacer. Ninguna tarjeta, ni de la Papelera, los usa.`}</Text>
-                <View style={styles.row}>
-                  <ActionButton label="Eliminar" tone="primary" accessibilityLabel={`Confirmar eliminar ${plural(unused.length, 'archivo sin usar', 'archivos sin usar')}`} onPress={() => void remove(unused.map((entry) => entry.ref))} />
-                  <ActionButton label="Cancelar" accessibilityLabel="Cancelar la eliminación" onPress={() => setConfirm(null)} />
-                </View>
-              </View>
-            ) : <ActionButton label={`Eliminar los sin usar (${unused.length})`} onPress={() => setConfirm('unused')} />
-          ) : null}
-
-          <Text testID="assets-count" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
-            {listed === null ? 'LEYENDO…' : plural(shown.length, 'ARCHIVO', 'ARCHIVOS')}
-          </Text>
-          {listed !== null && catalog.length === 0 ? (
-            <Text testID="assets-empty" style={[styles.hint, { color: colors.textSecondary }]}>Este proyecto aún no tiene archivos. Importa una imagen o añádela a una nota.</Text>
-          ) : null}
-          {/* El detalle va encima de la lista: con muchos archivos no hay que bajar hasta el final. */}
-          {current ? (
-            <View testID="asset-detail" style={[styles.detail, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <Text accessibilityRole="header" style={[styles.name, { color: colors.textPrimary }]}>{current.name}</Text>
-              {thumbs.get(current.ref) ? (
-                <Image accessibilityRole="image" accessibilityLabel={`Vista previa de ${current.name}`} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
+          <ScrollView contentContainerStyle={[styles.content, compact ? null : styles.contentWide]}>
+            <View style={compact ? styles.column : styles.mainColumn}>
+              <TextField label="Buscar por nombre" value={query} onChangeText={setQuery} placeholder="nombre del archivo" testID="assets-search" />
+              {problem ? <Text testID="assets-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{problem}</Text> : null}
+              {unused.length > 0 ? (
+                confirm === 'unused' ? (
+                  <View testID="assets-confirm-unused" style={[styles.confirm, { borderColor: colors.danger }]}>
+                    <Text style={[styles.body, { color: colors.textPrimary }]}>{`¿Eliminar ${plural(unused.length, 'archivo sin usar', 'archivos sin usar')}? No se puede deshacer. Ninguna tarjeta, ni de la Papelera, los usa.`}</Text>
+                    <View style={styles.row}>
+                      <ActionButton label="Eliminar" tone="primary" accessibilityLabel={`Confirmar eliminar ${plural(unused.length, 'archivo sin usar', 'archivos sin usar')}`} onPress={() => void remove(unused.map((entry) => entry.ref))} />
+                      <ActionButton label="Cancelar" accessibilityLabel="Cancelar la eliminación" onPress={() => setConfirm(null)} />
+                    </View>
+                  </View>
+                ) : <ActionButton label={`Eliminar los sin usar (${unused.length})`} onPress={() => setConfirm('unused')} />
               ) : null}
-              <Text style={[styles.meta, { color: colors.textSecondary }]}>
-                {`${kindLabel[current.kind].toUpperCase()}${bytes.has(current.ref) ? ` · ${size(bytes.get(current.ref) ?? 0)}` : ''}${current.missing ? ' · NO ESTÁ EN LA CARPETA' : ''}`}
+
+              <Text testID="assets-count" accessibilityLiveRegion="polite" style={[styles.section, { color: colors.textSecondary }]}>
+                {listed === null ? 'LEYENDO…' : plural(shown.length, 'ARCHIVO', 'ARCHIVOS')}
               </Text>
-              <Text selectable testID="asset-path" style={[styles.path, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{current.ref}</Text>
-              <View style={styles.row}>
-                {Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard ? (
-                  <ActionButton label={copied ? 'Ruta copiada' : 'Copiar ruta'} accessibilityLabel={`Copiar la ruta ${current.ref}`} onPress={() => void copy(current.ref)} />
-                ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>Mantén pulsada la ruta para copiarla.</Text>}
-                {current.kind === 'image' && !current.missing ? (
-                  <>
-                    <ActionButton label="Añadir al tablero" accessibilityLabel={`Añadir ${current.name} al tablero`} onPress={() => void addToBoard(current)} />
-                    <ActionButton label="Reemplazar" accessibilityLabel={`Reemplazar ${current.name}`} onPress={() => void replace(current)} />
-                  </>
-                ) : null}
-                {current.unused ? <ActionButton label="Eliminar" accessibilityLabel={`Eliminar ${current.name}`} onPress={() => setConfirm('one')} /> : null}
-              </View>
-              {confirm === 'one' ? (
-                <View testID="assets-confirm-one" style={[styles.confirm, { borderColor: colors.danger }]}>
-                  <Text style={[styles.body, { color: colors.textPrimary }]}>{`¿Eliminar «${current.name}»? No se puede deshacer. Ninguna tarjeta lo usa.`}</Text>
-                  <View style={styles.row}>
-                    <ActionButton label="Eliminar" tone="primary" accessibilityLabel={`Confirmar eliminar ${current.name}`} onPress={() => void remove([current.ref])} />
-                    <ActionButton label="Cancelar" accessibilityLabel="Cancelar la eliminación" onPress={() => setConfirm(null)} />
-                  </View>
-                </View>
+              {listed !== null && catalog.length === 0 ? (
+                <Text testID="assets-empty" style={[styles.hint, { color: colors.textSecondary }]}>Este proyecto aún no tiene archivos. Importa una imagen o añádela a una nota.</Text>
               ) : null}
-              <Text style={[styles.section, { color: colors.textSecondary }]}>USADO EN</Text>
-              {current.usedBy.length === 0 ? (
-                <Text style={[styles.hint, { color: colors.textSecondary }]}>Ninguna tarjeta lo usa. Puedes eliminarlo o añadirlo al tablero.</Text>
-              ) : current.usedBy.map((use) => (
-                <View key={use.cardId} style={styles.useRow}>
-                  <Text style={[styles.body, styles.useText, { color: colors.textPrimary }]}>
-                    {`${use.title} · ${use.inTrash ? 'en la Papelera' : use.inArchive ? 'en el Archivo' : use.boards.map((board) => board.title).join(', ') || 'sin tablero'}`}
-                  </Text>
-                  {use.inTrash || use.inArchive ? null : <ActionButton label="Ir" accessibilityLabel={`Ir a ${use.title}`} onPress={() => { close(); onGo(use.cardId); }} />}
-                </View>
-              ))}
-              {current.usedBy.length > 0 ? (
-                <Text style={[styles.hint, { color: colors.textSecondary }]}>Para eliminarlo, quítalo antes de esas tarjetas. Reemplazar cambia todas a la vez y deja el archivo anterior sin usar.</Text>
-              ) : null}
+              {/* En móvil, el detalle va encima de la lista: con muchos archivos no hay que bajar hasta el final. */}
+              {compact ? detail : null}
+              {list}
             </View>
-          ) : null}
-          <View style={grid ? styles.grid : styles.list}>
-            {shown.map((entry) => (
-              <View key={entry.ref} testID={`asset-${entry.name}`} style={[grid ? styles.tile : styles.line, { borderColor: entry.ref === selected ? colors.selection : colors.border, backgroundColor: colors.surface }]}>
-                {thumbs.get(entry.ref) ? (
-                  <Image accessibilityIgnoresInvertColors source={{ uri: thumbs.get(entry.ref) }} resizeMode="cover" style={grid ? styles.tileThumb : styles.lineThumb} />
-                ) : (
-                  <View style={[grid ? styles.tileThumb : styles.lineThumb, styles.placeholder, { backgroundColor: colors.background }]}>
-                    <Text style={[styles.meta, { color: colors.textSecondary }]}>{entry.missing ? 'FALTA' : kindLabel[entry.kind].toUpperCase()}</Text>
-                  </View>
-                )}
-                <View style={styles.info}>
-                  <Text numberOfLines={2} style={[styles.name, { color: colors.textPrimary }]}>{entry.name}</Text>
-                  <Text numberOfLines={1} style={[styles.meta, { color: entry.missing ? colors.danger : colors.textSecondary }]}>
-                    {entry.missing ? 'NO ESTÁ EN LA CARPETA' : entry.unused ? 'SIN USAR' : `USADO EN ${entry.usedBy.length}`}
-                  </Text>
-                  <ActionButton label={entry.ref === selected ? 'Viendo' : 'Ver'} pressed={entry.ref === selected} accessibilityLabel={`Ver ${entry.name}`}
-                    onPress={() => { setSelected(entry.ref); setConfirm(null); setCopied(false); }} />
-                </View>
-              </View>
-            ))}
-          </View>
-
+            {!compact ? <View style={styles.sideColumn}>{detail}</View> : null}
+          </ScrollView>
         </>
       )}
-    </Dialog>
+    </View>
   );
 }
 
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: 2 },
+  heading: { fontSize: 22, fontWeight: '900' },
+  toolbar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: 12, borderBottomWidth: 1 },
+  content: { padding: 16, gap: 16 },
+  contentWide: { flexDirection: 'row', alignItems: 'flex-start' },
+  column: { gap: 8 },
+  mainColumn: { flex: 1, gap: 8, minWidth: 0 },
+  sideColumn: { width: 320, flexShrink: 0, gap: 8 },
+  pad: { padding: 16 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
   hint: { fontSize: 13, lineHeight: 18 },
   body: { fontSize: 14, lineHeight: 20 },

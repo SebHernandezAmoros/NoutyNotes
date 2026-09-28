@@ -38,9 +38,9 @@ import { CardInspector } from './CardInspector';
 import { FrameInspector } from './FrameInspector';
 import { ProjectRail, ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
-import { ArchivePanel } from './ArchivePanel';
-import { DailyLogPanel } from './DailyLogPanel';
-import { AssetsPanel } from './AssetsPanel';
+import { ArchiveView } from './ArchiveView';
+import { DiaryView } from './DiaryView';
+import { AssetsView } from './AssetsView';
 import { LinkDialog } from './LinkDialog';
 import { SearchPanel } from './SearchPanel';
 import { TrashPanel } from './TrashPanel';
@@ -101,9 +101,18 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const { showGrid, snap } = preferences;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
-  const [assetsOpen, setAssetsOpen] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [diaryOpen, setDiaryOpen] = useState(false);
+  // Vista de trabajo a pantalla completa (ADR 0036), no un diálogo superpuesto; reemplaza diaryOpen,
+  // assetsOpen y archiveOpen.
+  type MainView = 'board' | 'diary' | 'assets' | 'archive';
+  const [mainView, setMainView] = useState<MainView>('board');
+  // Una vista visitada se queda montada (oculta, no desmontada) para conservar su estado —búsqueda,
+  // pestaña, selección— al volver, igual que ya hacía Dialog con `visible`; no se monta antes de la
+  // primera visita, para no pagar su coste si nunca se abre.
+  const [visitedViews, setVisitedViews] = useState<ReadonlySet<MainView>>(new Set());
+  const openView = (next: MainView) => {
+    setMainView(next);
+    setVisitedViews((current) => (current.has(next) ? current : new Set(current).add(next)));
+  };
   const [presentOpen, setPresentOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -355,6 +364,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const createBoard = () => {
     void run((storage, workspaceId) => addBoardToWorkspace(storage, workspaceId, {}), 'Tablero creado. Guardado en memoria.')
       .then((result) => { if (result.ok) void chooseBoard(result.value); });
+  };
+
+  const assetPlacement = () => {
+    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    return { createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) };
   };
 
   const pressCard = (cardId: CardId) => {
@@ -730,9 +744,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       trashCount={workspace.trash?.length ?? 0}
       onOpenTrash={() => setTrashOpen(true)}
       onOpenSettings={() => setSettingsOpen(true)}
-      onOpenAssets={() => setAssetsOpen(true)}
-      onOpenArchive={() => setArchiveOpen(true)}
-      onOpenDiary={() => setDiaryOpen(true)}
+      onOpenAssets={() => openView('assets')}
+      onOpenArchive={() => openView('archive')}
+      onOpenDiary={() => openView('diary')}
       onOpenPresent={() => setPresentOpen(true)}
       canPrint={Platform.OS === 'web'}
       onOpenPrint={() => printBoard()}
@@ -744,7 +758,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onUndo={() => void undoLast()}
       onRedo={() => void redoLast()}
       navInSidebar={sidebar}
-      trailing={sidebar ? feedbackLine : undefined}
     />
   ) : null;
 
@@ -880,9 +893,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical />
                 <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
                 <NavItem glyph="🗑" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
-                <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => setDiaryOpen(true)} />
-                <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => setArchiveOpen(true)} />
-                <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => setAssetsOpen(true)} />
+                <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => openView('diary')} />
+                <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
+                <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
                 <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
                 {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
                 <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
@@ -899,13 +912,54 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               <Text accessibilityRole="alert" style={[styles.body, { color: colors.textPrimary }]}>{view.message}</Text>
             </View>
           ) : null}
+          {/* Aviso de guardado: una sola instancia, transversal a cualquier vista, no solo al lienzo
+              (ADR 0036) — antes vivía dentro de la barra del lienzo, que ahora puede estar oculta. */}
+          {workspace ? feedbackLine : null}
+          {workspace && visitedViews.has('diary') ? (
+            <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'diary' ? styles.hidden : null]}>
+              <DiaryView
+                active={mainView === 'diary'}
+                compact={compact}
+                workspace={workspace}
+                run={run}
+                onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
+                onBack={() => setMainView('board')}
+              />
+            </View>
+          ) : null}
+          {workspace && visitedViews.has('assets') ? (
+            <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'assets' ? styles.hidden : null]}>
+              <AssetsView
+                active={mainView === 'assets'}
+                compact={compact}
+                workspace={workspace}
+                run={run}
+                placement={assetPlacement}
+                onAdded={(cardId) => void select(cardId)}
+                onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
+                onBack={() => setMainView('board')}
+              />
+            </View>
+          ) : null}
+          {workspace && visitedViews.has('archive') ? (
+            <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'archive' ? styles.hidden : null]}>
+              <ArchiveView
+                active={mainView === 'archive'}
+                compact={compact}
+                workspace={workspace}
+                busy={saving}
+                onRestore={(cardId) => void restoreArchived(cardId)}
+                onSendToTrash={archivedToTrash}
+                onBack={() => setMainView('board')}
+              />
+            </View>
+          ) : null}
           {workspace ? (
-            <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide]}>
+            <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'board' ? styles.hidden : null]}>
               {/* Enfocado en móvil: el editor usa todo el alto (sin pestañas ni barra del ZIP). */}
               {compact && focusing ? null : tabs}
               {compact && focusing ? null : exportBar}
               {compact ? null : toolbar}
-              {sidebar ? null : feedbackLine}
               {multiBar}
               {relocateBar}
               {placeBar}
@@ -964,24 +1018,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onResetView={() => { setZoom(1); setPan(START_PAN); }}
             onClose={() => setSettingsOpen(false)}
           />
-          <AssetsPanel
-            visible={assetsOpen}
-            compact={compact}
-            workspace={workspace}
-            run={run}
-            placement={() => {
-              const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
-              return { createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) };
-            }}
-            onAdded={(cardId) => void select(cardId)}
-            onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
-            onClose={() => setAssetsOpen(false)}
-          />
           {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
           <Dialog visible={moreOpen} title={t('more', locale)} compact={compact} onClose={() => setMoreOpen(false)} testID="more-sheet">
-            <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); setDiaryOpen(true); }} />
-            <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); setArchiveOpen(true); }} />
-            <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); setAssetsOpen(true); }} />
+            <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); openView('diary'); }} />
+            <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
+            <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
             <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
             {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
             <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
@@ -994,23 +1035,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               onClose={() => setPresentOpen(false)}
             />
           ) : null}
-          <DailyLogPanel
-            visible={diaryOpen}
-            compact={compact}
-            workspace={workspace}
-            run={run}
-            onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
-            onClose={() => setDiaryOpen(false)}
-          />
-          <ArchivePanel
-            visible={archiveOpen}
-            compact={compact}
-            workspace={workspace}
-            busy={saving}
-            onRestore={(cardId) => void restoreArchived(cardId)}
-            onSendToTrash={archivedToTrash}
-            onClose={() => setArchiveOpen(false)}
-          />
           <TrashPanel
             visible={trashOpen}
             compact={compact}

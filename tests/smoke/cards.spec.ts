@@ -817,7 +817,7 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
       await expect(page.getByTestId('more-sheet')).toBeVisible();
     }
     await button(page, 'Abrir los assets').click();
-    await expect(page.getByTestId('assets-panel')).toBeVisible();
+    await expect(page.getByTestId('assets-view')).toBeVisible();
   };
   await openAssets();
   await expect(page.getByTestId('assets-count')).toHaveText('1 ARCHIVO');
@@ -842,7 +842,8 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   // Un archivo en uso no se puede eliminar; «Ir» lleva a la tarjeta.
   await expect(button(page, 'Eliminar tarjeta-1-1.png')).toHaveCount(0);
   await button(page, 'Ir a Ruta').click();
-  await expect(page.getByTestId('assets-panel')).toHaveCount(0);
+  // Sigue montada (oculta) para conservar su búsqueda al volver (ADR 0036), no se desmonta.
+  await expect(page.getByTestId('assets-view')).toBeHidden();
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   await closeEditor(page);
 
@@ -905,7 +906,7 @@ test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar 
       await expect(page.getByTestId('more-sheet')).toBeVisible();
     }
     await button(page, `Abrir el Archivo (${count})`).click();
-    await expect(page.getByTestId('archive-panel')).toBeVisible();
+    await expect(page.getByTestId('archive-view')).toBeVisible();
   };
   await openArchive(1);
   await expect(page.getByTestId('archive-item-tarjeta-1')).toContainText('NOTA · ARCHIVADA');
@@ -951,7 +952,7 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
       await expect(page.getByTestId('more-sheet')).toBeVisible();
     }
     await button(page, 'Abrir el diario').click();
-    await expect(page.getByTestId('daily-log-panel')).toBeVisible();
+    await expect(page.getByTestId('diary-view')).toBeVisible();
   };
   await openDiary();
   await expect(page.getByTestId('log-day')).toContainText('· hoy');

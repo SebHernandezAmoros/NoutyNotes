@@ -640,7 +640,7 @@ test('carpeta: la entrada del diario y la fecha de creación se guardan en el Ma
   const openDiary = async () => {
     await openMore(page);
     await page.getByRole('button', { name: 'Abrir el diario', exact: true }).click();
-    await expect(page.getByTestId('daily-log-panel')).toBeVisible();
+    await expect(page.getByTestId('diary-view')).toBeVisible();
   };
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
