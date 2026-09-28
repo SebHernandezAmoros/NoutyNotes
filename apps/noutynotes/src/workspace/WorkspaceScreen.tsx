@@ -21,6 +21,7 @@ import { noteFontFamily } from './fonts';
 import { PresentView } from './PresentView';
 import { buildPrintHtml } from './printHtml';
 import { downloadFile } from '../session/archiveFiles';
+import { activateCustomFont, customFontFamilyName, supportsCustomFont } from '../session/customFont';
 import { describeFailure } from '../session/messages';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
@@ -149,6 +150,23 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const summaries = useSessionSummaries(workspace);
   const previews = useImagePreviews(session.storage, workspace);
   const saved = (text: string) => (storageMode === 'folder' ? text.replace('Guardado en memoria.', 'Guardado en la carpeta.') : text);
+
+  // Fuente personalizada (ADR 0041): el registro `FontFace` no sobrevive a recargar, así que se vuelve a
+  // activar al abrir este workspace si la preferencia la sigue señalando. Si el archivo ya no está, se
+  // queda sin activar y `noteFontFamily` cae a la reserva del sistema por diseño; no es un error.
+  const customFontRef = preferences.noteFont === 'custom' ? preferences.customFontRef : null;
+  const customFontFamily = customFontRef ? customFontFamilyName(customFontRef) : undefined;
+  const workspaceIdForFont = workspace?.id ?? null;
+  useEffect(() => {
+    if (!workspaceIdForFont || !customFontRef || !supportsCustomFont()) return undefined;
+    const assets = assetsOf(session.storage);
+    if (!assets) return undefined;
+    let active = true;
+    void assets.readAsset(workspaceIdForFont, customFontRef as AssetRef).then((read) => {
+      if (active && read.ok) void activateCustomFont(customFontRef, read.value);
+    });
+    return () => { active = false; };
+  }, [workspaceIdForFont, customFontRef, session.storage]);
 
   const { flushPendingText, setPendingText } = usePendingText(run, storageMode);
 
@@ -680,7 +698,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onSelectMany={boardView === 'canvas' && tool === 'select' ? () => void startMulti([selected.id]) : undefined}
       inSheet={compact}
       noteImages={previews.refs}
-      noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS)}
+      noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
     />
@@ -891,7 +909,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onResetView={() => { setZoom(1); setPan(START_PAN); }}
         onAreaSelect={(cardIds) => void startMulti(cardIds)}
         showDates={preferences.showDates}
-        noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS)}
+        noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
         connectSource={connectSource}
         onCardPress={pressCard}
         onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (frameId) void selectFrame(null); else if (selectedId) void select(null); }}
@@ -1004,6 +1022,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 onAdded={(cardId) => void select(cardId)}
                 onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
                 onBack={() => setMainView('board')}
+                preferences={preferences}
+                onPreferencesChange={setPreferences}
               />
             </View>
           ) : null}

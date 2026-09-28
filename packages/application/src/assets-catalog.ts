@@ -7,12 +7,13 @@ import type { AssetRef, BoardId, Card, CardId, Workspace } from '@noutynotes/dom
 import { fold } from './search';
 import { noteImageRefs, parseNoteBlocks, serializeNoteBlocks } from './note-blocks';
 
-export type AssetKind = 'image' | 'document' | 'audio' | 'other';
+export type AssetKind = 'image' | 'document' | 'audio' | 'font' | 'other';
 
 const KINDS: readonly [AssetKind, RegExp][] = [
   ['image', /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i],
   ['document', /\.(pdf|txt|md|markdown|docx?|odt|rtf|csv|xlsx?|ods|pptx?|odp|json|ya?ml)$/i],
   ['audio', /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i],
+  ['font', /\.(ttf|otf)$/i],
 ];
 
 export function assetKind(ref: string): AssetKind {

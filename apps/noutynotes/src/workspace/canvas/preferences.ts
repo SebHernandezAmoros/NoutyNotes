@@ -16,11 +16,14 @@ export interface ViewPreferences {
   readonly cardGap: number;
   /** Fecha de creación en el pie de las fichas (ADR 0029). */
   readonly showDates: boolean;
-  /** Tipografía del texto de las notas (ADR 0030): solo fuentes del sistema. */
+  /** Tipografía del texto de las notas (ADR 0030): fuentes del sistema, o una importada (ADR 0041). */
   readonly noteFont: NoteFont;
+  /** Ruta del asset de la fuente activada como «custom» (ADR 0041); solo tiene sentido en el workspace
+   * que la tiene. En otro, o si ya no está, `noteFontFamily` cae a la reserva del sistema por diseño. */
+  readonly customFontRef: string | null;
 }
 
-export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 64, cardGap: 8, showDates: false, noteFont: 'system' };
+export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 64, cardGap: 8, showDates: false, noteFont: 'system', customFontRef: null };
 
 export const PREFERENCE_LIMITS = {
   rowHeight: { min: 56, max: 96, step: 8 },
@@ -47,7 +50,8 @@ export function parsePreferences(stored: string | null): ViewPreferences {
   const number = (key: NumericPreference) => (typeof record[key] === 'number' && Number.isFinite(record[key])
     ? snapTo(record[key] as number, PREFERENCE_LIMITS[key]) : DEFAULT_PREFERENCES[key]);
   const noteFont = isNoteFont(record.noteFont) ? record.noteFont : DEFAULT_PREFERENCES.noteFont;
-  return { showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'), showDates: flag('showDates'), noteFont };
+  const customFontRef = typeof record.customFontRef === 'string' ? record.customFontRef : DEFAULT_PREFERENCES.customFontRef;
+  return { showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'), showDates: flag('showDates'), noteFont, customFontRef };
 }
 
 export function stepPreference(preferences: ViewPreferences, key: NumericPreference, direction: 1 | -1): ViewPreferences {

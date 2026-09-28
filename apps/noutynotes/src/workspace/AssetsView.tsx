@@ -1,5 +1,5 @@
 import {
-  addAssetToBoard, assetKind, assetsOf, buildAssetCatalog, deleteUnusedAssets, fold, importAssetImage, importLibraryFile, inspectImage, replaceAsset,
+  addAssetToBoard, assetKind, assetsOf, buildAssetCatalog, deleteUnusedAssets, fold, importAssetImage, importLibraryFile, importLibraryFont, inspectFont, inspectImage, replaceAsset,
 } from '@noutynotes/application';
 import type { AssetEntry, AssetKind, WorkspaceStorageResult } from '@noutynotes/application';
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
@@ -10,10 +10,13 @@ import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-nativ
 
 import { ActionButton, TextField } from '../components/controls';
 import { t } from '../i18n';
+import { activateCustomFont } from '../session/customFont';
 import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
+import { pickFontFile, supportsFontImport } from '../session/fontImport';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { openAssetFile, supportsOpenAsset } from '../session/openAsset';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
+import type { ViewPreferences } from './canvas/preferences';
 import { dataUri } from './dataUri';
 import { useEscapeBack } from './useEscapeBack';
 import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
@@ -31,13 +34,16 @@ interface AssetsViewProps {
   readonly onAdded: (cardId: CardId) => void;
   readonly onGo: (cardId: CardId) => void;
   readonly onBack: () => void;
+  /** Tipografía de las notas (ADR 0041): «Usar en las notas» activa la fuente y guarda la preferencia. */
+  readonly preferences: ViewPreferences;
+  readonly onPreferencesChange: (next: ViewPreferences) => void;
 }
 
-const tabKeys: readonly { tab: Tab; labelKey: 'assets.tab.all' | 'assets.tab.image' | 'assets.tab.document' | 'assets.tab.audio' | 'assets.tab.other' }[] = [
-  { tab: 'all', labelKey: 'assets.tab.all' }, { tab: 'image', labelKey: 'assets.tab.image' }, { tab: 'document', labelKey: 'assets.tab.document' }, { tab: 'audio', labelKey: 'assets.tab.audio' }, { tab: 'other', labelKey: 'assets.tab.other' },
+const tabKeys: readonly { tab: Tab; labelKey: 'assets.tab.all' | 'assets.tab.image' | 'assets.tab.document' | 'assets.tab.audio' | 'assets.tab.font' | 'assets.tab.other' }[] = [
+  { tab: 'all', labelKey: 'assets.tab.all' }, { tab: 'image', labelKey: 'assets.tab.image' }, { tab: 'document', labelKey: 'assets.tab.document' }, { tab: 'audio', labelKey: 'assets.tab.audio' }, { tab: 'font', labelKey: 'assets.tab.font' }, { tab: 'other', labelKey: 'assets.tab.other' },
 ];
-const kindLabelKey: Readonly<Record<AssetKind, 'assets.kind.image' | 'assets.kind.document' | 'assets.kind.audio' | 'assets.kind.other'>> = {
-  image: 'assets.kind.image', document: 'assets.kind.document', audio: 'assets.kind.audio', other: 'assets.kind.other',
+const kindLabelKey: Readonly<Record<AssetKind, 'assets.kind.image' | 'assets.kind.document' | 'assets.kind.audio' | 'assets.kind.font' | 'assets.kind.other'>> = {
+  image: 'assets.kind.image', document: 'assets.kind.document', audio: 'assets.kind.audio', font: 'assets.kind.font', other: 'assets.kind.other',
 };
 type PluralUnit = 'unusedDeleted' | 'unused' | 'fileUpper' | 'card';
 const unit = (base: PluralUnit, count: number, locale: Locale) =>
@@ -50,12 +56,12 @@ const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round
  * Importar, añadir al tablero sin copiar, reemplazar en todas las referencias y eliminar solo lo que
  * nada usa.
  */
-export function AssetsView({ active, compact, workspace, run, placement, onAdded, onGo, onBack }: AssetsViewProps) {
+export function AssetsView({ active, compact, workspace, run, placement, onAdded, onGo, onBack, preferences, onPreferencesChange }: AssetsViewProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
   const kindLabel: Readonly<Record<AssetKind, string>> = {
-    image: t(kindLabelKey.image, locale), document: t(kindLabelKey.document, locale), audio: t(kindLabelKey.audio, locale), other: t(kindLabelKey.other, locale),
+    image: t(kindLabelKey.image, locale), document: t(kindLabelKey.document, locale), audio: t(kindLabelKey.audio, locale), font: t(kindLabelKey.font, locale), other: t(kindLabelKey.other, locale),
   };
   const tabs: readonly { tab: Tab; label: string }[] = tabKeys.map(({ tab, labelKey }) => ({ tab, label: t(labelKey, locale) }));
   useEscapeBack(active, onBack);
@@ -74,6 +80,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const [bytes, setBytes] = useState<ReadonlyMap<string, number>>(new Map());
   const [confirm, setConfirm] = useState<'one' | 'unused' | null>(null);
   const [copied, setCopied] = useState(false);
+  const [fontDraft, setFontDraft] = useState<{ readonly bytes: Uint8Array; readonly name: string } | null>(null);
+  const [fontConsent, setFontConsent] = useState(false);
+  const [licenseNote, setLicenseNote] = useState('');
 
   // Al entrar (y tras cada cambio), se lista la carpeta assets/ y se leen las miniaturas de las imágenes.
   useEffect(() => {
@@ -170,6 +179,60 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       reload();
     }
   };
+  const pickFont = async () => {
+    if (!supportsFontImport()) {
+      setProblem(t('assets.error.noFontPicker', locale));
+      return;
+    }
+    let file;
+    try {
+      file = await pickFontFile();
+    } catch {
+      setProblem(t('assets.error.fontReadFailed', locale));
+      return;
+    }
+    if (!file) return;
+    // Firma binaria antes de pedir consentimiento (ADR 0041): no tiene sentido pedir licencia de algo
+    // que ni siquiera es una fuente TTF/OTF.
+    const kind = inspectFont(file.bytes);
+    if (!kind.ok) {
+      setProblem(kind.issues[0]?.message ?? t('assets.error.fontReadFailed', locale));
+      return;
+    }
+    setProblem(null);
+    setFontDraft(file);
+  };
+  const cancelFontImport = () => {
+    setFontDraft(null);
+    setFontConsent(false);
+    setLicenseNote('');
+  };
+  const confirmFontImport = async () => {
+    if (!assets || !fontDraft || !fontConsent) return;
+    const draft = fontDraft;
+    const note = licenseNote;
+    const result = await run((store, id) => importLibraryFont(store, assets, id, { bytes: draft.bytes, fileName: draft.name, licenseNote: note }),
+      `«${draft.name}» añadida a la biblioteca. Guardado en memoria.`);
+    cancelFontImport();
+    if (result.ok) {
+      setSelected(result.value.ref);
+      reload();
+    }
+  };
+  const applyFontToNotes = async (entry: AssetEntry) => {
+    if (!assets) return;
+    const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
+    if (!read.ok) {
+      setProblem(read.issues[0]?.message ?? t('assets.error.readFailed', locale));
+      return;
+    }
+    const activated = await activateCustomFont(entry.ref, read.value);
+    if (!activated) {
+      setProblem(t('assets.font.activateFailed', locale));
+      return;
+    }
+    onPreferencesChange({ ...preferences, noteFont: 'custom', customFontRef: entry.ref });
+  };
   const openFile = async (entry: AssetEntry) => {
     if (!assets) return;
     const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
@@ -242,6 +305,13 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         {(current.kind === 'document' || current.kind === 'audio') && !current.missing && supportsOpenAsset() ? (
           <ActionButton label={t('assets.open', locale)} accessibilityLabel={t('assets.open.accessibilityLabel', locale, { name: current.name })} onPress={() => void openFile(current)} />
         ) : null}
+        {current.kind === 'font' && !current.missing ? (
+          preferences.noteFont === 'custom' && preferences.customFontRef === current.ref ? (
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.font.active', locale)}</Text>
+          ) : (
+            <ActionButton label={t('assets.font.useInNotes', locale)} accessibilityLabel={t('assets.font.useInNotes.accessibilityLabel', locale, { name: current.name })} onPress={() => void applyFontToNotes(current)} />
+          )
+        ) : null}
         {current.unused ? <ActionButton label={t('assets.delete', locale)} accessibilityLabel={t('assets.delete.accessibilityLabel', locale, { name: current.name })} onPress={() => setConfirm('one')} /> : null}
       </View>
       {confirm === 'one' ? (
@@ -308,6 +378,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
           <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
             <ActionButton label={t('assets.import.image', locale)} tone="primary" accessibilityLabel={t('assets.import.image.accessibilityLabel', locale)} onPress={() => void importImage()} />
             {supportsFileImport() ? <ActionButton label={t('assets.import.file', locale)} accessibilityLabel={t('assets.import.file.accessibilityLabel', locale)} onPress={() => void importFile()} /> : null}
+            {supportsFontImport() ? <ActionButton label={t('assets.import.font', locale)} accessibilityLabel={t('assets.import.font.accessibilityLabel', locale)} onPress={() => void pickFont()} /> : null}
             <ActionButton label={grid ? t('assets.view.list', locale) : t('assets.view.grid', locale)} accessibilityLabel={grid ? t('assets.view.list.accessibilityLabel', locale) : t('assets.view.grid.accessibilityLabel', locale)} onPress={() => setGridChoice(!grid)} />
             {tabs.map(({ tab: key, label }) => (
               <ActionButton key={key} label={`${label} · ${counts.get(key) ?? 0}`} pressed={tab === key}
@@ -319,6 +390,18 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
             <View style={compact ? styles.column : styles.mainColumn}>
               <TextField label={t('assets.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('assets.search.placeholder', locale)} testID="assets-search" />
               {problem ? <Text testID="assets-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{problem}</Text> : null}
+              {fontDraft ? (
+                <View testID="assets-font-consent" style={[styles.confirm, { borderColor: colors.border }]}>
+                  <Text style={[styles.body, { color: colors.textPrimary }]}>{t('assets.font.import.title', locale, { name: fontDraft.name })}</Text>
+                  <ActionButton label={t('assets.font.consent', locale)} pressed={fontConsent} onPress={() => setFontConsent((value) => !value)} />
+                  <TextField label={t('assets.font.license.label', locale)} value={licenseNote} onChangeText={setLicenseNote} placeholder={t('assets.font.license.placeholder', locale)} testID="assets-font-license-input" />
+                  <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.font.license.hint', locale)}</Text>
+                  <View style={styles.row}>
+                    <ActionButton label={t('assets.font.import.confirm', locale)} tone="primary" disabled={!fontConsent} onPress={() => void confirmFontImport()} />
+                    <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('assets.font.import.cancel.accessibilityLabel', locale)} onPress={cancelFontImport} />
+                  </View>
+                </View>
+              ) : null}
               {unused.length > 0 ? (
                 confirm === 'unused' ? (
                   <View testID="assets-confirm-unused" style={[styles.confirm, { borderColor: colors.danger }]}>

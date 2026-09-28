@@ -40,6 +40,9 @@ export type { AssetEntry, AssetKind, AssetUse } from './assets-catalog';
 export { addAssetToBoard, assetBaseName, deleteUnusedAssets, importAssetImage, replaceAsset } from './assets-library';
 export { MAX_LIBRARY_FILE_BYTES, importLibraryFile } from './asset-import';
 export type { LibraryFileInput } from './asset-import';
+
+export { MAX_FONT_BYTES, importLibraryFont, inspectFont } from './font-import';
+export type { FontKind, ImportedFont, LibraryFontInput } from './font-import';
 export { DIARY_CARD_TYPE, activeDays, dailyLog, dailyLogRange, isDay, isDiaryEntry, localDay, localTime, shiftDay } from './daily-log';
 export type { DailyLog, DailyLogRangeResult, RangeLogItem, TimedCard } from './daily-log';
 export { diaryExportText } from './diary-export';

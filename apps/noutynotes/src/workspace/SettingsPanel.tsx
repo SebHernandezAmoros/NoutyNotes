@@ -7,7 +7,6 @@ import { ActionButton } from '../components/controls';
 import { Dialog } from '../components/Dialog';
 import { t } from '../i18n';
 import { NOTE_FONT_VALUES } from './fonts';
-import type { NoteFont } from './fonts';
 import { PREFERENCE_LIMITS, stepPreference } from './canvas/preferences';
 import type { ViewPreferences } from './canvas/preferences';
 import { MAX_ZOOM, MIN_ZOOM, formatZoom } from './canvas/viewport';
@@ -77,10 +76,15 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <View style={styles.section}>
         <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.fonts', locale)}</Text>
         <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel={t('settings.fonts.group', locale)}>
-          {NOTE_FONT_VALUES.map((value: NoteFont) => (
+          {NOTE_FONT_VALUES.map((value) => (
             <ActionButton key={value} label={t(fontLabelKey[value], locale)} accessibilityLabel={t(fontUseKey[value], locale)}
               pressed={preferences.noteFont === value} onPress={() => props.onChange({ ...preferences, noteFont: value })} />
           ))}
+          {/* Solo si ya hay una fuente activada en este workspace (ADR 0041): sin eso, un botón sin función. */}
+          {preferences.customFontRef !== null ? (
+            <ActionButton label={t('settings.font.custom', locale)} accessibilityLabel={t('settings.font.use.custom', locale)}
+              pressed={preferences.noteFont === 'custom'} onPress={() => props.onChange({ ...preferences, noteFont: 'custom' })} />
+          ) : null}
         </View>
         <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.fonts.note', locale)}</Text>
       </View>

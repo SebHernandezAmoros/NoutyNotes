@@ -633,6 +633,33 @@ export const TRANSLATIONS = {
   'inspector.sheet.show.frame.accessibilityLabel': { es: 'Mostrar el editor del marco', en: 'Show the frame editor' },
   'inspector.sheet.hide.frame.accessibilityLabel': { es: 'Ocultar el editor del marco', en: 'Hide the frame editor' },
   'inspector.sheet.close.frame.accessibilityLabel': { es: 'Cerrar el editor del marco', en: 'Close the frame editor' },
+
+  // Fuentes locales en Assets (E7c, ADR 0041)
+  'assets.tab.font': { es: 'Fuentes', en: 'Fonts' },
+  'assets.kind.font': { es: 'Fuente', en: 'Font' },
+  'assets.import.font': { es: 'Importar fuente', en: 'Import font' },
+  'assets.import.font.accessibilityLabel': { es: 'Importar una fuente TTF u OTF a la biblioteca', en: 'Import a TTF or OTF font to the library' },
+  'assets.error.noFontPicker': { es: 'Este entorno no permite elegir fuentes.', en: 'This environment does not allow choosing fonts.' },
+  'assets.error.fontReadFailed': { es: 'No se pudo leer la fuente elegida. Comprueba el permiso y vuelve a intentarlo.', en: 'Could not read the chosen font. Check the permission and try again.' },
+  'assets.font.import.title': { es: 'Importar «{name}»', en: 'Import “{name}”' },
+  'assets.font.consent': { es: 'Tengo derecho a usar y compartir esta fuente.', en: 'I have the right to use and share this font.' },
+  'assets.font.license.label': { es: 'Nota de licencia (opcional)', en: 'License note (optional)' },
+  'assets.font.license.placeholder': { es: 'p. ej. SIL Open Font License 1.1', en: 'e.g. SIL Open Font License 1.1' },
+  'assets.font.license.hint': {
+    es: 'NoutyNotes no puede comprobar la licencia de una fuente; esta nota se guarda junto al archivo, como recordatorio.',
+    en: 'NoutyNotes cannot verify a font’s license; this note is saved next to the file, as a reminder.',
+  },
+  'assets.font.import.confirm': { es: 'Importar', en: 'Import' },
+  'assets.font.import.cancel.accessibilityLabel': { es: 'Cancelar la importación de la fuente', en: 'Cancel importing the font' },
+  'assets.font.useInNotes': { es: 'Usar en las notas', en: 'Use in notes' },
+  'assets.font.useInNotes.accessibilityLabel': { es: 'Usar {name} como tipografía de las notas', en: 'Use {name} as the font for notes' },
+  'assets.font.active': { es: 'En uso en las notas', en: 'In use for notes' },
+  'settings.font.custom': { es: 'Personalizada', en: 'Custom' },
+  'settings.font.use.custom': { es: 'Usar la fuente personalizada de este proyecto', en: 'Use this project’s custom font' },
+  'assets.font.activateFailed': {
+    es: 'El navegador no pudo activar esta fuente. El archivo sigue guardado; puedes volver a intentarlo.',
+    en: 'The browser could not activate this font. The file is still saved; you can try again.',
+  },
 } as const satisfies Record<string, { readonly es: string; readonly en: string }>;
 
 export type TranslationKey = keyof typeof TRANSLATIONS;

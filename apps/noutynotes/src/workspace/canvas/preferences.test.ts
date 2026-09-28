@@ -7,11 +7,14 @@ describe('preferencias de vista del dispositivo (ADR 0014)', () => {
     expect(parsePreferences(null)).toEqual(DEFAULT_PREFERENCES);
     expect(parsePreferences('{no es json')).toEqual(DEFAULT_PREFERENCES);
     expect(parsePreferences(JSON.stringify({ showGrid: false, snap: false, rowHeight: 80, cardGap: 12, showDates: true, noteFont: 'serif' })))
-      .toEqual({ showGrid: false, snap: false, rowHeight: 80, cardGap: 12, showDates: true, noteFont: 'serif' });
+      .toEqual({ showGrid: false, snap: false, rowHeight: 80, cardGap: 12, showDates: true, noteFont: 'serif', customFontRef: null });
     // Fecha visible (ADR 0029): apagada por defecto y también si lo guardado no es un booleano.
     expect(parsePreferences(JSON.stringify({ showDates: 'sí' })).showDates).toBe(false);
     // Tipografía de las notas (ADR 0030): «Sistema» por defecto y también ante un valor desconocido.
     expect(parsePreferences(JSON.stringify({ noteFont: 'comic-sans' })).noteFont).toBe('system');
+    // Fuente importada (ADR 0041): se lee si es texto; cualquier otra cosa cae a null (sin fuente activada).
+    expect(parsePreferences(JSON.stringify({ noteFont: 'custom', customFontRef: 'assets/fonts/mi-fuente.ttf' })).customFontRef).toBe('assets/fonts/mi-fuente.ttf');
+    expect(parsePreferences(JSON.stringify({ customFontRef: 42 })).customFontRef).toBeNull();
     // Fuera de rango o de paso: se ajusta al valor válido más cercano; tipos erróneos, por defecto.
     expect(parsePreferences(JSON.stringify({ showGrid: 'sí', rowHeight: 500, cardGap: 3 })))
       .toEqual({ ...DEFAULT_PREFERENCES, rowHeight: 96, cardGap: 4 });

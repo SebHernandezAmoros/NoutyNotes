@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addAssetToBoard, addNoteImage, addCardToBoard, buildAssetCatalog, createEmptyWorkspaceNamed, deleteUnusedAssets, editCardContent, importAssetImage,
-  importImageCard, importLibraryFile, noteImageRefs, removeNoteBlock, replaceAsset,
+  importImageCard, importLibraryFile, importLibraryFont, noteImageRefs, removeNoteBlock, replaceAsset,
 } from '../../packages/application/src/index';
 import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { AssetRef, WorkspaceId } from '../../packages/domain/src/index';
@@ -106,5 +106,30 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     const catalog = buildAssetCatalog(ok(await storage.open(id)), ok(await storage.listAssets(id)));
     expect(catalog.find((entry) => entry.ref === doc)).toMatchObject({ kind: 'document', unused: true });
     expect(catalog.find((entry) => entry.ref === audio)).toMatchObject({ kind: 'audio', unused: true });
+  });
+
+  it('importar una fuente a la biblioteca (ADR 0041): carpeta assets/fonts, nombre portable, nota de licencia opcional; se rechaza lo que no es TTF/OTF o supera el límite', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Galería'));
+    const ttfBytes = Uint8Array.from([0x00, 0x01, 0x00, 0x00, 1, 2, 3, 4]);
+    const font = ok(await importLibraryFont(storage, storage, id, { bytes: ttfBytes, fileName: 'Mi Fuente.ttf', licenseNote: 'OFL 1.1' }));
+    expect(font.ref).toBe('assets/fonts/mi-fuente.ttf');
+    expect(font.licenseRef).toBe('assets/fonts/mi-fuente.ttf.license.txt');
+    expect(ok(await storage.readAsset(id, font.ref as AssetRef))).toEqual(ttfBytes);
+    expect(new TextDecoder().decode(ok(await storage.readAsset(id, font.licenseRef as AssetRef)))).toBe('OFL 1.1');
+    // Sin nota de licencia, no se escribe ningún archivo auxiliar.
+    const otfBytes = Uint8Array.from([0x4f, 0x54, 0x54, 0x4f, 9, 9]);
+    const noNote = ok(await importLibraryFont(storage, storage, id, { bytes: otfBytes, fileName: 'Otra.otf' }));
+    expect(noNote).toEqual({ ref: 'assets/fonts/otra.otf' });
+    // No sobrescribe: el mismo nombre base numera.
+    expect(ok(await importLibraryFont(storage, storage, id, { bytes: ttfBytes, fileName: 'Mi Fuente.ttf' }))).toMatchObject({ ref: 'assets/fonts/mi-fuente-2.ttf' });
+
+    const rejected = await importLibraryFont(storage, storage, id, { bytes: Uint8Array.from([1, 2, 3, 4]), fileName: 'no-es-fuente.ttf' });
+    expect(rejected.ok ? null : rejected.issues[0]?.code).toBe('invalid-asset');
+    const tooBig = await importLibraryFont(storage, storage, id, { bytes: new Uint8Array(10 * 1024 * 1024 + 1), fileName: 'grande.ttf' });
+    expect(tooBig.ok ? null : tooBig.issues[0]?.code).toBe('invalid-asset');
+
+    const catalog = buildAssetCatalog(ok(await storage.open(id)), ok(await storage.listAssets(id)));
+    expect(catalog.find((entry) => entry.ref === font.ref)).toMatchObject({ kind: 'font', unused: true });
   });
 });

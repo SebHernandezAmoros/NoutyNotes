@@ -920,6 +920,53 @@ test('Assets: importar un documento y un audio, sin «Añadir al tablero», y ab
   expect(runtimeErrors).toEqual([]);
 });
 
+test('Assets: importar una fuente TTF/OTF con consentimiento de licencia y activarla en las notas (ADR 0041)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Tipografía propia');
+  const pick = async (name: string, buffer: Buffer) => {
+    const chooser = page.waitForEvent('filechooser');
+    return (await chooser).setFiles({ name, mimeType: 'font/ttf', buffer });
+  };
+  if (isCompactWidth(page)) await button(page, 'Más secciones').click();
+  await button(page, 'Abrir los assets').click();
+  await expect(page.getByTestId('assets-view')).toBeVisible();
+
+  // Firma binaria, no la extensión: un archivo que dice «.ttf» pero no lo es, se rechaza.
+  const rejected = pick('falsa.ttf', Buffer.from('esto no es una fuente'));
+  await button(page, 'Importar una fuente TTF u OTF a la biblioteca').click();
+  await rejected;
+  await expect(page.getByTestId('assets-problem')).toContainText('Formato no admitido');
+  await expect(button(page, 'Fuentes (0)')).toBeVisible();
+
+  // Firma TTF válida (00 01 00 00): pide consentimiento antes de importar, no importa antes de tiempo.
+  const chosen = pick('Mi Fuente.ttf', Buffer.from([0x00, 0x01, 0x00, 0x00, 1, 2, 3, 4]));
+  await button(page, 'Importar una fuente TTF u OTF a la biblioteca').click();
+  await chosen;
+  await expect(page.getByTestId('assets-font-consent')).toContainText('Importar «Mi Fuente.ttf»');
+  await expect(button(page, 'Fuentes (0)')).toBeVisible();
+  await page.getByTestId('assets-font-license-input').fill('SIL Open Font License 1.1');
+  await expect(button(page, 'Importar')).toBeDisabled(); // sin marcar la casilla, no se puede importar.
+  await button(page, 'Tengo derecho a usar y compartir esta fuente.').click();
+  await expect(button(page, 'Importar')).toBeEnabled();
+  await button(page, 'Importar').click();
+  await expect(feedback(page)).toHaveText('«Mi Fuente.ttf» añadida a la biblioteca. Guardado en memoria.');
+  await expect(page.getByTestId('assets-font-consent')).toHaveCount(0);
+  await expect(button(page, 'Fuentes (1)')).toBeVisible();
+  await expect(page.getByTestId('asset-detail')).toContainText('FUENTE');
+  await page.screenshot({ path: testInfo.outputPath('assets-font.png') });
+
+  // Activarla: si el navegador no puede analizar estos bytes de prueba como una fuente real, lo dice sin
+  // romper nada (ADR 0041, «mantener el texto legible si falta una fuente»); si la acepta, queda en uso.
+  // El nombre portable sale del archivo original en minúsculas y sin espacios («mi-fuente.ttf»).
+  await button(page, 'Usar mi-fuente.ttf como tipografía de las notas').click();
+  await expect(page.getByTestId('assets-problem').or(page.getByText('En uso en las notas'))).toBeVisible();
+
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar en su sitio, y enviar a la Papelera con confirmación (ADR 0023)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);
