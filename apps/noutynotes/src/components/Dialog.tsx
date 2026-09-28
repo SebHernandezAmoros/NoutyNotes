@@ -1,8 +1,9 @@
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { t } from '../i18n';
 import { ActionButton } from './controls';
 import { useKeyboardInset, useRevealFocusedInput } from './useKeyboardInset';
 
@@ -23,6 +24,7 @@ interface DialogProps {
  */
 export function Dialog({ visible, title, compact, onClose, testID, children }: DialogProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const keyboard = useKeyboardInset();
   const scroll = useRef<ScrollView>(null);
@@ -39,7 +41,7 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={[styles.backdrop, compact ? styles.backdropCompact : styles.backdropWide, typing ? { paddingBottom: keyboard } : null]}>
-        <Pressable accessibilityLabel={`Cerrar ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable accessibilityLabel={`${t('dialog.close', locale)} ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={onClose} />
         <View
           testID={testID}
           accessibilityViewIsModal
@@ -48,7 +50,7 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
         >
           <View style={styles.header}>
             <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-            <ActionButton label="Cerrar" accessibilityLabel={`Cerrar ${title.toLowerCase()}`} onPress={onClose} />
+            <ActionButton label={t('dialog.close', locale)} accessibilityLabel={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
           </View>
           <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>

@@ -1,0 +1,142 @@
+/**
+ * Idioma de la interfaz (ADR 0032), del dispositivo como el tema. El contenido de las notas nunca se
+ * traduce. Alcance de esta subfase: el armazón siempre visible (barra de herramientas, navegación y
+ * Configuración). El resto de paneles, el editor de tarjeta e Inicio siguen en español; es un pendiente
+ * explícito, no un olvido.
+ */
+import type { Locale } from '@noutynotes/ui';
+
+export const TRANSLATIONS = {
+  'toolbar.label': { es: 'Herramientas del tablero', en: 'Board tools' },
+  'tool.select': { es: 'Seleccionar', en: 'Select' },
+  'tool.select.label': { es: 'Herramienta Seleccionar', en: 'Select tool' },
+  'tool.select.hint': { es: 'Toca para editar; arrastra para mover y usa las asas para cambiar el tamaño', en: 'Tap to edit; drag to move, and use its handles to resize' },
+  'tool.pan': { es: 'Mano', en: 'Pan' },
+  'tool.pan.label': { es: 'Herramienta Mano', en: 'Pan tool' },
+  'tool.pan.hint': { es: 'Arrastra para desplazar el lienzo', en: 'Drag to pan the canvas' },
+  'tool.connect': { es: 'Conectar', en: 'Connect' },
+  'tool.connect.label': { es: 'Herramienta Conectar', en: 'Connect tool' },
+  'tool.connect.hint': { es: 'Toca el origen y después otra tarjeta para conectar o desconectar', en: 'Tap the source, then another card, to connect or disconnect' },
+  'tool.search': { es: 'Buscar', en: 'Search' },
+  'tool.search.label': { es: 'Abrir la búsqueda', en: 'Open search' },
+  'tool.search.hint': { es: 'En este proyecto o en todos: palabras, #etiqueta, enlaces y tipos', en: 'In this project or all of them: words, #tag, links and types' },
+  'view.list': { es: 'Lista', en: 'List' },
+  'view.list.label': { es: 'Vista de lista', en: 'List view' },
+  'more': { es: 'Más', en: 'More' },
+  'more.label': { es: 'Más secciones', en: 'More sections' },
+  'more.hint': { es: 'Diario, Archivo, Assets y Configuración', en: 'Daily Log, Archive, Assets and Settings' },
+  'add.note': { es: 'Nota', en: 'Note' },
+  'add.note.label': { es: 'Añadir nota', en: 'Add note' },
+  'add.title': { es: 'Título', en: 'Title' },
+  'add.title.label': { es: 'Añadir título flotante', en: 'Add floating title' },
+  'add.link': { es: 'Enlace', en: 'Link' },
+  'add.link.label': { es: 'Añadir enlace', en: 'Add link' },
+  'add.link.hint': { es: 'Una dirección web o de correo; no se descarga nada', en: 'A web or email address; nothing is downloaded' },
+  'add.image': { es: 'Imagen', en: 'Image' },
+  'add.image.label': { es: 'Importar una imagen', en: 'Import an image' },
+  'add.image.hint': { es: 'Elige una imagen PNG, JPEG, GIF o WebP de hasta 5 MB', en: 'Choose a PNG, JPEG, GIF or WebP image up to 5 MB' },
+  'add.example': { es: 'Ejemplo', en: 'Example' },
+  'add.example.label': { es: 'Añadir imagen de ejemplo', en: 'Add example image' },
+  'add.example.hint': { es: 'Marcador de demostración sin archivo', en: 'Demo placeholder, no file' },
+  'undo': { es: 'Deshacer', en: 'Undo' },
+  'undo.hint': { es: 'Ctrl + Z', en: 'Ctrl + Z' },
+  'redo': { es: 'Rehacer', en: 'Redo' },
+  'redo.hint': { es: 'Ctrl + Mayús + Z', en: 'Ctrl + Shift + Z' },
+  'zoom.out': { es: 'Alejar', en: 'Zoom out' },
+  'zoom': { es: 'Zoom', en: 'Zoom' },
+  'zoom.in': { es: 'Acercar', en: 'Zoom in' },
+  'zoom.reset.suffix': { es: ', restablecer a 100 %', en: ', reset to 100%' },
+  'nav.trash': { es: 'Papelera', en: 'Trash' },
+  'nav.trash.open': { es: 'Abrir la Papelera', en: 'Open Trash' },
+  'nav.diary': { es: 'Diario', en: 'Diary' },
+  'nav.diary.open': { es: 'Abrir el diario', en: 'Open diary' },
+  'nav.archive': { es: 'Archivo', en: 'Archive' },
+  'nav.archive.open': { es: 'Abrir el Archivo', en: 'Open Archive' },
+  'nav.assets': { es: 'Assets', en: 'Assets' },
+  'nav.assets.open': { es: 'Abrir los assets', en: 'Open assets' },
+  'nav.present': { es: 'Presentar', en: 'Present' },
+  'nav.present.open': { es: 'Presentar este tablero', en: 'Present this board' },
+  'nav.print': { es: 'Imprimir', en: 'Print' },
+  'nav.print.open': { es: 'Imprimir este tablero', en: 'Print this board' },
+  'nav.settings': { es: 'Configuración', en: 'Settings' },
+  'nav.settings.open': { es: 'Abrir la configuración', en: 'Open settings' },
+  // Genérico del componente Dialog (todos los paneles): sin él, un panel traducido mezclaría idiomas
+  // en su propio botón de cerrar («Cerrar Settings»). El resto de cada panel sigue en español por ahora.
+  'dialog.close': { es: 'Cerrar', en: 'Close' },
+
+  'settings.title': { es: 'Configuración', en: 'Settings' },
+  'settings.appearance': { es: 'Apariencia', en: 'Appearance' },
+  'settings.theme.group': { es: 'Tema', en: 'Theme' },
+  'settings.theme.light': { es: 'Claro', en: 'Light' },
+  'settings.theme.dark': { es: 'Oscuro', en: 'Dark' },
+  'settings.theme.system': { es: 'Sistema', en: 'System' },
+  'settings.theme.use.light': { es: 'Usar el tema claro', en: 'Use light theme' },
+  'settings.theme.use.dark': { es: 'Usar el tema oscuro', en: 'Use dark theme' },
+  'settings.theme.use.system': { es: 'Usar el tema sistema', en: 'Use system theme' },
+  'settings.appearance.note': {
+    es: 'Es el mismo ajuste que en el inicio: se guarda en este dispositivo y cambia toda la app. «Sistema» sigue el modo del dispositivo.',
+    en: 'It is the same setting as on the home screen: it is saved on this device and changes the whole app. “System” follows the device’s mode.',
+  },
+  'settings.dates': { es: 'Fechas', en: 'Dates' },
+  'settings.dates.show': { es: 'Mostrar la fecha de creación en las fichas', en: 'Show the creation date on cards' },
+  'settings.dates.show.description': {
+    es: 'Las tarjetas creadas antes de esta versión no tienen fecha y no muestran ninguna. El editor de la tarjeta siempre la indica.',
+    en: 'Cards created before this version have no date and show none. The card editor always states it.',
+  },
+  'settings.fonts': { es: 'Tipografía', en: 'Fonts' },
+  'settings.fonts.group': { es: 'Tipografía de las notas', en: 'Font for notes' },
+  'settings.font.system': { es: 'Sistema', en: 'System' },
+  'settings.font.serif': { es: 'Serif', en: 'Serif' },
+  'settings.font.mono': { es: 'Monoespaciada', en: 'Monospace' },
+  'settings.font.use.system': { es: 'Usar tipografía sistema en las notas', en: 'Use system font for notes' },
+  'settings.font.use.serif': { es: 'Usar tipografía serif en las notas', en: 'Use serif font for notes' },
+  'settings.font.use.mono': { es: 'Usar tipografía monoespaciada en las notas', en: 'Use monospace font for notes' },
+  'settings.fonts.note': {
+    es: 'Solo fuentes del sistema: se ven igual sin conexión. Se aplica al texto de las notas, no a los títulos ni a la interfaz.',
+    en: 'System fonts only: they look the same offline. It applies to note text, not to titles or the interface.',
+  },
+  'settings.language': { es: 'Idioma', en: 'Language' },
+  'settings.language.use.es': { es: 'Usar español', en: 'Use Spanish' },
+  'settings.language.use.en': { es: 'Usar inglés', en: 'Use English' },
+  'settings.language.note': {
+    es: 'Es del dispositivo, como el tema: cambia al instante la barra, la navegación y esta Configuración. El resto de paneles y el contenido de las notas siguen en español por ahora.',
+    en: 'It is per-device, like the theme: it instantly changes the toolbar, navigation and this Settings panel. The rest of the panels and note content still show in Spanish for now.',
+  },
+  'settings.canvas': { es: 'Lienzo y grilla', en: 'Canvas and grid' },
+  'settings.grid.show': { es: 'Mostrar grilla', en: 'Show grid' },
+  'settings.grid.show.description': { es: 'Líneas de columnas y filas sobre el papel.', en: 'Column and row lines over the paper.' },
+  'settings.snap': { es: 'Imán en la vista previa', en: 'Snap in the preview' },
+  'settings.snap.description': {
+    es: 'Al arrastrar, la ficha salta de celda en celda. Sin imán sigue al puntero; al soltar se guarda siempre la celda entera.',
+    en: 'While dragging, the card jumps from cell to cell. Without snap it follows the pointer; releasing always saves the whole cell.',
+  },
+  'settings.zoom': { es: 'Zoom', en: 'Zoom' },
+  'settings.zoom.description': { es: 'Solo para esta sesión.', en: 'For this session only.' },
+  'settings.zoom.out': { es: 'Alejar el lienzo', en: 'Zoom out the canvas' },
+  'settings.zoom.in': { es: 'Acercar el lienzo', en: 'Zoom in the canvas' },
+  'settings.zoom.resetView': { es: 'Restablecer vista (100 %)', en: 'Reset view (100%)' },
+  'settings.zoom.resetView.label': { es: 'Restablecer la vista del lienzo', en: 'Reset the canvas view' },
+  'settings.zoom.limit': { es: 'Límite de zoom: 50–200 %.', en: 'Zoom limit: 50–200%.' },
+  'settings.rowHeight': { es: 'Alto de fila', en: 'Row height' },
+  'settings.rowHeight.decrease': { es: 'Reducir alto de fila', en: 'Decrease row height' },
+  'settings.rowHeight.increase': { es: 'Aumentar alto de fila', en: 'Increase row height' },
+  'settings.cardGap': { es: 'Separación entre fichas', en: 'Spacing between cards' },
+  'settings.cardGap.decrease': { es: 'Reducir separación entre fichas', en: 'Decrease spacing between cards' },
+  'settings.cardGap.increase': { es: 'Aumentar separación entre fichas', en: 'Increase spacing between cards' },
+  'settings.canvas.note': {
+    es: 'Estas preferencias se guardan en este dispositivo: no cambian las notas, no viajan con el espacio ni con el ZIP. La grilla guarda siempre 12 columnas; en el móvil se ve el mismo lienzo con celdas más pequeñas.',
+    en: 'These preferences are saved on this device: they do not change the notes, and do not travel with the space or the ZIP. The grid always keeps 12 columns; on mobile the same canvas shows with smaller cells.',
+  },
+  'settings.resetDefaults': { es: 'Restablecer valores', en: 'Reset values' },
+  'settings.resetDefaults.label': { es: 'Restablecer los valores de lienzo y grilla', en: 'Reset canvas and grid values' },
+  'toggle.yes': { es: 'Sí', en: 'Yes' },
+  'toggle.no': { es: 'No', en: 'No' },
+} as const satisfies Record<string, { readonly es: string; readonly en: string }>;
+
+export type TranslationKey = keyof typeof TRANSLATIONS;
+
+/** Texto en el idioma indicado. Una clave desconocida no rompe: devuelve la propia clave. */
+export function t(key: TranslationKey, locale: Locale): string {
+  const entry = TRANSLATIONS[key] as { readonly es: string; readonly en: string } | undefined;
+  return entry ? entry[locale] : key;
+}

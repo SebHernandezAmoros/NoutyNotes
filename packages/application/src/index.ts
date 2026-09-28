@@ -10,6 +10,8 @@ export {
   addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
 } from './workspace-editing';
 export { assetsOf } from './workspace-assets';
+export { printableDocument } from './print';
+export type { PrintConnection, PrintEntry } from './print';
 export { addNoteToFrame, groupCardsInFrame, moveFrameOnBoard, removeFrameFromBoard, renameFrameOnBoard, resizeFrameOnBoard } from './frames';
 export type { FrameTarget } from './frames';
 export { EMPTY_HISTORY, HISTORY_LIMIT, recordStep, redoStep, sameWorkspace, undoStep } from './history';

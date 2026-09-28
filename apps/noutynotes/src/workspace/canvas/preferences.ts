@@ -1,3 +1,5 @@
+import { isNoteFont } from '../fonts';
+import type { NoteFont } from '../fonts';
 import type { CanvasMetrics } from './geometry';
 
 /**
@@ -14,9 +16,11 @@ export interface ViewPreferences {
   readonly cardGap: number;
   /** Fecha de creación en el pie de las fichas (ADR 0029). */
   readonly showDates: boolean;
+  /** Tipografía del texto de las notas (ADR 0030): solo fuentes del sistema. */
+  readonly noteFont: NoteFont;
 }
 
-export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 64, cardGap: 8, showDates: false };
+export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 64, cardGap: 8, showDates: false, noteFont: 'system' };
 
 export const PREFERENCE_LIMITS = {
   rowHeight: { min: 56, max: 96, step: 8 },
@@ -42,7 +46,8 @@ export function parsePreferences(stored: string | null): ViewPreferences {
   const flag = (key: 'showGrid' | 'snap' | 'showDates') => (typeof record[key] === 'boolean' ? (record[key] as boolean) : DEFAULT_PREFERENCES[key]);
   const number = (key: NumericPreference) => (typeof record[key] === 'number' && Number.isFinite(record[key])
     ? snapTo(record[key] as number, PREFERENCE_LIMITS[key]) : DEFAULT_PREFERENCES[key]);
-  return { showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'), showDates: flag('showDates') };
+  const noteFont = isNoteFont(record.noteFont) ? record.noteFont : DEFAULT_PREFERENCES.noteFont;
+  return { showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'), showDates: flag('showDates'), noteFont };
 }
 
 export function stepPreference(preferences: ViewPreferences, key: NumericPreference, direction: 1 | -1): ViewPreferences {

@@ -107,10 +107,12 @@ interface TextFieldProps {
   /** Cursor opcional para comandos de edición; sin él, el campo gestiona su propia selección. */
   readonly selection?: { readonly start: number; readonly end: number } | undefined;
   readonly onSelectionChange?: (selection: { start: number; end: number }) => void;
+  /** Tipografía de las notas (ADR 0030): solo en el campo de contenido. */
+  readonly fontFamily?: string | undefined;
 }
 
 /** Campo con etiqueta visible, nombre accesible y foco visible. */
-export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true, selection, onSelectionChange }: TextFieldProps) {
+export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true, selection, onSelectionChange, fontFamily }: TextFieldProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
@@ -135,6 +137,7 @@ export function TextField({ label, value, onChangeText, placeholder, multiline =
           styles.input,
           multiline ? styles.multiline : null,
           { color: colors.textPrimary, backgroundColor: colors.background, borderColor: focused ? colors.selection : colors.border },
+          fontFamily === undefined ? null : { fontFamily },
         ]}
       />
     </View>

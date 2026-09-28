@@ -33,6 +33,18 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 - La Configuración del proyecto reúne **Apariencia** (Claro, Oscuro o Sistema; el mismo ajuste que en el inicio), **Fechas** («Mostrar la fecha de creación en las fichas») y **Lienzo y grilla**. Todo es de este dispositivo: no cambia las notas ni viaja con el ZIP.
 - El tema elegido se conserva al recargar o volver a abrir la app. El editor de la tarjeta indica siempre cuándo se creó o que no tiene fecha.
 
+**Idioma de la interfaz (ADR 0032):**
+- «Idioma» en Configuración, junto a Apariencia: Español o Inglés, del dispositivo como el tema. Cambia al instante la barra de herramientas, la navegación (barra lateral y «Más») y el propio panel de Configuración.
+- El contenido de las notas nunca se traduce. El resto de paneles (Papelera, Archivo, Diario, Buscar, Assets), el editor de tarjeta e Inicio siguen en español por ahora: es un pendiente explícito para traducir de forma incremental con la misma arquitectura.
+
+**Imprimir y presentar (ADR 0031):**
+- **Presentar:** diapositivas a pantalla completa, una por tarjeta, en el orden de lectura del tablero (de arriba abajo y de izquierda a derecha); flechas, deslizar o las teclas de dirección, y un contador. Funciona en cualquier plataforma.
+- **Imprimir** (solo en el navegador): abre una pestaña con un documento de lectura de todo el tablero —título, contenido completo, imágenes y conexiones en texto— y llama a la impresión del navegador. En Android no está disponible todavía.
+- Ninguna de las dos es una captura del lienzo; ambas están fuera de la exportación ZIP.
+
+**Tipografía de las notas (ADR 0030):**
+- «Tipografía» en Configuración: Sistema, Serif o Monoespaciada, solo con fuentes ya instaladas en el dispositivo (sin descargas, así que funciona sin conexión). Se aplica al texto de las notas en la ficha y en el editor; los títulos y la interfaz no cambian.
+
 **Vista general del lienzo (ADR 0028):**
 - Controles abajo a la derecha del lienzo: «Ver todo» (⌖) encuadra todas las tarjetas y marcos; el minimapa (▦) las muestra a escala con la zona visible, y tocar un punto lleva la vista allí. En móvil también está ahí el zoom.
 - **Selección por área:** con Seleccionar, arrastrar sobre el fondo dibuja un rectángulo; las tarjetas que toca pasan a la selección múltiple. Un toque en el fondo sigue cerrando el editor.

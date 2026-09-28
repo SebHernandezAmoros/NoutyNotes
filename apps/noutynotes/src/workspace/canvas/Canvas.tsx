@@ -82,6 +82,8 @@ interface CanvasProps {
   readonly onAreaSelect: (cardIds: readonly CardId[]) => void;
   /** Fecha de creación en el pie de las fichas (ADR 0029). */
   readonly showDates: boolean;
+  /** Tipografía de las notas (ADR 0030), ya resuelta para esta plataforma. */
+  readonly noteFontFamily?: string | undefined;
   readonly connectSource: CardId | null;
   readonly onCardPress: (cardId: CardId) => void;
   readonly onBackgroundPress: () => void;
@@ -635,6 +637,7 @@ export function Canvas(props: CanvasProps) {
               display={placement.display}
               selected={selected}
               createdLabel={props.showDates && card.createdAt ? formatDay(card.createdAt, new Date(card.createdAt).getTimezoneOffset()) : undefined}
+              noteFontFamily={props.noteFontFamily}
               dragging={dragging}
               colliding={colliding.has(card.id)}
               connectRole={tool === 'connect' ? connectTarget(connectSource, card.id, workspace.relations) : 'none'}

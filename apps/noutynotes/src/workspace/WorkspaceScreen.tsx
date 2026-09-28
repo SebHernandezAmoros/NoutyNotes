@@ -1,11 +1,11 @@
 import {
   PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  groupCardsInFrame, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
+  groupCardsInFrame, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
 import { frameMembers } from '@noutynotes/domain';
-import { resolveLayoutMode, useTheme, useWindowWidth } from '@noutynotes/ui';
+import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -15,6 +15,10 @@ import { BrandMark } from '../components/BrandMark';
 import { Dialog } from '../components/Dialog';
 import { ActionButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
+import { t } from '../i18n';
+import { noteFontFamily } from './fonts';
+import { PresentView } from './PresentView';
+import { buildPrintHtml } from './printHtml';
 import { describeFailure } from '../session/messages';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
@@ -84,6 +88,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const session = useWorkspaceSession();
   const storageMode = session.mode;
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const width = useWindowWidth();
   const compact = resolveLayoutMode(width) === 'compact';
@@ -98,6 +103,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [diaryOpen, setDiaryOpen] = useState(false);
+  const [presentOpen, setPresentOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -480,6 +486,21 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     void run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'Tamaño cambiado. Guardado en memoria.');
   };
 
+  // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
+  const printEntries = workspace && board ? printableDocument(workspace, board.id) : [];
+  const printBoard = () => {
+    if (Platform.OS !== 'web' || !board) return;
+    const html = buildPrintHtml(board.title, printEntries, previews.refs);
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      setFeedback({ tone: 'error', text: 'El navegador bloqueó la pestaña de impresión. Permite las ventanas emergentes e inténtalo de nuevo.' });
+      return;
+    }
+    tab.document.write(html);
+    tab.document.close();
+    tab.focus();
+    tab.print();
+  };
   const showArchive = Platform.OS === 'web' && storageMode === 'memory';
   const unexported = workspace ? session.unexported.includes(workspace.id) : false;
   const [awaiting, setAwaiting] = useState<{ fileName: string; revision: number } | null>(null);
@@ -549,6 +570,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onSelectMany={boardView === 'canvas' && tool === 'select' ? () => void startMulti([selected.id]) : undefined}
       inSheet={compact}
       noteImages={previews.refs}
+      noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS)}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
     />
@@ -678,6 +700,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onOpenAssets={() => setAssetsOpen(true)}
       onOpenArchive={() => setArchiveOpen(true)}
       onOpenDiary={() => setDiaryOpen(true)}
+      onOpenPresent={() => setPresentOpen(true)}
+      canPrint={Platform.OS === 'web'}
+      onOpenPrint={() => printBoard()}
       archiveCount={archiveCount}
       onOpenMore={() => setMoreOpen(true)}
       onOpenSearch={() => setSearchOpen(true)}
@@ -757,6 +782,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onResetView={() => { setZoom(1); setPan(START_PAN); }}
         onAreaSelect={(cardIds) => void startMulti(cardIds)}
         showDates={preferences.showDates}
+        noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS)}
         connectSource={connectSource}
         onCardPress={pressCard}
         onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (frameId) void selectFrame(null); else if (selectedId) void select(null); }}
@@ -807,11 +833,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>TABLEROS</Text>
                 <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical />
                 <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
-                <NavItem glyph="🗑" label="Papelera" count={trashCount} accessibilityLabel={`Abrir la Papelera (${trashCount})`} onPress={() => setTrashOpen(true)} />
-                <NavItem glyph="◷" label="Diario" accessibilityLabel="Abrir el diario" onPress={() => setDiaryOpen(true)} />
-                <NavItem glyph="▤" label="Archivo" count={archiveCount} accessibilityLabel={`Abrir el Archivo (${archiveCount})`} onPress={() => setArchiveOpen(true)} />
-                <NavItem glyph="▦" label="Assets" accessibilityLabel="Abrir los assets" onPress={() => setAssetsOpen(true)} />
-                <NavItem glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={() => setSettingsOpen(true)} />
+                <NavItem glyph="🗑" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
+                <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => setDiaryOpen(true)} />
+                <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => setArchiveOpen(true)} />
+                <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => setAssetsOpen(true)} />
+                <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
+                {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
+                <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
               </>
             ) : null}
           </ScrollView>
@@ -904,12 +932,22 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onClose={() => setAssetsOpen(false)}
           />
           {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
-          <Dialog visible={moreOpen} title="Más" compact={compact} onClose={() => setMoreOpen(false)} testID="more-sheet">
-            <NavItem glyph="◷" label="Diario" accessibilityLabel="Abrir el diario" onPress={() => { setMoreOpen(false); setDiaryOpen(true); }} />
-            <NavItem glyph="▤" label="Archivo" count={archiveCount} accessibilityLabel={`Abrir el Archivo (${archiveCount})`} onPress={() => { setMoreOpen(false); setArchiveOpen(true); }} />
-            <NavItem glyph="▦" label="Assets" accessibilityLabel="Abrir los assets" onPress={() => { setMoreOpen(false); setAssetsOpen(true); }} />
-            <NavItem glyph="⚙" label="Configuración" accessibilityLabel="Abrir la configuración" onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
+          <Dialog visible={moreOpen} title={t('more', locale)} compact={compact} onClose={() => setMoreOpen(false)} testID="more-sheet">
+            <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); setDiaryOpen(true); }} />
+            <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); setArchiveOpen(true); }} />
+            <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); setAssetsOpen(true); }} />
+            <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
+            {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
+            <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
           </Dialog>
+          {presentOpen ? (
+            <PresentView
+              boardTitle={board?.title ?? 'sin tablero'}
+              entries={printEntries}
+              images={previews.refs}
+              onClose={() => setPresentOpen(false)}
+            />
+          ) : null}
           <DailyLogPanel
             visible={diaryOpen}
             compact={compact}

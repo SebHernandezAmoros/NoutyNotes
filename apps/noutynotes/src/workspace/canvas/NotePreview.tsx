@@ -14,12 +14,14 @@ const GAP = 6;
  * Ficha de una nota con imágenes (ADR 0021): texto resumido e imágenes en el orden del documento
  * hasta llenar el alto disponible; si quedan bloques, «+n». El texto nunca se interpreta como HTML.
  */
-export function NotePreview({ blocks, images, height, testID }: {
+export function NotePreview({ blocks, images, height, testID, fontFamily }: {
   readonly blocks: readonly NoteBlock[];
   readonly images: ReadonlyMap<string, string>;
   /** Alto en píxeles para los bloques (sin título ni pie). */
   readonly height: number;
   readonly testID: string;
+  /** Tipografía de las notas (ADR 0030); sin ella, la de la app. */
+  readonly fontFamily?: string | undefined;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -52,7 +54,7 @@ export function NotePreview({ blocks, images, height, testID }: {
         )
       ) : (
         // Se recortan las líneas en vez de usar solo numberOfLines: con 1, RN Web pone nowrap y juntaría los renglones de una lista.
-        <Text key={index} numberOfLines={lines} style={[styles.text, { color: colors.cardText }]}>{markdownExcerpt(block.text).split('\n').slice(0, lines).join('\n')}</Text>
+        <Text key={index} numberOfLines={lines} style={[styles.text, { color: colors.cardText }, fontFamily === undefined ? null : { fontFamily }]}>{markdownExcerpt(block.text).split('\n').slice(0, lines).join('\n')}</Text>
       )))}
       {hidden > 0 ? <Text style={[styles.more, { color: colors.cardText }]}>{`+${hidden} ${hidden === 1 ? 'bloque' : 'bloques'} más`}</Text> : null}
     </View>

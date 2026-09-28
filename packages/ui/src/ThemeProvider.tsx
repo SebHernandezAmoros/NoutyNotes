@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, useState, useSyncExternalStore } from 'react';
 import type { PropsWithChildren } from 'react';
 
+import { createExternalPreference } from './externalPreference';
 import { resolveThemeMode, themeColors } from './theme';
 import type { ThemeColors, ThemeMode, ThemePreference } from './theme';
 import { useSystemTheme } from './useSystemTheme';
@@ -24,22 +25,7 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({ children, load, save }: PropsWithChildren<ThemeProviderProps>) {
   // Almacén externo: al hidratar vale «system» (la instantánea del servidor) y después, lo guardado.
-  const [store] = useState(() => {
-    let current: ThemePreference | null = null;
-    const listeners = new Set<() => void>();
-    return {
-      get: (): ThemePreference => (current ??= load?.() ?? 'system'),
-      set: (next: ThemePreference) => {
-        current = next;
-        save?.(next);
-        listeners.forEach((listener) => listener());
-      },
-      subscribe: (listener: () => void) => {
-        listeners.add(listener);
-        return () => { listeners.delete(listener); };
-      },
-    };
-  });
+  const [store] = useState(() => createExternalPreference<ThemePreference>('system', load, save));
   const preference = useSyncExternalStore(store.subscribe, store.get, () => 'system' as const);
   const setPreference = store.set;
   const systemMode = useSystemTheme();

@@ -1026,3 +1026,157 @@ test('Configuración: tema desde el proyecto y fecha de creación visible en las
   await expect(page.getByTestId('card-meta-tarjeta-1')).toHaveCount(0);
   expect(runtimeErrors).toEqual([]);
 });
+
+test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la ficha y en el editor; solo el texto, no los títulos (ADR 0030)', async ({ page }) => {
+  const { runtimeErrors } = trackProblems(page);
+  const settings = async (action: () => Promise<void>) => {
+    await openSettings(page);
+    await expect(page.getByTestId('settings-panel')).toBeVisible();
+    await action();
+    await button(page, 'Cerrar configuración').click();
+    await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  };
+  await page.goto('./');
+  await createWorkspace(page, 'Tipos');
+  await addNote(page, 'Con texto');
+  await page.getByLabel('Contenido Markdown').fill('Cuerpo de la nota.');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  const bodyInEditor = () => page.getByLabel('Contenido Markdown').evaluate((node) => getComputedStyle(node).fontFamily);
+  const titleInEditor = () => page.getByLabel('Título de la tarjeta').evaluate((node) => getComputedStyle(node).fontFamily);
+  const systemBody = await bodyInEditor();
+  const systemTitle = await titleInEditor();
+  await closeEditor(page);
+  const bodyInCard = () => page.getByTestId('card-tarjeta-1').getByText('Cuerpo de la nota.').evaluate((node) => getComputedStyle(node).fontFamily);
+
+  await settings(async () => {
+    await button(page, 'Usar tipografía serif en las notas').click();
+    await expect(button(page, 'Usar tipografía serif en las notas')).toHaveAttribute('aria-pressed', 'true');
+  });
+  await expect.poll(bodyInCard).toContain('Georgia');
+  await tapCard(page, 1);
+  await expect.poll(bodyInEditor).toContain('Georgia');
+  // El título de la tarjeta no cambia: la tipografía solo afecta al texto de la nota.
+  expect(await titleInEditor()).toBe(systemTitle);
+  await closeEditor(page);
+
+  await settings(async () => {
+    await button(page, 'Usar tipografía monoespaciada en las notas').click();
+  });
+  await expect.poll(bodyInCard).toMatch(/monospace|Menlo|Consolas/);
+
+  // Es del dispositivo: sobrevive a volver al inicio y a otro proyecto.
+  await button(page, 'Volver a mis espacios').click();
+  await createWorkspace(page, 'Otro tipo');
+  await addNote(page, 'Nueva');
+  await page.getByLabel('Contenido Markdown').fill('Otro cuerpo.');
+  await expect.poll(bodyInEditor).toMatch(/monospace|Menlo|Consolas/);
+
+  await settings(async () => { await button(page, 'Usar tipografía sistema en las notas').click(); });
+  await expect.poll(bodyInEditor).toBe(systemBody);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Presentar: pantalla completa en cualquier plataforma, cuenta y navegación; Imprimir abre una pestaña con el documento (ADR 0031)', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Lectura');
+  await addNote(page, 'Primera');
+  await page.getByLabel('Contenido Markdown').fill('Cuerpo de la primera.');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+  await addNote(page, 'Segunda');
+  await closeEditor(page);
+
+  const openPresent = async () => {
+    if (isCompactWidth(page)) {
+      await button(page, 'Más secciones').click();
+      await expect(page.getByTestId('more-sheet')).toBeVisible();
+    }
+    await button(page, 'Presentar este tablero').click();
+    await expect(page.getByTestId('present-view')).toBeVisible();
+  };
+  await openPresent();
+  await expect(page.getByTestId('present-count')).toHaveText('1 / 2');
+  await expect(page.getByRole('heading', { name: 'Primera' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('present.png') });
+  await button(page, 'Diapositiva siguiente').click();
+  await expect(page.getByTestId('present-count')).toHaveText('2 / 2');
+  await expect(page.getByRole('heading', { name: 'Segunda' })).toBeVisible();
+  // No se puede pasar de la última.
+  await button(page, 'Diapositiva siguiente').click();
+  await expect(page.getByTestId('present-count')).toHaveText('2 / 2');
+  await button(page, 'Cerrar la presentación').click();
+  await expect(page.getByTestId('present-view')).toHaveCount(0);
+  // Reabrir vuelve siempre a la primera.
+  await openPresent();
+  await expect(page.getByTestId('present-count')).toHaveText('1 / 2');
+  await button(page, 'Cerrar la presentación').click();
+
+  // Imprimir (web): abre una pestaña con el documento, en el orden de lectura, sin ejecutar nada.
+  if (isCompactWidth(page)) {
+    await button(page, 'Más secciones').click();
+    await expect(page.getByTestId('more-sheet')).toBeVisible();
+  }
+  await expect(button(page, 'Imprimir este tablero')).toBeVisible();
+  // Solo Chromium para la apertura real: en Firefox, un clic simulado por Playwright no lleva la
+  // «activación de usuario» reciente que ese motor exige para `window.open` (aunque `page.evaluate()`
+  // sí la tiene). Limitación de la herramienta, no del código; el botón ya se comprobó arriba.
+  test.skip(testInfo.project.name.startsWith('firefox'), 'window.open tras un clic simulado no se abre en Firefox (activación de usuario); ver testing.md.');
+  const [tab] = await Promise.all([page.waitForEvent('popup'), button(page, 'Imprimir este tablero').click()]);
+  await tab.waitForLoadState();
+  // El encabezado es el título del tablero (no el del proyecto): es lo que se está presentando/imprimiendo.
+  expect(await tab.title()).toBe('Tablero principal');
+  await expect(tab.getByRole('heading', { name: 'Primera', level: 2 })).toBeVisible();
+  await expect(tab.getByText('Cuerpo de la primera.')).toBeVisible();
+  await expect(tab.getByRole('heading', { name: 'Segunda', level: 2 })).toBeVisible();
+  await tab.close();
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Configuración: idioma de la interfaz (ES/EN) traduce la barra, la navegación y el propio panel; el contenido de las notas no se traduce (ADR 0032)', async ({ page }) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Idioma');
+  await addNote(page, 'Nota en español');
+  await closeEditor(page);
+
+  await openSettings(page);
+  await expect(page.getByTestId('settings-panel')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Configuración' })).toBeVisible();
+  await button(page, 'Usar inglés').click();
+  // El propio panel cambia al instante.
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByText('Appearance', { exact: true })).toBeVisible();
+  await expect(page.getByText('Language', { exact: true })).toBeVisible();
+  await button(page, 'Close settings').click();
+  await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+
+  // La barra de herramientas y la navegación cambian con ella.
+  await expect(page.getByRole('button', { name: 'Select tool' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add note' })).toBeVisible();
+  if (isCompactWidth(page)) {
+    await button(page, 'More sections').click();
+    await expect(page.getByRole('button', { name: 'Open Trash (0)' })).toBeVisible();
+    await button(page, 'Close more').click();
+  } else {
+    await expect(page.getByRole('button', { name: /Open Trash/ })).toBeVisible();
+  }
+
+  // El contenido de la nota, en español, no cambia.
+  await expect(page.getByText('Nota en español')).toBeVisible();
+
+  // Es del dispositivo: sobrevive a volver al inicio.
+  await page.goto('./');
+  await createWorkspace(page, 'Otro idioma');
+  await expect(page.getByRole('button', { name: 'Add note' })).toBeVisible();
+
+  // Volver a español (la interfaz sigue en inglés aquí: se abre con sus propios textos).
+  if (isCompactWidth(page)) await button(page, 'More sections').click();
+  await button(page, 'Open settings').click();
+  await button(page, 'Use Spanish').click();
+  await expect(page.getByRole('heading', { name: 'Configuración' })).toBeVisible();
+  await button(page, 'Cerrar configuración').click();
+  await expect(page.getByRole('button', { name: 'Añadir nota' })).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
+});

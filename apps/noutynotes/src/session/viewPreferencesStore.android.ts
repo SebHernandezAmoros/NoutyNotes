@@ -41,3 +41,25 @@ export function saveThemePreference(preference: (typeof themes)[number]): void {
     // Sin almacenamiento, el tema dura la sesión.
   }
 }
+
+const locales = ['es', 'en'] as const;
+const localeFile = () => new File(Paths.document, 'nouty-locale.txt');
+
+/** Idioma de la interfaz (ADR 0032) en un archivo privado; solo un valor conocido. */
+export function loadLocalePreference(): (typeof locales)[number] | null {
+  try {
+    const stored = localeFile();
+    const value = stored.exists ? stored.textSync().trim() : null;
+    return locales.find((locale) => locale === value) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocalePreference(locale: (typeof locales)[number]): void {
+  try {
+    localeFile().write(locale);
+  } catch {
+    // Sin almacenamiento, el idioma dura la sesión.
+  }
+}

@@ -1,10 +1,13 @@
-import { useTheme } from '@noutynotes/ui';
-import type { ThemePreference } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
+import type { Locale, ThemePreference } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/controls';
 import { Dialog } from '../components/Dialog';
+import { t } from '../i18n';
+import { NOTE_FONT_VALUES } from './fonts';
+import type { NoteFont } from './fonts';
 import { PREFERENCE_LIMITS, stepPreference } from './canvas/preferences';
 import type { ViewPreferences } from './canvas/preferences';
 import { MAX_ZOOM, MIN_ZOOM, formatZoom } from './canvas/viewport';
@@ -22,88 +25,112 @@ interface SettingsPanelProps {
   readonly onClose: () => void;
 }
 
-const themes: readonly { readonly value: ThemePreference; readonly label: string }[] = [
-  { value: 'light', label: 'Claro' },
-  { value: 'dark', label: 'Oscuro' },
-  { value: 'system', label: 'Sistema' },
-];
+const themes: readonly ThemePreference[] = ['light', 'dark', 'system'];
+const themeLabelKey = { light: 'settings.theme.light', dark: 'settings.theme.dark', system: 'settings.theme.system' } as const;
+const themeUseKey = { light: 'settings.theme.use.light', dark: 'settings.theme.use.dark', system: 'settings.theme.use.system' } as const;
+const fontLabelKey = { system: 'settings.font.system', serif: 'settings.font.serif', mono: 'settings.font.mono' } as const;
+const fontUseKey = { system: 'settings.font.use.system', serif: 'settings.font.use.serif', mono: 'settings.font.use.mono' } as const;
+
+/** Nombre de un idioma en sí mismo (no se traduce: «English» se ve igual venga del idioma que venga). */
+const languageNames: Record<Locale, string> = { es: 'Español', en: 'English' };
+const languageUseKey = { es: 'settings.language.use.es', en: 'settings.language.use.en' } as const;
 
 /**
- * Configuración del workspace (ADR 0014, ADR 0029): apariencia, fechas y lienzo. Todo es del dispositivo
- * y se aplica al instante; ninguna preferencia cambia las notas ni viaja con el espacio.
+ * Configuración del workspace (ADR 0014, ADR 0029, ADR 0032): apariencia, idioma, fechas, tipografía y
+ * lienzo. Todo es del dispositivo y se aplica al instante; ninguna preferencia cambia las notas ni viaja
+ * con el espacio. El idioma de este panel es el de la interfaz (ADR 0032); las notas no se traducen.
  */
 export function SettingsPanel(props: SettingsPanelProps) {
   const { theme, preference, setPreference } = useTheme();
+  const { locale, setLocale } = useLocale();
   const colors = theme.colors;
   const { preferences } = props;
   return (
-    <Dialog visible={props.visible} title="Configuración" compact={props.compact} onClose={props.onClose} testID="settings-panel">
+    <Dialog visible={props.visible} title={t('settings.title', locale)} compact={props.compact} onClose={props.onClose} testID="settings-panel">
       <View style={styles.section}>
-        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>Apariencia</Text>
-        <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel="Tema">
-          {themes.map(({ value, label }) => (
-            <ActionButton key={value} label={label} accessibilityLabel={`Usar el tema ${label.toLowerCase()}`} pressed={preference === value} onPress={() => setPreference(value)} />
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.appearance', locale)}</Text>
+        <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel={t('settings.theme.group', locale)}>
+          {themes.map((value) => (
+            <ActionButton key={value} label={t(themeLabelKey[value], locale)} accessibilityLabel={t(themeUseKey[value], locale)} pressed={preference === value} onPress={() => setPreference(value)} />
           ))}
         </View>
-        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>
-          Es el mismo ajuste que en el inicio: se guarda en este dispositivo y cambia toda la app. «Sistema» sigue el modo del dispositivo.
-        </Text>
+        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.appearance.note', locale)}</Text>
       </View>
       <View style={styles.section}>
-        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>Fechas</Text>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.language', locale)}</Text>
+        <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel={t('settings.language', locale)}>
+          {(['es', 'en'] as const).map((value) => (
+            <ActionButton key={value} label={languageNames[value]} accessibilityLabel={t(languageUseKey[value], locale)} pressed={locale === value} onPress={() => setLocale(value)} />
+          ))}
+        </View>
+        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.language.note', locale)}</Text>
+      </View>
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.dates', locale)}</Text>
         <Toggle
-          label="Mostrar la fecha de creación en las fichas"
-          description="Las tarjetas creadas antes de esta versión no tienen fecha y no muestran ninguna. El editor de la tarjeta siempre la indica."
+          label={t('settings.dates.show', locale)}
+          description={t('settings.dates.show.description', locale)}
           value={preferences.showDates}
           onChange={(showDates) => props.onChange({ ...preferences, showDates })}
         />
       </View>
       <View style={styles.section}>
-        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>Lienzo y grilla</Text>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.fonts', locale)}</Text>
+        <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel={t('settings.fonts.group', locale)}>
+          {NOTE_FONT_VALUES.map((value: NoteFont) => (
+            <ActionButton key={value} label={t(fontLabelKey[value], locale)} accessibilityLabel={t(fontUseKey[value], locale)}
+              pressed={preferences.noteFont === value} onPress={() => props.onChange({ ...preferences, noteFont: value })} />
+          ))}
+        </View>
+        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.fonts.note', locale)}</Text>
+      </View>
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.canvas', locale)}</Text>
         <Toggle
-          label="Mostrar grilla"
-          description="Líneas de columnas y filas sobre el papel."
+          label={t('settings.grid.show', locale)}
+          description={t('settings.grid.show.description', locale)}
           value={preferences.showGrid}
           onChange={(showGrid) => props.onChange({ ...preferences, showGrid })}
         />
         <Toggle
-          label="Imán en la vista previa"
-          description="Al arrastrar, la ficha salta de celda en celda. Sin imán sigue al puntero; al soltar se guarda siempre la celda entera."
+          label={t('settings.snap', locale)}
+          description={t('settings.snap.description', locale)}
           value={preferences.snap}
           onChange={(snap) => props.onChange({ ...preferences, snap })}
         />
         <View style={styles.row}>
           <View style={styles.rowText}>
-            <Text style={[styles.label, { color: colors.textPrimary }]}>Zoom</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>Solo para esta sesión.</Text>
+            <Text style={[styles.label, { color: colors.textPrimary }]}>{t('settings.zoom', locale)}</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>{t('settings.zoom.description', locale)}</Text>
           </View>
-          <ActionButton label="−" accessibilityLabel="Alejar el lienzo" onPress={props.onZoomOut} />
+          <ActionButton label="−" accessibilityLabel={t('settings.zoom.out', locale)} onPress={props.onZoomOut} />
           <Text testID="settings-zoom" style={[styles.value, { color: colors.textPrimary }]}>{formatZoom(props.zoom)}</Text>
-          <ActionButton label="+" accessibilityLabel="Acercar el lienzo" onPress={props.onZoomIn} />
+          <ActionButton label="+" accessibilityLabel={t('settings.zoom.in', locale)} onPress={props.onZoomIn} />
         </View>
-        <ActionButton label="Restablecer vista (100 %)" accessibilityLabel="Restablecer la vista del lienzo" onPress={props.onResetView} />
+        <ActionButton label={t('settings.zoom.resetView', locale)} accessibilityLabel={t('settings.zoom.resetView.label', locale)} onPress={props.onResetView} />
         {props.zoom <= MIN_ZOOM || props.zoom >= MAX_ZOOM ? (
-          <Text style={[styles.description, { color: colors.textSecondary }]}>Límite de zoom: 50–200 %.</Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>{t('settings.zoom.limit', locale)}</Text>
         ) : null}
         <Stepper
-          label="Alto de fila"
+          label={t('settings.rowHeight', locale)}
+          decreaseLabel={t('settings.rowHeight.decrease', locale)}
+          increaseLabel={t('settings.rowHeight.increase', locale)}
           unit="px"
           value={preferences.rowHeight}
           limits={PREFERENCE_LIMITS.rowHeight}
           onStep={(direction) => props.onChange(stepPreference(preferences, 'rowHeight', direction))}
         />
         <Stepper
-          label="Separación entre fichas"
+          label={t('settings.cardGap', locale)}
+          decreaseLabel={t('settings.cardGap.decrease', locale)}
+          increaseLabel={t('settings.cardGap.increase', locale)}
           unit="px"
           value={preferences.cardGap}
           limits={PREFERENCE_LIMITS.cardGap}
           onStep={(direction) => props.onChange(stepPreference(preferences, 'cardGap', direction))}
         />
-        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>
-          Estas preferencias se guardan en este dispositivo: no cambian las notas, no viajan con el espacio ni con el ZIP.
-          La grilla guarda siempre 12 columnas; en el móvil se ve el mismo lienzo con celdas más pequeñas.
-        </Text>
-        <ActionButton label="Restablecer valores" accessibilityLabel="Restablecer los valores de lienzo y grilla" onPress={props.onResetDefaults} />
+        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.canvas.note', locale)}</Text>
+        <ActionButton label={t('settings.resetDefaults', locale)} accessibilityLabel={t('settings.resetDefaults.label', locale)} onPress={props.onResetDefaults} />
       </View>
     </Dialog>
   );
@@ -111,6 +138,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
 function Toggle({ label, description, value, onChange }: { readonly label: string; readonly description: string; readonly value: boolean; readonly onChange: (value: boolean) => void }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   return (
@@ -131,13 +159,13 @@ function Toggle({ label, description, value, onChange }: { readonly label: strin
       <View style={[styles.track, { backgroundColor: value ? colors.accent : colors.surfaceRaised, borderColor: colors.border }]}>
         <View style={[styles.thumb, { backgroundColor: value ? colors.accentText : colors.surface, borderColor: colors.border, alignSelf: value ? 'flex-end' : 'flex-start' }]} />
       </View>
-      <Text style={[styles.state, { color: colors.textPrimary }]}>{value ? 'Sí' : 'No'}</Text>
+      <Text style={[styles.state, { color: colors.textPrimary }]}>{value ? t('toggle.yes', locale) : t('toggle.no', locale)}</Text>
     </Pressable>
   );
 }
 
-function Stepper({ label, unit, value, limits, onStep }: {
-  readonly label: string; readonly unit: string; readonly value: number;
+function Stepper({ label, decreaseLabel, increaseLabel, unit, value, limits, onStep }: {
+  readonly label: string; readonly decreaseLabel: string; readonly increaseLabel: string; readonly unit: string; readonly value: number;
   readonly limits: { readonly min: number; readonly max: number }; readonly onStep: (direction: 1 | -1) => void;
 }) {
   const { theme } = useTheme();
@@ -148,9 +176,9 @@ function Stepper({ label, unit, value, limits, onStep }: {
         <Text style={[styles.label, { color: colors.textPrimary }]}>{label}</Text>
         <Text style={[styles.description, { color: colors.textSecondary }]}>{`${limits.min}–${limits.max} ${unit}`}</Text>
       </View>
-      <ActionButton label="−" accessibilityLabel={`Reducir ${label.toLowerCase()}`} onPress={() => onStep(-1)} />
+      <ActionButton label="−" accessibilityLabel={decreaseLabel} onPress={() => onStep(-1)} />
       <Text accessibilityLiveRegion="polite" style={[styles.value, { color: colors.textPrimary }]}>{`${value} ${unit}`}</Text>
-      <ActionButton label="+" accessibilityLabel={`Aumentar ${label.toLowerCase()}`} onPress={() => onStep(1)} />
+      <ActionButton label="+" accessibilityLabel={increaseLabel} onPress={() => onStep(1)} />
     </View>
   );
 }

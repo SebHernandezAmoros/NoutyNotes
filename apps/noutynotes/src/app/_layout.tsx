@@ -1,4 +1,4 @@
-import { ThemeProvider, useTheme } from '@noutynotes/ui';
+import { LocaleProvider, ThemeProvider, useTheme } from '@noutynotes/ui';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { registerOfflineWorker } from '../offline/registerOfflineWorker';
 
 import { WorkspaceSessionProvider } from '../session/WorkspaceSession';
-import { loadThemePreference, saveThemePreference } from '../session/viewPreferencesStore';
+import { loadLocalePreference, loadThemePreference, saveLocalePreference, saveThemePreference } from '../session/viewPreferencesStore';
 
 function AppNavigation() {
   const { theme } = useTheme();
@@ -26,7 +26,9 @@ export default function RootLayout() {
   return (
     <WorkspaceSessionProvider>
       <ThemeProvider load={loadThemePreference} save={saveThemePreference}>
-        <AppNavigation />
+        <LocaleProvider load={loadLocalePreference} save={saveLocalePreference}>
+          <AppNavigation />
+        </LocaleProvider>
       </ThemeProvider>
     </WorkspaceSessionProvider>
   );

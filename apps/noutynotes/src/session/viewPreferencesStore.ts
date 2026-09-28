@@ -40,3 +40,24 @@ export function saveThemePreference(preference: (typeof themes)[number]): void {
     // Sin almacenamiento, el tema dura la sesión.
   }
 }
+
+const LOCALE_KEY = 'noutynotes.locale.v1';
+const locales = ['es', 'en'] as const;
+
+/** Idioma de la interfaz (ADR 0032): solo un valor conocido; cualquier otro, ninguno. */
+export function loadLocalePreference(): (typeof locales)[number] | null {
+  try {
+    const stored = typeof localStorage === 'undefined' ? null : localStorage.getItem(LOCALE_KEY);
+    return locales.find((locale) => locale === stored) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocalePreference(locale: (typeof locales)[number]): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LOCALE_KEY, locale);
+  } catch {
+    // Sin almacenamiento, el idioma dura la sesión.
+  }
+}

@@ -49,6 +49,16 @@ Configuración y fechas (ADR 0029):
 - `ThemeProvider` (`@noutynotes/ui`) recibe `load` y `save`; la app los implementa en `session/viewPreferencesStore(.android).ts`. Se lee con `useSyncExternalStore`: al hidratar el export estático vale «system» y después lo guardado, sin errores de hidratación.
 - `src/workspace/dates.ts`: «26 sep 2026» y «Creada el …, HH:MM» con `localDay`/`localTime`, sin `Intl`.
 
+Idioma de la interfaz (ADR 0032):
+- `packages/ui/src/externalPreference.ts` (puro): almacén get/set/subscribe compartido por `ThemeProvider` y el nuevo `LocaleProvider` (menos duplicación). `apps/noutynotes/src/i18n.ts` (puro): diccionario `es`/`en` y `t(key, locale)`; una prueba comprueba que ninguna clave se queda sin su pareja. Traducido: `Toolbar.tsx`, la navegación de `WorkspaceScreen.tsx` (barra lateral y «Más»), `SettingsPanel.tsx` completo y el botón «Cerrar» genérico de `Dialog.tsx` (para no mezclar idiomas dentro de un mismo panel).
+
+Imprimir y presentar (ADR 0031):
+- `packages/application/src/print.ts` (puro): `printableDocument(workspace, boardId)` en orden de lectura (fila, columna; la huella cuenta para minimizadas/contraídas), con imágenes propias o intercaladas sin duplicar y conexiones en texto.
+- `src/workspace/printHtml.ts` (puro): documento HTML propio, todo el texto del usuario escapado (nunca se ejecuta, igual que en las notas). `src/workspace/PresentView.tsx`: diapositivas a pantalla completa, montado solo mientras está abierto (empieza siempre en la primera). `printBoard()` en `WorkspaceScreen` abre una pestaña (`window.open` + `document.write` + `print()`), solo en web.
+
+Tipografía de las notas (ADR 0030):
+- `src/workspace/fonts.ts` (puro): `noteFontFamily(font, platform)` resuelve la pila por plataforma; «Sistema» no fija ninguna. `noteFont` se añadió a `ViewPreferences`. `CanvasCard`, `NotePreview` y el campo «Contenido Markdown» del editor reciben la familia ya resuelta.
+
 Vista general (ADR 0028):
 - `src/workspace/canvas/overview.ts` (puro): límites del contenido, `fitView` (reserva el alto de los controles), minimapa ↔ mundo y `cardsInArea`. `CanvasOverview.tsx` dibuja los controles y el minimapa con `zIndex` por encima de los controles de tarjeta. El fondo del lienzo usa un PanResponder: toque → cerrar; arrastre → rectángulo.
 

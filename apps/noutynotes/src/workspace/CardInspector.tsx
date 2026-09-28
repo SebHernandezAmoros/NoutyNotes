@@ -40,6 +40,8 @@ interface CardInspectorProps {
   readonly inSheet?: boolean;
   /** Imágenes intercaladas en notas, por ruta (ADR 0021). */
   readonly noteImages: ReadonlyMap<string, string>;
+  /** Tipografía de las notas (ADR 0030), ya resuelta para esta plataforma. */
+  readonly noteFontFamily?: string | undefined;
   /** Editor enfocado (ADR 0021): ampliar o volver al tablero. En la hoja móvil lo ofrece su barra. */
   readonly focused?: boolean;
   readonly onToggleFocus?: () => void;
@@ -69,7 +71,7 @@ const resizes = [
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, focused = false, onToggleFocus }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, focused = false, onToggleFocus }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -248,6 +250,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton label="☐" accessibilityLabel="Insertar lista de tareas" onPress={() => insertList('check')} style={styles.listButton} />
         </View>
         <TextField label="Contenido Markdown" value={content} onChangeText={changeContent} multiline placeholder="# Una idea"
+          fontFamily={noteFontFamily}
           selection={forcedSelection}
           onSelectionChange={(selection) => {
             selectionRef.current = selection;

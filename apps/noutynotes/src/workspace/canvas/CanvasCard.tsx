@@ -31,6 +31,8 @@ interface CanvasCardProps {
   readonly selected: boolean;
   /** Fecha de creación visible en el pie (ADR 0029): ya formateada, o undefined. */
   readonly createdLabel?: string | undefined;
+  /** Tipografía de las notas (ADR 0030): solo el texto, no el título ni el pie. */
+  readonly noteFontFamily?: string | undefined;
   readonly dragging: boolean;
   readonly colliding: boolean;
   readonly connectRole: ConnectRole;
@@ -190,11 +192,11 @@ export function CanvasCard(props: CanvasCardProps) {
                 </Text>
               ) : null}
               {mixed ? (
-                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages}
+                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
               {!image && !mixed && bodyLines > 0 ? (
-                <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }]}>{markdownExcerpt(card.content ?? '')}</Text>
+                <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>{markdownExcerpt(card.content ?? '')}</Text>
               ) : null}
               {tags.length > 0 ? (
                 // Pie de etiquetas (ADR 0019): hasta tres y el resto como «+n»; el nombre completo va en el inspector.
