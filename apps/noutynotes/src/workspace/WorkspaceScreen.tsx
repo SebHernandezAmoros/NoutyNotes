@@ -1,10 +1,11 @@
 import {
-  PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  groupCardsInFrame, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreCardFromArchive, restoreCardFromTrash, searchAllWorkspaces, sendArchivedToTrash, setCardDisplay,
+  PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
-import type { BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
+import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
 import { frameMembers } from '@noutynotes/domain';
+import { serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -19,6 +20,7 @@ import { t } from '../i18n';
 import { noteFontFamily } from './fonts';
 import { PresentView } from './PresentView';
 import { buildPrintHtml } from './printHtml';
+import { downloadFile } from '../session/archiveFiles';
 import { describeFailure } from '../session/messages';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
@@ -476,6 +478,67 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     void run((storage, workspaceId) => sendArchivedToTrash(storage, workspaceId, cardId), 'Tarjeta enviada del Archivo a la Papelera. Guardado en memoria.');
   };
 
+  // Tablero completo como unidad (ADR 0039): mismo «sin reloj» que el resto del archivo.
+  const archiveCurrentBoard = async () => {
+    if (!board) return;
+    if (!await flushPendingText()) return;
+    const result = await run((storage, workspaceId) => moveBoardToArchive(storage, workspaceId, board.id, new Date().toISOString()),
+      `Tablero «${board.title}» archivado con sus tarjetas. Guardado en memoria.`);
+    if (result.ok) {
+      setSelectedId(null);
+      setMulti(null);
+      setConnectSource(null);
+    }
+  };
+  const restoreArchivedBoardById = async (boardId: BoardId, title: string) => {
+    const result = await run((storage, workspaceId) => restoreBoardFromArchive(storage, workspaceId, boardId), `Tablero «${title}» restaurado. Guardado en memoria.`);
+    if (!result.ok) return;
+    if (result.value.skipped > 0) {
+      setFeedback({ tone: 'success', text: saved(`Tablero «${title}» restaurado. ${result.value.skipped === 1 ? '1 de sus tarjetas ya no estaba en el Archivo' : `${result.value.skipped} de sus tarjetas ya no estaban en el Archivo`} y se omitió. Guardado en memoria.`) });
+    }
+  };
+  const restoreArchivedSelection = async (cardIds: readonly CardId[]) => {
+    const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
+    const result = await run((storage, workspaceId) => restoreCardsFromArchive(storage, workspaceId, { cardIds, fallbackBoardId }),
+      plural(cardIds.length, 'Tarjeta restaurada del Archivo. Guardado en memoria.', '# tarjetas restauradas del Archivo. Guardado en memoria.'));
+    return result.ok;
+  };
+  const archivedSelectionToTrash = async (cardIds: readonly CardId[]) => {
+    const result = await run((storage, workspaceId) => sendArchivedCardsToTrash(storage, workspaceId, cardIds),
+      plural(cardIds.length, 'Tarjeta enviada del Archivo a la Papelera. Guardado en memoria.', '# tarjetas enviadas del Archivo a la Papelera. Guardado en memoria.'));
+    return result.ok;
+  };
+  // Exportar selección (ADR 0039): un ZIP nuevo y autocontenido, no el del workspace; no toca nada
+  // guardado, así que no hace falta el aviso de «¿ya lo guardaste?» del ZIP principal.
+  const exportArchivedSelection = async (cardIds: readonly CardId[]) => {
+    if (!workspace) return;
+    const built = archiveSelectionForExport(workspace, cardIds);
+    if (!built.ok) {
+      setFeedback({ tone: 'error', text: built.reason });
+      return;
+    }
+    const assets = assetsOf(session.storage);
+    const binaryAssets: Record<string, Uint8Array> = {};
+    if (assets) {
+      for (const ref of built.value.assetRefs) {
+        const read = await assets.readAsset(workspace.id, ref as AssetRef);
+        if (read.ok) binaryAssets[ref] = read.value;
+      }
+    }
+    const files = serializeWorkspace(built.value.workspace);
+    if (!files.ok) {
+      setFeedback({ tone: 'error', text: 'No se pudo armar la selección para exportar.' });
+      return;
+    }
+    const zip = writeWorkspaceArchive(files.value, binaryAssets);
+    if (!zip.ok) {
+      setFeedback({ tone: 'error', text: 'No se pudo generar el ZIP de la selección.' });
+      return;
+    }
+    downloadFile(`archivo-seleccion-${cardIds.length}.zip`, zip.value);
+    setFeedback({ tone: 'success', text: `Selección exportada como ZIP (${plural(cardIds.length, '1 tarjeta', `${cardIds.length} tarjetas`)}).` });
+  };
+
   const restore = async (cardId: CardId) => {
     const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
     const result = await run((storage, workspaceId) => restoreCardFromTrash(storage, workspaceId, { cardId, fallbackBoardId }), 'Tarjeta restaurada. Guardado en memoria.');
@@ -898,6 +961,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
                 <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
                 {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
+                {board && board.cardIds.length > 0 ? (
+                  <NavItem glyph="▤" label="Archivar tablero" accessibilityLabel={`Archivar el tablero ${board.title} con sus tarjetas`} onPress={() => void archiveCurrentBoard()} />
+                ) : null}
                 <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
               </>
             ) : null}
@@ -950,6 +1016,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 busy={saving}
                 onRestore={(cardId) => void restoreArchived(cardId)}
                 onSendToTrash={archivedToTrash}
+                onRestoreSelection={restoreArchivedSelection}
+                onSendSelectionToTrash={archivedSelectionToTrash}
+                onExportSelection={(cardIds) => void exportArchivedSelection(cardIds)}
+                onRestoreBoard={(boardId, title) => void restoreArchivedBoardById(boardId, title)}
                 onBack={() => setMainView('board')}
               />
             </View>
@@ -1025,6 +1095,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
             <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
             {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
+            {board && board.cardIds.length > 0 ? (
+              <NavItem glyph="▤" label="Archivar tablero" accessibilityLabel={`Archivar el tablero ${board.title} con sus tarjetas`} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
+            ) : null}
             <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
           </Dialog>
           {presentOpen ? (

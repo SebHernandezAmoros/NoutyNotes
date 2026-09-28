@@ -879,6 +879,47 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   expect(runtimeErrors).toEqual([]);
 });
 
+test('Assets: importar un documento y un audio, sin «Añadir al tablero», y abrir uno en una pestaña nueva (ADR 0038)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Biblioteca');
+  const pick = async (name: string, mimeType: string, buffer: Buffer) => {
+    const chooser = page.waitForEvent('filechooser');
+    return (await chooser).setFiles({ name, mimeType, buffer });
+  };
+  if (isCompactWidth(page)) await button(page, 'Más secciones').click();
+  await button(page, 'Abrir los assets').click();
+  await expect(page.getByTestId('assets-view')).toBeVisible();
+
+  const importPdf = pick('Guion.pdf', 'application/pdf', Buffer.from('%PDF-1.4 contenido de prueba'));
+  await button(page, 'Importar un documento o audio a la biblioteca').click();
+  await importPdf;
+  await expect(feedback(page)).toHaveText('«Guion.pdf» añadido a la biblioteca. Guardado en memoria.');
+  await expect(button(page, 'Documentos (1)')).toBeVisible();
+  await expect(page.getByTestId('asset-detail')).toContainText('DOCUMENTO');
+  await expect(button(page, 'Añadir Guion.pdf al tablero')).toHaveCount(0);
+  await expect(button(page, 'Reemplazar Guion.pdf')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('assets-library.png') });
+
+  const importMp3 = pick('tema.mp3', 'audio/mpeg', Buffer.from([0x49, 0x44, 0x33, 1, 2, 3]));
+  await button(page, 'Importar un documento o audio a la biblioteca').click();
+  await importMp3;
+  await expect(feedback(page)).toHaveText('«tema.mp3» añadido a la biblioteca. Guardado en memoria.');
+  await expect(button(page, 'Audio (1)')).toBeVisible();
+
+  // «Abrir» deja que el navegador decida cómo mostrarlo, en una pestaña nueva (no una descarga forzada).
+  const [popup] = await Promise.all([
+    page.context().waitForEvent('page'),
+    button(page, 'Abrir tema.mp3').click(),
+  ]);
+  expect(popup.url()).toContain('blob:');
+  await popup.close();
+
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar en su sitio, y enviar a la Papelera con confirmación (ADR 0023)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);
@@ -935,6 +976,106 @@ test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar 
   await expect(page.getByTestId('archive-empty')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Archivo: archivar un tablero completo y selección múltiple para restaurar o enviar varias tarjetas a la Papelera (ADR 0039)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { runtimeErrors } = trackProblems(page);
+  // Con varios tableros, el ID global de una tarjeta nueva no coincide con lo que ya se ve en el
+  // tablero activo: se crea sin la aserción estricta de `addNote` y se elige por su título.
+  const addNoteAnywhere = async (title: string) => {
+    await button(page, 'Añadir nota').click();
+    await page.getByLabel('Título de la tarjeta').fill(title);
+    await button(page, 'Guardar texto').click();
+    await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  };
+  const selectCardByTitle = (title: string) => page.locator('[data-testid^="card-tarjeta-"]').filter({ hasText: title });
+
+  await page.goto('./');
+  await createWorkspace(page, 'Estudio3');
+  await addNote(page, 'Idea original');
+  await closeEditor(page);
+
+  // Segundo tablero con dos tarjetas, para archivarlo entero. «Tablero principal» ya existe, así
+  // que el primero creado a mano es «Tablero 2» (cuenta todos los tableros, no solo los con nombre «Tablero N»).
+  if (isCompactWidth(page)) await button(page, 'Abrir un tablero').click();
+  await button(page, 'Crear un tablero').click();
+  await addNoteAnywhere('Escena 1');
+  await closeEditor(page);
+  await addNoteAnywhere('Escena 2');
+  await closeEditor(page);
+
+  const openArchive = async () => {
+    if (isCompactWidth(page)) {
+      await button(page, 'Más secciones').click();
+      await expect(page.getByTestId('more-sheet')).toBeVisible();
+    }
+    // Las tres veces que se abre en este flujo, el Archivo tiene 2 tarjetas.
+    await button(page, 'Abrir el Archivo (2)').click();
+    await expect(page.getByTestId('archive-view')).toBeVisible();
+  };
+
+  // Archivar el tablero completo desde la navegación.
+  if (isCompactWidth(page)) await button(page, 'Más secciones').click();
+  await button(page, 'Archivar el tablero Tablero 2 con sus tarjetas').click();
+  await expect(feedback(page)).toHaveText('Tablero «Tablero 2» archivado con sus tarjetas. Guardado en memoria.');
+  await openArchive();
+  await expect(page.getByTestId(/^archive-board-/)).toContainText('Tablero 2');
+  await expect(page.getByTestId(/^archive-board-/)).toContainText('2 tarjetas');
+  await page.screenshot({ path: testInfo.outputPath('archive-board.png') });
+  await button(page, 'Restaurar el tablero Tablero 2 con sus tarjetas').click();
+  await expect(feedback(page)).toHaveText('Tablero «Tablero 2» restaurado. Guardado en memoria.');
+  await expect(page.getByTestId(/^archive-board-/)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(button(page, 'Tablero Tablero 2')).toBeVisible();
+
+  // Selección múltiple: archivar dos tarjetas del tablero principal y restaurarlas juntas.
+  await button(page, 'Tablero Tablero principal').click();
+  await selectCardByTitle('Idea original').click();
+  await button(page, 'Archivar la tarjeta Idea original').click();
+  await addNoteAnywhere('Otra idea');
+  await closeEditor(page);
+  await selectCardByTitle('Otra idea').click();
+  await button(page, 'Archivar la tarjeta Otra idea').click();
+  await openArchive();
+  await expect(page.getByTestId('archive-count')).toHaveText('2 TARJETAS');
+  await button(page, 'Añadir a la selección a Idea original').click();
+  await button(page, 'Añadir a la selección a Otra idea').click();
+  await expect(page.getByTestId('archive-selection-bar')).toContainText('2 SELECCIONADAS');
+  await button(page, 'Restaurar las tarjetas seleccionadas').click();
+  await expect(feedback(page)).toHaveText('2 tarjetas restauradas del Archivo. Guardado en memoria.');
+  await expect(page.getByTestId('archive-empty')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(selectCardByTitle('Idea original')).toBeVisible();
+  await expect(selectCardByTitle('Otra idea')).toBeVisible();
+
+  // Ahora, seleccionar y enviar juntas a la Papelera.
+  await selectCardByTitle('Idea original').click();
+  await button(page, 'Archivar la tarjeta Idea original').click();
+  await selectCardByTitle('Otra idea').click();
+  await button(page, 'Archivar la tarjeta Otra idea').click();
+  await openArchive();
+  await button(page, 'Añadir a la selección a Idea original').click();
+  await button(page, 'Añadir a la selección a Otra idea').click();
+
+  // Exportar la selección: un ZIP nuevo, no el del workspace; la selección sigue intacta después.
+  const exportDownload = page.waitForEvent('download');
+  await button(page, 'Exportar la selección como ZIP con sus assets').click();
+  const exported = await exportDownload;
+  expect(exported.suggestedFilename()).toBe('archivo-seleccion-2.zip');
+  await expect(feedback(page)).toHaveText('Selección exportada como ZIP (2 tarjetas).');
+  await expect(page.getByTestId('archive-selection-bar')).toContainText('2 SELECCIONADAS');
+
+  await button(page, 'Enviar las tarjetas seleccionadas a la Papelera').click();
+  await expect(page.getByTestId('archive-selection-confirm')).toBeVisible();
+  await button(page, 'Confirmar enviar la selección a la Papelera').click();
+  await expect(feedback(page)).toHaveText('2 tarjetas enviadas del Archivo a la Papelera. Guardado en memoria.');
+  await expect(page.getByTestId('archive-empty')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(button(page, 'Abrir la Papelera (2)')).toBeVisible();
+
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
 });

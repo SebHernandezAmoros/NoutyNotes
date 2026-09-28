@@ -414,6 +414,29 @@ export function restoreCardFromArchive(
   return restoreSetAside(storage, workspaceId, input, restoreArchivedCard);
 }
 
+/** Restaura un conjunto de tarjetas archivadas en una sola escritura (ADR 0039, selección múltiple del Archivo). */
+export function restoreCardsFromArchive(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, input: { readonly cardIds: readonly CardId[]; readonly fallbackBoardId: BoardId },
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => {
+    if (input.cardIds.length === 0) return { ok: false, issues: [{ code: 'invalid-value', path: 'cardIds', message: 'Debe haber al menos una tarjeta.' }] };
+    const { workspace: target, boardId } = workspace.boards.some((board) => board.id === input.fallbackBoardId)
+      ? { workspace, boardId: input.fallbackBoardId } : withBoard(workspace);
+    let current = target;
+    for (const cardId of new Set(input.cardIds)) {
+      const restored = restoreArchivedCard(current, cardId, { fallbackBoardId: boardId, config: CANONICAL_GRID });
+      if (!restored.ok) return restored;
+      current = restored.value.workspace;
+    }
+    return { ok: true, value: current };
+  });
+}
+
+/** Envía un conjunto de tarjetas archivadas a la Papelera en una sola escritura (ADR 0039). */
+export function sendArchivedCardsToTrash(storage: WorkspaceStorage, workspaceId: WorkspaceId, cardIds: readonly CardId[]): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => eachCard(workspace, cardIds, archivedToTrash));
+}
+
 /** «Eliminar» desde el Archivo: la tarjeta pasa a la Papelera; solo la Papelera borra (ADR 0023). */
 export function sendArchivedToTrash(storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
   return modifyWorkspace(storage, workspaceId, (workspace) => archivedToTrash(workspace, cardId));

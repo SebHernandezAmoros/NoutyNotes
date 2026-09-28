@@ -1,5 +1,5 @@
 import { isValidId, validateWorkspace } from '@noutynotes/domain';
-import type { Board, Card, DomainIssue, TrashedCard, Workspace } from '@noutynotes/domain';
+import type { ArchivedBoard, Board, Card, DomainIssue, TrashedCard, Workspace } from '@noutynotes/domain';
 import type { z } from 'zod';
 
 import { LAYOUT_FILE, RELATIONS_FILE, layoutData, layoutSchemaVersion, parseLayouts, parseRelations, relationData, relationsSchemaVersion } from './codecs';
@@ -67,6 +67,20 @@ function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 {
     || entry.placements.some((placement) => placement.rect.x < 0 || placement.rect.y < 0)) ? 2 : 1;
 }
 
+/** v4 solo si hay tableros archivados (ADR 0039); si no, la misma versión selectiva de siempre. */
+function archiveSchemaVersion(entries: readonly TrashedCard[], archivedBoards: readonly ArchivedBoard[]): 1 | 2 | 3 | 4 {
+  return archivedBoards.length > 0 ? 4 : trashSchemaVersion(entries);
+}
+
+/** Copia canónica de un tablero archivado, sin claves ausentes ni orden accidental. */
+function archivedBoardData(entry: ArchivedBoard): unknown {
+  return compact({
+    board: compact({ id: entry.board.id, title: entry.board.title, description: entry.board.description }),
+    archivedAt: entry.archivedAt,
+    cardIds: entry.cardIds,
+  });
+}
+
 function boardDocument(board: Board): GeneratedDocument {
   return markdownDocument(compact({
     schemaVersion: 1, id: board.id, title: board.title, cardIds: board.cardIds,
@@ -93,10 +107,12 @@ function workspaceDocuments(workspace: Workspace): Map<string, GeneratedDocument
     documents.set(TRASH_FILE, yamlDocument({ schemaVersion: trashSchemaVersion(workspace.trash), items: workspace.trash.map(trashData) }));
   }
   if (workspace.archive && workspace.archive.length > 0) {
-    documents.set(ARCHIVE_FILE, yamlDocument({
-      schemaVersion: trashSchemaVersion(workspace.archive),
+    const archivedBoards = workspace.archivedBoards ?? [];
+    documents.set(ARCHIVE_FILE, yamlDocument(compact({
+      schemaVersion: archiveSchemaVersion(workspace.archive, archivedBoards),
       items: workspace.archive.map((entry) => ({ ...(trashData(entry) as object), archivedAt: entry.archivedAt })),
-    }));
+      archivedBoards: archivedBoards.length > 0 ? archivedBoards.map(archivedBoardData) : undefined,
+    })));
   }
   return documents;
 }
@@ -265,7 +281,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       }
     }));
   }
-  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3]) : null;
+  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4]) : null;
   if (archive && !archive.ok) issues.push(...archive.issues);
   if (archive?.ok && archive.value.schemaVersion === 1) {
     archive.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -284,6 +300,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     schemaVersion: 1, id, metadata, cardTypes, relationTypes, cards, boards, layouts: layouts.value, relations: relations.value,
     trash: trash?.ok ? trash.value.items : undefined,
     archive: archive?.ok ? archive.value.items : undefined,
+    archivedBoards: archive?.ok && archive.value.archivedBoards && archive.value.archivedBoards.length > 0 ? archive.value.archivedBoards : undefined,
   }) as unknown as Workspace;
   const semantic = validateWorkspace(workspace);
   const located = [

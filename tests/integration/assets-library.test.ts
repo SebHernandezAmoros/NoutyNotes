@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addAssetToBoard, addNoteImage, addCardToBoard, buildAssetCatalog, createEmptyWorkspaceNamed, deleteUnusedAssets, editCardContent, importAssetImage,
-  importImageCard, noteImageRefs, removeNoteBlock, replaceAsset,
+  importImageCard, importLibraryFile, noteImageRefs, removeNoteBlock, replaceAsset,
 } from '../../packages/application/src/index';
 import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { AssetRef, WorkspaceId } from '../../packages/domain/src/index';
@@ -82,5 +82,29 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     const content = ok(await storage.open(id)).cards[0]?.content ?? '';
     ok(await editCardContent(storage, id, note, { content: removeNoteBlock(content, 1) }));
     expect(ok(await deleteUnusedAssets(storage, storage, id, [ref])).removed).toEqual([ref]);
+  });
+
+  it('importar documento y audio a la biblioteca (ADR 0038): carpeta por tipo, nombre portable, sin sobrescribir; se rechaza lo que no es ninguno de los dos o supera el límite', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Galería'));
+    const pdfBytes = Uint8Array.from([37, 80, 68, 70, 1, 2, 3]);
+    const doc = ok(await importLibraryFile(storage, storage, id, { bytes: pdfBytes, fileName: 'Guion Final.pdf' }));
+    expect(doc).toBe('assets/documents/guion-final.pdf');
+    expect(ok(await storage.readAsset(id, doc as AssetRef))).toEqual(pdfBytes);
+    // No sobrescribe: el mismo nombre base numera.
+    expect(ok(await importLibraryFile(storage, storage, id, { bytes: pdfBytes, fileName: 'Guion Final.pdf' }))).toBe('assets/documents/guion-final-2.pdf');
+
+    const audioBytes = Uint8Array.from([73, 68, 51, 1, 2]);
+    const audio = ok(await importLibraryFile(storage, storage, id, { bytes: audioBytes, fileName: 'tema.mp3' }));
+    expect(audio).toBe('assets/audio/tema.mp3');
+
+    const rejected = await importLibraryFile(storage, storage, id, { bytes: pdfBytes, fileName: 'imagen.png' });
+    expect(rejected.ok ? null : rejected.issues[0]?.code).toBe('invalid-asset');
+    const tooBig = await importLibraryFile(storage, storage, id, { bytes: new Uint8Array(20 * 1024 * 1024 + 1), fileName: 'grande.pdf' });
+    expect(tooBig.ok ? null : tooBig.issues[0]?.code).toBe('invalid-asset');
+
+    const catalog = buildAssetCatalog(ok(await storage.open(id)), ok(await storage.listAssets(id)));
+    expect(catalog.find((entry) => entry.ref === doc)).toMatchObject({ kind: 'document', unused: true });
+    expect(catalog.find((entry) => entry.ref === audio)).toMatchObject({ kind: 'audio', unused: true });
   });
 });

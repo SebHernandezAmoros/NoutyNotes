@@ -21,6 +21,9 @@ export { archiveCard, archivedToTrash, restoreArchivedCard } from './cards/archi
 export { isArchiveInstant } from './cards/trashed-card';
 export type { RestoreOptions, RestoreReport } from './cards/trash';
 export type { ArchivedCard, TrashedCard } from './cards/trashed-card';
+export { archiveBoard, restoreArchivedBoard } from './boards/archive';
+export type { RestoreBoardReport } from './boards/archive';
+export type { ArchivedBoard } from './boards/archived-board';
 export { baseCardKinds, fieldKinds, validateCardType } from './cards/card-type';
 export type { BaseCardKind, CardTypeDefinition, FieldDefinition, FieldKind } from './cards/card-type';
 export { isCalendarDate } from './cards/field-values';

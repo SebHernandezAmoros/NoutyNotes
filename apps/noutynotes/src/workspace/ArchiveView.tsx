@@ -1,5 +1,5 @@
 import { fold } from '@noutynotes/application';
-import type { ArchivedCard, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
+import type { ArchivedBoard, ArchivedCard, BoardId, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -15,10 +15,17 @@ interface ArchiveViewProps {
   readonly busy: boolean;
   readonly onRestore: (cardId: CardId) => void;
   readonly onSendToTrash: (cardId: CardId) => void;
+  /** Selección múltiple (ADR 0039): una sola escritura; `true` si se guardó, para limpiar la selección. */
+  readonly onRestoreSelection: (cardIds: readonly CardId[]) => Promise<boolean>;
+  readonly onSendSelectionToTrash: (cardIds: readonly CardId[]) => Promise<boolean>;
+  /** ZIP nuevo con solo la selección y sus assets, no el del workspace (ADR 0039). */
+  readonly onExportSelection: (cardIds: readonly CardId[]) => void;
+  readonly onRestoreBoard: (boardId: BoardId, title: string) => void;
   readonly onBack: () => void;
 }
 
 type Order = 'recent' | 'title';
+const plural = (count: number, one: string, many: string) => (count === 1 ? one : many.replace('#', String(count)));
 const titleOf = (entry: ArchivedCard) => entry.card.title ?? 'Sin título';
 const pad = (value: number) => String(value).padStart(2, '0');
 /** Fecha local legible sin depender de Intl (igual en web y en Android). */
@@ -32,7 +39,9 @@ function when(iso: string): string {
  * Tarjetas apartadas sin destruir. Restaurar las devuelve a su sitio; «Enviar a la Papelera» (con
  * confirmación) es la única forma de eliminarlas, y solo la Papelera borra.
  */
-export function ArchiveView({ active, compact, workspace, busy, onRestore, onSendToTrash, onBack }: ArchiveViewProps) {
+export function ArchiveView({
+  active, compact, workspace, busy, onRestore, onSendToTrash, onRestoreSelection, onSendSelectionToTrash, onExportSelection, onRestoreBoard, onBack,
+}: ArchiveViewProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   useEscapeBack(active, onBack);
@@ -40,7 +49,22 @@ export function ArchiveView({ active, compact, workspace, busy, onRestore, onSen
   const [query, setQuery] = useState('');
   const [typeId, setTypeId] = useState<CardTypeId | null>(null);
   const [order, setOrder] = useState<Order>('recent');
+  const [selected, setSelected] = useState<ReadonlySet<CardId>>(new Set());
+  const [confirmingSelection, setConfirmingSelection] = useState(false);
+  const archivedBoards = workspace.archivedBoards ?? [];
   const archive = workspace.archive ?? [];
+  const toggleSelected = (cardId: CardId) => setSelected((current) => {
+    const next = new Set(current);
+    if (next.has(cardId)) next.delete(cardId); else next.add(cardId);
+    return next;
+  });
+  const restoreSelection = async () => {
+    if (await onRestoreSelection([...selected])) setSelected(new Set());
+  };
+  const trashSelection = async () => {
+    setConfirmingSelection(false);
+    if (await onSendSelectionToTrash([...selected])) setSelected(new Set());
+  };
   const typeLabel = (id: CardTypeId) => workspace.cardTypes.find((type) => type.id === id)?.label ?? 'Tarjeta';
   const types = [...new Set(archive.map((entry) => entry.card.typeId))].map((id) => ({ id, count: archive.filter((entry) => entry.card.typeId === id).length }));
   const text = fold(query.trim());
@@ -58,7 +82,7 @@ export function ArchiveView({ active, compact, workspace, busy, onRestore, onSen
         <ActionButton label="←" accessibilityLabel="Volver al tablero" onPress={onBack} />
         <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>Archivo</Text>
       </View>
-      {archive.length === 0 ? (
+      {archive.length === 0 && archivedBoards.length === 0 ? (
         <View style={styles.pad}>
           <Text style={[styles.intro, { color: colors.textSecondary }]}>
             Lo archivado sale de los tableros y de las búsquedas sin destruirse, y se guarda con el espacio (también en la carpeta y en el ZIP).
@@ -78,11 +102,53 @@ export function ArchiveView({ active, compact, workspace, busy, onRestore, onSen
             <ActionButton label="Por título" pressed={order === 'title'} accessibilityLabel="Ordenar por título" onPress={() => setOrder('title')} />
           </View>
           <ScrollView contentContainerStyle={styles.content}>
+            {archivedBoards.length > 0 ? (
+              <>
+                <Text style={[styles.section, { color: colors.textSecondary }]}>TABLEROS ARCHIVADOS</Text>
+                <View style={compact ? styles.list : styles.grid}>
+                  {archivedBoards.map((entry: ArchivedBoard) => (
+                    <View key={entry.board.id} testID={`archive-board-${entry.board.id}`} style={[styles.item, compact ? null : styles.itemCol, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                      <Text style={[styles.kind, { color: colors.textSecondary }]}>{`TABLERO · ARCHIVADO ${when(entry.archivedAt)}`}</Text>
+                      <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.board.title}</Text>
+                      <Text style={[styles.meta, { color: colors.textSecondary }]}>{plural(entry.cardIds.length, '1 tarjeta', `${entry.cardIds.length} tarjetas`)}</Text>
+                      <View style={styles.actions}>
+                        <ActionButton label="Restaurar tablero" tone="primary" accessibilityLabel={`Restaurar el tablero ${entry.board.title} con sus tarjetas`}
+                          onPress={() => { if (!busy) onRestoreBoard(entry.board.id, entry.board.title); }} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+            {archive.length > 0 ? <Text style={[styles.section, { color: colors.textSecondary }]}>TARJETAS</Text> : null}
             <TextField label="Buscar en el Archivo" value={query} onChangeText={setQuery} placeholder="título, texto o etiqueta" testID="archive-search" />
             <Text testID="archive-count" accessibilityLiveRegion="polite" style={[styles.count, { color: colors.textSecondary }]}>
               {shown.length === 1 ? '1 TARJETA' : `${shown.length} TARJETAS`}
             </Text>
             {shown.length === 0 ? <Text style={[styles.intro, { color: colors.textSecondary }]}>{`Sin resultados para «${query.trim()}».`}</Text> : null}
+            {selected.size > 0 ? (
+              <View testID="archive-selection-bar" style={[styles.item, { borderColor: colors.selection, backgroundColor: colors.surface }]}>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>{plural(selected.size, '1 SELECCIONADA', '# SELECCIONADAS')}</Text>
+                {confirmingSelection ? (
+                  <View testID="archive-selection-confirm" style={[styles.confirm, { borderColor: colors.danger }]}>
+                    <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>
+                      {`¿Enviar ${plural(selected.size, 'la seleccionada', 'las # seleccionadas')} a la Papelera? Desde allí aún podrás restaurarlas o eliminarlas definitivamente.`}
+                    </Text>
+                    <View style={styles.actions}>
+                      <ActionButton label="Enviar a la Papelera" tone="primary" accessibilityLabel="Confirmar enviar la selección a la Papelera" onPress={() => void trashSelection()} />
+                      <ActionButton label="Cancelar" accessibilityLabel="Cancelar el envío de la selección a la Papelera" onPress={() => setConfirmingSelection(false)} />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.actions}>
+                    <ActionButton label="Restaurar seleccionadas" tone="primary" accessibilityLabel="Restaurar las tarjetas seleccionadas" onPress={() => void restoreSelection()} />
+                    <ActionButton label="Enviar seleccionadas a la Papelera…" accessibilityLabel="Enviar las tarjetas seleccionadas a la Papelera" onPress={() => setConfirmingSelection(true)} />
+                    <ActionButton label="Exportar selección" accessibilityLabel="Exportar la selección como ZIP con sus assets" onPress={() => onExportSelection([...selected])} />
+                    <ActionButton label="Cancelar selección" accessibilityLabel="Cancelar la selección" onPress={() => setSelected(new Set())} />
+                  </View>
+                )}
+              </View>
+            ) : null}
             {/* Desde 800 px, tarjetas en columnas en vez de una sola fila muy ancha (ADR 0036). */}
             <View style={compact ? styles.list : styles.grid}>
               {shown.map((entry) => {
@@ -111,6 +177,8 @@ export function ArchiveView({ active, compact, workspace, busy, onRestore, onSen
                       <View style={styles.actions}>
                         <ActionButton label="Restaurar" tone="primary" accessibilityLabel={`Restaurar ${title} del Archivo`} onPress={() => { if (!busy) onRestore(entry.card.id); }} />
                         <ActionButton label="Enviar a la Papelera…" accessibilityLabel={`Enviar ${title} a la Papelera desde el Archivo`} onPress={() => setConfirming(entry.card.id)} />
+                        <ActionButton label={selected.has(entry.card.id) ? 'Seleccionada' : 'Seleccionar'} pressed={selected.has(entry.card.id)}
+                          accessibilityLabel={`${selected.has(entry.card.id) ? 'Quitar de' : 'Añadir a'} la selección a ${title}`} onPress={() => toggleSelected(entry.card.id)} />
                       </View>
                     )}
                   </View>
@@ -136,6 +204,7 @@ const styles = StyleSheet.create({
   intro: { fontSize: 14, lineHeight: 20 },
   empty: { fontSize: 15, borderWidth: 2, borderStyle: 'dashed', padding: 16 },
   count: { fontFamily: mono, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+  section: { fontFamily: mono, fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginTop: 4 },
   list: { gap: 10 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   item: { borderWidth: 2, padding: 12, gap: 6 },

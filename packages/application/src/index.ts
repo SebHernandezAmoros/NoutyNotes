@@ -7,8 +7,11 @@ export type { CreateEmptyWorkspaceInput, CreateFromTemplateInput, WorkspaceTrans
 export { nextSequentialId, workspaceIdFromName } from './ids';
 export {
   CANONICAL_GRID, DEFAULT_CARD_SIZE, PROTOTYPE_BOARD, PROTOTYPE_CARD_PRESETS, RELATED_RELATION_TYPE,
-  addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
+  addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, restoreCardsFromArchive, sendArchivedCardsToTrash, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
 } from './workspace-editing';
+export { moveBoardToArchive, restoreBoardFromArchive } from './board-archive';
+export { archiveSelectionForExport } from './archive-export';
+export type { ArchiveSelectionExport, ArchiveSelectionExportResult } from './archive-export';
 export { assetsOf } from './workspace-assets';
 export { printableDocument } from './print';
 export { resolveRelationType, updateConnection } from './relations';
@@ -35,6 +38,8 @@ export { LINK_CARD_TYPE, linkCardTypeFor, setCardLink } from './links';
 export { assetKind, buildAssetCatalog, cardAssetRefs, replaceAssetReferences } from './assets-catalog';
 export type { AssetEntry, AssetKind, AssetUse } from './assets-catalog';
 export { addAssetToBoard, assetBaseName, deleteUnusedAssets, importAssetImage, replaceAsset } from './assets-library';
+export { MAX_LIBRARY_FILE_BYTES, importLibraryFile } from './asset-import';
+export type { LibraryFileInput } from './asset-import';
 export { DIARY_CARD_TYPE, activeDays, dailyLog, dailyLogRange, isDay, isDiaryEntry, localDay, localTime, shiftDay } from './daily-log';
 export type { DailyLog, DailyLogRangeResult, RangeLogItem, TimedCard } from './daily-log';
 export { diaryExportText } from './diary-export';

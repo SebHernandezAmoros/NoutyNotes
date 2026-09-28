@@ -1,3 +1,5 @@
+import { collectArchivedBoardsIssues } from '../boards/archived-board';
+import type { ArchivedBoard } from '../boards/archived-board';
 import { collectBoardIssues } from '../boards/board';
 import type { Board } from '../boards/board';
 import { collectCardIssues } from '../cards/card';
@@ -39,6 +41,8 @@ export interface Workspace {
   readonly trash?: readonly TrashedCard[];
   /** Tarjetas archivadas (ADR 0023). Opcional: sin archivadas, ausente. */
   readonly archive?: readonly ArchivedCard[];
+  /** Tableros archivados como unidad (ADR 0039). Sus tarjetas siguen también en `archive`. */
+  readonly archivedBoards?: readonly ArchivedBoard[];
 }
 
 /** Índice de elementos que existen por ID; ignora IDs inválidos o repetidos, ya informados. */
@@ -171,5 +175,6 @@ export function validateWorkspace(workspace: Workspace): ValidationResult<Worksp
   const setAsideIds = (value: unknown) => (Array.isArray(value) ? value.flatMap((entry) => (isRecord(entry) && isRecord(entry.card) && typeof entry.card.id === 'string' ? [entry.card.id] : [])) : []);
   collectTrashIssues(input.trash, usableCardTypes, new Set([...cardIndex.keys(), ...setAsideIds(input.archive)]), issues);
   collectTrashIssues(input.archive, usableCardTypes, new Set([...cardIndex.keys(), ...setAsideIds(input.trash)]), issues, { key: 'archive', name: 'el Archivo' });
+  collectArchivedBoardsIssues(input.archivedBoards, new Set(boardIndex.keys()), issues);
   return resultOf(workspace, issues);
 }

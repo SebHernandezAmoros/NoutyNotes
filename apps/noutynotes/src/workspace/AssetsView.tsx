@@ -1,5 +1,5 @@
 import {
-  addAssetToBoard, assetKind, assetsOf, buildAssetCatalog, deleteUnusedAssets, fold, importAssetImage, inspectImage, replaceAsset,
+  addAssetToBoard, assetKind, assetsOf, buildAssetCatalog, deleteUnusedAssets, fold, importAssetImage, importLibraryFile, inspectImage, replaceAsset,
 } from '@noutynotes/application';
 import type { AssetEntry, AssetKind, WorkspaceStorageResult } from '@noutynotes/application';
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
@@ -8,7 +8,9 @@ import { useEffect, useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
+import { openAssetFile, supportsOpenAsset } from '../session/openAsset';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { dataUri } from './dataUri';
 import { useEscapeBack } from './useEscapeBack';
@@ -137,6 +139,35 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       reload();
     }
   };
+  const importFile = async () => {
+    if (!assets) return;
+    if (!supportsFileImport()) {
+      setProblem('Este entorno no permite elegir archivos.');
+      return;
+    }
+    let file;
+    try {
+      file = await pickLibraryFile();
+    } catch {
+      setProblem('No se pudo leer el archivo elegido. Comprueba el permiso y vuelve a intentarlo.');
+      return;
+    }
+    if (!file) return;
+    const result = await run((store, id) => importLibraryFile(store, assets, id, { bytes: file.bytes, fileName: file.name }), `«${file.name}» añadido a la biblioteca. Guardado en memoria.`);
+    if (result.ok) {
+      setSelected(result.value);
+      reload();
+    }
+  };
+  const openFile = async (entry: AssetEntry) => {
+    if (!assets) return;
+    const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
+    if (!read.ok) {
+      setProblem(read.issues[0]?.message ?? 'No se pudo leer el archivo.');
+      return;
+    }
+    openAssetFile(entry.name, read.value);
+  };
   const replace = async (entry: AssetEntry) => {
     if (!assets) return;
     const file = await pick();
@@ -194,6 +225,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
             <ActionButton label="Añadir al tablero" accessibilityLabel={`Añadir ${current.name} al tablero`} onPress={() => void addToBoard(current)} />
             <ActionButton label="Reemplazar" accessibilityLabel={`Reemplazar ${current.name}`} onPress={() => void replace(current)} />
           </>
+        ) : null}
+        {(current.kind === 'document' || current.kind === 'audio') && !current.missing && supportsOpenAsset() ? (
+          <ActionButton label="Abrir" accessibilityLabel={`Abrir ${current.name}`} onPress={() => void openFile(current)} />
         ) : null}
         {current.unused ? <ActionButton label="Eliminar" accessibilityLabel={`Eliminar ${current.name}`} onPress={() => setConfirm('one')} /> : null}
       </View>
@@ -260,6 +294,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
           {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
           <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
             <ActionButton label="Importar imagen" tone="primary" accessibilityLabel="Importar una imagen a la biblioteca" onPress={() => void importImage()} />
+            {supportsFileImport() ? <ActionButton label="Importar archivo" accessibilityLabel="Importar un documento o audio a la biblioteca" onPress={() => void importFile()} /> : null}
             <ActionButton label={grid ? 'Ver lista' : 'Ver cuadrícula'} accessibilityLabel={grid ? 'Ver como lista' : 'Ver como cuadrícula'} onPress={() => setGridChoice(!grid)} />
             {tabs.map(({ tab: key, label }) => (
               <ActionButton key={key} label={`${label} · ${counts.get(key) ?? 0}`} pressed={tab === key}
@@ -287,7 +322,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
                 {listed === null ? 'LEYENDO…' : plural(shown.length, 'ARCHIVO', 'ARCHIVOS')}
               </Text>
               {listed !== null && catalog.length === 0 ? (
-                <Text testID="assets-empty" style={[styles.hint, { color: colors.textSecondary }]}>Este proyecto aún no tiene archivos. Importa una imagen o añádela a una nota.</Text>
+                <Text testID="assets-empty" style={[styles.hint, { color: colors.textSecondary }]}>Este proyecto aún no tiene archivos. Importa una imagen, un documento o un audio, o añade una imagen a una nota.</Text>
               ) : null}
               {/* En móvil, el detalle va encima de la lista: con muchos archivos no hay que bajar hasta el final. */}
               {compact ? detail : null}

@@ -39,6 +39,13 @@ export const trashItemSchema = z.strictObject({
 /** Tarjeta archivada (ADR 0023): la instantánea de la Papelera y la fecha de archivo. */
 export const archiveItemSchema = trashItemSchema.extend({ archivedAt: text });
 
+/** Tablero archivado como unidad (ADR 0039): el tablero sin tarjetas y la pertenencia histórica. */
+export const archivedBoardSchema = z.strictObject({
+  board: z.strictObject({ id: text, title: text, description: text.optional() }),
+  archivedAt: text,
+  cardIds: z.array(text),
+});
+
 /** Forma del Workspace del dominio que el serializador sabe escribir sin perder claves. */
 export const workspaceSchema = z.strictObject({
   schemaVersion: z.number(), id: text, metadata: metadataSchema,
@@ -47,6 +54,7 @@ export const workspaceSchema = z.strictObject({
   layouts: z.array(layoutSchema), relations: z.array(relationSchema),
   trash: z.array(trashItemSchema).optional(),
   archive: z.array(archiveItemSchema).optional(),
+  archivedBoards: z.array(z.lazy(() => archivedBoardSchema)).optional(),
 });
 
 // Documentos del formato v1.
@@ -67,7 +75,11 @@ export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),
 });
 export const trashFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), items: z.array(trashItemSchema) });
-export const archiveFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), items: z.array(archiveItemSchema) });
+/** v4: con `archivedBoards`, tableros archivados como unidad (ADR 0039). */
+export const archiveFileSchema = z.strictObject({
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), items: z.array(archiveItemSchema),
+  archivedBoards: z.array(archivedBoardSchema).optional(),
+});
 export const templateFileSchema = z.strictObject({
   schemaVersion: z.literal(1), definition: z.record(text, z.unknown()), readmeFile: z.literal('README.md').optional(),
 });

@@ -16,9 +16,9 @@ import type { WorkspaceStorage, WorkspaceStorageResult } from './workspace-stora
 import { modifyWorkspace } from './workspace-use-cases';
 
 /** Nombre de archivo portable a partir del del usuario: «Plano del Río.jpg» → «plano-del-rio». */
-export function assetBaseName(fileName: string): string {
+export function assetBaseName(fileName: string, fallback = 'imagen'): string {
   const base = fold(fileName.replace(/\.[^./\\]*$/, '')).replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
-  return base === '' ? 'imagen' : base;
+  return base === '' ? fallback : base;
 }
 
 const numbered = (base: string) => (attempt: number) => (attempt === 1 ? base : `${base}-${attempt}`);
