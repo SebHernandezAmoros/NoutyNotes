@@ -1,6 +1,6 @@
 import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridSize, Workspace } from '@noutynotes/domain';
 import { footprint, frameMembers } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
@@ -144,6 +144,7 @@ function rejection(check: PlacementCheck, names: ReadonlyMap<CardId, string>): s
 export function Canvas(props: CanvasProps) {
   const { workspace, layout, metrics, zoom, pan, tool, snap, showGrid, selectedId, connectSource, boardTitle } = props;
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -623,7 +624,7 @@ export function Canvas(props: CanvasProps) {
               box={box}
               display={placement.display}
               selected={selected}
-              createdLabel={props.showDates && card.createdAt ? formatDay(card.createdAt, new Date(card.createdAt).getTimezoneOffset()) : undefined}
+              createdLabel={props.showDates && card.createdAt ? formatDay(card.createdAt, new Date(card.createdAt).getTimezoneOffset(), locale) : undefined}
               noteFontFamily={props.noteFontFamily}
               dragging={dragging}
               colliding={colliding.has(card.id)}

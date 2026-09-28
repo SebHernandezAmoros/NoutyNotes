@@ -1456,6 +1456,38 @@ test('Idioma (E7a, ADR 0040): Inicio, Papelera, enlaces, búsqueda, Diario, Asse
   expect(runtimeErrors).toEqual([]);
 });
 
+test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian a inglés, incluida la fecha de creación', async ({ page }) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Language inspector');
+
+  await openSettings(page);
+  await button(page, 'Usar inglés').click();
+  await button(page, 'Close settings').click();
+
+  await button(page, 'Add note').click();
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  // En móvil el encabezado propio del inspector se oculta (la hoja ya muestra título y «Close»).
+  if (!isCompactWidth(page)) await expect(page.getByText('SELECTED CARD', { exact: true })).toBeVisible();
+  await page.getByLabel('Card title').fill('English card');
+  await button(page, 'Save text').click();
+  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+
+  // La fecha de creación cambia de orden, no solo de palabras (ADR 0040): «28 sep 2026» -> «Sep 28, 2026».
+  await expect(page.getByTestId('card-created')).toContainText(/^Created [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{2}:\d{2}$/);
+  await expect(page.getByTestId('card-geometry')).toContainText(/^Column \d+, row \d+/);
+  await expect(page.getByText('CONNECTIONS', { exact: true })).toBeVisible();
+  await expect(page.getByText('No connections.', { exact: true })).toBeVisible();
+  await expect(button(page, 'Archive the card English card')).toBeVisible();
+  await expect(button(page, 'Send the card English card to the Trash')).toBeVisible();
+
+  await button(page, 'Close the card editor').click();
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('Conexiones: tipo y rótulo al crear, editarlos después, elegir el estilo de flecha y verlo en el lienzo (ADR 0034)', async ({ page }, testInfo) => {
   const { runtimeErrors } = trackProblems(page);
   await page.emulateMedia({ colorScheme: 'light' });

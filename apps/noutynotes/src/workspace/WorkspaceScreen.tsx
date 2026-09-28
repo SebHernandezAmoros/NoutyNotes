@@ -1048,20 +1048,20 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <View testID="inspector-sheet" style={[styles.sheet, typing ? styles.sheetTyping : null, focusing ? styles.sheetFocus : null, { backgroundColor: colors.background, borderColor: colors.border }]}>
                   <View style={styles.sheetBar}>
                     {/* Una sola barra: título, mostrar/ocultar y cerrar (sin repetir la cabecera del inspector). */}
-                    <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{frame ? frame.title : selected?.title ?? 'Sin título'}</Text>
+                    <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{frame ? frame.title : selected?.title ?? t('trash.item.untitled', locale)}</Text>
                     {focusing ? (
-                      <ActionButton label="Volver" accessibilityLabel="Volver al tablero" onPress={() => setFocus(false)} />
+                      <ActionButton label={t('inspector.sheet.back', locale)} accessibilityLabel={t('workview.back', locale)} onPress={() => setFocus(false)} />
                     ) : (
                       <>
-                        {frame ? null : <ActionButton label="⤢" accessibilityLabel="Ampliar el editor" onPress={() => { setSheetHidden(false); setFocus(true); }} />}
+                        {frame ? null : <ActionButton label="⤢" accessibilityLabel={t('inspector.expand.accessibilityLabel', locale)} onPress={() => { setSheetHidden(false); setFocus(true); }} />}
                         <ActionButton
-                          label={sheetHidden ? 'Mostrar' : 'Ocultar'}
-                          accessibilityLabel={`${sheetHidden ? 'Mostrar' : 'Ocultar'} el editor ${frame ? 'del marco' : 'de la tarjeta'}`}
+                          label={t(sheetHidden ? 'inspector.sheet.showLabel' : 'inspector.sheet.hideLabel', locale)}
+                          accessibilityLabel={t(sheetHidden ? (frame ? 'inspector.sheet.show.frame.accessibilityLabel' : 'inspector.sheet.show.card.accessibilityLabel') : (frame ? 'inspector.sheet.hide.frame.accessibilityLabel' : 'inspector.sheet.hide.card.accessibilityLabel'), locale)}
                           onPress={() => setSheetHidden((current) => !current)}
                         />
                       </>
                     )}
-                    <ActionButton label="Cerrar" accessibilityLabel={frame ? 'Cerrar el editor del marco' : 'Cerrar el editor de la tarjeta'} onPress={closeInspector} />
+                    <ActionButton label={t('inspector.close', locale)} accessibilityLabel={t(frame ? 'inspector.sheet.close.frame.accessibilityLabel' : 'inspector.close.accessibilityLabel', locale)} onPress={closeInspector} />
                   </View>
                   {/* Oculto, sigue montado: el texto sin guardar no se pierde. */}
                   <ScrollView ref={sheetScroll} onScroll={onSheetScroll} scrollEventThrottle={32} style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>

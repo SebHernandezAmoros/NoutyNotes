@@ -2,11 +2,12 @@ import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, edit
 import type { WorkspaceStorageResult } from '@noutynotes/application';
 import { linkUrlField } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { t } from '../i18n';
 import { formatCreated } from './dates';
 import { describeFailure } from '../session/messages';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
@@ -47,24 +48,24 @@ interface CardInspectorProps {
   readonly onToggleFocus?: () => void;
 }
 
-const displays: readonly { display: CardDisplayMode; label: string }[] = [
-  { display: 'expanded', label: 'Expandida' },
-  { display: 'collapsed', label: 'Contraída' },
-  { display: 'minimized', label: 'Minimizada' },
+const displayKeys: readonly { display: CardDisplayMode; labelKey: 'inspector.display.expanded' | 'inspector.display.collapsed' | 'inspector.display.minimized' }[] = [
+  { display: 'expanded', labelKey: 'inspector.display.expanded' },
+  { display: 'collapsed', labelKey: 'inspector.display.collapsed' },
+  { display: 'minimized', labelKey: 'inspector.display.minimized' },
 ];
 
-const moves = [
-  { label: '←', name: 'Mover a la izquierda', dx: -1, dy: 0 },
-  { label: '→', name: 'Mover a la derecha', dx: 1, dy: 0 },
-  { label: '↑', name: 'Mover arriba', dx: 0, dy: -1 },
-  { label: '↓', name: 'Mover abajo', dx: 0, dy: 1 },
+const moveKeys = [
+  { label: '←', nameKey: 'inspector.move.left', dx: -1, dy: 0 },
+  { label: '→', nameKey: 'inspector.move.right', dx: 1, dy: 0 },
+  { label: '↑', nameKey: 'inspector.move.up', dx: 0, dy: -1 },
+  { label: '↓', nameKey: 'inspector.move.down', dx: 0, dy: 1 },
 ] as const;
 
-const resizes = [
-  { label: 'Ancho −', name: 'Más estrecha', dw: -1, dh: 0 },
-  { label: 'Ancho +', name: 'Más ancha', dw: 1, dh: 0 },
-  { label: 'Alto −', name: 'Más baja', dw: 0, dh: -1 },
-  { label: 'Alto +', name: 'Más alta', dw: 0, dh: 1 },
+const resizeKeys = [
+  { labelKey: 'inspector.resize.width.label', nameKey: 'inspector.resize.width.name', dw: -1, dh: 0 },
+  { labelKey: 'inspector.resize.widthPlus.label', nameKey: 'inspector.resize.widthPlus.name', dw: 1, dh: 0 },
+  { labelKey: 'inspector.resize.height.label', nameKey: 'inspector.resize.height.name', dw: 0, dh: -1 },
+  { labelKey: 'inspector.resize.heightPlus.label', nameKey: 'inspector.resize.heightPlus.name', dw: 0, dh: 1 },
 ] as const;
 
 /**
@@ -74,6 +75,7 @@ const resizes = [
 export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, focused = false, onToggleFocus }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
@@ -128,7 +130,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const open = () => {
     setLinkProblem(null);
     void openLink(currentLink).then((opened) => {
-      if (!opened) setLinkProblem('No se pudo abrir el enlace con este dispositivo. La dirección sigue guardada.');
+      if (!opened) setLinkProblem(t('inspector.link.openFailed', locale));
     });
   };
   // Contenido en orden (ADR 0021): mover, quitar o el texto alternativo cambian el borrador, como escribir.
@@ -142,12 +144,12 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // Insertar o reemplazar guarda enseguida el contenido del editor con la imagen (y el asset nuevo).
   const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }) => {
     setImageProblem(null);
-    if (!supportsImageImport()) return setImageProblem('Este entorno no permite elegir imágenes.');
+    if (!supportsImageImport()) return setImageProblem(t('assets.error.noImagePicker', locale));
     let picked;
     try {
       picked = await pickImageFile();
     } catch {
-      return setImageProblem('No se pudo leer la imagen elegida. Comprueba el permiso y vuelve a intentarlo.');
+      return setImageProblem(t('assets.error.imageReadFailed', locale));
     }
     if (!picked) return undefined;
     const file = picked;
@@ -192,7 +194,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const [editingRelation, setEditingRelation] = useState<{ readonly id: RelationId; readonly typeLabel: string; readonly label: string } | null>(null);
   const [connectTypeDraft, setConnectTypeDraft] = useState('');
   const arrowOptions: readonly { readonly value: RelationArrow; readonly label: string }[] = [
-    { value: 'none', label: 'Sin flecha' }, { value: 'forward', label: 'Flecha' }, { value: 'both', label: 'Doble flecha' },
+    { value: 'none', label: t('inspector.relation.arrow.none', locale) },
+    { value: 'forward', label: t('inspector.relation.arrow.forward', locale) },
+    { value: 'both', label: t('inspector.relation.arrow.both', locale) },
   ];
   const saveRelationEdit = () => {
     if (!editingRelation) return;
@@ -209,62 +213,62 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       {inSheet ? null : (
         <View style={styles.header}>
           <View style={styles.headerText}>
-            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>TARJETA SELECCIONADA</Text>
+            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.heading.eyebrow', locale)}</Text>
             <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card)}</Text>
           </View>
           {onToggleFocus ? (
-            <ActionButton label={focused ? 'Volver al tablero' : 'Ampliar'} accessibilityLabel={focused ? 'Volver al tablero' : 'Ampliar el editor'} onPress={onToggleFocus} />
+            <ActionButton label={focused ? t('workview.back', locale) : t('inspector.expand', locale)} accessibilityLabel={focused ? t('workview.back', locale) : t('inspector.expand.accessibilityLabel', locale)} onPress={onToggleFocus} />
           ) : null}
-          <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor de la tarjeta" onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
+          <ActionButton label={t('inspector.close', locale)} accessibilityLabel={t('inspector.close.accessibilityLabel', locale)} onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
         </View>
       )}
 
       <Text testID="card-created" style={[styles.hint, { color: colors.textSecondary }]}>
-        {formatCreated(card.createdAt, new Date(card.createdAt ?? 0).getTimezoneOffset())}
+        {formatCreated(card.createdAt, new Date(card.createdAt ?? 0).getTimezoneOffset(), locale)}
       </Text>
       {onSelectMany ? (
         <View style={styles.row}>
-          <ActionButton label="Seleccionar varias" accessibilityLabel="Seleccionar varias tarjetas empezando por esta" onPress={onSelectMany} />
+          <ActionButton label={t('inspector.selectMany', locale)} accessibilityLabel={t('inspector.selectMany.accessibilityLabel', locale)} onPress={onSelectMany} />
         </View>
       ) : null}
       <View style={styles.section}>
-        <TextField label="Título de la tarjeta" value={title} onChangeText={changeTitle} placeholder="Sin título" />
+        <TextField label={t('inspector.title.label', locale)} value={title} onChangeText={changeTitle} placeholder={t('trash.item.untitled', locale)} />
         {linkKey ? (
           <View testID="card-link" style={styles.tagSection}>
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>ENLACE</Text>
-            <TextField label="Dirección del enlace" value={linkDraft} onChangeText={setLinkDraft} placeholder="https://ejemplo.com" onSubmitEditing={saveLink} testID="link-input" />
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.section', locale)}</Text>
+            <TextField label={t('inspector.link.address.label', locale)} value={linkDraft} onChangeText={setLinkDraft} placeholder={t('link.url.placeholder', locale)} onSubmitEditing={saveLink} testID="link-input" />
             <View style={styles.row}>
-              {linkDraft !== currentLink ? <ActionButton label="Guardar enlace" tone="primary" onPress={saveLink} /> : null}
-              {currentLink !== '' ? <ActionButton label="Abrir enlace ↗" accessibilityLabel={`Abrir el enlace ${currentLink}`} onPress={open} /> : null}
+              {linkDraft !== currentLink ? <ActionButton label={t('inspector.link.save', locale)} tone="primary" onPress={saveLink} /> : null}
+              {currentLink !== '' ? <ActionButton label={t('inspector.link.open', locale)} accessibilityLabel={t('inspector.link.open.accessibilityLabel', locale, { url: currentLink })} onPress={open} /> : null}
             </View>
             {linkProblem ? <Text testID="link-open-problem" style={[styles.hint, { color: colors.danger }]}>{linkProblem}</Text> : null}
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>Abrir necesita conexión. NoutyNotes no descarga nada de la página.</Text>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.hint', locale)}</Text>
           </View>
         ) : null}
         <View testID="card-tags" style={styles.tagSection}>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>ETIQUETAS</Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.tags.section', locale)}</Text>
           {(card.tags ?? []).length > 0 ? (
-            <View style={styles.row} accessibilityLabel="Etiquetas de la tarjeta">
+            <View style={styles.row} accessibilityLabel={t('inspector.tags.accessibilityLabel', locale)}>
               {(card.tags ?? []).map((tag) => (
-                <ActionButton key={tag} label={`#${tag}  ×`} accessibilityLabel={`Quitar la etiqueta ${tag}`} onPress={() => removeTag(tag)} />
+                <ActionButton key={tag} label={`#${tag}  ×`} accessibilityLabel={t('inspector.tag.remove.accessibilityLabel', locale, { tag })} onPress={() => removeTag(tag)} />
               ))}
             </View>
-          ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>Sin etiquetas. El «#» escrito en el texto no crea etiquetas.</Text>}
+          ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.tags.empty', locale)}</Text>}
           <View style={styles.tagAdd}>
             <View style={styles.tagInput}>
-              <TextField label="Nueva etiqueta" value={tagDraft} onChangeText={setTagDraft} placeholder="#idea" onSubmitEditing={addTag} testID="tag-input" />
+              <TextField label={t('inspector.tag.new.label', locale)} value={tagDraft} onChangeText={setTagDraft} placeholder="#idea" onSubmitEditing={addTag} testID="tag-input" />
             </View>
-            <ActionButton label="Añadir" accessibilityLabel="Añadir la etiqueta" onPress={addTag} />
+            <ActionButton label={t('inspector.tag.add', locale)} accessibilityLabel={t('inspector.tag.add.accessibilityLabel', locale)} onPress={addTag} />
           </View>
         </View>
-        <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Listas Markdown">
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>LISTAS</Text>
-          <ActionButton label="−" accessibilityLabel="Insertar lista con guiones" onPress={() => insertList('dash')} style={styles.listButton} />
-          <ActionButton label="•" accessibilityLabel="Insertar lista con viñetas" onPress={() => insertList('bullet')} style={styles.listButton} />
-          <ActionButton label="1." accessibilityLabel="Insertar lista numerada" onPress={() => insertList('number')} style={styles.listButton} />
-          <ActionButton label="☐" accessibilityLabel="Insertar lista de tareas" onPress={() => insertList('check')} style={styles.listButton} />
+        <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.lists.section', locale)}</Text>
+          <ActionButton label="−" accessibilityLabel={t('inspector.list.dash.accessibilityLabel', locale)} onPress={() => insertList('dash')} style={styles.listButton} />
+          <ActionButton label="•" accessibilityLabel={t('inspector.list.bullet.accessibilityLabel', locale)} onPress={() => insertList('bullet')} style={styles.listButton} />
+          <ActionButton label="1." accessibilityLabel={t('inspector.list.number.accessibilityLabel', locale)} onPress={() => insertList('number')} style={styles.listButton} />
+          <ActionButton label="☐" accessibilityLabel={t('inspector.list.check.accessibilityLabel', locale)} onPress={() => insertList('check')} style={styles.listButton} />
         </View>
-        <TextField label="Contenido Markdown" value={content} onChangeText={changeContent} multiline placeholder="# Una idea"
+        <TextField label={t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
           onSelectionChange={(selection) => {
@@ -279,13 +283,13 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         {imageProblem ? <Text testID="note-image-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{imageProblem}</Text> : null}
         {content.split('\n').some((line) => /^\s*[-*+]\s+\[[ xX]\]/.test(line)) ? (
           <View testID="checklist-preview" style={styles.preview}>
-            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>VISTA DE TAREAS</Text>
+            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.checklist.section', locale)}</Text>
             {content.split('\n').map((line, index) => {
               const check = /^(\s*[-*+]\s+)\[([ xX])\]\s*(.*)$/.exec(line);
               if (!check) return <Text key={index} style={[styles.body, { color: colors.textPrimary }]}>{line || ' '}</Text>;
               const checked = check[2]?.toLowerCase() === 'x';
               return <View key={index} style={styles.checkRow}>
-                <ActionButton label={checked ? '☑' : '☐'} accessibilityLabel={`${checked ? 'Desmarcar' : 'Marcar'} tarea ${check[3] ?? ''}`}
+                <ActionButton label={checked ? '☑' : '☐'} accessibilityLabel={t(checked ? 'inspector.checklist.uncheck.accessibilityLabel' : 'inspector.checklist.check.accessibilityLabel', locale, { text: check[3] ?? '' })}
                   pressed={checked} onPress={() => toggleCheck(index)} />
                 <Text style={[styles.body, styles.checkText, { color: colors.textPrimary }]}>{check[3]}</Text>
               </View>;
@@ -294,29 +298,30 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         ) : null}
         <View style={styles.row}>
           <ActionButton
-            label="Guardar texto"
+            label={t('inspector.save', locale)}
             tone="primary"
             onPress={() => { void (mode === 'folder' ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en memoria.', { mergeKey: `text:${card.id}` })); }}
           />
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? 'Cambios sin guardar' : 'Sin cambios pendientes'}</Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>POSICIÓN EN EL LIENZO</Text>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.position.section', locale)}</Text>
         <Text testID="card-geometry" style={[styles.body, { color: colors.textPrimary }]}>
           {rect ? rect.x < 0 || rect.y < 0
-            ? `X ${rect.x}, Y ${rect.y} · ${rect.w} × ${rect.h}`
-            : `Columna ${rect.x + 1}, fila ${rect.y + 1} · ${rect.w} × ${rect.h}` : 'Sin colocación en este tablero'}
+            ? t('inspector.geometry.negative', locale, { x: String(rect.x), y: String(rect.y), w: String(rect.w), h: String(rect.h) })
+            : t('inspector.geometry.cell', locale, { col: String(rect.x + 1), row: String(rect.y + 1), w: String(rect.w), h: String(rect.h) })
+            : t('inspector.geometry.none', locale)}
         </Text>
         {rect ? (
           <>
             <View style={styles.row}>
-              {moves.map((move) => (
+              {moveKeys.map((move) => (
                 <ActionButton
-                  key={move.name}
+                  key={move.nameKey}
                   label={move.label}
-                  accessibilityLabel={move.name}
+                  accessibilityLabel={t(move.nameKey, locale)}
                   onPress={() => void run((storage, id) => moveCardOnBoard(storage, id, {
                     boardId, cardId: card.id, to: { x: rect.x + move.dx, y: rect.y + move.dy },
                   }), 'Tarjeta movida. Guardado en memoria.')}
@@ -324,11 +329,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               ))}
             </View>
             <View style={styles.row}>
-              {resizes.map((resize) => (
+              {resizeKeys.map((resize) => (
                 <ActionButton
-                  key={resize.name}
-                  label={resize.label}
-                  accessibilityLabel={resize.name}
+                  key={resize.nameKey}
+                  label={t(resize.labelKey, locale)}
+                  accessibilityLabel={t(resize.nameKey, locale)}
                   onPress={() => void run((storage, id) => resizeCardOnBoard(storage, id, {
                     boardId, cardId: card.id, size: { w: rect.w + resize.dw, h: rect.h + resize.dh },
                   }), 'Tamaño cambiado. Guardado en memoria.')}
@@ -341,36 +346,36 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
       {placement ? (
         <View testID="card-display" style={styles.section}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>REPRESENTACIÓN</Text>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.display.section', locale)}</Text>
           <View style={styles.row}>
-            {displays.map((option) => (
+            {displayKeys.map((option) => (
               <ActionButton
                 key={option.display}
-                label={option.label}
-                accessibilityLabel={`Mostrar ${option.label.toLowerCase()}`}
+                label={t(option.labelKey, locale)}
+                accessibilityLabel={t('inspector.display.show.accessibilityLabel', locale, { label: t(option.labelKey, locale).toLowerCase() })}
                 pressed={placement.display === option.display}
                 onPress={() => { if (placement.display !== option.display) onDisplay(option.display); }}
               />
             ))}
           </View>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Conserva el contenido, el tamaño expandido y las conexiones.</Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.display.hint', locale)}</Text>
         </View>
       ) : null}
 
       {(card.assetRefs?.length ?? 0) > 0 ? (
         <View style={styles.section}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>ARCHIVO</Text>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.files.section', locale)}</Text>
           <Text testID="card-asset" style={[styles.body, { color: colors.textPrimary }]}>{card.assetRefs?.join(', ')}</Text>
         </View>
       ) : null}
 
       <View testID="card-connections" style={styles.section}>
-        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>CONEXIONES</Text>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.connections.section', locale)}</Text>
         {connected.length === 0 ? (
-          <Text style={[styles.body, { color: colors.textSecondary }]}>Sin conexiones.</Text>
+          <Text style={[styles.body, { color: colors.textSecondary }]}>{t('inspector.connections.empty', locale)}</Text>
         ) : connected.map((relation) => {
           const outgoing = relation.from === card.id;
-          const other = titles.get(outgoing ? relation.to : relation.from) ?? 'Sin título';
+          const other = titles.get(outgoing ? relation.to : relation.from) ?? t('trash.item.untitled', locale);
           const typeLabel = typeLabels.get(relation.typeId) ?? '';
           const arrow = relation.arrow ?? 'forward';
           const editingThis = editingRelation?.id === relation.id;
@@ -383,11 +388,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               </View>
               {editingThis ? (
                 <>
-                  <TextField label="Tipo de la conexión" value={editingRelation.typeLabel} onChangeText={(value) => setEditingRelation({ ...editingRelation, typeLabel: value })} />
-                  <TextField label="Rótulo sobre la línea" value={editingRelation.label} onChangeText={(value) => setEditingRelation({ ...editingRelation, label: value })} placeholder="Sin rótulo" />
+                  <TextField label={t('inspector.relation.type.label', locale)} value={editingRelation.typeLabel} onChangeText={(value) => setEditingRelation({ ...editingRelation, typeLabel: value })} />
+                  <TextField label={t('inspector.relation.label.label', locale)} value={editingRelation.label} onChangeText={(value) => setEditingRelation({ ...editingRelation, label: value })} placeholder={t('inspector.relation.label.placeholder', locale)} />
                   <View style={styles.row}>
-                    <ActionButton label="Guardar" tone="primary" accessibilityLabel="Guardar los cambios de la conexión" onPress={saveRelationEdit} />
-                    <ActionButton label="Cancelar" accessibilityLabel="Cancelar la edición de la conexión" onPress={() => setEditingRelation(null)} />
+                    <ActionButton label={t('inspector.relation.save', locale)} tone="primary" accessibilityLabel={t('inspector.relation.save.accessibilityLabel', locale)} onPress={saveRelationEdit} />
+                    <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('inspector.relation.cancel.accessibilityLabel', locale)} onPress={() => setEditingRelation(null)} />
                   </View>
                 </>
               ) : (
@@ -396,19 +401,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                     <ActionButton
                       key={option.value}
                       label={option.label}
-                      accessibilityLabel={`Usar ${option.label.toLowerCase()} en esta conexión`}
+                      accessibilityLabel={t('inspector.relation.arrow.use.accessibilityLabel', locale, { label: option.label.toLowerCase() })}
                       pressed={arrow === option.value}
                       onPress={() => void run((storage, id) => updateConnection(storage, id, relation.id, { arrow: option.value }), 'Estilo de la conexión cambiado. Guardado en memoria.')}
                     />
                   ))}
                   <ActionButton
-                    label="Editar"
-                    accessibilityLabel={`Editar el tipo y el rótulo de la conexión con ${other}`}
+                    label={t('inspector.relation.edit', locale)}
+                    accessibilityLabel={t('inspector.relation.edit.accessibilityLabel', locale, { other })}
                     onPress={() => setEditingRelation({ id: relation.id, typeLabel, label: relation.label ?? '' })}
                   />
                   <ActionButton
-                    label="Desconectar"
-                    accessibilityLabel={outgoing ? `Desconectar de ${other}` : `Desconectar desde ${other}`}
+                    label={t('inspector.relation.disconnect', locale)}
+                    accessibilityLabel={t(outgoing ? 'inspector.relation.disconnect.from.accessibilityLabel' : 'inspector.relation.disconnect.since.accessibilityLabel', locale, { other })}
                     onPress={() => void run((storage, id) => disconnectCards(storage, id, relation.id), 'Conexión eliminada. Guardado en memoria.')}
                   />
                 </View>
@@ -418,8 +423,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         })}
         {targets.length > 0 ? (
           <>
-            <TextField label="Tipo de la nueva conexión" value={connectTypeDraft} onChangeText={setConnectTypeDraft} placeholder="Relacionada con" testID="connect-type-input" />
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>Conectar con:</Text>
+            <TextField label={t('inspector.connect.type.label', locale)} value={connectTypeDraft} onChangeText={setConnectTypeDraft} placeholder={t('inspector.connect.type.placeholder', locale)} testID="connect-type-input" />
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.connect.with', locale)}</Text>
           </>
         ) : null}
         <View style={styles.row}>
@@ -427,7 +432,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <ActionButton
               key={target.id}
               label={cardTitle(target)}
-              accessibilityLabel={`Conectar con ${cardTitle(target)}`}
+              accessibilityLabel={t('inspector.connect.accessibilityLabel', locale, { title: cardTitle(target) })}
               onPress={() => void run((storage, id) => connectCards(storage, id, {
                 from: card.id, to: target.id, ...(connectTypeDraft.trim() === '' ? {} : { typeLabel: connectTypeDraft.trim() }),
               }), 'Tarjetas conectadas. Guardado en memoria.')}
@@ -436,10 +441,10 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       </View>
       <View style={styles.section}>
-        <ActionButton label="Archivar" accessibilityLabel={`Archivar la tarjeta ${cardTitle(card)}`} onPress={onArchive} />
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>Archivar la aparta de los tableros y de las búsquedas sin eliminarla; se restaura desde el Archivo.</Text>
-        <ActionButton label="Enviar a la Papelera" accessibilityLabel={`Enviar la tarjeta ${cardTitle(card)} a la Papelera`} onPress={onTrash} />
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>No se borra: podrás restaurarla desde la Papelera.</Text>
+        <ActionButton label={t('inspector.archive', locale)} accessibilityLabel={t('inspector.archive.accessibilityLabel', locale, { title: cardTitle(card) })} onPress={onArchive} />
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.archive.hint', locale)}</Text>
+        <ActionButton label={t('inspector.trash', locale)} accessibilityLabel={t('inspector.trash.accessibilityLabel', locale, { title: cardTitle(card) })} onPress={onTrash} />
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.trash.hint', locale)}</Text>
       </View>
     </View>
   );
