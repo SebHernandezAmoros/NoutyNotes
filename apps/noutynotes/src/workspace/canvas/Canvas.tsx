@@ -639,6 +639,7 @@ export function Canvas(props: CanvasProps) {
                 return found && found.kind !== 'strip' ? (found.count * CONTROL_SIZE + 4) / zoom : 0;
               })()}
               controlsOverBody={zoom < 1}
+              zoom={zoom}
               controller={controller}
             />
           );

@@ -212,14 +212,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     <View testID="card-inspector" style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       {inSheet ? null : (
         <View style={styles.header}>
+          {/* El título ocupa su propia fila (auditoría visual, 2026-09-29): junto a «Ampliar»/«Cerrar»
+              en la misma fila, el panel lateral angosto le dejaba tan poco ancho que se cortaba a mitad
+              de la primera palabra aunque tuviera dos líneas permitidas. */}
           <View style={styles.headerText}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.heading.eyebrow', locale)}</Text>
             <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card)}</Text>
           </View>
-          {onToggleFocus ? (
-            <ActionButton label={focused ? t('workview.back', locale) : t('inspector.expand', locale)} accessibilityLabel={focused ? t('workview.back', locale) : t('inspector.expand.accessibilityLabel', locale)} onPress={onToggleFocus} />
-          ) : null}
-          <ActionButton label={t('inspector.close', locale)} accessibilityLabel={t('inspector.close.accessibilityLabel', locale)} onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
+          <View style={styles.headerActions}>
+            {onToggleFocus ? (
+              <ActionButton label={focused ? t('workview.back', locale) : t('inspector.expand', locale)} accessibilityLabel={focused ? t('workview.back', locale) : t('inspector.expand.accessibilityLabel', locale)} onPress={onToggleFocus} />
+            ) : null}
+            <ActionButton label={t('inspector.close', locale)} accessibilityLabel={t('inspector.close.accessibilityLabel', locale)} onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
+          </View>
         </View>
       )}
 
@@ -457,8 +462,9 @@ const styles = StyleSheet.create({
   // Botones de lista de 44 × 44: los cuatro caben en una fila junto a «LISTAS» (panel de 320 px).
   listButton: { width: 44, minWidth: 44, paddingHorizontal: 0 },
   panel: { padding: 16, gap: 20 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  headerText: { flex: 1, minWidth: 0, gap: 4 },
+  header: { gap: 10 },
+  headerText: { minWidth: 0, gap: 4 },
+  headerActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   heading: { fontSize: 20, lineHeight: 25, fontWeight: '800' },
   section: { gap: 10 },

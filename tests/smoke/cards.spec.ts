@@ -231,7 +231,10 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
   for (let step = 0; step < 2; step += 1) await button(page, 'Más estrecha').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 2 × 3');
   const narrow = await box(card(page, 1));
-  if (narrow.width < 3 * 44 + 4) {
+  // Umbral real de chromeFor (auditoría visual, 2026-09-29): 3 controles de 44 px más una franja libre
+  // de 80 px para el tipo/arrastrar (antes 44 px; con solo eso, los controles dominaban la cabecera).
+  const needsMenu = narrow.width < 3 * 44 + 4 + 80;
+  if (needsMenu) {
     await button(page, 'Acciones de Guion').click();
     await expect(page.getByTestId('card-menu')).toBeVisible();
     await button(page, 'Minimizar Guion').click();
@@ -241,7 +244,7 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
   }
 
   // «×» envía a la Papelera existente, no elimina definitivamente (en una tarjeta estrecha, desde «⋯»).
-  if (narrow.width < 3 * 44 + 4) await button(page, 'Acciones de Guion').click();
+  if (needsMenu) await button(page, 'Acciones de Guion').click();
   await button(page, 'Enviar Guion a la Papelera').click();
   await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
   await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();

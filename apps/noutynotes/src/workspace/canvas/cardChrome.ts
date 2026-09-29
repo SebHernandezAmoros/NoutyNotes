@@ -8,6 +8,13 @@ export const CONTROL_SIZE = 44;
 /** Separación entre los controles y el borde de la tarjeta o de la ficha. */
 const INSET = 2;
 const STRIP_GAP = 4;
+/**
+ * Franja de cabecera que se deja siempre libre para el tipo/número y para arrastrar (auditoría
+ * visual, 2026-09-29): 44 px bastaban para agarrar la tarjeta, pero con el zoom alejado dejaban los
+ * tres controles ocupando casi toda la cabecera, sin sitio legible para el tipo. Con más margen, una
+ * tarjeta pequeña pasa antes al menú «⋯», que deja la cabecera legible en vez de tres botones apretados.
+ */
+const HEADER_FREE_SPACE = 80;
 
 export interface CardAction {
   readonly kind: CardDisplayMode | 'trash';
@@ -62,8 +69,8 @@ export function chromeFor(display: CardDisplayMode, box: ScreenBox, selected: bo
     const left = right + width <= viewport.width ? right : box.left - STRIP_GAP - width;
     return { kind: 'strip', left, top: box.top, count: actions.length };
   }
-  // Los tres controles más una franja libre de cabecera (44 px) por la que arrastrar la tarjeta.
-  const needed = actions.length * CONTROL_SIZE + INSET * 2 + CONTROL_SIZE;
+  // Los controles más una franja libre de cabecera por la que arrastrar y leer el tipo.
+  const needed = actions.length * CONTROL_SIZE + INSET * 2 + HEADER_FREE_SPACE;
   if (box.width < needed) {
     return { kind: 'menu', left: box.left + box.width - CONTROL_SIZE - INSET, top: box.top + INSET, count: 1 };
   }

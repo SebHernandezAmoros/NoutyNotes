@@ -17,9 +17,11 @@ describe('controles de la cabecera de una tarjeta (ADR 0016)', () => {
     expect(CONTROL_SIZE).toBe(44);
   });
 
-  it('deja siempre al menos 44 px de cabecera libres para arrastrar; si no, usa el menú', () => {
-    expect(chromeFor('expanded', { left: 0, top: 0, width: 170, height: 150 }, false, viewport)?.kind).toBe('menu');
-    expect(chromeFor('expanded', { left: 0, top: 0, width: 180, height: 150 }, false, viewport)?.kind).toBe('header');
+  it('deja siempre una franja de cabecera libre para el tipo y para arrastrar; si no cabe, usa el menú', () => {
+    // Auditoría visual (2026-09-29): con el zoom alejado, tres botones ocupando casi toda la cabecera
+    // no dejaban sitio legible para «001 // NOTA»; el margen exigido sube de 44 a 80 px libres.
+    expect(chromeFor('expanded', { left: 0, top: 0, width: 215, height: 150 }, false, viewport)?.kind).toBe('menu');
+    expect(chromeFor('expanded', { left: 0, top: 0, width: 216, height: 150 }, false, viewport)?.kind).toBe('header');
   });
 
   it('una cabecera estrecha usa un único botón de menú', () => {
