@@ -14,6 +14,7 @@ import { t } from '../i18n';
 import { describeFailure } from '../session/messages';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions, singleFlight } from './actions';
+import { TemplatePicker } from './TemplatePicker';
 
 const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' | 'settings.theme.dark' | 'settings.theme.system'; accessibilityLabelKey: 'home.theme.light.label' | 'home.theme.dark.label' | 'home.theme.system.label' }[] = [
   { value: 'light', labelKey: 'settings.theme.light', accessibilityLabelKey: 'home.theme.light.label' },
@@ -50,10 +51,7 @@ export function HomeScreen() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [focusedAction, setFocusedAction] = useState<string | null>(null);
   const untitledWorkspace = t('home.workspace.untitled', locale);
-  // El selector de plantillas llegará en una fase posterior.
-  const reservedActions = [
-    { key: 'template' as const, title: t('home.template.title', locale), description: t('home.template.description', locale), symbol: '▦' },
-  ];
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   const openWorkspace = (id: string) => router.push({ pathname: '/workspace', params: { id } });
 
@@ -295,24 +293,22 @@ export function HomeScreen() {
                     <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>⤓</Text>
                   </Pressable>
                 ) : null}
-                {reservedActions.map((action) => (
-                  <Pressable
-                    key={action.key}
-                    disabled
-                    accessibilityRole="button"
-                    accessibilityLabel={action.title}
-                    accessibilityHint={t('home.reserved.hint', locale)}
-                    accessibilityState={{ disabled: true }}
-                    style={[styles.action, actionBorder(action.key)]}
-                  >
-                    <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers[action.key]}</Text>
-                    <View style={styles.actionText}>
-                      <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{action.title}</Text>
-                      <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{action.description}</Text>
-                    </View>
-                    <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>{action.symbol}</Text>
-                  </Pressable>
-                ))}
+                <Pressable
+                  testID="open-template-picker"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('home.template.title', locale)}
+                  accessibilityHint={t('home.template.hint', locale)}
+                  onPress={() => setTemplateOpen(true)}
+                  {...actionFocus('template')}
+                  style={[styles.action, actionBorder('template')]}
+                >
+                  <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.template}</Text>
+                  <View style={styles.actionText}>
+                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('home.template.title', locale)}</Text>
+                    <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.template.description', locale)}</Text>
+                  </View>
+                  <Text style={[styles.actionSymbol, { color: colors.textSecondary }]}>▦</Text>
+                </Pressable>
               </View>
               <View testID="memory-notice" style={[styles.comingSoon, { backgroundColor: colors.surfaceRaised }]}>
                 <Text style={[styles.comingSoonText, { color: colors.textPrimary }]}>
@@ -354,6 +350,14 @@ export function HomeScreen() {
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('home.footer.version', locale)}</Text>
         </View>
       </ScrollView>
+      <TemplatePicker
+        visible={templateOpen}
+        compact={compact}
+        storage={storage}
+        locale={locale}
+        onClose={() => setTemplateOpen(false)}
+        onCreated={(id) => { setTemplateOpen(false); openWorkspace(id); }}
+      />
     </SafeAreaView>
   );
 }

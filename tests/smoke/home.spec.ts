@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, hasHorizontalOverflow, rgb, trackProblems } from './support';
+import { borderColor, hasHorizontalOverflow, rgb, trackProblems } from './support';
 
 type Arrangement = 'columns' | 'stacked' | 'overlapping';
 
@@ -61,7 +61,7 @@ function modeFor(width: number): 'columns' | 'stacked' {
   return width >= atBreakpoint.width ? 'columns' : 'stacked';
 }
 
-test('inicio responsive, temas, crear activo y acciones reservadas', async ({ page, browserName }, testInfo) => {
+test('inicio responsive, temas y las acciones activas: crear, carpeta/ZIP y plantilla', async ({ page, browserName }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   const initialWidth = page.viewportSize()?.width ?? 0;
   await page.emulateMedia({ colorScheme: 'light' });
@@ -84,7 +84,7 @@ test('inicio responsive, temas, crear activo y acciones reservadas', async ({ pa
     await expect(page.getByTestId('open-folder')).toContainText('Usa «Importar un ZIP»');
     await expect(page.getByRole('button', { name: 'Importar un ZIP', exact: true })).toBeEnabled();
   }
-  await expect(page.getByRole('button', { name: 'Usar una plantilla', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Usar una plantilla', exact: true })).toBeEnabled();
 
   const screen = page.getByTestId('home-screen');
   const lightBackground = await screen.evaluate((element) => getComputedStyle(element).backgroundColor);
@@ -178,7 +178,6 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   const dark = page.getByRole('button', { name: 'Tema oscuro', exact: true });
   const system = page.getByRole('button', { name: 'Tema sistema', exact: true });
   const actions = ['Crear un espacio', 'Abrir una carpeta', 'Usar una plantilla'];
-  const reserved = ['Usar una plantilla'];
   const nameField = page.getByLabel('Nombre del nuevo espacio');
   const create = page.getByRole('button', { name: 'Crear un espacio', exact: true });
   const screen = page.getByTestId('home-screen');
@@ -195,7 +194,7 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
 
-  // Orden de tabulación: los tres temas, el nombre y «Crear»; las acciones reservadas no reciben foco.
+  // Orden de tabulación: los tres temas, el nombre y «Crear».
   const unfocused = await borderColor(system);
   if (browserName === 'firefox') {
     // Firefox hace enfocable con el teclado el contenedor desplazable de la página (el ScrollView), para
@@ -239,12 +238,8 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   await page.keyboard.press('Tab');
   await expect(create).toBeFocused();
   await expect.poll(() => borderColor(create)).toBe(rgb(themeColors.dark.selection));
-  await page.keyboard.press('Tab');
-  expect(reserved).not.toContain(await activeLabel(page));
 
-  // Activación con Espacio, volviendo atrás con Shift+Tab.
-  await page.keyboard.press('Shift+Tab');
-  await expect(create).toBeFocused();
+  // Activación con Espacio, volviendo atrás con Shift+Tab (el foco ya está en «Crear»).
   await page.keyboard.press('Shift+Tab');
   await expect(nameField).toBeFocused();
   await page.keyboard.press('Shift+Tab');

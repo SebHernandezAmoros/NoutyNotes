@@ -1,8 +1,9 @@
 import { CURRENT_SCHEMA_VERSION, instantiateTemplate, isValidId, validateWorkspace } from '@noutynotes/domain';
-import type { Template, ValidationResult, Workspace, WorkspaceId } from '@noutynotes/domain';
+import type { AssetRef, Template, ValidationResult, Workspace, WorkspaceId } from '@noutynotes/domain';
 
 import { invalidWorkspaceIdFailure, storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from './workspace-storage';
+import type { WorkspaceAssets } from './workspace-assets';
 
 export interface CreateEmptyWorkspaceInput {
   readonly id: WorkspaceId;
@@ -47,6 +48,37 @@ export async function createWorkspaceFromTemplate(
   const instance = instantiateTemplate(template, input);
   if (!instance.ok) return storageFailure('invalid-template', 'template', 'La plantilla no se puede instanciar.', instance.issues);
   return storage.create(instance.value.workspace);
+}
+
+/**
+ * Instancia una plantilla incorporada (fase 11a, ADR 0033) y, además de guardar el workspace, escribe
+ * los assets binarios que declare (`instantiateTemplate` solo aporta las rutas, no los bytes). Un solo
+ * intento por asset; si falta uno en `assetBytes` o su escritura falla, se borra el workspace recién
+ * creado: o todo o nada, nunca un espacio con una imagen que no existe.
+ */
+export async function createWorkspaceFromBuiltInTemplate(
+  storage: WorkspaceStorage,
+  assets: WorkspaceAssets,
+  template: Template,
+  input: CreateFromTemplateInput,
+  assetBytes: ReadonlyMap<AssetRef, Uint8Array>,
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  const instance = instantiateTemplate(template, input);
+  if (!instance.ok) return storageFailure('invalid-template', 'template', 'La plantilla no se puede instanciar.', instance.issues);
+  const created = await storage.create(instance.value.workspace);
+  if (!created.ok) return created;
+  for (const ref of instance.value.assets) {
+    const bytes = assetBytes.get(ref);
+    const written = bytes === undefined
+      ? storageFailure<null>('invalid-asset', ref, `Falta el archivo «${ref}» de la plantilla.`)
+      : await assets.writeAsset(input.workspaceId, ref, bytes);
+    if (!written.ok) {
+      const removed = await storage.delete(input.workspaceId);
+      if (!removed.ok) return { ok: false, issues: [...written.issues, { code: 'io-failure', path: input.workspaceId, message: 'No se pudo deshacer el espacio creado; queda incompleto.' }] };
+      return { ok: false, issues: written.issues };
+    }
+  }
+  return created;
 }
 
 /**

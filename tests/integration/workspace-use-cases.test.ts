@@ -3,12 +3,12 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { createEmptyWorkspace, createWorkspaceFromTemplate, modifyWorkspace } from '../../packages/application/src/index';
-import type { WorkspaceStorageResult } from '../../packages/application/src/index';
+import { createEmptyWorkspace, createWorkspaceFromBuiltInTemplate, createWorkspaceFromTemplate, modifyWorkspace, storageFailure } from '../../packages/application/src/index';
+import type { WorkspaceAssets, WorkspaceStorageResult } from '../../packages/application/src/index';
 import { ideaA, ideaB, validWorkspace } from '../../packages/domain/src/__fixtures__/workspace';
 import { assertValid, deleteCard, importTemplate, instantiateTemplate, moveCard } from '../../packages/domain/src/index';
-import type { BoardLayout, Template, WorkspaceId } from '../../packages/domain/src/index';
-import { MemoryStorage, parseWorkspace } from '../../packages/storage/src/index';
+import type { AssetRef, BoardLayout, Template, WorkspaceId } from '../../packages/domain/src/index';
+import { ArchiveStorage, MemoryStorage, parseWorkspace } from '../../packages/storage/src/index';
 import type { StorageResult, TextFiles } from '../../packages/storage/src/index';
 
 const id = (value: string) => value as WorkspaceId;
@@ -96,6 +96,55 @@ describe('crear desde plantilla: errores', () => {
     const result = await createWorkspaceFromTemplate(storage, template('research'), { workspaceId: id('p'), name: 'Nuevo', namespace: 'r' });
     expect(codes(result)).toEqual(['workspace-already-exists@workspace']);
     expect(ok(await storage.list())).toEqual([{ id: 'p', name: 'Existente' }]);
+  });
+});
+
+describe.each(['gdd', 'storyboard', 'research'])('crear desde la plantilla incorporada %s, con sus assets (fase 11a, ADR 0033)', (name) => {
+  it('escribe el workspace y el asset que declara; queda legible desde la tarjeta que lo referencia', async () => {
+    const storage = new ArchiveStorage();
+    const input = { workspaceId: id(`${name}-project`), name: `Proyecto ${name}`, namespace: 'p' };
+    const svg = new TextEncoder().encode(`<svg data-template="${name}"></svg>`);
+    const ref = `assets/${name}.svg` as AssetRef;
+    const result = await createWorkspaceFromBuiltInTemplate(storage, storage, template(name), input, new Map([[ref, svg]]));
+    expect(ok(result)).toEqual({ id: `${name}-project`, name: `Proyecto ${name}` });
+    expect(ok(await storage.readAsset(input.workspaceId, ref))).toEqual(svg);
+    const expected = assertValid(instantiateTemplate(template(name), input)).workspace;
+    expect(ok(await storage.open(input.workspaceId))).toEqual(expected);
+  });
+});
+
+describe('crear desde plantilla incorporada: errores (fase 11a, ADR 0033)', () => {
+  it('si falta el archivo del asset en assetBytes, no deja ni workspace ni asset', async () => {
+    const storage = new ArchiveStorage();
+    const input = { workspaceId: id('sin-bytes'), name: 'Sin bytes', namespace: 'p' };
+    const result = await createWorkspaceFromBuiltInTemplate(storage, storage, template('gdd'), input, new Map());
+    expect(codes(result)).toEqual(['invalid-asset@assets/gdd.svg']);
+    expect(ok(await storage.list())).toEqual([]);
+  });
+
+  it('si la escritura del asset falla, borra el workspace recién creado: o todo o nada', async () => {
+    const storage = new ArchiveStorage();
+    // Puerto de assets que siempre falla al escribir, delegando todo lo demás al almacenamiento
+    // real: fuerza el fallo sin depender de un conflicto que este adaptador, con un ID recién
+    // creado, nunca produciría por sí solo.
+    const failingAssets: WorkspaceAssets = {
+      writeAsset: async () => storageFailure('io-failure', 'ref', 'Simulado: fallo de escritura.'),
+      readAsset: (workspaceId, ref) => storage.readAsset(workspaceId, ref),
+      removeAsset: (workspaceId, ref) => storage.removeAsset(workspaceId, ref),
+      listAssets: (workspaceId) => storage.listAssets(workspaceId),
+    };
+    const input = { workspaceId: id('falla-escritura'), name: 'Falla', namespace: 'p' };
+    const result = await createWorkspaceFromBuiltInTemplate(storage, failingAssets, template('gdd'), input, new Map([['assets/gdd.svg' as AssetRef, new Uint8Array([1])]]));
+    expect(codes(result)).toEqual(['io-failure@ref']);
+    expect(ok(await storage.list())).toEqual([]);
+  });
+
+  it('una instanciación inválida devuelve invalid-template y no escribe ningún asset', async () => {
+    const storage = new ArchiveStorage();
+    const input = { workspaceId: id('p'), name: 'P', namespace: 'Bad Namespace' };
+    const result = await createWorkspaceFromBuiltInTemplate(storage, storage, template('gdd'), input, new Map([['assets/gdd.svg' as AssetRef, new Uint8Array()]]));
+    expect(codes(result)).toEqual(['invalid-template@template']);
+    expect(ok(await storage.list())).toEqual([]);
   });
 });
 

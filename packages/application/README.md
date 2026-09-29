@@ -18,7 +18,8 @@ Todas devuelven `Promise<WorkspaceStorageResult<T>>` y nunca rechazan por datos 
 ## Casos de uso
 
 - `createEmptyWorkspace(storage, { id, name })`: crea un workspace vacío.
-- `createWorkspaceFromTemplate(storage, template, { workspaceId, name, namespace })`: instancia una plantilla y la guarda.
+- `createWorkspaceFromTemplate(storage, template, { workspaceId, name, namespace })`: instancia una plantilla y la guarda. No copia los assets binarios que la plantilla declare (`instantiateTemplate` solo aporta sus rutas): eso es responsabilidad de `createWorkspaceFromBuiltInTemplate`.
+- `createWorkspaceFromBuiltInTemplate(storage, assets, template, { workspaceId, name, namespace }, assetBytes)` (fase 11a, ADR 0033): igual, y además escribe en `assets` cada ruta que la plantilla declare con los bytes de `assetBytes` (`ReadonlyMap<AssetRef, Uint8Array>`, aportado por quien llama). Un solo intento por asset; si falta uno en el mapa o su escritura falla, borra el workspace recién creado — o todo o nada, nunca un espacio con una imagen que no existe.
 - `modifyWorkspace(storage, id, transform)`: abre, aplica una transformación pura del dominio (mover, borrar, relacionar…) y guarda. Si falla o cambia el ID, no se guarda nada.
 
 ### Prototipo de interfaz (fase 7)

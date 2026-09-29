@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "template": { "id": "gdd", "name": "Game Design Document", "version": "1.0.0", "author": "NoutyNotes", "description": "Visión y mecánicas de un juego." },
+  "readme": "# GDD\nDefine la visión del juego y conecta sus mecánicas.\n",
+  "assets": ["assets/gdd.svg"],
+  "preview": "assets/gdd.svg",
+  "cardTypes": [
+    { "id": "vision", "label": "Visión", "base": "note", "fields": [
+      { "key": "pitch", "kind": "markdown", "required": true },
+      { "key": "platform", "kind": "select", "options": ["desktop", "mobile"], "required": true }
+    ] },
+    { "id": "mechanic", "label": "Mecánica", "base": "note", "fields": [
+      { "key": "rule", "kind": "markdown", "required": true },
+      { "key": "priority", "kind": "number" }
+    ] }
+  ],
+  "relationTypes": [{ "id": "supports", "label": "Sostiene" }],
+  "boards": [
+    { "id": "overview", "title": "Visión del juego", "cardIds": ["concept", "movement"] },
+    { "id": "systems", "title": "Sistemas", "cardIds": ["movement"] }
+  ],
+  "cards": [
+    { "id": "concept", "typeId": "vision", "title": "Un jardín en movimiento", "content": "# Visión\nExplorar y recuperar un jardín.", "fields": { "pitch": "Exploración tranquila con decisiones pequeñas.", "platform": "mobile" }, "assetRefs": ["assets/gdd.svg"] },
+    { "id": "movement", "typeId": "mechanic", "title": "Mover semillas", "fields": { "rule": "Cada movimiento cambia una parcela.", "priority": 1 } }
+  ],
+  "relations": [{ "id": "movement-supports-concept", "typeId": "supports", "from": "movement", "to": "concept" }],
+  "layouts": [
+    { "boardId": "overview", "placements": [
+      { "cardId": "concept", "rect": { "x": 0, "y": 0, "w": 6, "h": 3 }, "display": "expanded" },
+      { "cardId": "movement", "rect": { "x": 6, "y": 0, "w": 6, "h": 3 }, "display": "expanded" }
+    ] },
+    { "boardId": "systems", "placements": [{ "cardId": "movement", "rect": { "x": 0, "y": 0, "w": 6, "h": 3 }, "display": "collapsed" }] }
+  ]
+}
