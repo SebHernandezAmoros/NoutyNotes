@@ -681,6 +681,10 @@ export const TRANSLATIONS = {
     es: 'La mayoría de las familias de Google Fonts usan la licencia SIL Open Font License (OFL) 1.1; algunas usan Apache License 2.0. Comprueba la licencia exacta de «{name}» en fonts.google.com.',
     en: 'Most Google Fonts families use the SIL Open Font License (OFL) 1.1; some use the Apache License 2.0. Check the exact license for “{name}” on fonts.google.com.',
   },
+
+  // Descargar un asset individual (E7e, ADR 0043)
+  'assets.download': { es: 'Descargar', en: 'Download' },
+  'assets.download.accessibilityLabel': { es: 'Descargar {name}', en: 'Download {name}' },
 } as const satisfies Record<string, { readonly es: string; readonly en: string }>;
 
 export type TranslationKey = keyof typeof TRANSLATIONS;

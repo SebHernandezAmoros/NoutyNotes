@@ -11,6 +11,7 @@ import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-nativ
 import { ActionButton, TextField } from '../components/controls';
 import { t } from '../i18n';
 import { activateCustomFont, supportsCustomFont } from '../session/customFont';
+import { downloadAssetFile, supportsAssetDownload } from '../session/downloadAsset';
 import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
 import { pickFontFile, supportsFontImport } from '../session/fontImport';
 import { fetchGoogleFont, supportsGoogleFonts } from '../session/googleFonts';
@@ -270,6 +271,15 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     }
     openAssetFile(entry.name, read.value);
   };
+  const download = async (entry: AssetEntry) => {
+    if (!assets) return;
+    const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
+    if (!read.ok) {
+      setProblem(read.issues[0]?.message ?? t('assets.error.readFailed', locale));
+      return;
+    }
+    downloadAssetFile(entry.name, read.value);
+  };
   const replace = async (entry: AssetEntry) => {
     if (!assets) return;
     const file = await pick();
@@ -324,6 +334,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         {Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard ? (
           <ActionButton label={copied ? t('assets.copyPath.copied', locale) : t('assets.copyPath', locale)} accessibilityLabel={t('assets.copyPath.accessibilityLabel', locale, { ref: current.ref })} onPress={() => void copy(current.ref)} />
         ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.copyPath.hint', locale)}</Text>}
+        {!current.missing && supportsAssetDownload() ? (
+          <ActionButton label={t('assets.download', locale)} accessibilityLabel={t('assets.download.accessibilityLabel', locale, { name: current.name })} onPress={() => void download(current)} />
+        ) : null}
         {current.kind === 'image' && !current.missing ? (
           <>
             <ActionButton label={t('assets.addToBoard', locale)} accessibilityLabel={t('assets.addToBoard.accessibilityLabel', locale, { name: current.name })} onPress={() => void addToBoard(current)} />

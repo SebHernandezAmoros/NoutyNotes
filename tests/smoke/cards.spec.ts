@@ -967,7 +967,7 @@ test('Assets: importar una fuente TTF/OTF con consentimiento de licencia y activ
   expect(runtimeErrors).toEqual([]);
 });
 
-test('Assets: Google Fonts, descarga explícita con la API pública css2 (sin clave), familia inexistente y consentimiento con nota de licencia pre-rellenada (ADR 0042)', async ({ page }, testInfo) => {
+test('Assets: Google Fonts, descarga explícita con la API pública css2 (sin clave), familia inexistente, consentimiento con nota de licencia pre-rellenada y exportar el archivo individual (ADR 0042, ADR 0043)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);
   // Red simulada con la forma exacta de la respuesta real (verificada contra el servidor antes de programar):
@@ -1018,6 +1018,13 @@ test('Assets: Google Fonts, descarga explícita con la API pública css2 (sin cl
   await expect(feedback(page)).toHaveText('«Roboto.woff2» añadida a la biblioteca. Guardado en memoria.');
   await expect(button(page, 'Fuentes (1)')).toBeVisible();
   await expect(page.getByTestId('asset-path')).toHaveText('assets/fonts/roboto.woff2');
+
+  // Exportación individual (ADR 0043, cierra el pendiente de ADR 0031): descargar el archivo tal cual.
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    button(page, 'Descargar roboto.woff2').click(),
+  ]);
+  expect(download.suggestedFilename()).toBe('roboto.woff2');
 
   // Caché local: una vez descargada, activarla no vuelve a tocar la red (misma tubería que E7c).
   await page.unroute('https://fonts.googleapis.com/css2**');

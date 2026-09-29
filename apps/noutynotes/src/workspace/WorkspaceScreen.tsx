@@ -23,6 +23,7 @@ import { buildPrintHtml } from './printHtml';
 import { downloadFile } from '../session/archiveFiles';
 import { activateCustomFont, customFontFamilyName, supportsCustomFont } from '../session/customFont';
 import { describeFailure } from '../session/messages';
+import { printHtmlNative, supportsNativePrint } from '../session/printNative';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
@@ -617,8 +618,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
   const printEntries = workspace && board ? printableDocument(workspace, board.id) : [];
   const printBoard = () => {
-    if (Platform.OS !== 'web' || !board) return;
+    if (!board) return;
     const html = buildPrintHtml(board.title, printEntries, previews.refs);
+    if (supportsNativePrint()) {
+      void printHtmlNative(html).then((opened) => {
+        if (!opened) setFeedback({ tone: 'error', text: 'No se pudo abrir el diálogo de impresión.' });
+      });
+      return;
+    }
+    if (Platform.OS !== 'web') return;
     const tab = window.open('', '_blank');
     if (!tab) {
       setFeedback({ tone: 'error', text: 'El navegador bloqueó la pestaña de impresión. Permite las ventanas emergentes e inténtalo de nuevo.' });
@@ -829,7 +837,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onOpenArchive={() => openView('archive')}
       onOpenDiary={() => openView('diary')}
       onOpenPresent={() => setPresentOpen(true)}
-      canPrint={Platform.OS === 'web'}
+      canPrint={Platform.OS === 'web' || supportsNativePrint()}
       onOpenPrint={() => printBoard()}
       archiveCount={archiveCount}
       onOpenMore={() => setMoreOpen(true)}
@@ -978,7 +986,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
                 <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
                 <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
-                {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
+                {Platform.OS === "web" || supportsNativePrint() ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
                 {board && board.cardIds.length > 0 ? (
                   <NavItem glyph="▤" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => void archiveCurrentBoard()} />
                 ) : null}
@@ -1114,7 +1122,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
             <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
             <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
-            {Platform.OS === "web" ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
+            {Platform.OS === "web" || supportsNativePrint() ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
             {board && board.cardIds.length > 0 ? (
               <NavItem glyph="▤" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
             ) : null}
