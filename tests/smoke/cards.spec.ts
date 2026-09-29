@@ -49,7 +49,7 @@ async function addNote(page: Page, title: string) {
   await expect(card(page, before + 1)).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('Título de la tarjeta').fill(title);
   await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
 }
 
 async function closeEditor(page: Page) {
@@ -486,7 +486,7 @@ test('P3: listas con teclado (continuar, terminar, renumerar sin perder el curso
   const hostile = '<img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script><style>body{display:none}</style>';
   await editor.fill(hostile);
   await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await expect(card(page, 1)).toContainText('<script>window.__pwned=2</script>');
   expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
   expect(await card(page, 1).locator('script, img[src="x"], style').count()).toBe(0);
@@ -723,7 +723,7 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   const editor = page.getByLabel('Contenido Markdown');
   await editor.fill('Llegada.\n\nTemplos y <b>jardines</b>.');
   await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   const pick = async (name: string) => {
     const chooser = page.waitForEvent('filechooser');
     return (await chooser).setFiles({ name, mimeType: 'image/png', buffer: readFileSync(image) });
@@ -759,7 +759,7 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   await page.getByLabel('Texto alternativo de la imagen 2').fill('Portada del viaje');
   await expect(editor).toHaveValue(/!\[Portada del viaje\]\(assets\/images\/tarjeta-1-1\.png\)/);
   await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
 
   // Reemplazar conserva la posición con un archivo nuevo; quitar saca la línea.
   const third = pick('mapa-nuevo.png');
@@ -1105,7 +1105,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
     await button(page, 'Añadir nota').click();
     await page.getByLabel('Título de la tarjeta').fill(title);
     await button(page, 'Guardar texto').click();
-    await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+    await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   };
   const selectCardByTitle = (title: string) => page.locator('[data-testid^="card-tarjeta-"]').filter({ hasText: title });
 
@@ -1348,7 +1348,7 @@ test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la fich
   await addNote(page, 'Con texto');
   await page.getByLabel('Contenido Markdown').fill('Cuerpo de la nota.');
   await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   const bodyInEditor = () => page.getByLabel('Contenido Markdown').evaluate((node) => getComputedStyle(node).fontFamily);
   const titleInEditor = () => page.getByLabel('Título de la tarjeta').evaluate((node) => getComputedStyle(node).fontFamily);
   const systemBody = await bodyInEditor();
@@ -1588,7 +1588,9 @@ test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian 
   if (!isCompactWidth(page)) await expect(page.getByText('SELECTED CARD', { exact: true })).toBeVisible();
   await page.getByLabel('Card title').fill('English card');
   await button(page, 'Save text').click();
-  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  // Antes de E7f (ADR 0044) el aviso de guardar texto se quedaba fijo en español pese al idioma
+  // elegido; con la clave única y compuesta, se traduce igual que el resto.
+  await expect(feedback(page)).toHaveText('Text saved. Saved in memory.');
 
   // La fecha de creación cambia de orden, no solo de palabras (ADR 0040): «28 sep 2026» -> «Sep 28, 2026».
   await expect(page.getByTestId('card-created')).toContainText(/^Created [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{2}:\d{2}$/);
@@ -1597,6 +1599,19 @@ test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian 
   await expect(page.getByText('No connections.', { exact: true })).toBeVisible();
   await expect(button(page, 'Archive the card English card')).toBeVisible();
   await expect(button(page, 'Send the card English card to the Trash')).toBeVisible();
+
+  // Los avisos de acción y las etiquetas de deshacer/rehacer también se traducen (ADR 0044),
+  // incluida la barra compacta de móvil, que antes quedaba fija en español.
+  await button(page, 'Move right').click();
+  await expect(feedback(page)).toHaveText('Card moved. Saved in memory.');
+  const undoButton = page.getByRole('button', { name: 'Undo: Card moved' });
+  const redoButton = page.getByRole('button', { name: 'Redo: Card moved' });
+  await expect(undoButton).toBeVisible();
+  await undoButton.click();
+  await expect(feedback(page)).toHaveText('Undone: Card moved. Saved in memory.');
+  await expect(redoButton).toBeVisible();
+  await redoButton.click();
+  await expect(feedback(page)).toHaveText('Redone: Card moved. Saved in memory.');
 
   await button(page, 'Close the card editor').click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);

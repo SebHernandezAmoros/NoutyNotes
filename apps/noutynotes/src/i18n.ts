@@ -685,6 +685,102 @@ export const TRANSLATIONS = {
   // Descargar un asset individual (E7e, ADR 0043)
   'assets.download': { es: 'Descargar', en: 'Download' },
   'assets.download.accessibilityLabel': { es: 'Descargar {name}', en: 'Download {name}' },
+
+  // Aviso de guardado (E7f, ADR 0044): sufijo de modo y prefijos de deshacer/rehacer.
+  'workview.savedIn.memory': { es: 'Guardado en memoria.', en: 'Saved in memory.' },
+  'workview.savedIn.folder': { es: 'Guardado en la carpeta.', en: 'Saved to the folder.' },
+  'workview.undone': { es: 'Deshecho', en: 'Undone' },
+  'workview.redone': { es: 'Rehecho', en: 'Redone' },
+  'workview.externalChange': {
+    es: 'El proyecto cambió fuera de esta sesión: no se deshizo nada y el historial se vació.',
+    en: 'The project changed outside this session: nothing was undone and the history was cleared.',
+  },
+
+  // Etiquetas de acción para el aviso de guardado y deshacer/rehacer (E7f, ADR 0044). Sin punto final:
+  // `composeSaved`/`composeSavedWithNotes` lo añaden al componer el aviso completo.
+  'action.tagAdded': { es: 'Etiqueta añadida', en: 'Tag added' },
+  'action.tagRemoved': { es: 'Etiqueta «#{tag}» quitada', en: 'Tag “#{tag}” removed' },
+  'action.linkSaved': { es: 'Enlace guardado', en: 'Link saved' },
+  'action.noteImageInserted': { es: 'Imagen «{name}» insertada en la nota', en: 'Image “{name}” inserted in the note' },
+  'action.noteImageReplaced': { es: 'Imagen reemplazada por «{name}»', en: 'Image replaced with “{name}”' },
+  'action.connectionUpdated': { es: 'Conexión actualizada', en: 'Connection updated' },
+  'action.textSaved': { es: 'Texto guardado', en: 'Text saved' },
+  'action.cardMoved': { es: 'Tarjeta movida', en: 'Card moved' },
+  'action.sizeChanged': { es: 'Tamaño cambiado', en: 'Size changed' },
+  'action.connectionStyleChanged': { es: 'Estilo de la conexión cambiado', en: 'Connection style changed' },
+  'action.connectionRemoved': { es: 'Conexión eliminada', en: 'Connection removed' },
+  'action.cardsConnected': { es: 'Tarjetas conectadas', en: 'Cards connected' },
+  'action.diaryEntryReady': { es: 'Entrada del diario lista', en: 'Diary entry ready' },
+  'action.diaryEntryNew': { es: 'Nueva entrada del diario', en: 'New diary entry' },
+  'action.diaryEntrySaved': { es: 'Entrada del diario guardada', en: 'Diary entry saved' },
+  'action.frameRenamed': { es: 'Marco renombrado', en: 'Frame renamed' },
+  'action.frameSizeChanged': { es: 'Tamaño del marco cambiado', en: 'Frame size changed' },
+  'action.frameNoteAdded': { es: 'Nota añadida en el marco', en: 'Note added in the frame' },
+  'action.frameRemoved': { es: 'Marco quitado; sus tarjetas siguen en el tablero', en: 'Frame removed; its cards stay on the board' },
+  'action.frameMoved': { es: 'Marco movido', en: 'Frame moved' },
+  'action.imageAddedToLibrary': { es: 'Imagen «{name}» añadida a la biblioteca', en: 'Image “{name}” added to the library' },
+  'action.fileAddedToLibrary': { es: '«{name}» añadido a la biblioteca', en: '“{name}” added to the library' },
+  'action.fontAddedToLibrary': { es: '«{name}» añadida a la biblioteca', en: '“{name}” added to the library' },
+  'action.assetReplaced': {
+    es: '«{name}» reemplazado por «{newName}» en {cards}; el archivo anterior queda sin usar',
+    en: '“{name}” replaced with “{newName}” in {cards}; the previous file is left unused',
+  },
+  'action.assetAddedToBoard': { es: '«{name}» añadido al tablero sin copiar el archivo', en: '“{name}” added to the board without copying the file' },
+  'action.frameCreated.one': { es: 'Marco creado con 1 tarjeta', en: 'Frame created with 1 card' },
+  'action.frameCreated.many': { es: 'Marco creado con {count} tarjetas', en: 'Frame created with {count} cards' },
+  'action.cardsMoved.many': { es: '{count} tarjetas movidas', en: '{count} cards moved' },
+  'action.cardsArchived.many': { es: '{count} tarjetas archivadas', en: '{count} cards archived' },
+  'action.cardsTrashed.many': { es: '{count} tarjetas enviadas a la Papelera', en: '{count} cards sent to the Trash' },
+  'action.tagRenamed': { es: 'Etiqueta renombrada', en: 'Tag renamed' },
+  'action.tagRemovedEverywhere': { es: 'Etiqueta quitada de todas las tarjetas', en: 'Tag removed from all cards' },
+  'action.boardCreated': { es: 'Tablero creado', en: 'Board created' },
+  'action.cardArchived': { es: 'Tarjeta archivada', en: 'Card archived' },
+  'action.cardTrashed': { es: 'Tarjeta enviada a la Papelera', en: 'Card sent to the Trash' },
+  'action.cardRestoredFromArchive': { es: 'Tarjeta restaurada del Archivo', en: 'Card restored from the Archive' },
+  'action.cardArchivedToTrash': { es: 'Tarjeta enviada del Archivo a la Papelera', en: 'Card sent from the Archive to the Trash' },
+  'action.boardArchived': { es: 'Tablero «{title}» archivado con sus tarjetas', en: 'Board “{title}” archived with its cards' },
+  'action.boardRestored': { es: 'Tablero «{title}» restaurado', en: 'Board “{title}” restored' },
+  'action.cardsRestoredFromArchive.many': { es: '{count} tarjetas restauradas del Archivo', en: '{count} cards restored from the Archive' },
+  'action.cardsArchivedToTrash.many': { es: '{count} tarjetas enviadas del Archivo a la Papelera', en: '{count} cards sent from the Archive to the Trash' },
+  'action.cardRestored': { es: 'Tarjeta restaurada', en: 'Card restored' },
+  'action.cardPurged': { es: 'Tarjeta eliminada definitivamente', en: 'Card permanently deleted' },
+  'action.imageImported': { es: 'Imagen «{name}» importada', en: 'Image “{name}” imported' },
+  'action.cardExpanded': { es: 'Tarjeta expandida', en: 'Card expanded' },
+  'action.cardCollapsed': { es: 'Tarjeta contraída', en: 'Card collapsed' },
+  'action.cardMinimized': { es: 'Tarjeta minimizada', en: 'Card minimized' },
+  'action.cardExpandedRelocated': { es: 'Tarjeta expandida en un hueco libre', en: 'Card expanded into a free spot' },
+  'action.cardPlaced': { es: 'Tarjeta colocada en un hueco libre', en: 'Card placed into a free spot' },
+  'action.noteAdded': { es: 'Nota añadida', en: 'Note added' },
+  'action.exampleImageAdded': { es: 'Imagen de ejemplo añadida', en: 'Example image added' },
+  'action.floatingTitleAdded': { es: 'Título flotante añadido', en: 'Floating title added' },
+  'action.linkAdded': { es: 'Enlace añadido', en: 'Link added' },
+
+  // Notas opcionales al restaurar (E7f, ADR 0044): se insertan entre la etiqueta y el sufijo de modo.
+  'action.restoredRelocated': {
+    es: 'Su sitio estaba ocupado: se colocó en el primer hueco libre.',
+    en: 'Its spot was occupied: it was placed in the first free spot.',
+  },
+  'action.restoredFallbackBoard': {
+    es: 'Su tablero ya no existe: se añadió a «{board}».',
+    en: 'Its board no longer exists: it was added to “{board}”.',
+  },
+  'action.restoredSkippedRelation.one': {
+    es: '1 conexión no se restauró porque la otra tarjeta ya no está.',
+    en: '1 connection was not restored because the other card is gone.',
+  },
+  'action.restoredSkippedRelation.many': {
+    es: '{count} conexiones no se restauraron porque la otra tarjeta ya no está.',
+    en: '{count} connections were not restored because the other card is gone.',
+  },
+  'action.boardRestoredSkipped.one': {
+    es: '1 de sus tarjetas ya no estaba en el Archivo y se omitió.',
+    en: '1 of its cards was no longer in the Archive and was skipped.',
+  },
+  'action.boardRestoredSkipped.many': {
+    es: '{count} de sus tarjetas ya no estaban en el Archivo y se omitió.',
+    en: '{count} of its cards were no longer in the Archive and were skipped.',
+  },
+  'action.selectionExported': { es: 'Selección exportada como ZIP ({count}).', en: 'Selection exported as a ZIP ({count}).' },
 } as const satisfies Record<string, { readonly es: string; readonly en: string }>;
 
 export type TranslationKey = keyof typeof TRANSLATIONS;

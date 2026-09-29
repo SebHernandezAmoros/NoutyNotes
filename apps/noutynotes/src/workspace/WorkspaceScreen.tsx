@@ -17,6 +17,7 @@ import { Dialog } from '../components/Dialog';
 import { ActionButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
 import { t } from '../i18n';
+import type { TranslationKey } from '../i18n';
 import { noteFontFamily } from './fonts';
 import { PresentView } from './PresentView';
 import { buildPrintHtml } from './printHtml';
@@ -53,23 +54,29 @@ import { Toolbar } from './Toolbar';
 import type { BoardView } from './Toolbar';
 import { saveStatus } from './saveStatus';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
+import type { ActionSuccess } from './useWorkspaceEditor';
+import { composeSavedWithNotes } from './actionFeedback';
 
 /** Desde este ancho la navegación de espacios y tableros va en una barra lateral. */
 const SIDEBAR_MIN_WIDTH = 1100;
 const START_PAN: Point = { x: 16, y: 16 };
 
-const displayMessages: Readonly<Record<CardDisplayMode, string>> = {
-  expanded: 'Tarjeta expandida. Guardado en memoria.',
-  collapsed: 'Tarjeta contraída. Guardado en memoria.',
-  minimized: 'Tarjeta minimizada. Guardado en memoria.',
+const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
+  expanded: 'action.cardExpanded',
+  collapsed: 'action.cardCollapsed',
+  minimized: 'action.cardMinimized',
 };
 
-const additions: Readonly<Record<PrototypeCardKind, string>> = {
-  note: 'Nota añadida. Guardado en memoria.',
-  image: 'Imagen de ejemplo añadida. Guardado en memoria.',
-  title: 'Título flotante añadido. Guardado en memoria.',
-  link: 'Enlace añadido. Guardado en memoria.',
+const additions: Readonly<Record<PrototypeCardKind, ActionSuccess>> = {
+  note: 'action.noteAdded',
+  image: 'action.exampleImageAdded',
+  title: 'action.floatingTitleAdded',
+  link: 'action.linkAdded',
 };
+
+/** Selección múltiple (ADR 0025): la etiqueta «uno» para una sola tarjeta, «muchos» (con `{count}`) para el resto. */
+const pluralAction = (count: number, one: ActionSuccess, many: TranslationKey): ActionSuccess =>
+  (count === 1 ? one : { key: many, params: { count: String(count) } });
 
 export function WorkspaceScreen() {
   const params = useLocalSearchParams<{ id?: string; notice?: string; card?: string }>();
@@ -150,7 +157,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const archiveCount = workspace?.archive?.length ?? 0;
   const summaries = useSessionSummaries(workspace);
   const previews = useImagePreviews(session.storage, workspace);
-  const saved = (text: string) => (storageMode === 'folder' ? text.replace('Guardado en memoria.', 'Guardado en la carpeta.') : text);
 
   // Fuente personalizada (ADR 0041): el registro `FontFace` no sobrevive a recargar, así que se vuelve a
   // activar al abrir este workspace si la preferencia la sigue señalando. Si el archivo ya no está, se
@@ -249,29 +255,30 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const groupMany = async () => {
     if (!board || multiIds.length === 0) return;
     const result = await run((storage, workspaceId) => groupCardsInFrame(storage, workspaceId, { boardId: board.id, cardIds: multiIds, title: 'Nuevo marco' }),
-      plural(multiIds.length, 'Marco creado con 1 tarjeta. Guardado en memoria.', 'Marco creado con # tarjetas. Guardado en memoria.'));
+      pluralAction(multiIds.length, 'action.frameCreated.one', 'action.frameCreated.many'));
     if (result.ok) void selectFrame(result.value);
   };
   const moveFrame = (target: string, delta: GridPoint) => {
     if (!board) return;
-    void run((storage, workspaceId) => moveFrameOnBoard(storage, workspaceId, { boardId: board.id, frameId: target, delta }), 'Marco movido. Guardado en memoria.');
+    void run((storage, workspaceId) => moveFrameOnBoard(storage, workspaceId, { boardId: board.id, frameId: target, delta }), 'action.frameMoved');
   };
+  // Solo para etiquetas de la barra de selección múltiple (fuera del alcance de E7f: no son avisos de `run()`).
   const plural = (count: number, one: string, many: string) => (count === 1 ? one : many.replace('#', String(count)));
   const moveMany = (cardIds: readonly CardId[], delta: GridPoint) => {
     if (!board || cardIds.length === 0) return;
     void run((storage, workspaceId) => moveCardsOnBoard(storage, workspaceId, { boardId: board.id, cardIds, delta }),
-      plural(cardIds.length, 'Tarjeta movida. Guardado en memoria.', '# tarjetas movidas. Guardado en memoria.'));
+      pluralAction(cardIds.length, 'action.cardMoved', 'action.cardsMoved.many'));
   };
   const archiveMany = async () => {
     if (multiIds.length === 0) return;
     const result = await run((storage, workspaceId) => moveCardsToArchive(storage, workspaceId, multiIds, new Date().toISOString()),
-      plural(multiIds.length, 'Tarjeta archivada. Guardado en memoria.', '# tarjetas archivadas. Guardado en memoria.'));
+      pluralAction(multiIds.length, 'action.cardArchived', 'action.cardsArchived.many'));
     if (result.ok) setMulti(null);
   };
   const trashMany = async () => {
     if (multiIds.length === 0) return;
     const result = await run((storage, workspaceId) => moveCardsToTrash(storage, workspaceId, multiIds),
-      plural(multiIds.length, 'Tarjeta enviada a la Papelera. Guardado en memoria.', '# tarjetas enviadas a la Papelera. Guardado en memoria.'));
+      pluralAction(multiIds.length, 'action.cardTrashed', 'action.cardsTrashed.many'));
     if (result.ok) setMulti(null);
   };
 
@@ -351,7 +358,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!placeOffer) return;
     const { cardId, boardId: target } = placeOffer;
     const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
-    void run((storage, workspaceId) => placeCardOnBoard(storage, workspaceId, { boardId: target, cardId, ...(near ? { near } : {}) }), 'Tarjeta colocada en un hueco libre. Guardado en memoria.')
+    void run((storage, workspaceId) => placeCardOnBoard(storage, workspaceId, { boardId: target, cardId, ...(near ? { near } : {}) }), 'action.cardPlaced')
       .then((result) => {
         if (!result.ok) return;
         setPlaceOffer(null);
@@ -361,9 +368,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const searchAll = (query: string) => searchAllWorkspaces(session.storage, query, workspace ?? undefined);
 
   const renameProjectTag = async (from: string, to: string) =>
-    (await run((storage, workspaceId) => renameTag(storage, workspaceId, from, to), 'Etiqueta renombrada. Guardado en memoria.')).ok;
+    (await run((storage, workspaceId) => renameTag(storage, workspaceId, from, to), 'action.tagRenamed')).ok;
   const removeProjectTag = async (tag: string) =>
-    (await run((storage, workspaceId) => removeTagEverywhere(storage, workspaceId, tag), 'Etiqueta quitada de todas las tarjetas. Guardado en memoria.')).ok;
+    (await run((storage, workspaceId) => removeTagEverywhere(storage, workspaceId, tag), 'action.tagRemovedEverywhere')).ok;
 
   // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
@@ -383,7 +390,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const createBoard = () => {
-    void run((storage, workspaceId) => addBoardToWorkspace(storage, workspaceId, {}), 'Tablero creado. Guardado en memoria.')
+    void run((storage, workspaceId) => addBoardToWorkspace(storage, workspaceId, {}), 'action.boardCreated')
       .then((result) => { if (result.ok) void chooseBoard(result.value); });
   };
 
@@ -402,10 +409,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setConnectSource(step.source);
     if (step.action?.kind === 'connect') {
       const { from, to } = step.action;
-      void run((storage, workspaceId) => connectCards(storage, workspaceId, { from, to }), 'Tarjetas conectadas. Guardado en memoria.');
+      void run((storage, workspaceId) => connectCards(storage, workspaceId, { from, to }), 'action.cardsConnected');
     } else if (step.action?.kind === 'disconnect') {
       const { relationId } = step.action;
-      void run((storage, workspaceId) => disconnectCards(storage, workspaceId, relationId), 'Conexión eliminada. Guardado en memoria.');
+      void run((storage, workspaceId) => disconnectCards(storage, workspaceId, relationId), 'action.connectionRemoved');
     }
   };
 
@@ -456,7 +463,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!board) return;
     setRelocateOffer(null);
     void run((storage, workspaceId) => setCardDisplay(storage, workspaceId, { boardId: board.id, cardId, display, relocate }),
-      relocate ? 'Tarjeta expandida en un hueco libre. Guardado en memoria.' : displayMessages[display])
+      relocate ? 'action.cardExpandedRelocated' : displayMessages[display])
       .then((result) => {
         const cause = result.ok ? undefined : result.issues[0]?.details?.[0]?.code;
         if (display === 'expanded' && !relocate && cause === 'grid-collision') setRelocateOffer(cardId);
@@ -465,7 +472,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const sendToTrash = async (cardId: CardId) => {
     if (!await flushPendingText()) return;
-    const result = await run((storage, workspaceId) => moveCardToTrash(storage, workspaceId, cardId), 'Tarjeta enviada a la Papelera. Guardado en memoria.');
+    const result = await run((storage, workspaceId) => moveCardToTrash(storage, workspaceId, cardId), 'action.cardTrashed');
     if (result.ok) {
       setSelectedId(null);
       setConnectSource(null);
@@ -475,7 +482,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Archivo (ADR 0023). La hora la pone la interfaz: application no usa el reloj.
   const archiveSelected = async (cardId: CardId) => {
     if (!await flushPendingText()) return;
-    const result = await run((storage, workspaceId) => moveCardToArchive(storage, workspaceId, cardId, new Date().toISOString()), 'Tarjeta archivada. Guardado en memoria.');
+    const result = await run((storage, workspaceId) => moveCardToArchive(storage, workspaceId, cardId, new Date().toISOString()), 'action.cardArchived');
     if (result.ok) {
       setSelectedId(null);
       setConnectSource(null);
@@ -484,17 +491,19 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
   const restoreArchived = async (cardId: CardId) => {
     const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
-    const result = await run((storage, workspaceId) => restoreCardFromArchive(storage, workspaceId, { cardId, fallbackBoardId }), 'Tarjeta restaurada del Archivo. Guardado en memoria.');
+    const result = await run((storage, workspaceId) => restoreCardFromArchive(storage, workspaceId, { cardId, fallbackBoardId }), 'action.cardRestoredFromArchive');
     if (!result.ok) return;
     const notes = [
-      result.value.relocated.length > 0 ? 'Su sitio estaba ocupado: se colocó en el primer hueco libre.' : '',
-      result.value.addedToFallback ? `Su tablero ya no existe: se añadió a «${board?.title ?? 'Tablero principal'}».` : '',
-      result.value.skippedRelations > 0 ? `${result.value.skippedRelations === 1 ? '1 conexión no se restauró' : `${result.value.skippedRelations} conexiones no se restauraron`} porque la otra tarjeta ya no está.` : '',
+      result.value.relocated.length > 0 ? t('action.restoredRelocated', locale) : '',
+      result.value.addedToFallback ? t('action.restoredFallbackBoard', locale, { board: board?.title ?? 'Tablero principal' }) : '',
+      result.value.skippedRelations > 0
+        ? t(result.value.skippedRelations === 1 ? 'action.restoredSkippedRelation.one' : 'action.restoredSkippedRelation.many', locale, { count: String(result.value.skippedRelations) })
+        : '',
     ].filter(Boolean);
-    if (notes.length > 0) setFeedback({ tone: 'success', text: saved(`Tarjeta restaurada del Archivo. ${notes.join(' ')} Guardado en memoria.`) });
+    if (notes.length > 0) setFeedback({ tone: 'success', text: composeSavedWithNotes(t('action.cardRestoredFromArchive', locale), notes, storageMode, locale) });
   };
   const archivedToTrash = (cardId: CardId) => {
-    void run((storage, workspaceId) => sendArchivedToTrash(storage, workspaceId, cardId), 'Tarjeta enviada del Archivo a la Papelera. Guardado en memoria.');
+    void run((storage, workspaceId) => sendArchivedToTrash(storage, workspaceId, cardId), 'action.cardArchivedToTrash');
   };
 
   // Tablero completo como unidad (ADR 0039): mismo «sin reloj» que el resto del archivo.
@@ -502,7 +511,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!board) return;
     if (!await flushPendingText()) return;
     const result = await run((storage, workspaceId) => moveBoardToArchive(storage, workspaceId, board.id, new Date().toISOString()),
-      `Tablero «${board.title}» archivado con sus tarjetas. Guardado en memoria.`);
+      { key: 'action.boardArchived', params: { title: board.title } });
     if (result.ok) {
       setSelectedId(null);
       setMulti(null);
@@ -510,21 +519,22 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     }
   };
   const restoreArchivedBoardById = async (boardId: BoardId, title: string) => {
-    const result = await run((storage, workspaceId) => restoreBoardFromArchive(storage, workspaceId, boardId), `Tablero «${title}» restaurado. Guardado en memoria.`);
+    const result = await run((storage, workspaceId) => restoreBoardFromArchive(storage, workspaceId, boardId), { key: 'action.boardRestored', params: { title } });
     if (!result.ok) return;
     if (result.value.skipped > 0) {
-      setFeedback({ tone: 'success', text: saved(`Tablero «${title}» restaurado. ${result.value.skipped === 1 ? '1 de sus tarjetas ya no estaba en el Archivo' : `${result.value.skipped} de sus tarjetas ya no estaban en el Archivo`} y se omitió. Guardado en memoria.`) });
+      const note = t(result.value.skipped === 1 ? 'action.boardRestoredSkipped.one' : 'action.boardRestoredSkipped.many', locale, { count: String(result.value.skipped) });
+      setFeedback({ tone: 'success', text: composeSavedWithNotes(t('action.boardRestored', locale, { title }), [note], storageMode, locale) });
     }
   };
   const restoreArchivedSelection = async (cardIds: readonly CardId[]) => {
     const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
     const result = await run((storage, workspaceId) => restoreCardsFromArchive(storage, workspaceId, { cardIds, fallbackBoardId }),
-      plural(cardIds.length, 'Tarjeta restaurada del Archivo. Guardado en memoria.', '# tarjetas restauradas del Archivo. Guardado en memoria.'));
+      pluralAction(cardIds.length, 'action.cardRestoredFromArchive', 'action.cardsRestoredFromArchive.many'));
     return result.ok;
   };
   const archivedSelectionToTrash = async (cardIds: readonly CardId[]) => {
     const result = await run((storage, workspaceId) => sendArchivedCardsToTrash(storage, workspaceId, cardIds),
-      plural(cardIds.length, 'Tarjeta enviada del Archivo a la Papelera. Guardado en memoria.', '# tarjetas enviadas del Archivo a la Papelera. Guardado en memoria.'));
+      pluralAction(cardIds.length, 'action.cardArchivedToTrash', 'action.cardsArchivedToTrash.many'));
     return result.ok;
   };
   // Exportar selección (ADR 0039): un ZIP nuevo y autocontenido, no el del workspace; no toca nada
@@ -555,24 +565,27 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       return;
     }
     downloadFile(`archivo-seleccion-${cardIds.length}.zip`, zip.value);
-    setFeedback({ tone: 'success', text: `Selección exportada como ZIP (${plural(cardIds.length, '1 tarjeta', `${cardIds.length} tarjetas`)}).` });
+    const count = t(cardIds.length === 1 ? 'unit.card.one' : 'unit.card.many', locale, { count: String(cardIds.length) });
+    setFeedback({ tone: 'success', text: t('action.selectionExported', locale, { count }) });
   };
 
   const restore = async (cardId: CardId) => {
     const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
-    const result = await run((storage, workspaceId) => restoreCardFromTrash(storage, workspaceId, { cardId, fallbackBoardId }), 'Tarjeta restaurada. Guardado en memoria.');
+    const result = await run((storage, workspaceId) => restoreCardFromTrash(storage, workspaceId, { cardId, fallbackBoardId }), 'action.cardRestored');
     if (!result.ok) return;
     const notes = [
-      result.value.relocated.length > 0 ? 'Su sitio estaba ocupado: se colocó en el primer hueco libre.' : '',
-      result.value.addedToFallback ? `Su tablero ya no existe: se añadió a «${board?.title ?? 'Tablero principal'}».` : '',
-      result.value.skippedRelations > 0 ? `${result.value.skippedRelations === 1 ? '1 conexión no se restauró' : `${result.value.skippedRelations} conexiones no se restauraron`} porque la otra tarjeta ya no está.` : '',
+      result.value.relocated.length > 0 ? t('action.restoredRelocated', locale) : '',
+      result.value.addedToFallback ? t('action.restoredFallbackBoard', locale, { board: board?.title ?? 'Tablero principal' }) : '',
+      result.value.skippedRelations > 0
+        ? t(result.value.skippedRelations === 1 ? 'action.restoredSkippedRelation.one' : 'action.restoredSkippedRelation.many', locale, { count: String(result.value.skippedRelations) })
+        : '',
     ].filter(Boolean);
-    if (notes.length > 0) setFeedback({ tone: 'success', text: saved(`Tarjeta restaurada. ${notes.join(' ')} Guardado en memoria.`) });
+    if (notes.length > 0) setFeedback({ tone: 'success', text: composeSavedWithNotes(t('action.cardRestored', locale), notes, storageMode, locale) });
   };
 
   const purge = async (cardId: CardId) => {
     const assets = assetsOf(session.storage);
-    const result = await run((storage, workspaceId) => purgeCardFromTrash(storage, assets, workspaceId, cardId), 'Tarjeta eliminada definitivamente. Guardado en memoria.', { history: 'clear' });
+    const result = await run((storage, workspaceId) => purgeCardFromTrash(storage, assets, workspaceId, cardId), 'action.cardPurged', { history: 'clear' });
     if (result.ok && result.value.failedAssets.length > 0) {
       setFeedback({ tone: 'error', text: `La tarjeta se eliminó, pero no se pudo borrar ${result.value.failedAssets.join(', ')}; queda como archivo sin usar.` });
     }
@@ -602,17 +615,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const file = picked;
     const result = await run((storage, workspaceId) => importImageCard(storage, assets, workspaceId, {
       bytes: file.bytes, fileName: file.name, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}),
-    }), `Imagen «${file.name}» importada. Guardado en memoria.`);
+    }), { key: 'action.imageImported', params: { name: file.name } });
     if (result.ok) void select(result.value);
   };
 
   const move = (cardId: CardId, to: GridPoint) => {
     if (!board) return;
-    void run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'Tarjeta movida. Guardado en memoria.');
+    void run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'action.cardMoved');
   };
   const resize = (cardId: CardId, size: GridSize) => {
     if (!board) return;
-    void run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'Tamaño cambiado. Guardado en memoria.');
+    void run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged');
   };
 
   // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
@@ -809,8 +822,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const feedbackLine = workspace && compact ? (
     <View style={styles.feedbackRow}>
       <View style={styles.feedbackGrow}>{feedbackText}</View>
-      <ActionButton label="↶" accessibilityLabel={undoLabel ? `Deshacer: ${undoLabel}` : 'Deshacer'} disabled={undoLabel === null} onPress={() => void undoLast()} />
-      <ActionButton label="↷" accessibilityLabel={redoLabel ? `Rehacer: ${redoLabel}` : 'Rehacer'} disabled={redoLabel === null} onPress={() => void redoLast()} />
+      <ActionButton label="↶" accessibilityLabel={undoLabel ? `${t('undo', locale)}: ${undoLabel}` : t('undo', locale)} disabled={undoLabel === null} onPress={() => void undoLast()} />
+      <ActionButton label="↷" accessibilityLabel={redoLabel ? `${t('redo', locale)}: ${redoLabel}` : t('redo', locale)} disabled={redoLabel === null} onPress={() => void redoLast()} />
     </View>
   ) : feedbackText;
 
@@ -1210,7 +1223,7 @@ function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run'], stora
       if (!draft) return true;
       const task: Promise<boolean> = run((storage, workspaceId) => editCardContent(storage, workspaceId, draft.cardId, {
         title: draft.title, content: draft.content,
-      }), 'Texto guardado en la carpeta.', { mergeKey: `text:${draft.cardId}` }).then((result) => {
+      }), 'action.textSaved', { mergeKey: `text:${draft.cardId}` }).then((result) => {
         if (result.ok && pendingText.current === draft) pendingText.current = null;
         return result.ok;
       }).finally(() => { if (pendingSave.current === task) pendingSave.current = null; });

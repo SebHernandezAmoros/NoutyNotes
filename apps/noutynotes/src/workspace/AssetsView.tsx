@@ -21,9 +21,9 @@ import { useWorkspaceSession } from '../session/WorkspaceSession';
 import type { ViewPreferences } from './canvas/preferences';
 import { dataUri } from './dataUri';
 import { useEscapeBack } from './useEscapeBack';
-import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
+import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
-type Run = <T>(action: WorkspaceAction<T>, success: string, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
+type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 type Tab = 'all' | AssetKind;
 
 interface AssetsViewProps {
@@ -158,7 +158,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     if (!assets) return;
     const file = await pick();
     if (!file) return;
-    const result = await run((store, id) => importAssetImage(store, assets, id, { bytes: file.bytes, fileName: file.name }), `Imagen «${file.name}» añadida a la biblioteca. Guardado en memoria.`);
+    const result = await run((store, id) => importAssetImage(store, assets, id, { bytes: file.bytes, fileName: file.name }), { key: 'action.imageAddedToLibrary', params: { name: file.name } });
     if (result.ok) {
       setSelected(result.value);
       reload();
@@ -178,7 +178,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       return;
     }
     if (!file) return;
-    const result = await run((store, id) => importLibraryFile(store, assets, id, { bytes: file.bytes, fileName: file.name }), `«${file.name}» añadido a la biblioteca. Guardado en memoria.`);
+    const result = await run((store, id) => importLibraryFile(store, assets, id, { bytes: file.bytes, fileName: file.name }), { key: 'action.fileAddedToLibrary', params: { name: file.name } });
     if (result.ok) {
       setSelected(result.value);
       reload();
@@ -241,7 +241,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     const draft = fontDraft;
     const note = licenseNote;
     const result = await run((store, id) => importLibraryFont(store, assets, id, { bytes: draft.bytes, fileName: draft.name, licenseNote: note }),
-      `«${draft.name}» añadida a la biblioteca. Guardado en memoria.`);
+      { key: 'action.fontAddedToLibrary', params: { name: draft.name } });
     cancelFontImport();
     if (result.ok) {
       setSelected(result.value.ref);
@@ -284,9 +284,8 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     if (!assets) return;
     const file = await pick();
     if (!file) return;
-    const cardsEs = entry.usedBy.length === 1 ? '1 tarjeta' : `${entry.usedBy.length} tarjetas`;
     const result = await run((store, id) => replaceAsset(store, assets, id, { from: entry.ref, bytes: file.bytes, fileName: file.name }),
-      `«${entry.name}» reemplazado por «${file.name}» en ${cardsEs}; el archivo anterior queda sin usar. Guardado en memoria.`);
+      { key: 'action.assetReplaced', params: { name: entry.name, newName: file.name, cards: unit('card', entry.usedBy.length, locale) } });
     if (result.ok) {
       setSelected(result.value);
       reload();
@@ -294,7 +293,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   };
   const addToBoard = async (entry: AssetEntry) => {
     const where = placement();
-    const result = await run((store, id) => addAssetToBoard(store, id, { ref: entry.ref, ...where }), `«${entry.name}» añadido al tablero sin copiar el archivo. Guardado en memoria.`);
+    const result = await run((store, id) => addAssetToBoard(store, id, { ref: entry.ref, ...where }), { key: 'action.assetAddedToBoard', params: { name: entry.name } });
     if (result.ok) {
       onBack();
       onAdded(result.value);
@@ -302,8 +301,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   };
   const remove = async (refs: readonly string[]) => {
     if (!assets) return;
-    const deletedEs = refs.length === 1 ? '1 archivo sin usar eliminado' : `${refs.length} archivos sin usar eliminados`;
-    const result = await run((store, id) => deleteUnusedAssets(store, assets, id, refs), `${deletedEs}. Guardado en memoria.`, { history: 'clear' });
+    const result = await run((store, id) => deleteUnusedAssets(store, assets, id, refs), { label: unit('unusedDeleted', refs.length, locale) }, { history: 'clear' });
     setConfirm(null);
     if (result.ok) {
       if (result.value.failed.length > 0) setProblem(t('assets.error.deleteFailed', locale, { files: result.value.failed.join(', ') }));

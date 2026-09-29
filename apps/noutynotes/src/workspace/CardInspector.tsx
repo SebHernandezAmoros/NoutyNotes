@@ -17,9 +17,9 @@ import { applyListCommand, normalizeListChange, toggleChecklistLine } from './ma
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
 import type { ListKind, TextSelection } from './markdownLists';
-import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
+import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
-type Run = <T>(action: WorkspaceAction<T>, success: string, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
+type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
 interface CardInspectorProps {
   readonly workspace: Workspace;
@@ -104,11 +104,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const [tagDraft, setTagDraft] = useState('');
   const addTag = () => {
     const input = tagDraft;
-    void run((storage, id) => addCardTag(storage, id, card.id, input), 'Etiqueta añadida. Guardado en memoria.')
+    void run((storage, id) => addCardTag(storage, id, card.id, input), 'action.tagAdded')
       .then((result) => { if (result.ok) setTagDraft(''); });
   };
   const removeTag = (tag: string) => {
-    void run((storage, id) => removeCardTag(storage, id, card.id, tag), `Etiqueta «#${tag}» quitada. Guardado en memoria.`);
+    void run((storage, id) => removeCardTag(storage, id, card.id, tag), { key: 'action.tagRemoved', params: { tag } });
   };
   // Enlace (ADR 0020): la dirección se guarda al pulsar «Guardar enlace», normalizada; abrir usa el sistema.
   const linkKey = linkUrlField(workspace.cardTypes.find((type) => type.id === card.typeId));
@@ -123,7 +123,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   }
   const saveLink = () => {
     const input = linkDraft;
-    void run((storage, id) => setCardLink(storage, id, card.id, input), 'Enlace guardado. Guardado en memoria.')
+    void run((storage, id) => setCardLink(storage, id, card.id, input), 'action.linkSaved')
       .then((result) => { if (result.ok) setLinkDraft(result.value); });
   };
   const [linkProblem, setLinkProblem] = useState<string | null>(null);
@@ -158,7 +158,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       const assets = assetsOf(storage);
       if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
       return addNoteImage(storage, assets, id, card.id, { bytes: file.bytes, fileName: file.name, content: draft, place });
-    }, place.kind === 'insert' ? `Imagen «${file.name}» insertada en la nota. Guardado en memoria.` : `Imagen reemplazada por «${file.name}». Guardado en memoria.`);
+    }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: file.name } } : { key: 'action.noteImageReplaced', params: { name: file.name } });
     if (result.ok) {
       setContent(result.value.content);
       if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: result.value.content });
@@ -204,7 +204,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     void run((storage, id) => updateConnection(storage, id, relationId, {
       ...(typeLabel.trim() === '' ? {} : { typeLabel: typeLabel.trim() }),
       ...(label.trim() === '' ? {} : { label: label.trim() }),
-    }), 'Conexión actualizada. Guardado en memoria.').then((result) => { if (result.ok) setEditingRelation(null); });
+    }), 'action.connectionUpdated').then((result) => { if (result.ok) setEditingRelation(null); });
   };
   const rect = placement?.rect;
 
@@ -300,7 +300,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
-            onPress={() => { void (mode === 'folder' ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'Texto guardado en memoria.', { mergeKey: `text:${card.id}` })); }}
+            onPress={() => { void (mode === 'folder' ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'action.textSaved', { mergeKey: `text:${card.id}` })); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
         </View>
@@ -324,7 +324,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                   accessibilityLabel={t(move.nameKey, locale)}
                   onPress={() => void run((storage, id) => moveCardOnBoard(storage, id, {
                     boardId, cardId: card.id, to: { x: rect.x + move.dx, y: rect.y + move.dy },
-                  }), 'Tarjeta movida. Guardado en memoria.')}
+                  }), 'action.cardMoved')}
                 />
               ))}
             </View>
@@ -336,7 +336,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                   accessibilityLabel={t(resize.nameKey, locale)}
                   onPress={() => void run((storage, id) => resizeCardOnBoard(storage, id, {
                     boardId, cardId: card.id, size: { w: rect.w + resize.dw, h: rect.h + resize.dh },
-                  }), 'Tamaño cambiado. Guardado en memoria.')}
+                  }), 'action.sizeChanged')}
                 />
               ))}
             </View>
@@ -403,7 +403,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                       label={option.label}
                       accessibilityLabel={t('inspector.relation.arrow.use.accessibilityLabel', locale, { label: option.label.toLowerCase() })}
                       pressed={arrow === option.value}
-                      onPress={() => void run((storage, id) => updateConnection(storage, id, relation.id, { arrow: option.value }), 'Estilo de la conexión cambiado. Guardado en memoria.')}
+                      onPress={() => void run((storage, id) => updateConnection(storage, id, relation.id, { arrow: option.value }), 'action.connectionStyleChanged')}
                     />
                   ))}
                   <ActionButton
@@ -414,7 +414,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                   <ActionButton
                     label={t('inspector.relation.disconnect', locale)}
                     accessibilityLabel={t(outgoing ? 'inspector.relation.disconnect.from.accessibilityLabel' : 'inspector.relation.disconnect.since.accessibilityLabel', locale, { other })}
-                    onPress={() => void run((storage, id) => disconnectCards(storage, id, relation.id), 'Conexión eliminada. Guardado en memoria.')}
+                    onPress={() => void run((storage, id) => disconnectCards(storage, id, relation.id), 'action.connectionRemoved')}
                   />
                 </View>
               )}
@@ -435,7 +435,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               accessibilityLabel={t('inspector.connect.accessibilityLabel', locale, { title: cardTitle(target) })}
               onPress={() => void run((storage, id) => connectCards(storage, id, {
                 from: card.id, to: target.id, ...(connectTypeDraft.trim() === '' ? {} : { typeLabel: connectTypeDraft.trim() }),
-              }), 'Tarjetas conectadas. Guardado en memoria.')}
+              }), 'action.cardsConnected')}
             />
           ))}
         </View>

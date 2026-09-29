@@ -61,7 +61,7 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.getByTestId('card-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Nota persistente');
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota persistente');
-  await expect(page.getByTestId('workspace-feedback')).toContainText('guardado en la carpeta');
+  await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado en la carpeta');
   await page.screenshot({ path: testInfo.outputPath('folder-saved.png'), fullPage: true });
   await page.reload();
   await expect(page.getByTestId('workspace-missing')).toBeVisible();

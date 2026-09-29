@@ -6,9 +6,9 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
-import type { RunOptions, WorkspaceAction } from './useWorkspaceEditor';
+import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
-type Run = <T>(action: WorkspaceAction<T>, success: string, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
+type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
 interface FrameInspectorProps {
   readonly frame: Frame;
@@ -38,18 +38,18 @@ export function FrameInspector({ frame, boardId, members, run, inSheet, onClose,
   const target = { boardId, frameId: frame.id };
   const rename = () => {
     if (title.trim() === frame.title) return;
-    void run((storage, id) => renameFrameOnBoard(storage, id, { ...target, title }), 'Marco renombrado. Guardado en memoria.');
+    void run((storage, id) => renameFrameOnBoard(storage, id, { ...target, title }), 'action.frameRenamed');
   };
   const resize = (dw: number, dh: number) => {
-    void run((storage, id) => resizeFrameOnBoard(storage, id, { ...target, size: { w: frame.rect.w + dw, h: frame.rect.h + dh } }), 'Tamaño del marco cambiado. Guardado en memoria.');
+    void run((storage, id) => resizeFrameOnBoard(storage, id, { ...target, size: { w: frame.rect.w + dw, h: frame.rect.h + dh } }), 'action.frameSizeChanged');
   };
   const addNote = async () => {
     // La fecha de creación la pone la interfaz (ADR 0024).
-    const result = await run((storage, id) => addNoteToFrame(storage, id, { ...target, createdAt: new Date().toISOString() }), 'Nota añadida en el marco. Guardado en memoria.');
+    const result = await run((storage, id) => addNoteToFrame(storage, id, { ...target, createdAt: new Date().toISOString() }), 'action.frameNoteAdded');
     if (result.ok) onNoteAdded(result.value);
   };
   const remove = async () => {
-    const result = await run((storage, id) => removeFrameFromBoard(storage, id, target), 'Marco quitado; sus tarjetas siguen en el tablero. Guardado en memoria.');
+    const result = await run((storage, id) => removeFrameFromBoard(storage, id, target), 'action.frameRemoved');
     if (result.ok) onClose();
   };
   return (
@@ -82,7 +82,7 @@ export function FrameInspector({ frame, boardId, members, run, inSheet, onClose,
         <View style={styles.row}>
           {moves.map((move) => (
             <ActionButton key={move.name} label={move.label} accessibilityLabel={move.name}
-              onPress={() => void run((storage, id) => moveFrameOnBoard(storage, id, { ...target, delta: { x: move.dx, y: move.dy } }), 'Marco movido. Guardado en memoria.')} />
+              onPress={() => void run((storage, id) => moveFrameOnBoard(storage, id, { ...target, delta: { x: move.dx, y: move.dy } }), 'action.frameMoved')} />
           ))}
         </View>
         <View style={styles.row}>

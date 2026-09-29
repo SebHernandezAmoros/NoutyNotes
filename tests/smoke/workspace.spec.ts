@@ -192,7 +192,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await page.getByLabel('Contenido Markdown').fill('# Plano\n\n- abierto');
   await expect(page.getByText('Cambios sin guardar')).toBeVisible();
   await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toHaveText('Texto guardado en memoria.');
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await expect(card(page, 1)).toContainText('Escena inicial');
   await expect(card(page, 1)).toContainText('Plano');
 

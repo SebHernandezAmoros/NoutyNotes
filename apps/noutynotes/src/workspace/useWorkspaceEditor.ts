@@ -1,11 +1,17 @@
 import { EMPTY_HISTORY, recordStep, redoStep, revertWorkspace, undoStep } from '@noutynotes/application';
 import type { UndoHistory, WorkspaceStorage, WorkspaceStorageResult } from '@noutynotes/application';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
+import { useLocale } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { t } from '../i18n';
 import { describeFailure } from '../session/messages';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
+import { composeSaved, resolveAction } from './actionFeedback';
+import type { ActionSuccess } from './actionFeedback';
 import { isSaveFailure } from './saveStatus';
+
+export type { ActionSuccess } from './actionFeedback';
 
 export type WorkspaceView =
   | { readonly kind: 'loading' }
@@ -29,9 +35,6 @@ export interface RunOptions {
   readonly mergeKey?: string;
 }
 
-/** «Tarjeta movida. Guardado en memoria.» → «Tarjeta movida». */
-const actionLabel = (success: string) => success.replace(/\s*Guardado en (memoria|la carpeta)\.$/, '').replace(/\.$/, '');
-
 /**
  * Estado de pantalla de un workspace: lo lee del puerto y despacha casos de uso. Las acciones se
  * encadenan en serie para que cada una parta de lo guardado por la anterior; tras un éxito se
@@ -40,6 +43,7 @@ const actionLabel = (success: string) => success.replace(/\s*Guardado en (memori
 export function useWorkspaceEditor(id: string | undefined) {
   const storage = useWorkspaceStorage();
   const { mode } = useWorkspaceSession();
+  const { locale } = useLocale();
   const workspaceId = (id ?? '') as WorkspaceId;
   const [view, setView] = useState<WorkspaceView>({ kind: 'loading' });
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -73,21 +77,20 @@ export function useWorkspaceEditor(id: string | undefined) {
     };
   }, [reload]);
 
-  const saved = useCallback((text: string) => (mode === 'folder' ? text.replace('Guardado en memoria.', 'Guardado en la carpeta.') : text), [mode]);
-
-  const run = useCallback(<T>(action: WorkspaceAction<T>, success: string, options: RunOptions = {}): Promise<WorkspaceStorageResult<T>> => {
+  const run = useCallback(<T>(action: WorkspaceAction<T>, success: ActionSuccess, options: RunOptions = {}): Promise<WorkspaceStorageResult<T>> => {
     setSaving(true);
+    const { label, text } = resolveAction(success, mode, locale);
     const task = queue.current.then(async () => {
       const before = current.current;
       const result = await action(storage, workspaceId);
       if (mounted.current) {
-        setFeedback(result.ok ? { tone: 'success', text: saved(success) } : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
+        setFeedback(result.ok ? { tone: 'success', text } : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
       }
       if (result.ok) {
         const after = await reload();
         if (options.history === 'clear') setHistory(EMPTY_HISTORY);
         else if (before && after) {
-          setHistory(recordStep(history.current, { label: actionLabel(success), before, after, ...(options.mergeKey ? { mergeKey: options.mergeKey } : {}) }));
+          setHistory(recordStep(history.current, { label, before, after, ...(options.mergeKey ? { mergeKey: options.mergeKey } : {}) }));
         }
       }
       if (mounted.current) setSaving(false);
@@ -95,7 +98,7 @@ export function useWorkspaceEditor(id: string | undefined) {
     });
     queue.current = task.catch(() => { if (mounted.current) setSaving(false); });
     return task;
-  }, [storage, workspaceId, reload, mode, saved, setHistory]);
+  }, [storage, workspaceId, reload, mode, locale, setHistory]);
 
   // Deshacer o rehacer: vuelve a la instantánea solo si lo guardado sigue siendo el estado esperado.
   const travel = useCallback((direction: 'undo' | 'redo'): Promise<boolean> => {
@@ -114,7 +117,8 @@ export function useWorkspaceEditor(id: string | undefined) {
         await reload();
         if (mounted.current) {
           setRevision((value) => value + 1);
-          setFeedback({ tone: 'success', text: saved(`${direction === 'undo' ? 'Deshecho' : 'Rehecho'}: ${step.label}. Guardado en memoria.`) });
+          const prefix = t(direction === 'undo' ? 'workview.undone' : 'workview.redone', locale);
+          setFeedback({ tone: 'success', text: composeSaved(`${prefix}: ${step.label}`, mode, locale) });
         }
       } else {
         const external = result.issues[0]?.path === 'history';
@@ -123,7 +127,7 @@ export function useWorkspaceEditor(id: string | undefined) {
         await reload();
         if (mounted.current) {
           setFeedback(external
-            ? { tone: 'error', text: 'El proyecto cambió fuera de esta sesión: no se deshizo nada y el historial se vació.' }
+            ? { tone: 'error', text: t('workview.externalChange', locale) }
             : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
         }
       }
@@ -132,7 +136,7 @@ export function useWorkspaceEditor(id: string | undefined) {
     });
     queue.current = task.catch(() => { if (mounted.current) setSaving(false); });
     return task;
-  }, [storage, workspaceId, reload, mode, saved, setHistory]);
+  }, [storage, workspaceId, reload, mode, locale, setHistory]);
   const undo = useCallback(() => travel('undo'), [travel]);
   const redo = useCallback(() => travel('redo'), [travel]);
 
