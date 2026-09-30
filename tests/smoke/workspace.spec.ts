@@ -457,6 +457,44 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   expect(await hasHorizontalOverflow(page)).toBe(false);
 });
 
+test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; la rueda normal sigue paneando', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Zoom cursor');
+  await addCards(page, ['nota']);
+  // Gesto de escritorio (ratón/trackpad con Ctrl); el táctil usa pellizco o los controles de la barra.
+  test.skip(isCompact(page), 'Ctrl + rueda es un gesto de escritorio.');
+  await expectZoom(page, '100 %');
+  const before = await box(card(page, 1));
+  // El cursor se sitúa justo en la esquina superior izquierda de la tarjeta: ese punto del mundo debe
+  // seguir en el mismo píxel de pantalla tras acercar, solo cambia el tamaño.
+  await page.mouse.move(before.x, before.y);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -600);
+  await page.keyboard.up('Control');
+  await expect(page.getByTestId('zoom-level')).not.toContainText('100 %');
+  const after = await box(card(page, 1));
+  expect(Math.abs(after.x - before.x)).toBeLessThan(2);
+  expect(Math.abs(after.y - before.y)).toBeLessThan(2);
+  expect(after.width).toBeGreaterThan(before.width);
+  // Ctrl + rueda al revés aleja; nunca pasa del límite de la barra (50–200 %).
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, 6000);
+  await page.keyboard.up('Control');
+  await expectZoom(page, '50 %');
+  await page.mouse.wheel(0, -6000);
+  await expectZoom(page, '50 %');
+  // Sin Ctrl, la rueda sigue desplazando el lienzo en vez de hacer zoom.
+  await button(page, 'Zoom 50 %, restablecer a 100 %').click();
+  await expectZoom(page, '100 %');
+  const beforePan = await box(card(page, 1));
+  await page.getByTestId('board-canvas').hover();
+  await page.mouse.wheel(0, 80);
+  await expectZoom(page, '100 %');
+  const afterPan = await box(card(page, 1));
+  expect(afterPan.y).toBeLessThan(beforePan.y);
+});
+
 test('P4: una tarjeta recién creada se revela completa cuando el inspector estrecha el lienzo', async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.endsWith('desktop'), 'El estrechamiento por inspector se comprueba en escritorio.');
   await page.goto('./');

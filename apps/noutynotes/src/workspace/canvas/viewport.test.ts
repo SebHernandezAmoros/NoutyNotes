@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAX_ZOOM, MIN_ZOOM, clampPan, formatZoom, panToReveal, panToRevealWorld, renderBase, visibleCells, visibleGridLines, worldPan, zoomIn, zoomOut } from './viewport';
+import { MAX_ZOOM, MIN_ZOOM, clampPan, clampZoom, formatZoom, panToReveal, panToRevealWorld, renderBase, visibleCells, visibleGridLines, worldPan, zoomAroundPoint, zoomIn, zoomOut } from './viewport';
 
 describe('cámara del mundo bidireccional', () => {
   it('permite explorar los cuatro sentidos sin depender del contenido', () => {
@@ -33,6 +33,35 @@ describe('zoom del lienzo (ADR 0013)', () => {
     expect(formatZoom(1)).toBe('100 %');
     expect(formatZoom(0.75)).toBe('75 %');
     expect(formatZoom(1.25)).toBe('125 %');
+  });
+});
+
+describe('zoom alrededor del cursor (Ctrl/⌘ + rueda, auditoría de interacción, 2026-09-29)', () => {
+  it('fuera de rango, se recorta a 50–200 %', () => {
+    expect(clampZoom(10)).toBe(MAX_ZOOM);
+    expect(clampZoom(0.1)).toBe(MIN_ZOOM);
+    expect(clampZoom(1)).toBe(1);
+  });
+
+  it('el punto del mundo bajo el cursor sigue bajo el cursor tras acercar o alejar', () => {
+    const pan = { x: 0, y: 0 };
+    const cursor = { x: 100, y: 50 };
+    const worldBefore = { x: (cursor.x - pan.x) / 1, y: (cursor.y - pan.y) / 1 };
+    const zoomedIn = zoomAroundPoint(pan, 1, 2, cursor);
+    expect(zoomedIn).toEqual({ x: -100, y: -50 });
+    const worldAfter = { x: (cursor.x - zoomedIn.x) / 2, y: (cursor.y - zoomedIn.y) / 2 };
+    expect(worldAfter).toEqual(worldBefore);
+    // También al alejar, y con una cámara ya desplazada.
+    const panned = { x: -320, y: 90 };
+    const zoomedOut = zoomAroundPoint(panned, 1, 0.5, cursor);
+    const worldBeforeOut = { x: (cursor.x - panned.x) / 1, y: (cursor.y - panned.y) / 1 };
+    const worldAfterOut = { x: (cursor.x - zoomedOut.x) / 0.5, y: (cursor.y - zoomedOut.y) / 0.5 };
+    expect(worldAfterOut).toEqual(worldBeforeOut);
+  });
+
+  it('sin cambio de zoom, no desplaza', () => {
+    const pan = { x: -40, y: 15 };
+    expect(zoomAroundPoint(pan, 1, 1, { x: 200, y: 200 })).toEqual(pan);
   });
 });
 

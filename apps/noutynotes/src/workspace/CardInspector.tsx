@@ -190,6 +190,16 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const connected = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id);
   const targets = workspace.cards.filter((other) => other.id !== card.id
     && !workspace.relations.some((relation) => relation.from === card.id && relation.to === other.id));
+  // Con pocas tarjetas conectables, listarlas directas es más rápido que buscar; con muchas, una pared
+  // de botones no se puede recorrer (auditoría de interacción, 2026-09-29): hace falta escribir para
+  // acotarlas por título, hasta un máximo de resultados visibles a la vez.
+  const [connectSearch, setConnectSearch] = useState('');
+  const needsConnectSearch = targets.length > 6;
+  const connectQuery = connectSearch.trim().toLowerCase();
+  const matchingTargets = needsConnectSearch
+    ? (connectQuery === '' ? [] : targets.filter((target) => cardTitle(target).toLowerCase().includes(connectQuery)))
+    : targets;
+  const visibleTargets = needsConnectSearch ? matchingTargets.slice(0, 8) : targets;
   // Tipo, rótulo y flecha (ADR 0034): una conexión a la vez en edición; la flecha se aplica al instante.
   const [editingRelation, setEditingRelation] = useState<{ readonly id: RelationId; readonly typeLabel: string; readonly label: string } | null>(null);
   const [connectTypeDraft, setConnectTypeDraft] = useState('');
@@ -429,11 +439,17 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         {targets.length > 0 ? (
           <>
             <TextField label={t('inspector.connect.type.label', locale)} value={connectTypeDraft} onChangeText={setConnectTypeDraft} placeholder={t('inspector.connect.type.placeholder', locale)} testID="connect-type-input" />
+            {needsConnectSearch ? (
+              <TextField label={t('inspector.connect.search.label', locale)} value={connectSearch} onChangeText={setConnectSearch} placeholder={t('inspector.connect.search.placeholder', locale)} testID="connect-search-input" />
+            ) : null}
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.connect.with', locale)}</Text>
           </>
         ) : null}
+        {needsConnectSearch && connectQuery !== '' && matchingTargets.length === 0 ? (
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.connect.none', locale, { query: connectSearch.trim() })}</Text>
+        ) : null}
         <View style={styles.row}>
-          {targets.map((target) => (
+          {visibleTargets.map((target) => (
             <ActionButton
               key={target.id}
               label={cardTitle(target)}
@@ -444,6 +460,13 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             />
           ))}
         </View>
+        {needsConnectSearch && matchingTargets.length > visibleTargets.length ? (
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>
+            {matchingTargets.length - visibleTargets.length === 1
+              ? t('inspector.connect.more.one', locale)
+              : t('inspector.connect.more.many', locale).replace('#', String(matchingTargets.length - visibleTargets.length))}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.section}>
         <ActionButton label={t('inspector.archive', locale)} accessibilityLabel={t('inspector.archive.accessibilityLabel', locale, { title: cardTitle(card) })} onPress={onArchive} />

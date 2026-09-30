@@ -16,6 +16,20 @@ export function formatZoom(zoom: number): string {
   return `${Math.round(zoom * 100)} %`;
 }
 
+export function clampZoom(zoom: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+/**
+ * Nuevo desplazamiento para que el punto del mundo bajo `cursor` (en coordenadas del lienzo, no de la
+ * pantalla) siga bajo el cursor tras pasar de `zoom` a `nextZoom` (Ctrl/⌘ + rueda, auditoría de
+ * interacción). Con `nextZoom === zoom` devuelve `pan` sin cambios.
+ */
+export function zoomAroundPoint(pan: Point, zoom: number, nextZoom: number, cursor: Point): Point {
+  const scale = nextZoom / zoom;
+  return { x: cursor.x - (cursor.x - pan.x) * scale, y: cursor.y - (cursor.y - pan.y) * scale };
+}
+
 export interface Point {
   readonly x: number;
   readonly y: number;

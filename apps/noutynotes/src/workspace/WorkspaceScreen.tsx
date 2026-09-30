@@ -1,9 +1,9 @@
 import {
   PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, updateConnection,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
-import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridSize, WorkspaceId } from '@noutynotes/domain';
+import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridSize, RelationArrow, RelationId, WorkspaceId } from '@noutynotes/domain';
 import { frameMembers } from '@noutynotes/domain';
 import { serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
@@ -441,6 +441,22 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       const { relationId } = step.action;
       void run((storage, workspaceId) => disconnectCards(storage, workspaceId, relationId), 'action.connectionRemoved');
     }
+  };
+
+  // Menú de la línea de conexión (auditoría de interacción, 2026-09-29): mismas acciones que ya ofrecía
+  // el inspector de la tarjeta, alcanzables ahora sin abrirlo.
+  const setRelationArrow = (relationId: RelationId, arrow: RelationArrow) => {
+    void run((storage, workspaceId) => updateConnection(storage, workspaceId, relationId, { arrow }), 'action.connectionStyleChanged');
+  };
+  const updateRelation = (relationId: RelationId, changes: { readonly typeLabel?: string; readonly label?: string }) => {
+    const typeLabel = changes.typeLabel?.trim();
+    const label = changes.label?.trim();
+    void run((storage, workspaceId) => updateConnection(storage, workspaceId, relationId, {
+      ...(typeLabel ? { typeLabel } : {}), ...(label ? { label } : {}),
+    }), 'action.connectionUpdated');
+  };
+  const disconnectRelation = (relationId: RelationId) => {
+    void run((storage, workspaceId) => disconnectCards(storage, workspaceId, relationId), 'action.connectionRemoved');
   };
 
   const changeTool = (next: CanvasTool) => {
@@ -976,6 +992,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardOpen={(cardId) => void openCard(cardId)}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onTrash={(cardId) => void sendToTrash(cardId)}
+        onRelationArrow={setRelationArrow}
+        onRelationUpdate={updateRelation}
+        onRelationDisconnect={disconnectRelation}
         compact={compact}
         onViewport={(size) => { canvasSize.current = size; }}
       />

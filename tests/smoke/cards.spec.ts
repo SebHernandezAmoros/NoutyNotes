@@ -1692,3 +1692,68 @@ test('Conexiones: tipo y rótulo al crear, editarlos después, elegir el estilo 
   await page.screenshot({ path: testInfo.outputPath('connection-minimized.png') });
   expect(runtimeErrors).toEqual([]);
 });
+
+test('Conexiones: con muchas tarjetas conectables, hace falta buscar por título en vez de una pared de botones', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Huerto');
+  await addNote(page, 'Origen');
+  await closeEditor(page);
+  for (const title of ['Manzana', 'Banana', 'Cereza', 'Durazno', 'Endibia', 'Fresa', 'Granada']) {
+    await addNote(page, title);
+    await closeEditor(page);
+  }
+  // Con 7 tarjetas conectables (> 6), no aparece ninguna hasta escribir.
+  await tapCard(page, 1);
+  await expect(page.getByTestId('connect-search-input')).toBeVisible();
+  await expect(button(page, 'Conectar con Fresa')).toHaveCount(0);
+  await expect(button(page, 'Conectar con Banana')).toHaveCount(0);
+  // Escribir acota por título; solo coincide lo escrito.
+  await page.getByTestId('connect-search-input').fill('fre');
+  await expect(button(page, 'Conectar con Fresa')).toBeVisible();
+  await expect(button(page, 'Conectar con Banana')).toHaveCount(0);
+  // Sin coincidencias, lo dice en vez de no mostrar nada.
+  await page.getByTestId('connect-search-input').fill('xilófono');
+  await expect(page.getByText('Ninguna tarjeta coincide con «xilófono».')).toBeVisible();
+  await expect(button(page, 'Conectar con Fresa')).toHaveCount(0);
+  // Conectar con la coincidencia funciona igual que con la lista corta.
+  await page.getByTestId('connect-search-input').fill('fre');
+  await button(page, 'Conectar con Fresa').click();
+  await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+  await expect(page.getByTestId('card-connections')).toContainText('→ Fresa');
+});
+
+test('Conexiones: tocar la línea abre su menú (flechas, tipo, rótulo, desconectar) sin abrir el inspector de ninguna tarjeta', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Diagrama');
+  await addNote(page, 'A');
+  await closeEditor(page);
+  await addNote(page, 'B');
+  await closeEditor(page);
+  await tapCard(page, 1);
+  await page.getByTestId('connect-type-input').fill('Bloquea');
+  await button(page, 'Conectar con B').click();
+  await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+  await closeEditor(page);
+
+  // Tocar la línea abre su menú, sin pasar por el inspector de A ni de B.
+  await page.getByTestId(/^relation-line-/).click();
+  const menu = page.getByTestId('relation-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText('A → B');
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+
+  // Flecha, tipo y rótulo desde el propio menú, con los mismos casos de uso que el inspector.
+  await button(page, 'Usar doble flecha en esta conexión').click();
+  await expect(feedback(page)).toHaveText('Estilo de la conexión cambiado. Guardado en memoria.');
+  await menu.getByLabel('Rótulo sobre la línea').fill('hasta el jueves');
+  await button(page, 'Guardar los cambios de la conexión').click();
+  await expect(feedback(page)).toHaveText('Conexión actualizada. Guardado en memoria.');
+  await expect(page.getByTestId(/^relation-label-/)).toHaveText('hasta el jueves');
+
+  // Desconectar desde el menú lo confirma y quita la línea del lienzo.
+  await button(page, 'Desconectar A de B').click();
+  await expect(feedback(page)).toHaveText('Conexión eliminada. Guardado en memoria.');
+  await expect(page.getByTestId(/^relation-line-/)).toHaveCount(0);
+});

@@ -1,4 +1,4 @@
-import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridSize, Workspace } from '@noutynotes/domain';
+import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { footprint, frameMembers } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -10,6 +10,7 @@ import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
 import { relationSegments } from '../board-geometry';
 import { RelationLine } from './RelationLine';
+import { RelationMenu } from './RelationMenu';
 import { CanvasCard, ResizeHandles } from './CanvasCard';
 import { CanvasFrame } from './CanvasFrame';
 import { CanvasOverview } from './CanvasOverview';
@@ -22,7 +23,7 @@ import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTar
 import { cardsInArea, contentBounds, fitView } from './overview';
 import type { CanvasMetrics, PlacementCheck, ResizeHandle } from './geometry';
 import { formatDay } from '../dates';
-import { panToRevealWorld, renderBase, visibleGridLines, worldPan, zoomIn, zoomOut } from './viewport';
+import { clampZoom, panToRevealWorld, renderBase, visibleGridLines, worldPan, zoomAroundPoint, zoomIn, zoomOut } from './viewport';
 import type { Point, Size } from './viewport';
 
 export type CanvasTool = 'select' | 'pan' | 'connect';
@@ -107,6 +108,11 @@ interface CanvasProps {
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
+  /** Menú de la línea de conexión seleccionada (auditoría de interacción, 2026-09-29): flechas, tipo,
+   * rótulo y desconectar sin abrir el inspector completo de ninguna de las dos tarjetas. */
+  readonly onRelationArrow: (relationId: RelationId, arrow: RelationArrow) => void;
+  readonly onRelationUpdate: (relationId: RelationId, changes: { readonly typeLabel?: string; readonly label?: string }) => void;
+  readonly onRelationDisconnect: (relationId: RelationId) => void;
   /** Distribución compacta: el menú «⋯» se abre como hoja inferior. */
   readonly compact: boolean;
   /** Tamaño visible del lienzo: la pantalla coloca las tarjetas nuevas dentro de lo que se ve (P2). */
@@ -159,6 +165,8 @@ export function Canvas(props: CanvasProps) {
   const [frameDrag, setFrameDrag] = useState<{ readonly frameId: string; readonly dx: number; readonly dy: number } | null>(null);
   // Tarjeta estrecha cuyo menú «⋯» está abierto.
   const [menuFor, setMenuFor] = useState<CardId | null>(null);
+  // Línea de conexión seleccionada, con su menú compacto abierto (auditoría de interacción, 2026-09-29).
+  const [selectedRelationId, setSelectedRelationId] = useState<RelationId | null>(null);
   const cards = useMemo(() => new Map(workspace.cards.map((card) => [card.id, card])), [workspace.cards]);
   const names = useMemo(() => new Map(workspace.cards.map((card) => [card.id, cardTitle(card)])), [workspace.cards]);
   const relationById = useMemo(() => new Map(workspace.relations.map((relation) => [relation.id, relation])), [workspace.relations]);
@@ -311,6 +319,9 @@ export function Canvas(props: CanvasProps) {
 
   // Rueda y trackpad desplazan el mundo en ambos ejes. Shift+rueda permite desplazamiento lateral
   // con un ratón de una sola rueda; el listener no es pasivo para evitar que la página robe el scroll.
+  // Ctrl/⌘ + rueda (o el gesto de pellizco del trackpad, que el navegador expone como wheel+ctrlKey)
+  // hace zoom alrededor del cursor en vez de desplazar (auditoría de interacción, 2026-09-29): antes
+  // secuestraba la rueda para paneo incluso con Ctrl pulsado, sin ofrecer forma de acercar con ella.
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const node = viewportRef.current as unknown as HTMLElement | null;
@@ -320,6 +331,14 @@ export function Canvas(props: CanvasProps) {
       event.preventDefault();
       const current = latest.current;
       const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? current.viewport.height : 1;
+      if (event.ctrlKey || event.metaKey) {
+        const rect = node.getBoundingClientRect();
+        const cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        const nextZoom = clampZoom(current.props.zoom * Math.exp((-event.deltaY * factor) / 1200));
+        if (nextZoom === current.props.zoom) return;
+        current.props.onView(nextZoom, worldPan(zoomAroundPoint(current.props.pan, current.props.zoom, nextZoom, cursor)));
+        return;
+      }
       const dx = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
       const dy = event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
       current.props.onPan(worldPan({ x: current.props.pan.x - dx * factor, y: current.props.pan.y - dy * factor }));
@@ -403,6 +422,7 @@ export function Canvas(props: CanvasProps) {
         setMarquee(null);
         const { props: current } = latest.current;
         if (!area) {
+          setSelectedRelationId(null);
           current.onBackgroundPress();
           return;
         }
@@ -664,9 +684,28 @@ export function Canvas(props: CanvasProps) {
               relation={relation}
               typeLabel={relationTypeLabel.get(relation.typeId) ?? ''}
               highlighted={highlighted}
+              selected={selectedRelationId === relation.id}
+              onSelect={() => setSelectedRelationId(relation.id)}
             />,
           ];
         })}
+        {(() => {
+          const relation = selectedRelationId ? relationById.get(selectedRelationId) : undefined;
+          if (!relation) return null;
+          return (
+            <RelationMenu
+              relation={relation}
+              fromTitle={names.get(relation.from) ?? 'Sin título'}
+              toTitle={names.get(relation.to) ?? 'Sin título'}
+              typeLabel={relationTypeLabel.get(relation.typeId) ?? ''}
+              compact={props.compact}
+              onArrow={(arrow) => props.onRelationArrow(relation.id, arrow)}
+              onSave={(nextTypeLabel, nextLabel) => props.onRelationUpdate(relation.id, { typeLabel: nextTypeLabel, label: nextLabel })}
+              onDisconnect={() => { props.onRelationDisconnect(relation.id); setSelectedRelationId(null); }}
+              onClose={() => setSelectedRelationId(null)}
+            />
+          );
+        })()}
         {/* El destino va encima de las tarjetas: su color (válido o no) siempre se ve. */}
         {preview && groupDelta ? placements.filter((placement) => groupMoving.has(placement.cardId) && placement.cardId !== active?.cardId).map((placement) => (
           <View
