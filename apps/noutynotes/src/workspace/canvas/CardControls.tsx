@@ -105,12 +105,13 @@ export function EditButton({ cardId, title, chrome, onPress, onFocus }: {
 }
 
 /** Acciones cercanas a la tarjeta en escritorio; hoja temporal en móvil. */
-export function CardMenu({ title, display, compact, anchor, onEdit, onConnect, onSelectMany, onArchive, onAction, onClose }: {
+export function CardMenu({ title, display, compact, anchor, onEdit, onTags, onConnect, onSelectMany, onArchive, onAction, onClose }: {
   readonly title: string;
   readonly display: CardDisplayMode;
   readonly compact: boolean;
   readonly anchor: { readonly left: number; readonly top: number } | null;
   readonly onEdit: () => void;
+  readonly onTags: () => void;
   readonly onConnect: () => void;
   readonly onSelectMany: () => void;
   readonly onArchive: () => void;
@@ -135,9 +136,10 @@ export function CardMenu({ title, display, compact, anchor, onEdit, onConnect, o
     <View style={styles.menu}>
       <Text style={[styles.menuSection, { color: colors.textSecondary }]}>TRABAJAR</Text>
       <ActionButton label="Editar" accessibilityLabel={`Editar ${title}`} onPress={() => { onClose(); onEdit(); }} />
+      <ActionButton label="Etiquetas" accessibilityLabel={`Editar etiquetas de ${title}`} onPress={() => { onClose(); onTags(); }} />
       <ActionButton label="Conectar" accessibilityLabel={`Conectar desde ${title}`} onPress={() => { onClose(); onConnect(); }} />
       <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
-      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>REPRESENTACIÓN</Text>
+      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>APARIENCIA</Text>
         {displayActions.map((action) => (
           <ActionButton key={action.kind} label={`${action.glyph}  ${action.verb}`}
             accessibilityLabel={actionLabel(action, title)} onPress={() => { onClose(); onAction(action); }} />

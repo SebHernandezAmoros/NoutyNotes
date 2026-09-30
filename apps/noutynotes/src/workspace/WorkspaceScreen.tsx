@@ -216,6 +216,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setMulti(null);
     setFrameId(null);
     setSheetHidden(false);
+    // En móvil el formulario y el teclado necesitan toda la pantalla; abrirlo como hoja parcial
+    // dejaba poco espacio útil. La selección simple sigue sin editar (ADR 0045).
+    setFocus(compact);
   };
   const selectFrame = async (next: string | null) => {
     if (!await flushPendingText()) return;

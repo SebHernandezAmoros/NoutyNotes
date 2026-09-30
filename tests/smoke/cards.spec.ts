@@ -317,12 +317,18 @@ test('menú de ficha minimizada: editar y empezar una conexión sin abrir el ins
   await button(page, 'Acciones de Primera').click();
   const menu = page.getByTestId('card-menu');
   await expect(menu).toContainText('TRABAJAR');
-  await expect(menu).toContainText('REPRESENTACIÓN');
+  await expect(menu).toContainText('APARIENCIA');
   await expect(menu).toContainText('ORGANIZAR');
+  await expect(menu.getByRole('button', { name: 'Editar etiquetas de Primera', exact: true })).toBeVisible();
   await expect(menu.getByRole('button', { name: 'Seleccionar Primera junto con otras tarjetas', exact: true })).toBeVisible();
   await expect(menu.getByRole('button', { name: 'Archivar Primera', exact: true })).toBeVisible();
-  await button(page, 'Editar Primera').click();
+  await menu.getByRole('button', { name: 'Editar etiquetas de Primera', exact: true }).click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(page.getByTestId('tag-input')).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 800) {
+    await expect(page.getByTestId('board-canvas')).not.toBeVisible();
+    await expect(button(page, 'Volver al tablero')).toBeVisible();
+  }
   await closeEditor(page);
 
   await card(page, 1).focus();

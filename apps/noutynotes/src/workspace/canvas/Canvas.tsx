@@ -852,6 +852,7 @@ export function Canvas(props: CanvasProps) {
           compact={props.compact}
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
+          onTags={() => props.onCardEdit(menuPlacement.cardId)}
           onConnect={() => props.onCardStartConnect(menuPlacement.cardId)}
           onSelectMany={() => props.onSelectMany(menuPlacement.cardId)}
           onArchive={() => props.onArchive(menuPlacement.cardId)}
