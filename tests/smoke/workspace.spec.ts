@@ -652,7 +652,9 @@ async function layoutProblems(page: Page, width: number): Promise<string[]> {
   const height = page.viewportSize()?.height ?? 0;
   if (width >= at.width) {
     if (toolbar.y + toolbar.height > canvas.y) problems.push('la barra no está sobre el lienzo');
-    if (inspector.x < canvas.x + canvas.width) problems.push('el inspector no está a la derecha');
+    // Editor enfocado (auditoría de interacción, 2026-09-29): flota sobre el lienzo, pegado a su borde
+    // derecho, en vez de repartir el ancho con él — así el lienzo no se estrecha al editar.
+    if (Math.abs(inspector.x + inspector.width - (canvas.x + canvas.width)) > 1) problems.push('el inspector no está pegado al borde derecho del lienzo');
     if (await page.getByTestId('inspector-panel').count() !== 1) problems.push('sin panel lateral');
   } else {
     if (toolbar.y < canvas.y + canvas.height) problems.push('la barra no está bajo el lienzo');

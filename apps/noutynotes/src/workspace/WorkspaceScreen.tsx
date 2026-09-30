@@ -1130,7 +1130,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 {/* Enfocado: el lienzo se oculta sin desmontarse y el editor ocupa su sitio. */}
                 <View style={[styles.boardSlot, focusing ? styles.hidden : null]}>{boardArea}</View>
                 {!compact && inspector ? (
-                  <ScrollView testID="inspector-panel" style={[styles.sidePanel, focusing ? styles.sidePanelFocus : null, { borderColor: colors.gridLine }]}
+                  <ScrollView testID="inspector-panel" style={[styles.sidePanel, focusing ? styles.sidePanelFocus : null, { borderColor: colors.gridLine, backgroundColor: colors.background }]}
                     contentContainerStyle={[styles.sidePanelContent, focusing ? styles.focusContent : null]}>
                     {inspector}
                   </ScrollView>
@@ -1338,12 +1338,16 @@ const styles = StyleSheet.create({
   exportBarCompact: { padding: 6, gap: 6 },
   exportStatusCompact: { fontSize: 10, lineHeight: 14, minWidth: 150 },
   stage: { flex: 1, minHeight: 180, gap: 12 },
-  stageRow: { flexDirection: 'row' },
+  stageRow: { flexDirection: 'row', position: 'relative' },
   boardSlot: { flex: 1, minWidth: 0, minHeight: 0 },
   listPage: { paddingBottom: 16 },
-  sidePanel: { width: 280, flexGrow: 0, borderWidth: 1 },
-  // Enfocado en escritorio: el editor ocupa el ancho del lienzo, con una columna de lectura cómoda.
-  sidePanelFocus: { width: 'auto', flexGrow: 1 },
+  // Editor enfocado (auditoría de interacción, 2026-09-29): flotante sobre el lienzo, no una columna que
+  // le reste ancho. `boardSlot` es el único hijo con `flex` de `stageRow`, así que ocupa toda la fila
+  // tanto si el editor está abierto como si no; antes era un hermano de ancho fijo que sí se lo quitaba.
+  sidePanel: { position: 'absolute', top: 0, right: 0, bottom: 0, width: 280, borderWidth: 1, zIndex: 20 },
+  // «Ampliar» en escritorio: el lienzo ya se oculta aparte (ver `boardSlot`/`focusing`), así que aquí
+  // vuelve al flujo normal y ocupa el ancho que deja libre, con una columna de lectura cómoda.
+  sidePanelFocus: { position: 'relative', width: 'auto', flexGrow: 1 },
   focusContent: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   sidePanelContent: { padding: 0 },
   sheet: { maxHeight: '32%', flexShrink: 0, borderTopWidth: 3, paddingTop: 6 },

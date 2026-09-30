@@ -157,12 +157,27 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   expect(tile.height).toBeGreaterThanOrEqual(44);
   await page.screenshot({ path: testInfo.outputPath('minimized.png') });
 
-  // Segunda ocupa el sitio que Primera necesita para expandirse. Desde P2 la segunda nota nace
-  // debajo, dentro de lo visible: se sube dos filas, junto a la ficha minimizada sin tocarla.
+  // Segunda ocupa parte del sitio que Primera necesita para expandirse, pegada a su huella minimizada
+  // (1 × 1, columna 1 fila 1) sin pisarla. Dónde nace depende del viewport (a la derecha en escritorio
+  // —el editor ya no le resta ancho al lienzo—, debajo en móvil, ADR 0004): se lee su posición real y
+  // se mueve hasta la columna 2, fila 1, que sí se solapa con el hueco que Primera necesita al volver.
   await tapCard(page, 2);
-  await expect(geometry(page)).toHaveText('Columna 1, fila 4 · 4 × 3');
-  for (let step = 0; step < 2; step += 1) await button(page, 'Mover arriba').click();
-  await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 4 × 3');
+  const cell = async () => {
+    const text = await geometry(page).innerText();
+    const grid = /Columna (\d+), fila (\d+)/.exec(text);
+    if (!grid) throw new Error(`Geometría ilegible: ${text}`);
+    return { x: Number(grid[1]) - 1, y: Number(grid[2]) - 1 };
+  };
+  const step = async (name: string) => {
+    const before = await cell();
+    await button(page, name).click();
+    await expect.poll(cell).not.toEqual(before);
+  };
+  while ((await cell()).x < 1) await step('Mover a la derecha');
+  while ((await cell()).x > 1) await step('Mover a la izquierda');
+  while ((await cell()).y > 0) await step('Mover arriba');
+  while ((await cell()).y < 0) await step('Mover abajo');
+  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
   await tapCard(page, 1);
   await button(page, 'Expandir Primera').click();
   await expect(feedback(page)).toHaveText('Ahí se solaparía con otra tarjeta.');
@@ -171,9 +186,10 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   await button(page, 'Expandir en un hueco libre').click();
   await expect(feedback(page)).toHaveText('Tarjeta expandida en un hueco libre. Guardado en memoria.');
   await expect(page.getByTestId('minimized-tarjeta-1')).toHaveCount(0);
-  // Ya expandida, «Editar» abre su editor (antes minimizada, sin ese botón, ver `tapCard`).
+  // Ya expandida, «Editar» abre su editor (antes minimizada, sin ese botón, ver `tapCard`). El primer
+  // hueco libre queda tras Segunda (columnas 2-5): columna 6.
   await page.getByTestId('card-edit-tarjeta-1').click();
-  await expect(geometry(page)).toHaveText('Columna 5, fila 1 · 4 × 3');
+  await expect(geometry(page)).toHaveText('Columna 6, fila 1 · 4 × 3');
 
   // Contraer desde el inspector; conexiones intactas.
   await button(page, 'Conectar con Segunda').click();
