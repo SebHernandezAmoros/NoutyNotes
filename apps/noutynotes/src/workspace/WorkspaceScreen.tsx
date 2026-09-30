@@ -3,7 +3,7 @@ import {
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, updateConnection,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
-import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridSize, RelationArrow, RelationId, WorkspaceId } from '@noutynotes/domain';
+import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, WorkspaceId } from '@noutynotes/domain';
 import { frameMembers } from '@noutynotes/domain';
 import { serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
@@ -153,6 +153,12 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>(START_PAN);
   const [boardView, setBoardView] = useState<BoardView>('canvas');
+  // Posición/tamaño optimistas mientras se guarda un movimiento o redimensionado (auditoría de
+  // interacción, 2026-09-29): reproducido que, si otra acción vuelve a renderizar el lienzo antes de
+  // que el guardado termine, la tarjeta se ve un instante en su sitio anterior («salto al soltar», el
+  // layout todavía no refleja el destino). Se mantiene el valor esperado hasta que el guardado termina
+  // (con o sin éxito), en vez de depender de `layout`, que solo se actualiza tras recargar.
+  const [pendingRects, setPendingRects] = useState<ReadonlyMap<CardId, GridRect>>(new Map());
   // Móvil: el editor puede ocultarse para usar el lienzo (y las asas) sin perder el borrador.
   const [sheetHidden, setSheetHidden] = useState(false);
   // Editor enfocado (ADR 0021): el mismo editor ocupa el sitio del lienzo; el borrador no se pierde.
@@ -289,8 +295,22 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const plural = (count: number, one: string, many: string) => (count === 1 ? one : many.replace('#', String(count)));
   const moveMany = (cardIds: readonly CardId[], delta: GridPoint) => {
     if (!board || cardIds.length === 0) return;
-    void run((storage, workspaceId) => moveCardsOnBoard(storage, workspaceId, { boardId: board.id, cardIds, delta }),
+    const action = run((storage, workspaceId) => moveCardsOnBoard(storage, workspaceId, { boardId: board.id, cardIds, delta }),
       pluralAction(cardIds.length, 'action.cardMoved', 'action.cardsMoved.many'));
+    // Posición optimista de cada tarjeta del conjunto (mismo motivo que `move`, ver `withPendingRect`).
+    setPendingRects((current) => {
+      const next = new Map(current);
+      for (const cardId of cardIds) {
+        const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
+        if (placement) next.set(cardId, { ...placement.rect, x: placement.rect.x + delta.x, y: placement.rect.y + delta.y });
+      }
+      return next;
+    });
+    void action.finally(() => setPendingRects((current) => {
+      const next = new Map(current);
+      for (const cardId of cardIds) next.delete(cardId);
+      return next;
+    }));
   };
   const archiveMany = async () => {
     if (multiIds.length === 0) return;
@@ -665,13 +685,30 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (result.ok) void select(result.value);
   };
 
+  // Guarda una posición/tamaño optimista para una tarjeta hasta que su guardado termine (con o sin
+  // éxito): sin esto, un redibujado de por medio la mostraría un instante en el layout aún sin guardar.
+  const withPendingRect = <T,>(cardId: CardId, rect: GridRect, action: Promise<T>): Promise<T> => {
+    setPendingRects((current) => new Map(current).set(cardId, rect));
+    return action.finally(() => setPendingRects((current) => {
+      if (!current.has(cardId)) return current;
+      const next = new Map(current);
+      next.delete(cardId);
+      return next;
+    }));
+  };
   const move = (cardId: CardId, to: GridPoint) => {
     if (!board) return;
-    void run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'action.cardMoved');
+    const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
+    if (!placement) return;
+    void withPendingRect(cardId, { ...placement.rect, ...to },
+      run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'action.cardMoved'));
   };
   const resize = (cardId: CardId, size: GridSize) => {
     if (!board) return;
-    void run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged');
+    const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
+    if (!placement) return;
+    void withPendingRect(cardId, { ...placement.rect, ...size },
+      run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged'));
   };
 
   // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
@@ -980,9 +1017,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         connectSource={connectSource}
         onCardPress={pressCard}
         onCardEdit={(cardId) => void editCard(cardId)}
+        onCardStartConnect={(cardId) => {
+          setEditingId(null);
+          setSelectedId(cardId);
+          setConnectSource(cardId);
+          setTool('connect');
+        }}
         onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (frameId) void selectFrame(null); else if (selectedId) void select(null); }}
         onMove={move}
         onResize={resize}
+        pendingRects={pendingRects}
         onRejected={(message) => setFeedback({ tone: 'error', text: message })}
         onCreateFirst={() => void add('note')}
         boardTitle={board?.title ?? 'sin tableros'}

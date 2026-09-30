@@ -27,7 +27,14 @@ const fakeFolder = `
           let bytes;
           return {
             write: async (value) => { bytes = Array.from(value); },
-            close: async () => { const files = data(); files[path] = bytes; put(files); },
+            close: async () => {
+              if (window.__holdNoutyWrite) {
+                window.__holdNoutyWrite = false;
+                await new Promise((resolve) => { window.__releaseNoutyWrite = resolve; });
+                window.__releaseNoutyWrite = null;
+              }
+              const files = data(); files[path] = bytes; put(files);
+            },
           };
         },
       };
@@ -72,6 +79,46 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.getByRole('button', { name: 'Abrir Mi carpeta' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota persistente');
   await page.screenshot({ path: testInfo.outputPath('folder-reconnected.png'), fullPage: true });
+});
+
+test('arrastre con escritura retenida: la tarjeta permanece en destino hasta confirmar el guardado', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Arrastre pendiente');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  const card = page.getByTestId('card-tarjeta-1');
+  const origin = await card.boundingBox();
+  if (!origin) throw new Error('La tarjeta no tiene geometría');
+  const row = (page.viewportSize()?.width ?? 0) >= 800 ? 64 : 56;
+  await page.evaluate(() => {
+    (window as unknown as { __holdNoutyWrite: boolean }).__holdNoutyWrite = true;
+  });
+  await page.mouse.move(origin.x + 20, origin.y + 12);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step += 1) await page.mouse.move(origin.x + 20, origin.y + 12 + 3 * row * step / 10);
+  await page.mouse.up();
+  try {
+    await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { __releaseNoutyWrite?: () => void }).__releaseNoutyWrite))).toBe(true);
+    // Dejar pasar varios fotogramas del navegador mientras la escritura sigue bloqueada detecta el
+    // regreso visual al origen, que un expect posterior al guardado no podría observar.
+    const positions = await page.evaluate(async () => {
+      const top: number[] = [];
+      for (let frame = 0; frame < 8; frame += 1) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const element = document.querySelector('[data-testid="card-tarjeta-1"]');
+        if (element) top.push(element.getBoundingClientRect().top);
+      }
+      return top;
+    });
+    expect(positions).toHaveLength(8);
+    expect(positions.every((top) => top >= origin.y + 2.5 * row)).toBe(true);
+  } finally {
+    await page.evaluate(() => (window as unknown as { __releaseNoutyWrite?: () => void }).__releaseNoutyWrite?.());
+  }
+  await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado en la carpeta');
+  await expect.poll(async () => (await card.boundingBox())?.y ?? -1).toBeGreaterThan(origin.y + 2.5 * row);
 });
 
 test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conserva formato v2 y se reabre en el mismo lugar', async ({ page }) => {

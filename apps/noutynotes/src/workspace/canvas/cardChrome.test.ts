@@ -28,20 +28,20 @@ describe('controles de la cabecera de una tarjeta (ADR 0016)', () => {
     expect(chromeFor('collapsed', { left: 10, top: 10, width: 104, height: 48 }, false, viewport)).toEqual({ kind: 'menu', left: 10 + 104 - CONTROL_SIZE - 2, top: 12, count: 1 });
   });
 
-  it('una ficha minimizada no tapa su cara: sin controles salvo seleccionada, y entonces una tira al lado', () => {
+  it('una ficha minimizada no tapa su cara: al seleccionarla ofrece solo un menú compacto', () => {
     const tile = { left: 20, top: 40, width: 48, height: 48 };
     expect(chromeFor('minimized', tile, false, viewport)).toBeNull();
-    expect(chromeFor('minimized', tile, true, viewport)).toEqual({ kind: 'strip', left: 20 + 48 + 4, top: 40, count: 2 });
+    expect(chromeFor('minimized', tile, true, viewport)).toEqual({ kind: 'menu', left: 20 + 48 + 4, top: 40, count: 1 });
     // Sin sitio a la derecha, va a la izquierda.
-    expect(chromeFor('minimized', { ...tile, left: 330 }, true, viewport)).toEqual({ kind: 'strip', left: 330 - 4 - 2 * CONTROL_SIZE, top: 40, count: 2 });
+    expect(chromeFor('minimized', { ...tile, left: 330 }, true, viewport)).toEqual({ kind: 'menu', left: 330 - 4 - CONTROL_SIZE, top: 40, count: 1 });
   });
 });
 
 describe('controles que no caben dentro de la tarjeta', () => {
-  it('una barra contraída más baja que un control (zoom alejado) no los saca fuera: tira al lado y solo seleccionada', () => {
+  it('una barra contraída más baja que un control (zoom alejado) ofrece solo un menú al seleccionarla', () => {
     const bar = { left: 20, top: 40, width: 190, height: 28 };
     expect(chromeFor('collapsed', bar, false, viewport)).toBeNull();
-    expect(chromeFor('collapsed', bar, true, viewport)).toEqual({ kind: 'strip', left: 20 + 190 + 4, top: 40, count: 3 });
+    expect(chromeFor('collapsed', bar, true, viewport)).toEqual({ kind: 'menu', left: 20 + 190 + 4, top: 40, count: 1 });
   });
 });
 

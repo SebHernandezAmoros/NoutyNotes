@@ -179,6 +179,7 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   while ((await cell()).y < 0) await step('Mover abajo');
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
   await tapCard(page, 1);
+  await button(page, 'Acciones de Primera').click();
   await button(page, 'Expandir Primera').click();
   await expect(feedback(page)).toHaveText('Ahí se solaparía con otra tarjeta.');
   await expect(page.getByTestId('relocate-offer')).toBeVisible();
@@ -233,15 +234,24 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
   await button(page, 'Expandir Guion').click();
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion');
 
-  // «−» minimiza: icono y título; sin selección la ficha no lleva controles, seleccionada, una tira.
+  // «−» minimiza: icono y título; sin selección no hay controles y seleccionada solo ofrece «⋯».
   await button(page, 'Minimizar Notas').click();
   await expect(page.getByTestId('minimized-icon-tarjeta-2')).toBeVisible();
   await expect(page.getByTestId('card-controls-tarjeta-2')).toHaveCount(0);
   await tapCard(page, 2);
-  await expect(page.getByTestId('card-controls-tarjeta-2').getByRole('button')).toHaveCount(2);
-  // Sin asas de redimensionado: no se solapan con la tira ni cambian un tamaño que no se ve.
+  await expect(page.getByTestId('card-controls-tarjeta-2').getByRole('button')).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath('minimized-menu.png') });
+  // Sin asas de redimensionado: no se solapan con el menú ni cambian un tamaño que no se ve.
   await expect(page.locator('[data-testid^="resize-"][data-testid$="-tarjeta-2"]')).toHaveCount(0);
+  await button(page, 'Acciones de Notas').click();
   await expect(button(page, 'Expandir Notas')).toBeVisible();
+  await expect(button(page, 'Editar Notas')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('minimized-menu-open.png') });
+  if (!compact) {
+    const menu = await box(page.getByTestId('card-menu'));
+    expect(menu.width).toBeLessThanOrEqual(280);
+  }
+  await button(page, 'Cerrar acciones de notas').click();
   // «Notas» sigue minimizada: solo seleccionada, sin editor que cerrar (`tapCard` no lo abre ahí).
 
   // Con Conectar o Mano no hay controles: no compiten con esas herramientas.
@@ -264,6 +274,7 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
     await button(page, 'Minimizar Guion').click();
     await expect(page.getByTestId('card-menu')).toHaveCount(0);
     await expect(page.getByTestId('minimized-tarjeta-1')).toBeVisible();
+    await button(page, 'Acciones de Guion').click();
     await button(page, 'Expandir Guion').click();
   }
 
@@ -282,6 +293,34 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
       expect(Math.round((await box(control)).width)).toBe(44);
     }
   }
+});
+
+test('menú de ficha minimizada: editar y empezar una conexión sin abrir el inspector al seleccionar', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Menú contextual');
+  await addNote(page, 'Primera');
+  await closeEditor(page);
+  await addNote(page, 'Segunda');
+  await closeEditor(page);
+
+  // La primera ficha puede quedar detrás de la barra de exportación en móvil; el teclado conserva
+  // una vía accesible hasta que se ajuste esa geometría responsive.
+  await button(page, 'Minimizar Primera').focus();
+  await page.keyboard.press('Enter');
+  await card(page, 1).focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+  await button(page, 'Acciones de Primera').click();
+  await button(page, 'Editar Primera').click();
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await closeEditor(page);
+
+  await card(page, 1).focus();
+  await page.keyboard.press('Space');
+  await button(page, 'Acciones de Primera').click();
+  await button(page, 'Conectar desde Primera').click();
+  await card(page, 2).click();
+  await expect(feedback(page)).toContainText('conectadas');
 });
 
 test('imagen real: vista previa, formato inválido, cancelación y ejemplo separado', async ({ page }, testInfo) => {
@@ -537,6 +576,7 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
   await button(page, 'Minimizar Proyecto Solace').click();
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Proyecto Solace, minimizada');
+  await button(page, 'Acciones de Proyecto Solace').click();
   await button(page, 'Expandir Proyecto Solace').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
   await button(page, 'Enviar Proyecto Solace a la Papelera').click();

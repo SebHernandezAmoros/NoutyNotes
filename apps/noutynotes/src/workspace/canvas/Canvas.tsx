@@ -1,4 +1,4 @@
-import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
+import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { footprint, frameMembers } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -39,6 +39,8 @@ export interface GestureController {
   gestureEnded(cardId: CardId): void;
   /** Solo para esa tarjeta: una pulsación de teclado en otra no se descarta. */
   justEndedGesture(cardId: CardId): boolean;
+  /** Una acción explícita rompe la secuencia de doble toque anterior. */
+  resetTap(): void;
   canResize(): boolean;
   begin(gesture: { readonly cardId: CardId; readonly kind: 'move' | 'resize'; readonly handle: ResizeHandle }): void;
   update(dx: number, dy: number): void;
@@ -91,6 +93,10 @@ interface CanvasProps {
   readonly onBackgroundPress: () => void;
   readonly onMove: (cardId: CardId, to: GridPoint) => void;
   readonly onResize: (cardId: CardId, size: GridSize) => void;
+  /** Posición/tamaño optimistas mientras se guarda (auditoría de interacción, 2026-09-29): sin esto, un
+   * redibujado antes de que `layout` refleje el guardado mostraba la tarjeta un instante en su sitio
+   * anterior («salto al soltar», reproducido con guardado lento y una segunda acción de por medio). */
+  readonly pendingRects: ReadonlyMap<CardId, GridRect>;
   readonly onRejected: (message: string) => void;
   readonly onCreateFirst: () => void;
   readonly boardTitle: string;
@@ -105,6 +111,8 @@ interface CanvasProps {
   /** Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): un solo clic ya
    * no abre el editor por sí solo; esta es la vía explícita para llegar a él sin doble clic/toque. */
   readonly onCardEdit: (cardId: CardId) => void;
+  /** Atajo del menú contextual: inicia una conexión desde esta tarjeta. */
+  readonly onCardStartConnect: (cardId: CardId) => void;
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
@@ -157,6 +165,24 @@ export function Canvas(props: CanvasProps) {
   const colors = theme.colors;
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  // Puente local al soltar (auditoría de interacción, 2026-09-29): `setGesture(null)` de aquí y el
+  // `pendingRects` que llega por props desde `WorkspaceScreen` no tienen garantizado el mismo ciclo de
+  // render (son componentes distintos). Reproducido: sin este puente, un redibujado entre ambos mostraba
+  // la tarjeta un instante en su sitio anterior («salto al soltar»). Al fijarlo en la misma función
+  // síncrona que limpia `gesture`, ese primer redibujado ya usa el destino correcto; se libera en cuanto
+  // `props.pendingRects` lo confirma (con éxito o con rechazo: en ambos casos dejó de hacer falta).
+  const [justFinished, setJustFinished] = useState<ReadonlyMap<CardId, GridRect>>(new Map());
+  // Se libera desde el propio gesto que lo creó (más abajo), no reactivamente a props: 100 ms bastan de
+  // sobra para que `WorkspaceScreen` reciba el `pendingRects` que releva al puente (se fija en la misma
+  // llamada síncrona que hace `run()`, mucho antes de que el guardado en sí termine).
+  const releaseJustFinished = (cardId: CardId) => {
+    setTimeout(() => setJustFinished((current) => {
+      if (!current.has(cardId)) return current;
+      const next = new Map(current);
+      next.delete(cardId);
+      return next;
+    }), 100);
+  };
   // Minimapa abierto (ADR 0028): estado de la sesión, cerrado por defecto.
   const [minimapOpen, setMinimapOpen] = useState(false);
   // Rectángulo de selección por área, en píxeles de la ventana del lienzo.
@@ -165,6 +191,7 @@ export function Canvas(props: CanvasProps) {
   const [frameDrag, setFrameDrag] = useState<{ readonly frameId: string; readonly dx: number; readonly dy: number } | null>(null);
   // Tarjeta estrecha cuyo menú «⋯» está abierto.
   const [menuFor, setMenuFor] = useState<CardId | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ readonly left: number; readonly top: number } | null>(null);
   // Línea de conexión seleccionada, con su menú compacto abierto (auditoría de interacción, 2026-09-29).
   const [selectedRelationId, setSelectedRelationId] = useState<RelationId | null>(null);
   const cards = useMemo(() => new Map(workspace.cards.map((card) => [card.id, card])), [workspace.cards]);
@@ -196,6 +223,7 @@ export function Canvas(props: CanvasProps) {
     return {
       gestureEnded: (cardId) => { ended = { cardId, at: Date.now() }; },
       justEndedGesture: (cardId) => ended !== null && ended.cardId === cardId && Date.now() - ended.at < 400,
+      resetTap: () => { lastTap = null; },
       canDragCard: () => latest.current.props.tool === 'select' && active === null,
       tapCard: (cardId) => {
         if (swallowTap) {
@@ -249,9 +277,28 @@ export function Canvas(props: CanvasProps) {
           current.props.onRejected(`No se guardó el cambio. ${rejection(result.check, current.names)}`);
           return;
         }
-        if (done.group && 'delta' in result && result.delta) current.props.onMoveMany(done.group, result.delta);
-        else if (done.kind === 'move') current.props.onMove(done.cardId, { x: result.rect.x, y: result.rect.y });
-        else current.props.onResize(done.cardId, { w: result.rect.w, h: result.rect.h });
+        if (done.group && 'delta' in result && result.delta) {
+          const delta = result.delta;
+          const members = done.group ?? [];
+          setJustFinished((prev) => {
+            const next = new Map(prev);
+            for (const cardId of members) {
+              const memberPlacement = currentLayout.placements.find((candidate) => candidate.cardId === cardId);
+              if (memberPlacement) next.set(cardId, { ...memberPlacement.rect, x: memberPlacement.rect.x + delta.x, y: memberPlacement.rect.y + delta.y });
+            }
+            return next;
+          });
+          for (const cardId of members) releaseJustFinished(cardId);
+          current.props.onMoveMany(done.group, delta);
+        } else if (done.kind === 'move') {
+          setJustFinished((prev) => new Map(prev).set(done.cardId, result.rect));
+          releaseJustFinished(done.cardId);
+          current.props.onMove(done.cardId, { x: result.rect.x, y: result.rect.y });
+        } else {
+          setJustFinished((prev) => new Map(prev).set(done.cardId, result.rect));
+          releaseJustFinished(done.cardId);
+          current.props.onResize(done.cardId, { w: result.rect.w, h: result.rect.h });
+        }
       },
     };
   });
@@ -528,10 +575,13 @@ export function Canvas(props: CanvasProps) {
   const chrome = new Map<CardId, Chrome>();
   const editChrome = new Map<CardId, EditChrome>();
   if (tool === 'select') {
-    for (const placement of placements) {
-      if (gesture?.cardId === placement.cardId || gesture?.group?.includes(placement.cardId) || (framePreview && groupMoving.has(placement.cardId))) continue;
+    for (const rawPlacement of placements) {
+      if (gesture?.cardId === rawPlacement.cardId || gesture?.group?.includes(rawPlacement.cardId) || (framePreview && groupMoving.has(rawPlacement.cardId))) continue;
       // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
-      if (cards.get(placement.cardId)?.typeId === FLOATING_TITLE && placement.cardId !== selectedId) continue;
+      if (cards.get(rawPlacement.cardId)?.typeId === FLOATING_TITLE && rawPlacement.cardId !== selectedId) continue;
+      // Mismo sitio optimista que el cuerpo de la tarjeta mientras se guarda (ver `pendingRects` arriba).
+      const pendingRect = props.pendingRects.get(rawPlacement.cardId) ?? justFinished.get(rawPlacement.cardId);
+      const placement = pendingRect ? { ...rawPlacement, rect: pendingRect } : rawPlacement;
       const box = cardBox(footprint(placement), metrics);
       const screen = { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
       const isSelected = placement.cardId === selectedId;
@@ -628,9 +678,13 @@ export function Canvas(props: CanvasProps) {
             />
           );
         })}
-        {placements.map((placement) => {
-          const card = cards.get(placement.cardId);
+        {placements.map((rawPlacement) => {
+          const card = cards.get(rawPlacement.cardId);
           if (!card) return null;
+          // Mientras se guarda, se dibuja en el sitio esperado en vez del que todavía tiene `layout»
+          // (ver `pendingRects`/`justFinished` y la auditoría de interacción del 2026-09-29).
+          const pendingRect = props.pendingRects.get(rawPlacement.cardId) ?? justFinished.get(rawPlacement.cardId);
+          const placement = pendingRect ? { ...rawPlacement, rect: pendingRect } : rawPlacement;
           const index = numbers.get(card.id) ?? 0;
           const cell = footprint(placement);
           const dragging = gesture?.cardId === card.id || groupMoving.has(card.id);
@@ -663,7 +717,7 @@ export function Canvas(props: CanvasProps) {
               onFocus={() => reveal(card.id)}
               reserveRight={(() => {
                 const found = chrome.get(card.id);
-                return found && found.kind !== 'strip' ? (found.count * CONTROL_SIZE + 4) / zoom : 0;
+                return found ? (found.count * CONTROL_SIZE + 4) / zoom : 0;
               })()}
               controlsOverBody={zoom < 1}
               zoom={zoom}
@@ -725,8 +779,8 @@ export function Canvas(props: CanvasProps) {
             }]}
           />
         ) : null}
-        {/* Una ficha minimizada no se redimensiona desde el lienzo: su tamaño expandido queda oculto y la tira de
-            controles va a su lado (ADR 0016). El inspector conserva «Más ancha/estrecha». */}
+        {/* Una ficha minimizada no se redimensiona desde el lienzo: su tamaño expandido queda oculto y
+            sus acciones se abren desde un único menú al lado. El editor conserva «Más ancha/estrecha». */}
         {selectedPlacement && tool === 'select' && selectedPlacement.display !== 'minimized' ? (
           <ResizeHandles
             key={selectedPlacement.cardId}
@@ -766,7 +820,15 @@ export function Canvas(props: CanvasProps) {
             floating={cards.get(placement.cardId)?.typeId === FLOATING_TITLE}
             chrome={found}
             onAction={(action) => runAction(placement.cardId, action)}
-            onMenu={() => setMenuFor(placement.cardId)}
+            onMenu={() => {
+              controller.resetTap();
+              if (Platform.OS === 'web') {
+                const node = viewportRef.current as unknown as HTMLElement | null;
+                const bounds = node?.getBoundingClientRect();
+                setMenuAnchor(bounds ? { left: bounds.left + found.left, top: bounds.top + found.top } : null);
+              }
+              setMenuFor(placement.cardId);
+            }}
             onFocus={() => reveal(placement.cardId)}
           />
         );
@@ -780,7 +842,7 @@ export function Canvas(props: CanvasProps) {
             cardId={placement.cardId}
             title={names.get(placement.cardId) ?? 'Sin título'}
             chrome={found}
-            onPress={() => props.onCardEdit(placement.cardId)}
+            onPress={() => { controller.resetTap(); props.onCardEdit(placement.cardId); }}
             onFocus={() => reveal(placement.cardId)}
           />
         );
@@ -790,6 +852,9 @@ export function Canvas(props: CanvasProps) {
           title={names.get(menuPlacement.cardId) ?? 'Sin título'}
           display={menuPlacement.display}
           compact={props.compact}
+          anchor={menuAnchor}
+          onEdit={() => props.onCardEdit(menuPlacement.cardId)}
+          onConnect={() => props.onCardStartConnect(menuPlacement.cardId)}
           onAction={(action) => runAction(menuPlacement.cardId, action)}
           onClose={() => setMenuFor(null)}
         />

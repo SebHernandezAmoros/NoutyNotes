@@ -48,8 +48,8 @@ export interface ScreenBox {
 }
 
 export interface Chrome {
-  /** Controles en la cabecera, un menú «⋯» si no caben, o una tira junto a la ficha minimizada. */
-  readonly kind: 'header' | 'menu' | 'strip';
+  /** Controles en la cabecera o un único menú «⋯» cuando no caben o la ficha está minimizada. */
+  readonly kind: 'header' | 'menu';
   readonly left: number;
   readonly top: number;
   /** Botones que se dibujan. */
@@ -59,15 +59,15 @@ export interface Chrome {
 /** Dónde van los controles de una tarjeta, o `null` si no lleva (ficha minimizada sin seleccionar). */
 export function chromeFor(display: CardDisplayMode, box: ScreenBox, selected: boolean, viewport: Size): Chrome | null {
   const actions = cardActions(display);
-  // Ni siquiera un «⋯» cabe dentro (ficha minimizada, o barra/tarjeta pequeña con el zoom alejado):
-  // los controles no se sacan encima de otras tarjetas; van en una tira al lado y solo seleccionada.
+  // Una ficha minimizada o demasiado pequeña conserva libre su cara. Al seleccionarla, solo aparece
+  // «⋯» al lado: la tira anterior quedaba flotando con dos o tres acciones sobre el lienzo.
   const fitsInside = box.height >= CONTROL_SIZE + INSET * 2 && box.width >= CONTROL_SIZE + INSET * 2;
   if (display === 'minimized' || !fitsInside) {
     if (!selected) return null;
-    const width = actions.length * CONTROL_SIZE;
+    const width = CONTROL_SIZE;
     const right = box.left + box.width + STRIP_GAP;
     const left = right + width <= viewport.width ? right : box.left - STRIP_GAP - width;
-    return { kind: 'strip', left, top: box.top, count: actions.length };
+    return { kind: 'menu', left: Math.max(0, left), top: Math.max(0, Math.min(box.top, viewport.height - CONTROL_SIZE)), count: 1 };
   }
   // Los controles más una franja libre de cabecera por la que arrastrar y leer el tipo.
   const needed = actions.length * CONTROL_SIZE + INSET * 2 + HEADER_FREE_SPACE;
