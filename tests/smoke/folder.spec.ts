@@ -58,7 +58,8 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await expect(page.getByRole('heading', { name: 'Mi carpeta' })).toBeVisible();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
-  await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Nota persistente');
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota persistente');
   await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado en la carpeta');
@@ -88,6 +89,8 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await press('Añadir nota');
   await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   // A la izquierda y por encima del origen: coordenadas negativas en ambos ejes.
   await press('Mover a la izquierda');
   await press('Mover arriba');
@@ -98,6 +101,7 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
   // Otra tarjeta, lejos: más allá de la columna 12 del formato antiguo y muy abajo.
   await press('Añadir nota');
   await expect(page.getByTestId('card-tarjeta-2')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('card-edit-tarjeta-2').click();
   // La geometría se lee «Columna c, fila f» o, con alguna coordenada negativa, «X x, Y y».
   const cell = async () => {
     const text = await geometry.innerText();
@@ -128,12 +132,18 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
   expect((await page.getByTestId('card-tarjeta-2').boundingBox())?.y ?? 0).toBeGreaterThan(canvas.y + canvas.height);
   await page.getByTestId('card-tarjeta-2').focus();
   await page.keyboard.press('Space');
+  // Un clic normal fallaría aquí: a esta distancia el botón «Editar» (esquina inferior izquierda de la
+  // tarjeta) puede coincidir en pantalla con el minimapa/zoom flotante (zIndex superior a propósito,
+  // para que las tarjetas nunca lo tapen). El teclado activa el mismo botón sin depender de su posición.
+  await page.getByTestId('card-edit-tarjeta-2').focus();
+  await page.keyboard.press('Enter');
   await expect(geometry).toHaveText('Columna 21, fila 31 · 4 × 3');
   const far = await page.getByTestId('card-tarjeta-2').boundingBox();
   const frame = await page.getByTestId('board-canvas').boundingBox();
   expect(far && frame && far.y >= frame.y && far.y < frame.y + frame.height).toBe(true);
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await expect(geometry).toHaveText('X -1, Y -2 · 4 × 3');
 });
 
@@ -160,6 +170,7 @@ test('P2: una tarjeta a casi un millón de celdas se pinta con coordenadas peque
   await press('Abrir Lejos');
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await expect(page.getByTestId('card-geometry')).toHaveText('X 999000, Y -999000 · 4 × 3');
   // Con la cámara allí, lo pintado usa números pequeños: el compositor trabaja en coma flotante de
   // 32 bits (unos 16,7 millones exactos) y a -96 millones de píxeles la tarjeta se pintaba rota.
@@ -182,11 +193,13 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir título flotante' }).click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toBeVisible();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Proyecto Solace');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
   await page.getByRole('button', { name: 'Añadir nota' }).click();
-  await page.getByTestId('card-tarjeta-2').click();
+  await page.getByTestId('card-edit-tarjeta-2').click();
   const editor = page.getByLabel('Contenido Markdown');
   await page.getByRole('button', { name: 'Insertar lista de tareas' }).click();
   await expect(editor).toHaveValue('- [ ] ');
@@ -210,6 +223,7 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   await page.getByRole('button', { name: 'Abrir Editorial' }).click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
   await page.getByTestId('card-tarjeta-2').click();
+  await page.getByTestId('card-edit-tarjeta-2').click();
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('- [x] Primera\n- [ ] ');
 });
 
@@ -256,7 +270,8 @@ test('salir del editor inmediatamente conserva el texto pendiente en la carpeta'
   await page.getByLabel('Nombre del nuevo espacio').fill('Salida rápida');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
-  await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Título pendiente');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
@@ -271,7 +286,8 @@ test('volver al inicio inmediatamente espera al guardado del borrador', async ({
   await page.getByLabel('Nombre del nuevo espacio').fill('Navegación');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
-  await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Antes de salir');
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByRole('button', { name: 'Abrir Navegación' }).click();
@@ -291,6 +307,8 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   }
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Borrador sin guardar');
   // Sin pulsar «Guardar texto»: cambiar de proyecto desde las pestañas (o la lista en móvil).
   if ((page.viewportSize()?.width ?? 0) < 800) await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
@@ -307,7 +325,8 @@ test('recargar con texto pendiente exige confirmar la salida', async ({ page }) 
   await page.getByLabel('Nombre del nuevo espacio').fill('Recarga');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
-  await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Pendiente');
   const warning = page.waitForEvent('dialog');
   void page.evaluate(() => window.location.reload());
@@ -324,7 +343,8 @@ test('un fallo al guardar el borrador mantiene abierto el editor y conserva el t
   await page.getByLabel('Nombre del nuevo espacio').fill('Borrador en conflicto');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
-  await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     const path = 'borrador-en-conflicto/.nouty/workspace.yaml';
@@ -352,12 +372,30 @@ test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ning�
     await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
     await expect(page.getByTestId(`card-tarjeta-${id}`)).toBeVisible();
   }
-  // Desde P2 la segunda nace debajo, dentro de lo visible. Para probar la colisión horizontal se
-  // coloca a su derecha con los botones del inspector y se restablece la vista.
+  // Dónde nace la segunda tarjeta depende del viewport (a la derecha en escritorio, debajo en móvil,
+  // ADR 0004): se lee su posición real y se mueve el desplazamiento exacto que haga falta.
   const press = (name: string) => page.getByRole('button', { name, exact: true }).click();
-  for (let step = 0; step < 4; step += 1) await press('Mover a la derecha');
-  for (let step = 0; step < 3; step += 1) await press('Mover arriba');
-  await expect(page.getByTestId('card-geometry')).toHaveText('Columna 5, fila 1 · 4 × 3');
+  const geometry = page.getByTestId('card-geometry');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-2').click();
+  const pos = async () => {
+    const text = await geometry.innerText();
+    const grid = /Columna (\d+), fila (\d+)/.exec(text);
+    if (grid) return { x: Number(grid[1]) - 1, y: Number(grid[2]) - 1 };
+    const world = /X (-?\d+), Y (-?\d+)/.exec(text);
+    if (!world) throw new Error(`Geometría ilegible: ${text}`);
+    return { x: Number(world[1]), y: Number(world[2]) };
+  };
+  const step = async (name: string) => {
+    const beforeStep = await pos();
+    await press(name);
+    await expect.poll(pos).not.toEqual(beforeStep);
+  };
+  while ((await pos()).x < 4) await step('Mover a la derecha');
+  while ((await pos()).x > 4) await step('Mover a la izquierda');
+  while ((await pos()).y > 0) await step('Mover arriba');
+  while ((await pos()).y < 0) await step('Mover abajo');
+  await expect(geometry).toHaveText('Columna 5, fila 1 · 4 × 3');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta', exact: true }).click();
   if ((page.viewportSize()?.width ?? 0) < 800) {
     await openSettings(page);
@@ -415,8 +453,10 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
   for (const [index, title] of ['Mínima', 'Borrador'].entries()) {
     const cardId = `card-tarjeta-${index + 2}`;
     await button('Añadir nota').click();
-    // Esperar a que el inspector muestre la tarjeta nueva antes de escribir.
+    // Esperar a que la tarjeta nueva quede seleccionada y abrir su editor antes de escribir (crear ya
+    // no lo abre por sí solo, auditoría de interacción, 2026-09-29).
     await expect(page.getByTestId(cardId)).toHaveAttribute('aria-pressed', 'true');
+    await page.getByTestId(`card-edit-${cardId.slice('card-'.length)}`).click();
     await page.getByLabel('Título de la tarjeta').fill(title);
     await button('Guardar texto').click();
     await expect(page.getByTestId(cardId)).toContainText(title);
@@ -441,6 +481,7 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
 
   // La imagen a la Papelera y eliminada definitivamente: su binario sale de la carpeta.
   await page.getByTestId('card-tarjeta-1').click();
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await button('Enviar app-icon a la Papelera').click();
   expect(Object.keys(await files())).toContain('galeria/assets/images/tarjeta-1.png');
   await button('Abrir la Papelera (2)').click();
@@ -457,6 +498,8 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   await page.getByLabel('Nombre del nuevo espacio').fill('Rutas');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Kioto');
   await page.getByTestId('tag-input').fill('#Japón');
   await page.getByRole('button', { name: 'Añadir la etiqueta' }).click();
@@ -466,8 +509,9 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Escribe un nombre para la etiqueta.');
   await expect(page.getByTestId('workspace-memory')).toHaveText('CARPETA LOCAL · CAMBIOS GUARDADOS');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): sin tocarla queda
+  // seleccionada, sin etiquetas, tal como necesita este contraste.
   await page.getByRole('button', { name: 'Añadir nota' }).click();
-  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   const cards = () => page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     return ['rutas/cards/tarjeta-1.md', 'rutas/cards/tarjeta-2.md'].map((path) => new TextDecoder().decode(new Uint8Array(files[path] ?? [])));
@@ -545,6 +589,8 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   await page.getByLabel('Nombre del nuevo espacio').fill('Diario');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   const editor = page.getByLabel('Contenido Markdown');
   await editor.fill('Primera parte.');
   await editor.press('End');
@@ -565,6 +611,8 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   // Quitar la imagen de la nota la saca de assetRefs, pero el archivo sigue en la carpeta (ADR 0021).
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');
+  // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByRole('button', { name: 'Quitar la imagen plano de la nota' }).click();
   await expect.poll(() => text('diario/cards/tarjeta-1.md')).not.toContain('assets/images/tarjeta-1-1.png');
   expect((await files())['diario/assets/images/tarjeta-1-1.png']).toBeDefined();
@@ -613,6 +661,8 @@ test('carpeta: archivar crea .nouty/archive.yaml, sobrevive a recargar y restaur
   await page.getByLabel('Nombre del nuevo espacio').fill('Cajón');
   await button('Crear un espacio').click();
   await button('Añadir nota').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Idea aparcada');
   await button('Archivar la tarjeta Idea aparcada').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta archivada. Guardado en la carpeta.');
@@ -647,8 +697,9 @@ test('carpeta: la entrada del diario y la fecha de creación se guardan en el Ma
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
   await page.getByLabel('Nombre del nuevo espacio').fill('Bitácora');
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): la fecha de
+  // creación ya queda guardada por el propio alta, sin necesidad de abrir ni cerrar su editor.
   await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
-  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await expect.poll(() => text('bitacora/cards/tarjeta-1.md')).toMatch(/createdAt: "?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z/);
 
   await openDiary();
@@ -676,9 +727,11 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   // «Columna 1, fila 1 · 4 × 3» → fila + 1.
   const lower = (text: string) => text.replace(/fila (\d+)/, (_all, row: string) => `fila ${Number(row) + 1}`);
+  // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   const where = async (id: number) => {
     await page.getByTestId(`card-tarjeta-${id}`).focus();
     await page.keyboard.press('Enter');
+    await page.getByTestId(`card-edit-tarjeta-${id}`).click();
     const text = await geometry.innerText();
     await button('Cerrar el editor de la tarjeta').click();
     return text;
@@ -689,8 +742,8 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   await page.getByLabel('Nombre del nuevo espacio').fill('Grupo');
   await button('Crear un espacio').click();
   await button('Añadir nota').click();
-  await button('Cerrar el editor de la tarjeta').click();
   await button('Añadir nota').click();
+  await page.getByTestId('card-edit-tarjeta-2').click();
   await button('Seleccionar varias tarjetas empezando por esta').click();
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Enter');
@@ -700,6 +753,7 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
 
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Enter');
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await button('Seleccionar varias tarjetas empezando por esta').click();
   await button('Seleccionar todas las tarjetas del tablero').click();
   await button('Mover la selección hacia abajo').click();
@@ -721,6 +775,8 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   await page.getByLabel('Nombre del nuevo espacio').fill('Vuelta');
   await button('Crear un espacio').click();
   await button('Añadir nota').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   const start = await geometry.innerText();
   await button('Mover abajo').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta movida. Guardado en la carpeta.');
@@ -735,6 +791,7 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   await button('Abrir Vuelta').click();
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Enter');
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await expect(geometry).toHaveText(start);
   await expect(page.getByRole('button', { name: /^Deshacer/ })).toHaveAttribute('aria-disabled', 'true');
 });
@@ -751,8 +808,9 @@ test('carpeta: el marco se guarda en layout.yaml (v3) y reaparece al recargar; q
   await page.getByLabel('Nombre del nuevo espacio').fill('Álbum');
   await button('Crear un espacio').click();
   await button('Añadir nota').click();
-  await button('Cerrar el editor de la tarjeta').click();
   await button('Añadir nota').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-2').click();
   await button('Seleccionar varias tarjetas empezando por esta').click();
   await button('Seleccionar todas las tarjetas del tablero').click();
   await button('Agrupar las 2 seleccionadas en un marco').click();

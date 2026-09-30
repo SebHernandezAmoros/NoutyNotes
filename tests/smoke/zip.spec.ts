@@ -63,7 +63,8 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await button(page, 'Añadir nota').click();
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   await expect(page.getByTestId('export-status')).toHaveText('CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.');
-  await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Nota del ZIP');
   await page.getByLabel('Contenido Markdown').fill('## Desde el navegador\n\n- conservar **todo**');
   await button(page, 'Guardar texto').click();
@@ -125,6 +126,8 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   // Enfocarla primero la trae a la vista si el lienzo no la muestra (a 390 px puede quedar fuera).
   await page.getByTestId('card-tarjeta-1').focus();
   await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('## Desde el navegador\n\n- conservar **todo**');
   await expect(page.getByTestId('card-connections')).toContainText('→ Idea A');
   await expect(button(page, 'Quitar la etiqueta exportable')).toBeVisible();
@@ -140,6 +143,8 @@ test('una importación inválida explica el motivo y no sobrescribe ni deja esta
   await page.goto('./');
   await importZip(page, 'demo.zip', fixtureZip());
   await page.getByTestId('card-idea-a').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-idea-a').click();
   await page.getByLabel('Título de la tarjeta').fill('Editada antes del error');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('card-idea-a')).toContainText('Editada antes del error');
@@ -348,6 +353,8 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   await (await chooser).setFiles(icon);
   await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
   await button(page, 'Añadir nota').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-2').click();
   await page.getByLabel('Título de la tarjeta').fill('Descartada');
   await button(page, 'Guardar texto').click();
   await button(page, 'Enviar la tarjeta Descartada a la Papelera').click();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CONTROL_SIZE, cardActions, chromeFor, miniIcon } from './cardChrome';
+import { CONTROL_SIZE, cardActions, chromeFor, editChromeFor, miniIcon } from './cardChrome';
 
 const viewport = { width: 378, height: 300 };
 
@@ -42,6 +42,24 @@ describe('controles que no caben dentro de la tarjeta', () => {
     const bar = { left: 20, top: 40, width: 190, height: 28 };
     expect(chromeFor('collapsed', bar, false, viewport)).toBeNull();
     expect(chromeFor('collapsed', bar, true, viewport)).toEqual({ kind: 'strip', left: 20 + 190 + 4, top: 40, count: 3 });
+  });
+});
+
+describe('botón «Editar» adicional (auditoría de interacción, 2026-09-29)', () => {
+  it('sin selección, o con la ficha minimizada, no aparece', () => {
+    const box = { left: 20, top: 30, width: 220, height: 160 };
+    expect(editChromeFor('expanded', box, false)).toBeNull();
+    expect(editChromeFor('minimized', box, true)).toBeNull();
+  });
+
+  it('va en la esquina inferior izquierda, no en la superior: ahí se agarra la tarjeta por la cabecera '
+    + '(a 20 px del borde, ADR 0016) y bloqueaba el arrastre (reproducido con la prueba táctil de arrastrar y redimensionar)', () => {
+    const box = { left: 20, top: 30, width: 220, height: 160 };
+    const chrome = editChromeFor('expanded', box, true);
+    expect(chrome).toEqual({ left: 22, top: 30 + 160 - CONTROL_SIZE - 2 });
+    // El punto de agarre de la cabecera (20 px de margen, 12 px de alto) queda fuera del botón.
+    const grab = { x: box.left + 20, y: box.top + 12 };
+    expect(chrome && grab.y < chrome.top).toBe(true);
   });
 });
 

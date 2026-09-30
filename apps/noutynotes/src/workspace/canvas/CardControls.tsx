@@ -6,7 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '../../components/controls';
 import { Dialog } from '../../components/Dialog';
 import { CONTROL_SIZE, actionLabel, cardActions } from './cardChrome';
-import type { CardAction, Chrome } from './cardChrome';
+import type { CardAction, Chrome, EditChrome } from './cardChrome';
 
 interface CardControlsProps {
   readonly cardId: CardId;
@@ -71,6 +71,40 @@ function Control({ glyph, label, danger = false, floating = false, onPress, onFo
   );
 }
 
+/**
+ * Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): seleccionar ya no
+ * abre el editor por sí solo (ver `WorkspaceScreen.tsx`); este botón, con acento visual propio, es el
+ * paso explícito para llegar a él. Doble clic o doble toque lo siguen abriendo directamente.
+ */
+export function EditButton({ cardId, title, chrome, onPress, onFocus }: {
+  readonly cardId: CardId;
+  readonly title: string;
+  readonly chrome: EditChrome;
+  readonly onPress: () => void;
+  readonly onFocus: () => void;
+}) {
+  const { theme } = useTheme();
+  const colors = theme.colors;
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      testID={`card-edit-${cardId}`}
+      accessibilityRole="button"
+      accessibilityLabel={`Editar ${title}`}
+      onPress={onPress}
+      onFocus={() => { setFocused(true); onFocus(); }}
+      onBlur={() => setFocused(false)}
+      style={[styles.editButton, {
+        backgroundColor: colors.accent,
+        borderColor: focused ? colors.selection : colors.border,
+        left: chrome.left, top: chrome.top,
+      }]}
+    >
+      <Text style={[styles.glyph, { color: colors.accentText }]}>✎</Text>
+    </Pressable>
+  );
+}
+
 /** Menú «⋯» de una tarjeta estrecha: las mismas acciones con su nombre completo. */
 export function CardMenu({ title, display, compact, onAction, onClose }: {
   readonly title: string;
@@ -94,6 +128,7 @@ export function CardMenu({ title, display, compact, onAction, onClose }: {
 const styles = StyleSheet.create({
   row: { position: 'absolute', flexDirection: 'row', zIndex: 30 },
   control: { width: CONTROL_SIZE, height: CONTROL_SIZE, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  editButton: { position: 'absolute', width: CONTROL_SIZE, height: CONTROL_SIZE, alignItems: 'center', justifyContent: 'center', borderWidth: 2, zIndex: 30 },
   glyph: { fontSize: 22, lineHeight: 26, fontWeight: '900' },
   menu: { gap: 8 },
 });

@@ -81,3 +81,23 @@ export function chromeFor(display: CardDisplayMode, box: ScreenBox, selected: bo
 export function miniIcon(base: BaseCardKind | undefined): 'note' | 'image' | null {
   return base === 'note' || base === 'image' ? base : null;
 }
+
+export interface EditChrome {
+  readonly left: number;
+  readonly top: number;
+}
+
+/**
+ * Botón «Editar» adicional, solo con la tarjeta seleccionada (auditoría de interacción, 2026-09-29):
+ * seleccionar ya no abre el editor por sí solo, así que hace falta una acción explícita y visible para
+ * llegar a él. Esquina inferior izquierda, fuera de la escala del zoom: la superior ya se usa para
+ * agarrar la tarjeta por la cabecera (a 20 px del borde, ADR 0016) y un primer intento ahí bloqueaba el
+ * arrastre (reproducido el 2026-09-29, prueba táctil de arrastrar y redimensionar). Las asas de
+ * redimensionar ocupan el borde derecho, el centro y la esquina inferior derecha, no la izquierda.
+ * Solo en expandida/contraída: una ficha minimizada ya ofrece «Expandir» en su tira, y expandir dentro
+ * del hueco actual antes de editar es su propio paso.
+ */
+export function editChromeFor(display: CardDisplayMode, box: ScreenBox, selected: boolean): EditChrome | null {
+  if (!selected || display === 'minimized') return null;
+  return { left: box.left + INSET, top: box.top + box.height - CONTROL_SIZE - INSET };
+}

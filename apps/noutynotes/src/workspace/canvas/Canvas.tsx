@@ -14,9 +14,9 @@ import { CanvasCard, ResizeHandles } from './CanvasCard';
 import { CanvasFrame } from './CanvasFrame';
 import { CanvasOverview } from './CanvasOverview';
 import type { FrameGestures } from './CanvasFrame';
-import { CONTROL_SIZE, chromeFor } from './cardChrome';
-import type { CardAction, Chrome } from './cardChrome';
-import { CardControls, CardMenu } from './CardControls';
+import { CONTROL_SIZE, chromeFor, editChromeFor } from './cardChrome';
+import type { CardAction, Chrome, EditChrome } from './cardChrome';
+import { CardControls, CardMenu, EditButton } from './CardControls';
 import { connectTarget } from './connect';
 import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
 import { cardsInArea, contentBounds, fitView } from './overview';
@@ -101,6 +101,9 @@ interface CanvasProps {
   readonly noteImages: ReadonlyMap<string, string>;
   /** Doble toque o doble clic en una tarjeta: editor enfocado (ADR 0021). */
   readonly onCardOpen: (cardId: CardId) => void;
+  /** Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): un solo clic ya
+   * no abre el editor por sí solo; esta es la vía explícita para llegar a él sin doble clic/toque. */
+  readonly onCardEdit: (cardId: CardId) => void;
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
@@ -503,6 +506,7 @@ export function Canvas(props: CanvasProps) {
   }, [selectedFrameRect, viewport.width, viewport.height]);
   // Controles de cabecera (ADR 0016): en píxeles de pantalla, fuera de la escala del zoom.
   const chrome = new Map<CardId, Chrome>();
+  const editChrome = new Map<CardId, EditChrome>();
   if (tool === 'select') {
     for (const placement of placements) {
       if (gesture?.cardId === placement.cardId || gesture?.group?.includes(placement.cardId) || (framePreview && groupMoving.has(placement.cardId))) continue;
@@ -510,8 +514,11 @@ export function Canvas(props: CanvasProps) {
       if (cards.get(placement.cardId)?.typeId === FLOATING_TITLE && placement.cardId !== selectedId) continue;
       const box = cardBox(footprint(placement), metrics);
       const screen = { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
-      const found = chromeFor(placement.display, screen, placement.cardId === selectedId, viewport);
+      const isSelected = placement.cardId === selectedId;
+      const found = chromeFor(placement.display, screen, isSelected, viewport);
       if (found) chrome.set(placement.cardId, found);
+      const foundEdit = editChromeFor(placement.display, screen, isSelected);
+      if (foundEdit) editChrome.set(placement.cardId, foundEdit);
     }
   }
   const runAction = (cardId: CardId, action: CardAction) => {
@@ -721,6 +728,20 @@ export function Canvas(props: CanvasProps) {
             chrome={found}
             onAction={(action) => runAction(placement.cardId, action)}
             onMenu={() => setMenuFor(placement.cardId)}
+            onFocus={() => reveal(placement.cardId)}
+          />
+        );
+      })}
+      {placements.map((placement) => {
+        const found = editChrome.get(placement.cardId);
+        if (!found) return null;
+        return (
+          <EditButton
+            key={`edit-${placement.cardId}`}
+            cardId={placement.cardId}
+            title={names.get(placement.cardId) ?? 'Sin título'}
+            chrome={found}
+            onPress={() => props.onCardEdit(placement.cardId)}
             onFocus={() => reveal(placement.cardId)}
           />
         );

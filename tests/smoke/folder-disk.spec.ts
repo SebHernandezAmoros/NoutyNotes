@@ -125,7 +125,8 @@ test('carpeta física en disco: nota, edición rápida, cierre inmediato, recarg
   // Añadir una nota, editar su título y cerrar el editor sin esperar al autoguardado.
   await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
-  await page.getByTestId('card-tarjeta-1').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Nota en disco');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta', exact: true }).click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);

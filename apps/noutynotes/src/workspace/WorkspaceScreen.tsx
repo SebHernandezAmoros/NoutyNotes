@@ -138,6 +138,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   );
   const { view, feedback, saving, run, setFeedback, undo, redo, revision, undoLabel, redoLabel } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
+  // Editor visible (auditoría de interacción, 2026-09-29): separado de `selectedId» a propósito.
+  // Seleccionar una tarjeta ya no abre su editor ni reduce el lienzo; solo «Editar» (doble clic/toque,
+  // o el botón que aparece junto a la seleccionada) lo hace. `null` mientras solo hay selección.
+  const [editingId, setEditingId] = useState<CardId | null>(null);
   // Selección múltiple (ADR 0025): null fuera del modo; en el modo, tocar una tarjeta la añade o la quita.
   const [multi, setMulti] = useState<readonly CardId[] | null>(null);
   // Marco seleccionado (ADR 0027): excluye la tarjeta abierta y la selección múltiple.
@@ -191,13 +195,25 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const select = async (cardId: CardId | null) => {
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
+    setEditingId(null);
     setMulti(null);
     setFrameId(null);
     setSheetHidden(false);
     if (cardId === null) setFocus(false);
   };
+  // Botón «Editar» de la tarjeta ya seleccionada, o llegar a ella con el teclado: abre su editor sin
+  // pasar por un doble clic/toque (auditoría de interacción, 2026-09-29).
+  const editCard = async (cardId: CardId) => {
+    if (!await flushPendingText()) return;
+    setSelectedId(cardId);
+    setEditingId(cardId);
+    setMulti(null);
+    setFrameId(null);
+    setSheetHidden(false);
+  };
   const selectFrame = async (next: string | null) => {
     if (!await flushPendingText()) return;
+    setEditingId(null);
     setSelectedId(null);
     setMulti(null);
     setFrameId(next);
@@ -212,6 +228,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     }
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
+    setEditingId(cardId);
     setSheetHidden(false);
     setFocus(true);
   };
@@ -231,7 +248,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const visibleIds = new Set(layout?.placements.map((placement) => placement.cardId) ?? []);
   const unplaced = unplacedCardIds(board, layout).map((cardId) => workspace?.cards.find((card) => card.id === cardId)?.title ?? 'Sin título');
   const boardCount = board?.cardIds.length ?? 0;
-  const selected = workspace?.cards.find((card) => card.id === selectedId && visibleIds.has(card.id));
+  // El editor se muestra por `editingId`, no por `selectedId` (auditoría de interacción, 2026-09-29):
+  // seleccionar una tarjeta ya no implica editarla.
+  const selected = workspace?.cards.find((card) => card.id === editingId && visibleIds.has(card.id));
+  // Resaltado/arrastre en el lienzo: sigue siendo por `selectedId`, filtrado igual que `selected`.
+  const selectedOnBoard = workspace?.cards.find((card) => card.id === selectedId && visibleIds.has(card.id));
   const multiIds = (multi ?? []).filter((cardId) => visibleIds.has(cardId));
   const multiSet = new Set(multiIds);
 
@@ -240,6 +261,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     const base = multi ?? (selectedId && visibleIds.has(selectedId) ? [selectedId] : []);
     setMulti(base.includes(cardId) ? base.filter((current) => current !== cardId) : [...base, cardId]);
+    setEditingId(null);
     setSelectedId(null);
     setFrameId(null);
     setFocus(false);
@@ -247,6 +269,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const startMulti = async (cardIds: readonly CardId[]) => {
     if (!await flushPendingText()) return;
     setMulti(cardIds);
+    setEditingId(null);
     setSelectedId(null);
     setFrameId(null);
     setFocus(false);
@@ -293,6 +316,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const chooseBoard = async (next: BoardId) => {
     if (!await flushPendingText()) return;
     openBoard(next);
+    setEditingId(null);
     setSelectedId(null);
     setMulti(null);
     setFrameId(null);
@@ -336,7 +360,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     }
     const placed = workspace.layouts.find((candidate) => candidate.boardId === target.id)?.placements.some((placement) => placement.cardId === cardId) ?? false;
     setPlaceOffer(placed ? null : { cardId, boardId: target.id, title: card.title ?? 'Sin título' });
+    // «Ir a» desde la búsqueda es una navegación directa a esa tarjeta: sigue abriendo su editor, a
+    // diferencia de seleccionar en el lienzo (auditoría de interacción, 2026-09-29).
     setSelectedId(placed ? cardId : null);
+    setEditingId(placed ? cardId : null);
     setSheetHidden(false);
   };
   const goTo = async (result: SearchResult) => {
@@ -474,6 +501,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     const result = await run((storage, workspaceId) => moveCardToTrash(storage, workspaceId, cardId), 'action.cardTrashed');
     if (result.ok) {
+      setEditingId(null);
       setSelectedId(null);
       setConnectSource(null);
     }
@@ -484,6 +512,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     const result = await run((storage, workspaceId) => moveCardToArchive(storage, workspaceId, cardId, new Date().toISOString()), 'action.cardArchived');
     if (result.ok) {
+      setEditingId(null);
       setSelectedId(null);
       setConnectSource(null);
       setFocus(false);
@@ -513,6 +542,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const result = await run((storage, workspaceId) => moveBoardToArchive(storage, workspaceId, board.id, new Date().toISOString()),
       { key: 'action.boardArchived', params: { title: board.title } });
     if (result.ok) {
+      setEditingId(null);
       setSelectedId(null);
       setMulti(null);
       setConnectSource(null);
@@ -712,7 +742,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       run={run}
       onDraftChange={setPendingText}
       flushPendingText={flushPendingText}
-      onClose={() => { setSelectedId(null); }}
+      onClose={() => { setEditingId(null); setSelectedId(null); }}
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
       onArchive={() => void archiveSelected(selected.id)}
@@ -727,7 +757,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const inspector = frameInspector ?? cardInspector;
   const focusing = focus && cardInspector !== null;
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
-  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setSelectedId(null); setFrameId(null); setFocus(false); } }); };
+  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
 
   // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
   // y el lienzo recupera la fila de la barra; en móvil siguen en su barra compacta.
@@ -918,7 +948,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         tool={tool}
         snap={snap}
         showGrid={showGrid}
-        selectedId={selected?.id ?? null}
+        selectedId={selectedOnBoard?.id ?? null}
         selectedIds={multiSet}
         onCardToggle={(cardId) => void toggleCard(cardId)}
         onMoveMany={moveMany}
@@ -933,6 +963,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
         connectSource={connectSource}
         onCardPress={pressCard}
+        onCardEdit={(cardId) => void editCard(cardId)}
         onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (frameId) void selectFrame(null); else if (selectedId) void select(null); }}
         onMove={move}
         onResize={resize}
@@ -950,7 +981,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       />
     ) : (
       <ScrollView testID="board-list-scroll" contentContainerStyle={styles.listPage}>
-        <Board workspace={workspace} layout={layout} mode="compact" selectedId={selected?.id ?? null} onSelect={(cardId) => void select(cardId)} />
+        {/* La vista de lista no tiene un botón «Editar» propio (a diferencia del lienzo): seleccionar
+            sigue abriendo el editor directamente aquí, fuera del alcance de esta corrección. */}
+        <Board workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)} />
       </ScrollView>
     )
   ) : null;

@@ -30,6 +30,10 @@ async function tapCard(page: Page, id: number) {
     await expect(card(page, id)).toBeFocused({ timeout: 200 });
   }).toPass();
   await page.keyboard.press('Space');
+  // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): esta suite
+  // asume el editor abierto tras «tocar» una tarjeta, así que este ayudante pulsa «Editar» a continuación.
+  // Sin efecto (a propósito) en una ficha minimizada: no tiene ese botón, solo «Expandir».
+  await page.getByTestId(`card-edit-tarjeta-${id}`).click({ timeout: 2000 }).catch(() => {});
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
 const geometry = (page: Page) => page.getByTestId('card-geometry');
@@ -101,13 +105,34 @@ async function resetView(page: Page) {
 }
 
 /**
- * Dos notas lado a lado en la primera fila. Desde P2 la segunda nace debajo, dentro de lo visible;
- * los recorridos que prueban colisiones horizontales la colocan con los botones del inspector.
+ * Dos notas lado a lado en la primera fila. Dónde nace la segunda depende del viewport (reproducido
+ * el 2026-09-29): en escritorio `findFreeSpace` la coloca pegada a la derecha de la primera, pero en
+ * móvil nace debajo (grilla proyectada, ADR 0004). Se lee su posición real y se mueve con los botones
+ * del inspector el desplazamiento exacto que haga falta, en vez de asumir ninguno de los dos casos.
  */
 async function sideBySide(page: Page) {
   await addCards(page, ['nota', 'nota']);
-  for (let step = 0; step < 4; step += 1) await button(page, 'Mover a la derecha').click();
-  for (let step = 0; step < 3; step += 1) await button(page, 'Mover arriba').click();
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): solo hay un botón
+  // «Editar» visible, el de la tarjeta recién creada, y se abre para leer y ajustar su posición.
+  await page.locator('[data-testid^="card-edit-tarjeta-"]').click();
+  const cell = async () => {
+    const text = await geometry(page).innerText();
+    const grid = /Columna (\d+), fila (\d+)/.exec(text);
+    if (grid) return { x: Number(grid[1]) - 1, y: Number(grid[2]) - 1 };
+    const world = /X (-?\d+), Y (-?\d+)/.exec(text);
+    if (!world) throw new Error(`Geometría ilegible: ${text}`);
+    return { x: Number(world[1]), y: Number(world[2]) };
+  };
+  // Cada paso espera a que se guarde el anterior (la geometría cambia) antes de volver a pulsar.
+  const step = async (name: string) => {
+    const before = await cell();
+    await button(page, name).click();
+    await expect.poll(cell).not.toEqual(before);
+  };
+  while ((await cell()).x < 4) await step('Mover a la derecha');
+  while ((await cell()).x > 4) await step('Mover a la izquierda');
+  while ((await cell()).y > 0) await step('Mover arriba');
+  while ((await cell()).y < 0) await step('Mover abajo');
   await expect(geometry(page)).toHaveText('Columna 5, fila 1 · 4 × 3');
   await closeEditor(page);
   await resetView(page);
@@ -152,7 +177,10 @@ async function setSwitch(page: Page, name: string, on: boolean) {
 }
 
 async function expectGeometry(page: Page, cardNumber: number, text: string) {
+  // `card-geometry` vive dentro del editor: seleccionar ya no lo abre por sí solo (auditoría de
+  // interacción, 2026-09-29), así que hace falta «Editar» además de tocar la tarjeta.
   await card(page, cardNumber).click();
+  await page.getByTestId(`card-edit-tarjeta-${cardNumber}`).click();
   await expect(geometry(page)).toHaveText(text);
 }
 
@@ -183,6 +211,8 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   // Con los controles en la cabecera, en una tarjeta estrecha solo cabe el número.
   await expect(card(page, 1)).toContainText(isCompact(page) ? '001' : '001 // NOTA');
   await expect(card(page, 3)).toContainText(isCompact(page) ? '003' : '003 // IMAGEN');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-3').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
 
   // 3. Editar título y Markdown.
@@ -202,14 +232,13 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(geometry(page)).toHaveText('X -1, Y 0 · 4 × 3');
   await button(page, 'Mover a la derecha').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
-  // Desde P2 la segunda nota nace debajo, dentro de lo visible: a la derecha hay sitio y abajo, no.
-  await button(page, 'Mover a la derecha').click();
-  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
+  // Reproducido el 2026-09-29: dónde nace la segunda nota depende del viewport (a la derecha en
+  // escritorio, debajo en móvil, ADR 0004), pero en ambos «abajo» choca con la tarjeta más próxima.
   await button(page, 'Mover abajo').click();
   await expect(page.getByRole('alert')).toHaveText('Ahí se solaparía con otra tarjeta.');
-  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
-  await button(page, 'Más ancha').click();
-  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 5 × 3');
+  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
+  await button(page, 'Más estrecha').click();
+  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 3 × 3');
 
   // 5. Conectar desde el inspector y con la herramienta Conectar, que también desconecta.
   const connections = page.getByTestId('card-connections');
@@ -250,7 +279,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.getByTestId('workspace-screen')).toHaveCSS('background-color', rgb(themeColors.dark.background));
   await expect(page.getByTestId('board-canvas')).toHaveCSS('background-color', rgb(themeColors.dark.canvas));
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
-  await expectGeometry(page, 1, 'Columna 2, fila 1 · 5 × 3');
+  await expectGeometry(page, 1, 'Columna 1, fila 1 · 3 × 3');
   await expect(page.getByTestId('card-connections')).toContainText('→ Imagen de ejemplo');
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('# Plano\n\n- abierto');
   await page.screenshot({ path: testInfo.outputPath('workspace-reopened-dark.png') });
@@ -344,8 +373,9 @@ test('táctil: arrastrar una tarjeta y redimensionar con el dedo', async ({ page
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await createWorkspace(page, 'Dedo');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): nace seleccionada,
+  // sin editor que cerrar.
   await addCards(page, ['nota']);
-  await closeEditor(page);
   const cell = cellSize(page);
   await touchDrag(page, card(page, 1), cell.x, 2 * cell.y);
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
@@ -357,10 +387,12 @@ test('táctil: arrastrar una tarjeta y redimensionar con el dedo', async ({ page
   await expect(feedback(page)).toHaveText('Tamaño cambiado. Guardado en memoria.');
   await button(page, 'Mostrar el editor de la tarjeta').click();
   await expect(geometry(page)).toHaveText('Columna 2, fila 3 · 4 × 4');
-  // Un toque corto selecciona, no arrastra.
+  // Un toque corto selecciona, no arrastra (seleccionar ya no abre el editor por sí solo, auditoría
+  // de interacción, 2026-09-29).
   await closeEditor(page);
   await page.getByTestId('card-tarjeta-1').tap();
-  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await expect(geometry(page)).toHaveText('Columna 2, fila 3 · 4 × 4');
 });
 
@@ -441,8 +473,8 @@ test('P4: una tarjeta recién creada se revela completa cuando el inspector estr
 test('lienzo de mundo: rueda, trackpad y tacto exploran ambos ejes sin borde en la última tarjeta', async ({ page, browserName }) => {
   await page.goto('./');
   await createWorkspace(page, 'Mundo');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): no hay nada que cerrar.
   await addCards(page, ['nota']);
-  await closeEditor(page);
   const canvas = page.getByTestId('board-canvas');
   const first = await box(card(page, 1));
   const frame = await box(canvas);
@@ -654,12 +686,16 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await card(page, 1).focus();
   await page.keyboard.press('Space');
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
-  // La segunda tarjeta nace debajo (P2): a la derecha hay sitio.
-  const moveRight = button(page, 'Mover a la derecha');
-  await moveRight.focus();
+  // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.getByTestId('card-edit-tarjeta-1').click();
+  // Dónde nace la segunda tarjeta depende del viewport (a la derecha en escritorio, debajo en móvil,
+  // ADR 0004), así que «arriba» es la única dirección libre en ambos para probar que Enter activa el
+  // botón igual que un clic (reproducido el 2026-09-29).
+  const moveUp = button(page, 'Mover arriba');
+  await moveUp.focus();
   await page.keyboard.press('Enter');
-  await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
-  expect(await activeLabel(page)).toBe('Mover a la derecha');
+  await expect(geometry(page)).toHaveText('X 0, Y -1 · 4 × 3');
+  expect(await activeLabel(page)).toBe('Mover arriba');
   // Escape cancela una conexión a medias.
   await button(page, 'Herramienta Conectar').click();
   await tapCard(page, 2);
@@ -747,9 +783,11 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
   }
 
   // «Todas» y archivar el conjunto de una vez: el tablero queda vacío y el Archivo cuenta 2.
-  // Con ratón se abre con un clic: un Espacio sobre la tarjeta recién soltada se descartaría como el «click» del gesto.
+  // Con ratón, el doble clic abre el editor directamente (ADR 0021): un solo clic aquí (tan seguido del
+  // de la línea anterior) se interpretaría como el segundo toque de ese gesto y desplazaría el botón
+  // «Editar» al reflujo del lienzo (auditoría de interacción, 2026-09-29).
   if (isCompact(page)) await tapCard(page, 1);
-  else await card(page, 1).click();
+  else await card(page, 1).dblclick();
   await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
   await button(page, 'Seleccionar todas las tarjetas del tablero').click();
   await expect(count).toHaveText('2 SELECCIONADAS');
@@ -770,6 +808,9 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
   await expect(undoButton).toHaveAttribute('aria-disabled', 'true');
   await addCards(page, ['nota']);
   await expect(undoButton).toHaveAccessibleName('Deshacer: Nota añadida');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Mover a la
+  // derecha» es del editor.
+  await page.getByTestId('card-edit-tarjeta-1').click();
   await button(page, 'Mover a la derecha').click();
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
@@ -800,6 +841,7 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
     await page.keyboard.press('Control+Shift+z');
     await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
     await card(page, 1).click();
+    await page.getByTestId('card-edit-tarjeta-1').click();
     await page.getByLabel('Título de la tarjeta').focus();
     await page.keyboard.press('Control+z');
     await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
@@ -877,7 +919,7 @@ test('marcos: agrupar la selección, renombrar, mover con sus tarjetas (flechas 
   await expectGeometry(page, 1, 'Columna 1, fila 4 · 4 × 3');
   await closeEditor(page);
 
-  // Lleno, no añade nada; más alto, la nota aparece dentro y se abre su editor.
+  // Lleno, no añade nada; más alto, la nota aparece dentro (seleccionada, sin abrir su editor por sí sola).
   await openFrame();
   await button(page, 'Añadir nota en el marco').click();
   await expect(feedback(page)).toHaveText('El marco no tiene hueco para otra nota: hazlo más grande.');
@@ -885,6 +927,8 @@ test('marcos: agrupar la selección, renombrar, mover con sus tarjetas (flechas 
   await expect(frameGeometry).toHaveText('Columna 1, fila 3 · 8 × 7');
   await button(page, 'Añadir nota en el marco').click();
   await expect(feedback(page)).toHaveText('Nota añadida en el marco. Guardado en memoria.');
+  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
+  await page.locator('[data-testid^="card-edit-tarjeta-"]').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   await closeEditor(page);
 
