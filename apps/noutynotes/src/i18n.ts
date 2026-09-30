@@ -93,9 +93,11 @@ export const TRANSLATIONS = {
   'settings.font.use.serif': { es: 'Usar tipografía serif en las notas', en: 'Use serif font for notes' },
   'settings.font.use.mono': { es: 'Usar tipografía monoespaciada en las notas', en: 'Use monospace font for notes' },
   'settings.fonts.note': {
-    es: 'Solo fuentes del sistema: se ven igual sin conexión. Se aplica al texto de las notas, no a los títulos ni a la interfaz.',
-    en: 'System fonts only: they look the same offline. It applies to note text, not to titles or the interface.',
+    es: 'Las opciones incluidas funcionan sin conexión. También puedes importar una fuente local o buscar una familia de Google Fonts desde la biblioteca.',
+    en: 'The included choices work offline. You can also import a local font or search for a Google Fonts family from the library.',
   },
+  'settings.fonts.library': { es: 'Explorar e importar fuentes', en: 'Browse and import fonts' },
+  'settings.fonts.library.accessibilityLabel': { es: 'Abrir la biblioteca para importar o buscar fuentes', en: 'Open the library to import or search for fonts' },
   'settings.language': { es: 'Idioma', en: 'Language' },
   'settings.language.use.es': { es: 'Usar español', en: 'Use Spanish' },
   'settings.language.use.en': { es: 'Usar inglés', en: 'Use English' },

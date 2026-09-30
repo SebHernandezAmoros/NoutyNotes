@@ -105,19 +105,24 @@ export function EditButton({ cardId, title, chrome, onPress, onFocus }: {
 }
 
 /** Acciones cercanas a la tarjeta en escritorio; hoja temporal en móvil. */
-export function CardMenu({ title, display, compact, anchor, onEdit, onConnect, onAction, onClose }: {
+export function CardMenu({ title, display, compact, anchor, onEdit, onConnect, onSelectMany, onArchive, onAction, onClose }: {
   readonly title: string;
   readonly display: CardDisplayMode;
   readonly compact: boolean;
   readonly anchor: { readonly left: number; readonly top: number } | null;
   readonly onEdit: () => void;
   readonly onConnect: () => void;
+  readonly onSelectMany: () => void;
+  readonly onArchive: () => void;
   readonly onAction: (action: CardAction) => void;
   readonly onClose: () => void;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const screen = useWindowDimensions();
+  const actions = cardActions(display);
+  const displayActions = actions.filter((action) => action.kind !== 'trash');
+  const trash = actions.find((action) => action.kind === 'trash');
   useEffect(() => {
     if (compact || Platform.OS !== 'web') return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -128,18 +133,25 @@ export function CardMenu({ title, display, compact, anchor, onEdit, onConnect, o
   }, [compact, onClose]);
   const content = (
     <View style={styles.menu}>
+      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>TRABAJAR</Text>
       <ActionButton label="Editar" accessibilityLabel={`Editar ${title}`} onPress={() => { onClose(); onEdit(); }} />
       <ActionButton label="Conectar" accessibilityLabel={`Conectar desde ${title}`} onPress={() => { onClose(); onConnect(); }} />
       <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
-        {cardActions(display).map((action) => (
-          <ActionButton key={action.kind} label={`${action.glyph}  ${action.kind === 'trash' ? 'Enviar a la Papelera' : action.verb}`}
+      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>REPRESENTACIÓN</Text>
+        {displayActions.map((action) => (
+          <ActionButton key={action.kind} label={`${action.glyph}  ${action.verb}`}
             accessibilityLabel={actionLabel(action, title)} onPress={() => { onClose(); onAction(action); }} />
         ))}
+      <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
+      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>ORGANIZAR</Text>
+      <ActionButton label="Seleccionar varias" accessibilityLabel={`Seleccionar ${title} junto con otras tarjetas`} onPress={() => { onClose(); onSelectMany(); }} />
+      <ActionButton label="Archivar" accessibilityLabel={`Archivar ${title}`} onPress={() => { onClose(); onArchive(); }} />
+      {trash ? <ActionButton label="Enviar a la Papelera" accessibilityLabel={actionLabel(trash, title)} onPress={() => { onClose(); onAction(trash); }} /> : null}
     </View>
   );
   if (compact) return <Dialog visible title={`Acciones de ${title}`} compact onClose={onClose} testID="card-menu">{content}</Dialog>;
   const width = Math.min(248, screen.width - 16);
-  const height = (cardActions(display).length + 2) * 52 + 86;
+  const height = (actions.length + 4) * 52 + 164;
   const left = Math.max(8, Math.min(anchor?.left ?? 8, screen.width - width - 8));
   const below = (anchor?.top ?? 8) + CONTROL_SIZE + 4;
   const top = below + height <= screen.height - 8 ? below : Math.max(8, (anchor?.top ?? 8) - height - 4);
@@ -172,4 +184,5 @@ const styles = StyleSheet.create({
   popover: { position: 'absolute', borderWidth: 2, padding: 10, gap: 8 },
   menuHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   menuTitle: { flex: 1, fontWeight: '900', fontSize: 16 },
+  menuSection: { fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: 1 },
 });

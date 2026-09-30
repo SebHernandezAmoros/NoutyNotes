@@ -97,13 +97,13 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await page.getByRole('switch', { name: 'Imán en la vista previa' }).click();
   await expect(page.getByRole('switch', { name: 'Imán en la vista previa' })).toHaveAttribute('aria-checked', 'false');
 
-  // Densidad: la ficha de 3 filas crece 3 × 8 px al subir el alto de fila; la separación cambia su ancho.
+  // Densidad cuadrada: la ficha crece en ambos ejes al subir la unidad; reducir la separación suma 2 px.
   await button(page, 'Aumentar alto de fila').click();
   await expect(panel).toContainText('72 px');
   await expect.poll(async () => Math.round((await box(card(page, 1))).height - initial.height)).toBe(24);
   await button(page, 'Reducir separación entre fichas').click();
   await expect(panel).toContainText('6 px');
-  await expect.poll(async () => Math.round((await box(card(page, 1))).width - initial.width)).toBe(2);
+  await expect.poll(async () => Math.round((await box(card(page, 1))).width - initial.width)).toBe(34);
   // Zoom desde la configuración (en móvil es el único sitio) y restablecer vista.
   await button(page, 'Acercar el lienzo').click();
   await expect(page.getByTestId('settings-zoom')).toHaveText('125 %');
@@ -132,6 +132,10 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   }
   await button(page, 'Cerrar configuración').click();
   await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  await openSettings(page);
+  await button(page, 'Abrir la biblioteca para importar o buscar fuentes').click();
+  await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  await expect(page.getByTestId('assets-view')).toBeVisible();
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
 });
@@ -311,6 +315,12 @@ test('menú de ficha minimizada: editar y empezar una conexión sin abrir el ins
   await page.keyboard.press('Space');
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
   await button(page, 'Acciones de Primera').click();
+  const menu = page.getByTestId('card-menu');
+  await expect(menu).toContainText('TRABAJAR');
+  await expect(menu).toContainText('REPRESENTACIÓN');
+  await expect(menu).toContainText('ORGANIZAR');
+  await expect(menu.getByRole('button', { name: 'Seleccionar Primera junto con otras tarjetas', exact: true })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Archivar Primera', exact: true })).toBeVisible();
   await button(page, 'Editar Primera').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   await closeEditor(page);

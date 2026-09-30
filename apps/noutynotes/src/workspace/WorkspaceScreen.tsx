@@ -844,6 +844,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null
       ) : (
         <>
+          {!sidebar && workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null}
           {showArchive && workspace ? (
             <View testID="export-bar" style={styles.headerExport}>
               {exportStatus}
@@ -1036,6 +1037,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardOpen={(cardId) => void openCard(cardId)}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onTrash={(cardId) => void sendToTrash(cardId)}
+        onArchive={(cardId) => void archiveSelected(cardId)}
+        onSelectMany={(cardId) => void startMulti([cardId])}
         onRelationArrow={setRelationArrow}
         onRelationUpdate={updateRelation}
         onRelationDisconnect={disconnectRelation}
@@ -1208,7 +1211,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             </View>
           ) : null}
         </View>
-        {!compact && workspace ? <ProjectRail projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} /> : null}
+        {sidebar && workspace ? <ProjectRail projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} /> : null}
       </View>
       {workspace ? (
         <>
@@ -1223,6 +1226,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onZoomIn={() => setZoom(zoomIn)}
             onZoomOut={() => setZoom(zoomOut)}
             onResetView={() => { setZoom(1); setPan(START_PAN); }}
+            onOpenFontLibrary={() => { setSettingsOpen(false); openView('assets'); }}
             onClose={() => setSettingsOpen(false)}
           />
           {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
@@ -1388,10 +1392,16 @@ const styles = StyleSheet.create({
   // Editor enfocado (auditoría de interacción, 2026-09-29): flotante sobre el lienzo, no una columna que
   // le reste ancho. `boardSlot` es el único hijo con `flex` de `stageRow`, así que ocupa toda la fila
   // tanto si el editor está abierto como si no; antes era un hermano de ancho fijo que sí se lo quitaba.
-  sidePanel: { position: 'absolute', top: 0, right: 0, bottom: 0, width: 280, borderWidth: 1, zIndex: 20 },
+  // Editor contextual centrado: conserva el tablero como contexto y ofrece una anchura de escritura
+  // útil. Deja de sentirse como una columna lateral permanente pegada al borde.
+  sidePanel: {
+    position: 'absolute', top: 12, bottom: 12, left: '50%', width: 620, marginLeft: -310,
+    borderWidth: 2, zIndex: 20,
+    ...Platform.select({ web: { boxShadow: '0 18px 60px rgba(0,0,0,0.28)' } as object, default: { elevation: 12 } }),
+  },
   // «Ampliar» en escritorio: el lienzo ya se oculta aparte (ver `boardSlot`/`focusing`), así que aquí
   // vuelve al flujo normal y ocupa el ancho que deja libre, con una columna de lectura cómoda.
-  sidePanelFocus: { position: 'relative', width: 'auto', flexGrow: 1 },
+  sidePanelFocus: { position: 'relative', top: 0, bottom: 0, left: 0, width: 'auto', marginLeft: 0, flexGrow: 1 },
   focusContent: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   sidePanelContent: { padding: 0 },
   sheet: { maxHeight: '32%', flexShrink: 0, borderTopWidth: 3, paddingTop: 6 },

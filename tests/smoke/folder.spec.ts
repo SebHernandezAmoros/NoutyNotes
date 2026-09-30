@@ -358,7 +358,7 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   await page.getByTestId('card-edit-tarjeta-1').click();
   await page.getByLabel('Título de la tarjeta').fill('Borrador sin guardar');
   // Sin pulsar «Guardar texto»: cambiar de proyecto desde las pestañas (o la lista en móvil).
-  if ((page.viewportSize()?.width ?? 0) < 800) await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
+  if ((page.viewportSize()?.width ?? 0) < 1100) await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
   await page.getByRole('button', { name: 'Ir al proyecto Uno', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Uno', exact: true })).toBeVisible();
   const card = new TextDecoder().decode(new Uint8Array((await files())['dos/cards/tarjeta-1.md'] ?? []));

@@ -21,6 +21,8 @@ interface SettingsPanelProps {
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
   readonly onResetView: () => void;
+  /** Abre la biblioteca en la que se importan fuentes locales o de Google. */
+  readonly onOpenFontLibrary: () => void;
   readonly onClose: () => void;
 }
 
@@ -87,6 +89,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           ) : null}
         </View>
         <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.fonts.note', locale)}</Text>
+        <ActionButton label={t('settings.fonts.library', locale)} accessibilityLabel={t('settings.fonts.library.accessibilityLabel', locale)} onPress={props.onOpenFontLibrary} />
       </View>
       <View style={styles.section}>
         <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.canvas', locale)}</Text>

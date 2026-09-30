@@ -64,8 +64,12 @@ const MIN_TOUCH = 44;
 
 /** Métricas del lienzo según el ancho y la densidad elegida, sin bajar del área táctil mínima. */
 export function metricsFor(mode: 'wide' | 'compact', preferences: ViewPreferences): CanvasMetrics {
-  const cell = mode === 'wide' ? 96 : 56;
   const row = mode === 'wide' ? preferences.rowHeight : preferences.rowHeight - 8;
+  // La unidad visible y la unidad real del arrastre son la misma y cuadrada. Antes escritorio usaba
+  // 96 × rowHeight: la cuadrícula se veía rectangular y las subdivisiones sugerían destinos que el
+  // motor no podía guardar. Mantener la medida en preferencias evita cambiar las coordenadas del
+  // formato; solo corrige su proyección en pantalla.
+  const cell = row;
   const gap = Math.max(PREFERENCE_LIMITS.cardGap.min, Math.min(preferences.cardGap, Math.min(cell, row) - MIN_TOUCH));
   return { cell, row, gap };
 }

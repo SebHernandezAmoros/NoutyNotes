@@ -593,9 +593,10 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
     await expect(page.getByRole('button', { name: 'Cerrar la pestaña de Tablero 2' })).toHaveCount(0);
   }
 
-  // Proyectos (ADR 0016): pestañas a la derecha desde 800 px; en móvil, la lista desde la cabecera.
+  // Proyectos (ADR 0016): pestañas a la derecha cuando también cabe la navegación lateral (≥1100 px);
+  // por debajo, la lista se abre desde la cabecera para no recortar el lienzo en tablet.
   // Son los espacios reales de la sesión y cambiar de uno a otro es navegación real.
-  if (isCompact(page)) {
+  if ((page.viewportSize()?.width ?? 0) < 1100) {
     await expect(page.getByTestId('project-tabs')).toHaveCount(0);
     await button(page, 'Cambiar de proyecto').click();
     await expect(page.getByTestId('project-sheet')).toBeVisible();
@@ -640,8 +641,8 @@ test('recargar pierde los datos en memoria y la interfaz lo indica', async ({ pa
 });
 
 /**
- * Distribución según el ancho: barra abajo y hoja de edición en compacto; barra encima e inspector a la
- * derecha desde 800 px; barra lateral desde 1100 px. El lienzo domina y nunca hay desbordamiento.
+ * Distribución según el ancho: barra abajo y hoja de edición en compacto; barra encima y editor
+ * contextual centrado desde 800 px; barra lateral desde 1100 px. El lienzo domina y nunca desborda.
  */
 /** Incumplimientos de la distribución para un ancho; vacío si todo está bien. Se reintenta tras redimensionar. */
 async function layoutProblems(page: Page, width: number): Promise<string[]> {
@@ -652,10 +653,9 @@ async function layoutProblems(page: Page, width: number): Promise<string[]> {
   const height = page.viewportSize()?.height ?? 0;
   if (width >= at.width) {
     if (toolbar.y + toolbar.height > canvas.y) problems.push('la barra no está sobre el lienzo');
-    // Editor enfocado (auditoría de interacción, 2026-09-29): flota sobre el lienzo, pegado a su borde
-    // derecho, en vez de repartir el ancho con él — así el lienzo no se estrecha al editar.
-    if (Math.abs(inspector.x + inspector.width - (canvas.x + canvas.width)) > 1) problems.push('el inspector no está pegado al borde derecho del lienzo');
-    if (await page.getByTestId('inspector-panel').count() !== 1) problems.push('sin panel lateral');
+    // El editor flota centrado sobre el lienzo y no reparte su ancho con él.
+    if (Math.abs(inspector.x + inspector.width / 2 - (canvas.x + canvas.width / 2)) > 1) problems.push('el editor no está centrado sobre el lienzo');
+    if (await page.getByTestId('inspector-panel').count() !== 1) problems.push('sin editor contextual');
   } else {
     if (toolbar.y < canvas.y + canvas.height) problems.push('la barra no está bajo el lienzo');
     if (inspector.y < canvas.y + canvas.height) problems.push('el editor tapa el lienzo');
@@ -676,8 +676,8 @@ async function layoutProblems(page: Page, width: number): Promise<string[]> {
 }
 
 /**
- * Distribución según el ancho: barra abajo y hoja de edición en compacto; barra encima e inspector a la
- * derecha desde 800 px; barra lateral desde 1100 px. El lienzo domina y nunca hay desbordamiento.
+ * Distribución según el ancho: barra abajo y hoja de edición en compacto; barra encima y editor
+ * contextual centrado desde 800 px; barra lateral desde 1100 px. El lienzo domina y nunca desborda.
  */
 async function expectLayout(page: Page, width: number) {
   await expect.poll(() => layoutProblems(page, width), { message: `distribución a ${width} px` }).toEqual([]);

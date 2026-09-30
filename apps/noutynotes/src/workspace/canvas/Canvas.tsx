@@ -116,6 +116,8 @@ interface CanvasProps {
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
+  readonly onArchive: (cardId: CardId) => void;
+  readonly onSelectMany: (cardId: CardId) => void;
   /** Menú de la línea de conexión seleccionada (auditoría de interacción, 2026-09-29): flechas, tipo,
    * rótulo y desconectar sin abrir el inspector completo de ninguna de las dos tarjetas. */
   readonly onRelationArrow: (relationId: RelationId, arrow: RelationArrow) => void;
@@ -636,12 +638,8 @@ export function Canvas(props: CanvasProps) {
       <View testID="canvas-background" style={StyleSheet.absoluteFill} {...background} />
       {showGrid ? (
         <View testID="canvas-grid" style={styles.overlay} pointerEvents="none">
-          {visibleGridLines(pan.x, zoom, metrics.cell / 4, viewport.width).map((left) => (
-            <View key={`sc${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine, opacity: 0.32 }]} />
-          ))}
-          {visibleGridLines(pan.y, zoom, metrics.row / 4, viewport.height).map((top) => (
-            <View key={`sr${top}`} style={[styles.gridRow, { top, backgroundColor: colors.gridLine, opacity: 0.32 }]} />
-          ))}
+          {/* Solo se dibujan destinos que el motor puede guardar. La antigua subgrilla de cuartos era
+              decorativa y prometía puntos de ajuste inexistentes. */}
           {visibleGridLines(pan.x, zoom, metrics.cell, viewport.width).map((left) => (
             <View key={`c${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine }]} />
           ))}
@@ -855,6 +853,8 @@ export function Canvas(props: CanvasProps) {
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
           onConnect={() => props.onCardStartConnect(menuPlacement.cardId)}
+          onSelectMany={() => props.onSelectMany(menuPlacement.cardId)}
+          onArchive={() => props.onArchive(menuPlacement.cardId)}
           onAction={(action) => runAction(menuPlacement.cardId, action)}
           onClose={() => setMenuFor(null)}
         />
