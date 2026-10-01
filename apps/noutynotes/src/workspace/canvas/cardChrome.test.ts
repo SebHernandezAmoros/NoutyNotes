@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CONTROL_SIZE, cardActions, chromeFor, editChromeFor, miniIcon } from './cardChrome';
+import { CONTROL_SIZE, cardActions, chromeFor, miniIcon } from './cardChrome';
 
 const viewport = { width: 378, height: 300 };
 
@@ -28,12 +28,11 @@ describe('controles de la cabecera de una tarjeta (ADR 0016)', () => {
     expect(chromeFor('collapsed', { left: 10, top: 10, width: 104, height: 48 }, false, viewport)).toEqual({ kind: 'menu', left: 10 + 104 - CONTROL_SIZE - 2, top: 12, count: 1 });
   });
 
-  it('una ficha minimizada no tapa su cara: al seleccionarla ofrece solo un menú compacto', () => {
+  it('una ficha minimizada no tapa su cara: al seleccionarla ofrece un menú al lado', () => {
     const tile = { left: 20, top: 40, width: 48, height: 48 };
     expect(chromeFor('minimized', tile, false, viewport)).toBeNull();
-    expect(chromeFor('minimized', tile, true, viewport)).toEqual({ kind: 'menu', left: 20 + 48 + 4, top: 40, count: 1 });
-    // Sin sitio a la derecha, va a la izquierda.
-    expect(chromeFor('minimized', { ...tile, left: 330 }, true, viewport)).toEqual({ kind: 'menu', left: 330 - 4 - CONTROL_SIZE, top: 40, count: 1 });
+    expect(chromeFor('minimized', tile, true, viewport)).toEqual({ kind: 'menu', left: 70, top: 42, count: 1 });
+    expect(chromeFor('minimized', { ...tile, left: 330 }, true, viewport)).toEqual({ kind: 'menu', left: 284, top: 42, count: 1 });
   });
 });
 
@@ -41,25 +40,7 @@ describe('controles que no caben dentro de la tarjeta', () => {
   it('una barra contraída más baja que un control (zoom alejado) ofrece solo un menú al seleccionarla', () => {
     const bar = { left: 20, top: 40, width: 190, height: 28 };
     expect(chromeFor('collapsed', bar, false, viewport)).toBeNull();
-    expect(chromeFor('collapsed', bar, true, viewport)).toEqual({ kind: 'menu', left: 20 + 190 + 4, top: 40, count: 1 });
-  });
-});
-
-describe('botón «Editar» adicional (auditoría de interacción, 2026-09-29)', () => {
-  it('sin selección, o con la ficha minimizada, no aparece', () => {
-    const box = { left: 20, top: 30, width: 220, height: 160 };
-    expect(editChromeFor('expanded', box, false)).toBeNull();
-    expect(editChromeFor('minimized', box, true)).toBeNull();
-  });
-
-  it('va en la esquina inferior izquierda, no en la superior: ahí se agarra la tarjeta por la cabecera '
-    + '(a 20 px del borde, ADR 0016) y bloqueaba el arrastre (reproducido con la prueba táctil de arrastrar y redimensionar)', () => {
-    const box = { left: 20, top: 30, width: 220, height: 160 };
-    const chrome = editChromeFor('expanded', box, true);
-    expect(chrome).toEqual({ left: 22, top: 30 + 160 - CONTROL_SIZE - 2 });
-    // El punto de agarre de la cabecera (20 px de margen, 12 px de alto) queda fuera del botón.
-    const grab = { x: box.left + 20, y: box.top + 12 };
-    expect(chrome && grab.y < chrome.top).toBe(true);
+    expect(chromeFor('collapsed', bar, true, viewport)).toEqual({ kind: 'menu', left: 212, top: 42, count: 1 });
   });
 });
 

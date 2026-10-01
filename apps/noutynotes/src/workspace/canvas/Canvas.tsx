@@ -15,9 +15,10 @@ import { CanvasCard, ResizeHandles } from './CanvasCard';
 import { CanvasFrame } from './CanvasFrame';
 import { CanvasOverview } from './CanvasOverview';
 import type { FrameGestures } from './CanvasFrame';
-import { CONTROL_SIZE, chromeFor, editChromeFor } from './cardChrome';
-import type { CardAction, Chrome, EditChrome } from './cardChrome';
-import { CardControls, CardMenu, EditButton } from './CardControls';
+import { CONTROL_SIZE, chromeFor } from './cardChrome';
+import type { CardAction, Chrome } from './cardChrome';
+import { CardControls, CardMenu } from './CardControls';
+import { InlineCardEditor } from './InlineCardEditor';
 import { connectTarget } from './connect';
 import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
 import { cardsInArea, contentBounds, fitView } from './overview';
@@ -106,8 +107,13 @@ interface CanvasProps {
   readonly imageUris: ReadonlyMap<CardId, string>;
   /** Imágenes intercaladas en notas, por ruta (ADR 0021). */
   readonly noteImages: ReadonlyMap<string, string>;
-  /** Doble toque o doble clic en una tarjeta: editor enfocado (ADR 0021). */
+  /** Doble toque o doble clic: edición rápida o editor enfocado según el espacio disponible (ADR 0047). */
   readonly onCardOpen: (cardId: CardId) => void;
+  /** Tarjeta cuya edición rápida está superpuesta sobre la propia ficha (ADR 0047). */
+  readonly inlineEditingId: CardId | null;
+  readonly onInlineSave: (cardId: CardId, title: string, content: string) => Promise<boolean>;
+  readonly onInlineClose: () => void;
+  readonly onInlineAdvanced: (cardId: CardId) => void;
   /** Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): un solo clic ya
    * no abre el editor por sí solo; esta es la vía explícita para llegar a él sin doble clic/toque. */
   readonly onCardEdit: (cardId: CardId) => void;
@@ -216,7 +222,7 @@ export function Canvas(props: CanvasProps) {
     let active: Omit<Gesture, 'dx' | 'dy'> | null = null;
     let cancelled = false;
     let ended: { cardId: CardId; at: number } | null = null;
-    // Doble toque o doble clic con Seleccionar (ADR 0021): el primero selecciona y el segundo, sobre la
+    // Doble toque o doble clic con Seleccionar (ADR 0021/0047): el primero selecciona y el segundo, sobre la
     // misma tarjeta en menos de 400 ms, abre el editor enfocado.
     let lastTap: { cardId: CardId; at: number } | null = null;
     // Escape cancela un arrastre con el botón aún pulsado: al soltar, esa pulsación llega como un toque
@@ -575,7 +581,6 @@ export function Canvas(props: CanvasProps) {
   }, [selectedFrameRect, viewport.width, viewport.height]);
   // Controles de cabecera (ADR 0016): en píxeles de pantalla, fuera de la escala del zoom.
   const chrome = new Map<CardId, Chrome>();
-  const editChrome = new Map<CardId, EditChrome>();
   if (tool === 'select') {
     for (const rawPlacement of placements) {
       if (gesture?.cardId === rawPlacement.cardId || gesture?.group?.includes(rawPlacement.cardId) || (framePreview && groupMoving.has(rawPlacement.cardId))) continue;
@@ -589,8 +594,6 @@ export function Canvas(props: CanvasProps) {
       const isSelected = placement.cardId === selectedId;
       const found = chromeFor(placement.display, screen, isSelected, viewport);
       if (found) chrome.set(placement.cardId, found);
-      const foundEdit = editChromeFor(placement.display, screen, isSelected);
-      if (foundEdit) editChrome.set(placement.cardId, foundEdit);
     }
   }
   const runAction = (cardId: CardId, action: CardAction) => {
@@ -607,6 +610,14 @@ export function Canvas(props: CanvasProps) {
     if (next !== current.props.pan) current.props.onPan(next);
   };
   const menuPlacement = menuFor ? placements.find((placement) => placement.cardId === menuFor) : undefined;
+  const inlinePlacement = props.inlineEditingId ? placements.find((placement) => placement.cardId === props.inlineEditingId) : undefined;
+  const inlineCard = inlinePlacement ? cards.get(inlinePlacement.cardId) : undefined;
+  const inlineBox = inlinePlacement ? (() => {
+    const pendingRect = props.pendingRects.get(inlinePlacement.cardId) ?? justFinished.get(inlinePlacement.cardId);
+    const placement = pendingRect ? { ...inlinePlacement, rect: pendingRect } : inlinePlacement;
+    const box = cardBox(footprint(placement), metrics);
+    return { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
+  })() : null;
   const status = framePreview && draggedFrame
     ? framePreview.check.ok
       ? `Mover el marco «${draggedFrame.title}» con ${framePreview.members.length === 1 ? '1 tarjeta' : `${framePreview.members.length} tarjetas`}: ${framePreview.delta.x >= 0 ? '+' : ''}${framePreview.delta.x} columnas, ${framePreview.delta.y >= 0 ? '+' : ''}${framePreview.delta.y} filas. Escape cancela.`
@@ -789,6 +800,16 @@ export function Canvas(props: CanvasProps) {
           />
         ) : null}
       </View>
+      {inlineCard && inlineBox ? (
+        <InlineCardEditor
+          key={inlineCard.id}
+          card={inlineCard}
+          box={inlineBox}
+          onSave={props.onInlineSave}
+          onAdvanced={() => props.onInlineAdvanced(inlineCard.id)}
+          onClose={props.onInlineClose}
+        />
+      ) : null}
       {empty ? (
         <View testID="board-empty" style={styles.emptyWrap} pointerEvents="box-none">
           <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -830,20 +851,6 @@ export function Canvas(props: CanvasProps) {
           />
         );
       })}
-      {placements.map((placement) => {
-        const found = editChrome.get(placement.cardId);
-        if (!found) return null;
-        return (
-          <EditButton
-            key={`edit-${placement.cardId}`}
-            cardId={placement.cardId}
-            title={names.get(placement.cardId) ?? 'Sin título'}
-            chrome={found}
-            onPress={() => { controller.resetTap(); props.onCardEdit(placement.cardId); }}
-            onFocus={() => reveal(placement.cardId)}
-          />
-        );
-      })}
       {menuPlacement ? (
         <CardMenu
           title={names.get(menuPlacement.cardId) ?? 'Sin título'}
@@ -851,6 +858,7 @@ export function Canvas(props: CanvasProps) {
           compact={props.compact}
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
+          onQuickEdit={() => props.onCardOpen(menuPlacement.cardId)}
           onTags={() => props.onCardEdit(menuPlacement.cardId)}
           onConnect={() => props.onCardStartConnect(menuPlacement.cardId)}
           onSelectMany={() => props.onSelectMany(menuPlacement.cardId)}

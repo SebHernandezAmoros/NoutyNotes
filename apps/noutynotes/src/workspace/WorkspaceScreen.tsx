@@ -13,6 +13,8 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '../components/BrandMark';
+import { AppIcon } from '../components/AppIcon';
+import type { AppIconName } from '../components/AppIcon';
 import { Dialog } from '../components/Dialog';
 import { ActionButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
@@ -143,6 +145,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Seleccionar una tarjeta ya no abre su editor ni reduce el lienzo; solo «Editar» (doble clic/toque,
   // o el botón que aparece junto a la seleccionada) lo hace. `null` mientras solo hay selección.
   const [editingId, setEditingId] = useState<CardId | null>(null);
+  /** `true`: editor breve sobre la ficha; `false`: editor completo (ADR 0047). */
+  const [inlineEditing, setInlineEditing] = useState(false);
   // Selección múltiple (ADR 0025): null fuera del modo; en el modo, tocar una tarjeta la añade o la quita.
   const [multi, setMulti] = useState<readonly CardId[] | null>(null);
   // Marco seleccionado (ADR 0027): excluye la tarjeta abierta y la selección múltiple.
@@ -203,6 +207,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
     setEditingId(null);
+    setInlineEditing(false);
     setMulti(null);
     setFrameId(null);
     setSheetHidden(false);
@@ -214,6 +219,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     setSelectedId(cardId);
     setEditingId(cardId);
+    setInlineEditing(false);
     setMulti(null);
     setFrameId(null);
     setSheetHidden(false);
@@ -224,13 +230,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const selectFrame = async (next: string | null) => {
     if (!await flushPendingText()) return;
     setEditingId(null);
+    setInlineEditing(false);
     setSelectedId(null);
     setMulti(null);
     setFrameId(next);
     setFocus(false);
     setSheetHidden(false);
   };
-  // Doble toque o doble clic: selecciona y abre el editor enfocado. En selección múltiple solo alterna.
+  // Doble toque o doble clic: edición rápida si la ficha tiene espacio; editor enfocado en móvil o fichas pequeñas.
   const openCard = async (cardId: CardId) => {
     if (multi !== null) {
       void toggleCard(cardId);
@@ -240,14 +247,21 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const target = workspace?.cards.find((candidate) => candidate.id === cardId)?.boardTargetId;
     if (target) {
       setEditingId(null);
+      setInlineEditing(false);
       setSelectedId(null);
       void chooseBoard(target);
       return;
     }
+    const activeBoard = workspace?.boards.find((candidate) => candidate.id === boardId) ?? workspace?.boards[0];
+    const activeLayout = workspace?.layouts.find((candidate) => candidate.boardId === activeBoard?.id);
+    const placement = activeLayout?.placements.find((candidate) => candidate.cardId === cardId);
+    const canEditInline = !compact && placement?.display === 'expanded'
+      && placement.rect.w * metrics.cell * zoom >= 240 && placement.rect.h * metrics.row * zoom >= 180;
     setSelectedId(cardId);
     setEditingId(cardId);
+    setInlineEditing(canEditInline);
     setSheetHidden(false);
-    setFocus(true);
+    setFocus(!canEditInline);
   };
 
   const board = workspace ? workspace.boards.find((candidate) => candidate.id === boardId) ?? workspace.boards[0] : undefined;
@@ -348,6 +362,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!await flushPendingText()) return;
     openBoard(next);
     setEditingId(null);
+    setInlineEditing(false);
     setSelectedId(null);
     setMulti(null);
     setFrameId(null);
@@ -395,6 +410,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     // diferencia de seleccionar en el lienzo (auditoría de interacción, 2026-09-29).
     setSelectedId(placed ? cardId : null);
     setEditingId(placed ? cardId : null);
+    setInlineEditing(false);
     setSheetHidden(false);
   };
   const goTo = async (result: SearchResult) => {
@@ -790,7 +806,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         : 'Conectar: toca la tarjeta de origen.'
       : (layout?.placements.length ?? 0) === 0
         ? 'Tablero vacío: crea la primera nota desde el lienzo o con «Nota» en la barra.'
-        : 'Toca una tarjeta para editarla; arrástrala para moverla y usa sus asas para cambiar el tamaño.';
+        : 'Toca una tarjeta para seleccionarla; ábrela con doble toque o desde Acciones. Arrastra para moverla y usa sus asas para cambiar el tamaño.';
 
   const frame = frameId ? layout?.frames?.find((candidate) => candidate.id === frameId) : undefined;
   const frameInspector = workspace && board && layout && frame ? (
@@ -806,7 +822,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onNoteAdded={(cardId) => void select(cardId)}
     />
   ) : null;
-  const cardInspector = workspace && board && selected ? (
+  const cardInspector = workspace && board && selected && !inlineEditing ? (
     <CardInspector
       key={`${selected.id}-${revision}`}
       workspace={workspace}
@@ -816,7 +832,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       run={run}
       onDraftChange={setPendingText}
       flushPendingText={flushPendingText}
-      onClose={() => { setEditingId(null); setSelectedId(null); }}
+      onClose={() => { setEditingId(null); setInlineEditing(false); setSelectedId(null); }}
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
       onArchive={() => void archiveSelected(selected.id)}
@@ -826,13 +842,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
-      onOpenBoard={(target) => { setEditingId(null); void chooseBoard(target); }}
+      onOpenBoard={(target) => { setEditingId(null); setInlineEditing(false); void chooseBoard(target); }}
     />
   ) : null;
   const inspector = frameInspector ?? cardInspector;
   const focusing = focus && cardInspector !== null;
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
-  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
+  const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setInlineEditing(false); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
+  const saveInlineCard = useCallback(async (cardId: CardId, title: string, content: string) => {
+    const result = await run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { title, content }), 'action.textSaved', { mergeKey: `text:${cardId}` });
+    return result.ok;
+  }, [run]);
 
   // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
   // y el lienzo recupera la fila de la barra; en móvil siguen en su barra compacta.
@@ -1043,6 +1063,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardEdit={(cardId) => void editCard(cardId)}
         onCardStartConnect={(cardId) => {
           setEditingId(null);
+          setInlineEditing(false);
           setSelectedId(cardId);
           setConnectSource(cardId);
           setTool('connect');
@@ -1058,6 +1079,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         imageUris={previews.cards}
         noteImages={previews.refs}
         onCardOpen={(cardId) => void openCard(cardId)}
+        inlineEditingId={inlineEditing ? editingId : null}
+        onInlineSave={saveInlineCard}
+        onInlineClose={() => { setEditingId(null); setInlineEditing(false); setFocus(false); }}
+        onInlineAdvanced={(cardId) => { setSelectedId(cardId); setEditingId(cardId); setInlineEditing(false); setFocus(true); }}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onTrash={(cardId) => void sendToTrash(cardId)}
         onArchive={(cardId) => void archiveSelected(cardId)}
@@ -1116,16 +1141,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t("workspace.sidebar.boards", locale)}</Text>
                 <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical />
                 <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
-                <NavItem glyph="🗑" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
-                <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => openView('diary')} />
-                <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
-                <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
-                <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
-                {Platform.OS === "web" || supportsNativePrint() ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
+                <NavItem icon="trash" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
+                <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => openView('diary')} />
+                <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
+                <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
+                <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
+                {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
                 {board && board.cardIds.length > 0 ? (
-                  <NavItem glyph="▤" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => void archiveCurrentBoard()} />
+                  <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => void archiveCurrentBoard()} />
                 ) : null}
-                <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
+                <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
               </>
             ) : null}
           </ScrollView>
@@ -1254,15 +1279,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           />
           {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
           <Dialog visible={moreOpen} title={t('more', locale)} compact={compact} onClose={() => setMoreOpen(false)} testID="more-sheet">
-            <NavItem glyph="◷" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); openView('diary'); }} />
-            <NavItem glyph="▤" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
-            <NavItem glyph="▦" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
-            <NavItem glyph="▶" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
-            {Platform.OS === "web" || supportsNativePrint() ? <NavItem glyph="⎙" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
+            <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); openView('diary'); }} />
+            <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
+            <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
+            <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
+            {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
             {board && board.cardIds.length > 0 ? (
-              <NavItem glyph="▤" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
+              <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
             ) : null}
-            <NavItem glyph="⚙" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
+            <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
           </Dialog>
           {presentOpen ? (
             <PresentView
@@ -1313,8 +1338,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 }
 
 /** Entrada de la barra lateral: solo secciones que funcionan (ADR 0016). */
-function NavItem({ glyph, label, count, accessibilityLabel, onPress }: {
-  readonly glyph: string;
+function NavItem({ icon, label, count, accessibilityLabel, onPress }: {
+  readonly icon: AppIconName;
   readonly label: string;
   readonly count?: number;
   readonly accessibilityLabel: string;
@@ -1332,7 +1357,7 @@ function NavItem({ glyph, label, count, accessibilityLabel, onPress }: {
       onBlur={() => setFocused(false)}
       style={({ pressed }) => [styles.navItem, { borderColor: focused ? colors.selection : 'transparent', backgroundColor: pressed ? colors.surfaceRaised : 'transparent' }]}
     >
-      <Text style={[styles.navGlyph, { color: colors.textPrimary }]}>{glyph}</Text>
+      <View style={styles.navGlyph}><AppIcon name={icon} size={20} color={colors.textPrimary} /></View>
       <Text numberOfLines={1} style={[styles.navLabel, { color: colors.textPrimary }]}>{label}</Text>
       {count !== undefined && count > 0 ? <Text style={[styles.navCount, { color: colors.textSecondary }]}>{count}</Text> : null}
     </Pressable>

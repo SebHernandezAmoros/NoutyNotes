@@ -3,6 +3,9 @@ import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
+import { AppIcon } from './AppIcon';
+import type { AppIconName } from './AppIcon';
+
 type Tone = 'primary' | 'default';
 
 interface ActionButtonProps {
@@ -47,7 +50,9 @@ export function ActionButton({ label, accessibilityLabel, onPress, tone = 'defau
 
 interface ToolButtonProps {
   /** Símbolo visible sobre la etiqueta. */
-  readonly glyph: string;
+  readonly glyph?: string;
+  /** Icono portable del catálogo común; tiene prioridad sobre `glyph`. */
+  readonly icon?: AppIconName;
   readonly label: string;
   readonly accessibilityLabel?: string;
   readonly accessibilityHint?: string;
@@ -60,7 +65,7 @@ interface ToolButtonProps {
 }
 
 /** Botón de la barra de herramientas: símbolo y etiqueta corta, 44 × 44 como mínimo, foco visible. */
-export function ToolButton({ glyph, label, accessibilityLabel, accessibilityHint, onPress, active, disabled = false, testID, style }: ToolButtonProps) {
+export function ToolButton({ glyph, icon, label, accessibilityLabel, accessibilityHint, onPress, active, disabled = false, testID, style }: ToolButtonProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
@@ -88,7 +93,8 @@ export function ToolButton({ glyph, label, accessibilityLabel, accessibilityHint
         style,
       ]}
     >
-      <Text style={[styles.toolGlyph, { color: on ? colors.accentText : colors.textPrimary }]}>{glyph}</Text>
+      {icon ? <AppIcon name={icon} size={20} color={on ? colors.accentText : colors.textPrimary} />
+        : <Text style={[styles.toolGlyph, { color: on ? colors.accentText : colors.textPrimary }]}>{glyph}</Text>}
       <Text numberOfLines={2} style={[styles.toolLabel, { color: on ? colors.accentText : colors.textSecondary }]}>{label}</Text>
     </Pressable>
   );

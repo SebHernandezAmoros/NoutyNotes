@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { hasHorizontalOverflow, isCompactWidth, rgb, trackProblems, openSettings } from './support';
+import { hasHorizontalOverflow, isCompactWidth, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -85,10 +85,7 @@ async function openCardEditor(page: Page, id: number) {
       await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
     }).toPass({ intervals: [100, 100, 100, 100, 100] });
   }
-  const edit = page.getByTestId(`card-edit-tarjeta-${id}`);
-  await edit.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await openFullCardEditor(page, page.getByTestId(`card-edit-tarjeta-${id}`));
 }
 
 test('configuración: modal o panel, cambios al instante, restablecer, Escape y preferencias del dispositivo', async ({ page }, testInfo) => {
@@ -212,7 +209,7 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   while ((await cell()).y > 0) await step('Mover arriba');
   while ((await cell()).y < 0) await step('Mover abajo');
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
-  await tapCard(page, 1);
+  await tapCard(page, 1, false);
   await button(page, 'Acciones de Primera').click();
   await button(page, 'Expandir Primera').click();
   await expect(feedback(page)).toHaveText('Ahí se solaparía con otra tarjeta.');
@@ -223,7 +220,7 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   await expect(page.getByTestId('minimized-tarjeta-1')).toHaveCount(0);
   // Ya expandida, «Editar» abre su editor (antes minimizada, sin ese botón, ver `tapCard`). El primer
   // hueco libre queda tras Segunda (columnas 2-5): columna 6.
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
   await expect(geometry(page)).toHaveText('Columna 6, fila 1 · 4 × 3');
 
   // Contraer desde el inspector; conexiones intactas.
@@ -272,14 +269,14 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
   await button(page, 'Minimizar Notas').click();
   await expect(page.getByTestId('minimized-icon-tarjeta-2')).toBeVisible();
   await expect(page.getByTestId('card-controls-tarjeta-2')).toHaveCount(0);
-  await tapCard(page, 2);
+  await tapCard(page, 2, false);
   await expect(page.getByTestId('card-controls-tarjeta-2').getByRole('button')).toHaveCount(1);
   await page.screenshot({ path: testInfo.outputPath('minimized-menu.png') });
   // Sin asas de redimensionado: no se solapan con el menú ni cambian un tamaño que no se ve.
   await expect(page.locator('[data-testid^="resize-"][data-testid$="-tarjeta-2"]')).toHaveCount(0);
   await button(page, 'Acciones de Notas').click();
   await expect(button(page, 'Expandir Notas')).toBeVisible();
-  await expect(button(page, 'Editar Notas')).toBeVisible();
+  await expect(button(page, 'Editar Notas dentro de la ficha')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('minimized-menu-open.png') });
   if (!compact) {
     const menu = await box(page.getByTestId('card-menu'));
@@ -425,7 +422,7 @@ test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con 
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
   await closeEditor(page);
   await card(page, 1).click();
-
+  await button(page, 'Acciones de Primera').click();
   await button(page, 'Enviar Primera a la Papelera').click();
   await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
   await expect(card(page, 1)).toHaveCount(0);
@@ -626,7 +623,7 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await createWorkspace(page, 'Rótulo');
   await button(page, 'Añadir título flotante').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toBeVisible();
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Proyecto Solace');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
@@ -634,11 +631,13 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
   await closeEditor(page);
   await card(page, 1).click();
+  await button(page, 'Acciones de Proyecto Solace').click();
   await button(page, 'Minimizar Proyecto Solace').click();
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Proyecto Solace, minimizada');
   await button(page, 'Acciones de Proyecto Solace').click();
   await button(page, 'Expandir Proyecto Solace').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
+  await button(page, 'Acciones de Proyecto Solace').click();
   await button(page, 'Enviar Proyecto Solace a la Papelera').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toHaveCount(0);
   await button(page, 'Abrir la Papelera (1)').click();
@@ -692,7 +691,7 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   if (isCompactWidth(page)) await button(page, 'Abrir un tablero').click();
   await button(page, 'Crear un tablero').click();
   await button(page, 'Crear la primera nota').click();
-  await page.locator('[data-testid^="card-edit-tarjeta-"]').click();
+  await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
   await page.getByLabel('Título de la tarjeta').fill('Osaka');
   await button(page, 'Guardar texto').click();
   await tagInput.fill('japon');
@@ -786,7 +785,7 @@ test('enlaces: crear con validación, abrir en pestaña nueva con noopener, edit
   await expect(card(page, 1)).toContainText('ejemplo.com');
   await expect(page.getByTestId('card-link-tarjeta-1')).toHaveText('↗ ejemplo.com/guia');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «link-input» vive ahí.
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
   await expect(page.getByTestId('link-input')).toHaveValue('https://ejemplo.com/guia');
 
   await button(page, 'Abrir el enlace https://ejemplo.com/guia').click();
@@ -921,8 +920,13 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   await expect(editor).toHaveValue(/Borrador sin guardar$/);
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
-  // Doble toque o doble clic en la ficha: selecciona y abre el editor enfocado.
+  // En escritorio, el doble clic usa la edición breve dentro de la ficha; el editor completo sigue
+  // disponible desde su control explícito. En móvil se abre directamente a pantalla completa.
   await card(page, 1).dblclick();
+  if (!isCompactWidth(page)) {
+    await expect(page.getByTestId('inline-card-editor')).toBeVisible();
+    await button(page, 'Abrir el editor completo').first().click();
+  }
   await expect(page.getByTestId('board-canvas')).toBeHidden();
   await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Viaje');
   await button(page, 'Volver al tablero').click();
@@ -1243,7 +1247,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
     await button(page, 'Añadir nota').click();
     // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): solo hay un botón
     // «Editar» visible a la vez, el de la tarjeta recién creada y seleccionada.
-    await page.locator('[data-testid^="card-edit-tarjeta-"]').click();
+    await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
     await page.getByLabel('Título de la tarjeta').fill(title);
     await button(page, 'Guardar texto').click();
     await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
@@ -1290,7 +1294,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
 
   // Selección múltiple: archivar dos tarjetas del tablero principal y restaurarlas juntas.
   // «Archivar la tarjeta X» es del editor (distinto del de cabecera): hace falta «Editar».
-  const editSelected = () => page.locator('[data-testid^="card-edit-tarjeta-"]').click();
+  const editSelected = () => openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
   await button(page, 'Tablero Tablero principal').click();
   await selectCardByTitle('Idea original').click();
   await editSelected();
@@ -1733,7 +1737,7 @@ test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian 
 
   await button(page, 'Add note').click();
   // Creating no longer opens the editor by itself (interaction audit, 2026-09-29): «Editar»/«Edit» does.
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   // En móvil el encabezado propio del inspector se oculta (la hoja ya muestra título y «Close»).
   if (!isCompactWidth(page)) await expect(page.getByText('SELECTED CARD', { exact: true })).toBeVisible();

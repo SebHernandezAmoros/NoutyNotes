@@ -4,6 +4,8 @@ import { isAbsolute, join, relative as relativePath, resolve, sep } from 'node:p
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+import { openFullCardEditor } from './support';
+
 /**
  * Bytes reales en disco, sin handles de Chrome. Esta prueba sustituye `showDirectoryPicker` y crea
  * sus propios objetos de directorio, archivo, permiso (`queryPermission` siempre `granted`) y
@@ -126,7 +128,7 @@ test('carpeta física en disco: nota, edición rápida, cierre inmediato, recarg
   await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Nota en disco');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta', exact: true }).click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);

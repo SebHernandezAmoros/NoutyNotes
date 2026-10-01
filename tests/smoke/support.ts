@@ -37,3 +37,21 @@ export async function openSettings(page: Page) {
   await openMore(page);
   await page.getByRole('button', { name: 'Abrir la configuración', exact: true }).click();
 }
+
+/** Abre el editor completo desde el botón contextual de una tarjeta (ADR 0047). */
+export async function openFullCardEditor(page: Page, actions: Locator) {
+  const inline = page.getByTestId('inline-card-editor');
+  if (await inline.isVisible()) {
+    await inline.getByRole('button', { name: 'Abrir el editor completo', exact: true }).first().click();
+    await page.getByTestId('card-inspector').waitFor({ state: 'visible' });
+    return;
+  }
+  const trigger = await actions.count() > 0 ? actions : page.getByRole('button', { name: /^Acciones de / }).last();
+  // Activar por teclado evita que un minimapa o control flotante tape físicamente el botón de acciones.
+  // `onFocus` puede recentrar el lienzo y volver a renderizar el control. `locator.press` vuelve a
+  // resolver el objetivo y envía Enter al botón correcto; separar `focus()` y `page.keyboard` podía
+  // mandar la tecla al lienzo después de ese render.
+  await trigger.press('Enter');
+  await page.getByRole('button', { name: /^Abrir el editor completo de / }).click();
+  await page.getByTestId('card-inspector').waitFor({ state: 'visible' });
+}

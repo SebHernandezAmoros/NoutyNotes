@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, hasHorizontalOverflow, rgb, trackProblems, openSettings } from './support';
+import { activeLabel, borderColor, hasHorizontalOverflow, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
 // 56 × 56 px; desde 800 px: barra sobre el lienzo, editor contextual y celdas cuadradas de 64 × 64 px;
@@ -34,7 +34,18 @@ async function tapCard(page: Page, id: number, edit = true) {
   // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): esta suite
   // asume el editor abierto tras «tocar» una tarjeta, así que este ayudante pulsa «Editar» a continuación.
   // Sin efecto (a propósito) en una ficha minimizada: no tiene ese botón, solo «Expandir».
-  if (edit && await page.getByTestId(`card-edit-tarjeta-${id}`).count()) await openCardEditor(page, id);
+  if (edit) await openCardEditor(page, id);
+}
+
+/** Selecciona una tarjeta cuando la prueba necesita abrir su menú contextual. */
+async function selectCard(page: Page, id: number) {
+  await expect(async () => {
+    if (await card(page, id).getAttribute('aria-pressed') !== 'true') {
+      await card(page, id).focus();
+      await page.keyboard.press('Space');
+    }
+    await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
+  }).toPass({ intervals: [100, 100, 100, 100, 100] });
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
 const geometry = (page: Page) => page.getByTestId('card-geometry');
@@ -73,10 +84,7 @@ async function openCardEditor(page: Page, id: number) {
       await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
     }).toPass({ intervals: [100, 100, 100, 100, 100] });
   }
-  const edit = page.getByTestId(`card-edit-tarjeta-${id}`);
-  await edit.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await openFullCardEditor(page, page.getByTestId(`card-actions-tarjeta-${id}`));
 }
 
 async function box(locator: Locator) {
@@ -136,7 +144,7 @@ async function sideBySide(page: Page) {
   await addCards(page, ['nota', 'nota']);
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): solo hay un botón
   // «Editar» visible, el de la tarjeta recién creada, y se abre para leer y ajustar su posición.
-  await page.locator('[data-testid^="card-edit-tarjeta-"]').click();
+  await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
   const cell = async () => {
     const text = await geometry(page).innerText();
     const grid = /Columna (\d+), fila (\d+)/.exec(text);
@@ -242,7 +250,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(card(page, 1)).toContainText('001');
   await expect(card(page, 3)).toContainText('003');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await page.getByTestId('card-edit-tarjeta-3').click();
+  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-3'));
   await expect(page.getByTestId('card-inspector')).toBeVisible();
 
   // 3. Editar título y Markdown.
@@ -316,6 +324,37 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
 
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
+});
+
+test('edición rápida: título y Markdown se editan sobre la ficha y el editor completo sigue disponible (ADR 0047)', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Edición directa');
+  await addCards(page, ['nota']);
+  await selectCard(page, 1);
+  await button(page, 'Acciones de Nueva nota').click();
+  await page.screenshot({ path: testInfo.outputPath('card-actions-menu.png') });
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+
+  const inline = page.getByTestId('inline-card-editor');
+  await expect(inline).toBeVisible();
+  const cardBox = await box(card(page, 1));
+  const editorBox = await box(inline);
+  expect(Math.abs(editorBox.x - cardBox.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(editorBox.y - cardBox.y)).toBeLessThanOrEqual(2);
+  await page.screenshot({ path: testInfo.outputPath('inline-card-editor.png') });
+  await page.getByTestId('inline-card-title').fill('Idea editada aquí');
+  await page.getByTestId('inline-card-content').fill('- una línea\n- otra línea');
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+  await expect(inline).toHaveCount(0);
+  await expect(card(page, 1)).toContainText('Idea editada aquí');
+
+  await selectCard(page, 1);
+  await button(page, 'Acciones de Idea editada aquí').click();
+  await button(page, 'Abrir el editor completo de Idea editada aquí').click();
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  expect(runtimeErrors).toEqual([]);
 });
 
 test('arrastrar con ratón: vista previa con imán, colisión y límites visibles, Escape cancela y soltar guarda', async ({ page }, testInfo) => {
@@ -851,16 +890,19 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
   const cell = cellSize(page);
   const count = page.getByTestId('multi-count');
 
-  // Táctil y teclado: «Seleccionar varias» desde el editor; tocar otra la añade y tocarla de nuevo la quita.
-  await tapCard(page, 1);
-  await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
+  // Táctil y teclado: «Selección» vive en el menú ligero de la ficha; tocar otra la añade y tocarla de nuevo la quita.
+  await selectCard(page, 1);
+  await button(page, 'Acciones de Nueva nota').focus();
+  await page.keyboard.press('Enter');
+  await button(page, 'Seleccionar Nueva nota junto con otras tarjetas').click();
   await expect(count).toHaveText('1 SELECCIONADA');
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
-  await tapCard(page, 2, false);
+  const toggleInSet = async (id: number) => { await card(page, id).focus(); await page.keyboard.press('Space'); };
+  await toggleInSet(2);
   await expect(count).toHaveText('2 SELECCIONADAS');
-  await tapCard(page, 2, false);
+  await toggleInSet(2);
   await expect(count).toHaveText('1 SELECCIONADA');
-  await tapCard(page, 2, false);
+  await toggleInSet(2);
   await expect(count).toHaveText('2 SELECCIONADAS');
   await expect(page.getByTestId('resize-s-tarjeta-1')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('multi-select.png') });
@@ -895,12 +937,10 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
   }
 
   // «Todas» y archivar el conjunto de una vez: el tablero queda vacío y el Archivo cuenta 2.
-  // Con ratón, el doble clic abre el editor directamente (ADR 0021): un solo clic aquí (tan seguido del
-  // de la línea anterior) se interpretaría como el segundo toque de ese gesto y desplazaría el botón
-  // «Editar» al reflujo del lienzo (auditoría de interacción, 2026-09-29).
-  if (isCompact(page)) await tapCard(page, 1);
-  else await card(page, 1).dblclick();
-  await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
+  await selectCard(page, 1);
+  await button(page, 'Acciones de Nueva nota').focus();
+  await page.keyboard.press('Enter');
+  await button(page, 'Seleccionar Nueva nota junto con otras tarjetas').click();
   await button(page, 'Seleccionar todas las tarjetas del tablero').click();
   await expect(count).toHaveText('2 SELECCIONADAS');
   await button(page, 'Archivar las 2 seleccionadas').click();
@@ -922,7 +962,7 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
   await expect(undoButton).toHaveAccessibleName('Deshacer: Nota añadida');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Mover a la
   // derecha» es del editor.
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
   await button(page, 'Mover a la derecha').click();
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
@@ -953,7 +993,7 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
     await page.keyboard.press('Control+Shift+z');
     await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
     await card(page, 1).click();
-    await page.getByTestId('card-edit-tarjeta-1').click();
+    await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
     await page.getByLabel('Título de la tarjeta').focus();
     await page.keyboard.press('Control+z');
     await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
@@ -1040,7 +1080,7 @@ test('marcos: agrupar la selección, renombrar, mover con sus tarjetas (flechas 
   await button(page, 'Añadir nota en el marco').click();
   await expect(feedback(page)).toHaveText('Nota añadida en el marco. Guardado en memoria.');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await page.locator('[data-testid^="card-edit-tarjeta-"]').click();
+  await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   await closeEditor(page);
 

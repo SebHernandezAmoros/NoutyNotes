@@ -139,7 +139,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const tabLabel = box.width - props.reserveRight - 16 >= 110 ? `${number3} // ${(type?.label ?? 'Tarjeta').toUpperCase()}` : number3;
   const accessibilityHint = connectRole === 'connect' ? `Conectar ${connectSourceName} con esta tarjeta`
     : connectRole === 'disconnect' ? `Desconectar ${connectSourceName} de esta tarjeta`
-      : connectRole === 'source' ? 'Cancelar la conexión' : 'Selecciona para editar; arrastra para mover';
+      : connectRole === 'source' ? 'Cancelar la conexión' : 'Selecciona la tarjeta; doble toque para editar; arrastra para mover';
 
   return (
     <View

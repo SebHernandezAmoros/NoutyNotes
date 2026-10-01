@@ -67,61 +67,61 @@ export function Toolbar(props: ToolbarProps) {
   const archiveOpenLabel = `${t('nav.archive.open', locale)} (${props.archiveCount})`;
   const tools = (
     <View style={styles.group}>
-      <ToolButton glyph="↖" label={t('tool.select', locale)} accessibilityLabel={t('tool.select.label', locale)} accessibilityHint={t('tool.select.hint', locale)}
+      <ToolButton icon="select" label={t('tool.select', locale)} accessibilityLabel={t('tool.select.label', locale)} accessibilityHint={t('tool.select.hint', locale)}
         active={props.tool === 'select'} disabled={!onCanvas} onPress={() => props.onTool('select')} style={cell} />
-      <ToolButton glyph="✋" label={t('tool.pan', locale)} accessibilityLabel={t('tool.pan.label', locale)} accessibilityHint={t('tool.pan.hint', locale)}
+      <ToolButton icon="pan" label={t('tool.pan', locale)} accessibilityLabel={t('tool.pan.label', locale)} accessibilityHint={t('tool.pan.hint', locale)}
         active={props.tool === 'pan'} disabled={!onCanvas} onPress={() => props.onTool('pan')} style={cell} />
-      <ToolButton glyph="⤳" label={t('tool.connect', locale)} accessibilityLabel={t('tool.connect.label', locale)} accessibilityHint={t('tool.connect.hint', locale)}
+      <ToolButton icon="connect" label={t('tool.connect', locale)} accessibilityLabel={t('tool.connect.label', locale)} accessibilityHint={t('tool.connect.hint', locale)}
         active={props.tool === 'connect'} disabled={!onCanvas} onPress={() => props.onTool('connect')} style={cell} />
-      <ToolButton testID="open-search" glyph="⌕" label={t('tool.search', locale)} accessibilityLabel={t('tool.search.label', locale)} accessibilityHint={t('tool.search.hint', locale)}
+      <ToolButton testID="open-search" icon="search" label={t('tool.search', locale)} accessibilityLabel={t('tool.search.label', locale)} accessibilityHint={t('tool.search.hint', locale)}
         onPress={props.onOpenSearch} style={cell} />
       {props.compact ? (
         <>
-          <ToolButton glyph="≡" label={t('view.list', locale)} accessibilityLabel={t('view.list.label', locale)} active={!onCanvas} onPress={props.onToggleView} style={cell} />
-          <ToolButton glyph="☰" label={t('more', locale)} accessibilityLabel={t('more.label', locale)} accessibilityHint={t('more.hint', locale)} onPress={props.onOpenMore} style={cell} />
+          <ToolButton icon="list" label={t('view.list', locale)} accessibilityLabel={t('view.list.label', locale)} active={!onCanvas} onPress={props.onToggleView} style={cell} />
+          <ToolButton icon="menu" label={t('more', locale)} accessibilityLabel={t('more.label', locale)} accessibilityHint={t('more.hint', locale)} onPress={props.onOpenMore} style={cell} />
         </>
       ) : null}
     </View>
   );
   const create = (
     <View style={styles.group}>
-      <ToolButton glyph="+" label={t('add.note', locale)} accessibilityLabel={t('add.note.label', locale)} onPress={props.onAddNote} style={cell} />
-      <ToolButton glyph="T" label={t('add.title', locale)} accessibilityLabel={t('add.title.label', locale)} onPress={props.onAddTitle} style={cell} />
-      <ToolButton glyph="▣" label="Tablero" accessibilityLabel="Crear acceso rápido a un tablero" onPress={props.onAddBoardShortcut} style={cell} />
-      <ToolButton glyph="↗" label={t('add.link', locale)} accessibilityLabel={t('add.link.label', locale)} accessibilityHint={t('add.link.hint', locale)} onPress={props.onAddLink} style={cell} />
-      <ToolButton glyph="⤒" label={t('add.image', locale)} accessibilityLabel={t('add.image.label', locale)} accessibilityHint={t('add.image.hint', locale)} onPress={props.onImportImage} style={cell} />
-      <ToolButton glyph="▣" label={t('add.example', locale)} accessibilityLabel={t('add.example.label', locale)} accessibilityHint={t('add.example.hint', locale)} onPress={props.onAddExample} style={cell} />
+      <ToolButton icon="note" label={t('add.note', locale)} accessibilityLabel={t('add.note.label', locale)} onPress={props.onAddNote} style={cell} />
+      <ToolButton icon="text" label={t('add.title', locale)} accessibilityLabel={t('add.title.label', locale)} onPress={props.onAddTitle} style={cell} />
+      <ToolButton icon="board" label="Tablero" accessibilityLabel="Crear acceso rápido a un tablero" onPress={props.onAddBoardShortcut} style={cell} />
+      <ToolButton icon="link" label={t('add.link', locale)} accessibilityLabel={t('add.link.label', locale)} accessibilityHint={t('add.link.hint', locale)} onPress={props.onAddLink} style={cell} />
+      <ToolButton icon="upload" label={t('add.image', locale)} accessibilityLabel={t('add.image.label', locale)} accessibilityHint={t('add.image.hint', locale)} onPress={props.onImportImage} style={cell} />
+      <ToolButton icon="image" label={t('add.example', locale)} accessibilityLabel={t('add.example.label', locale)} accessibilityHint={t('add.example.hint', locale)} onPress={props.onAddExample} style={cell} />
       {props.compact ? (
         <>
-          <ToolButton glyph="🗑" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
+          <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
         </>
       ) : null}
     </View>
   );
   const history = props.compact ? null : (
     <View style={styles.group}>
-      <ToolButton glyph="↶" label={t('undo', locale)} accessibilityLabel={props.undoLabel ? `${t('undo', locale)}: ${props.undoLabel}` : t('undo', locale)}
+      <ToolButton icon="undo" label={t('undo', locale)} accessibilityLabel={props.undoLabel ? `${t('undo', locale)}: ${props.undoLabel}` : t('undo', locale)}
         accessibilityHint={t('undo.hint', locale)} disabled={props.undoLabel === null} onPress={props.onUndo} style={cell} />
-      <ToolButton glyph="↷" label={t('redo', locale)} accessibilityLabel={props.redoLabel ? `${t('redo', locale)}: ${props.redoLabel}` : t('redo', locale)}
+      <ToolButton icon="redo" label={t('redo', locale)} accessibilityLabel={props.redoLabel ? `${t('redo', locale)}: ${props.redoLabel}` : t('redo', locale)}
         accessibilityHint={t('redo.hint', locale)} disabled={props.redoLabel === null} onPress={props.onRedo} style={cell} />
     </View>
   );
   const view = props.compact ? null : (
     <View style={styles.group}>
-      <ToolButton glyph="−" label={t('zoom.out', locale)} accessibilityLabel={t('zoom.out', locale)} disabled={!onCanvas || props.zoom <= MIN_ZOOM} onPress={props.onZoomOut} style={cell} />
+      <ToolButton icon="minus" label={t('zoom.out', locale)} accessibilityLabel={t('zoom.out', locale)} disabled={!onCanvas || props.zoom <= MIN_ZOOM} onPress={props.onZoomOut} style={cell} />
       <ToolButton testID="zoom-level" glyph={formatZoom(props.zoom)} label={t('zoom', locale)} accessibilityLabel={`${t('zoom', locale)} ${formatZoom(props.zoom)}${t('zoom.reset.suffix', locale)}`}
         disabled={!onCanvas} onPress={props.onZoomReset} style={[cell, styles.zoomCell]} />
-      <ToolButton glyph="+" label={t('zoom.in', locale)} accessibilityLabel={t('zoom.in', locale)} disabled={!onCanvas || props.zoom >= MAX_ZOOM} onPress={props.onZoomIn} style={cell} />
-      <ToolButton glyph="≡" label={t('view.list', locale)} accessibilityLabel={t('view.list.label', locale)} active={!onCanvas} onPress={props.onToggleView} style={cell} />
+      <ToolButton icon="plus" label={t('zoom.in', locale)} accessibilityLabel={t('zoom.in', locale)} disabled={!onCanvas || props.zoom >= MAX_ZOOM} onPress={props.onZoomIn} style={cell} />
+      <ToolButton icon="list" label={t('view.list', locale)} accessibilityLabel={t('view.list.label', locale)} active={!onCanvas} onPress={props.onToggleView} style={cell} />
       {props.navInSidebar ? null : (
         <>
-          <ToolButton glyph="🗑" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
-          <ToolButton glyph="◷" label={t('nav.diary', locale)} accessibilityLabel={t('nav.diary.open', locale)} onPress={props.onOpenDiary} style={cell} />
-          <ToolButton glyph="▤" label={archiveLabel} accessibilityLabel={archiveOpenLabel} onPress={props.onOpenArchive} style={cell} />
-          <ToolButton glyph="▦" label={t('nav.assets', locale)} accessibilityLabel={t('nav.assets.open', locale)} onPress={props.onOpenAssets} style={cell} />
-          <ToolButton glyph="▶" label={t('nav.present', locale)} accessibilityLabel={t('nav.present.open', locale)} onPress={props.onOpenPresent} style={cell} />
-          {props.canPrint ? <ToolButton glyph="⎙" label={t('nav.print', locale)} accessibilityLabel={t('nav.print.open', locale)} onPress={props.onOpenPrint} style={cell} /> : null}
-          <ToolButton glyph="⚙" label={t('nav.settings', locale)} accessibilityLabel={t('nav.settings.open', locale)} onPress={props.onOpenSettings} style={cell} />
+          <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
+          <ToolButton icon="diary" label={t('nav.diary', locale)} accessibilityLabel={t('nav.diary.open', locale)} onPress={props.onOpenDiary} style={cell} />
+          <ToolButton icon="archive" label={archiveLabel} accessibilityLabel={archiveOpenLabel} onPress={props.onOpenArchive} style={cell} />
+          <ToolButton icon="assets" label={t('nav.assets', locale)} accessibilityLabel={t('nav.assets.open', locale)} onPress={props.onOpenAssets} style={cell} />
+          <ToolButton icon="present" label={t('nav.present', locale)} accessibilityLabel={t('nav.present.open', locale)} onPress={props.onOpenPresent} style={cell} />
+          {props.canPrint ? <ToolButton icon="print" label={t('nav.print', locale)} accessibilityLabel={t('nav.print.open', locale)} onPress={props.onOpenPrint} style={cell} /> : null}
+          <ToolButton icon="settings" label={t('nav.settings', locale)} accessibilityLabel={t('nav.settings.open', locale)} onPress={props.onOpenSettings} style={cell} />
         </>
       )}
     </View>
@@ -158,11 +158,11 @@ const styles = StyleSheet.create({
   bar: { borderWidth: 1, padding: 4, gap: 4 },
   compact: { flexDirection: 'column' },
   wide: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
-  group: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  group: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   // Seis por fila y ancho según el texto (el sobrante se reparte): ninguna palabra se parte a 360-390 px.
   compactCell: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', paddingHorizontal: 2 },
-  wideCell: { paddingHorizontal: 10 },
+  wideCell: { paddingHorizontal: 5 },
   zoomCell: { minWidth: 64 },
-  divider: { width: 2, alignSelf: 'stretch', marginHorizontal: 4 },
+  divider: { width: 1, alignSelf: 'stretch', marginHorizontal: 2 },
   trailing: { flexGrow: 1, flexShrink: 1, flexBasis: 240, minWidth: 220, alignSelf: 'stretch', justifyContent: 'center' },
 });
