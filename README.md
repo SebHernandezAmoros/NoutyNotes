@@ -85,8 +85,13 @@ NoutyNotes es un proyecto de espacio visual para organizar notas Markdown, imág
 
 **Tarjetas y navegación (ADR 0016):**
 - **Controles en la cabecera:** cada tarjeta tiene `−` minimizar, `▭`/`□` contraer o expandir y `×` Papelera, a 44 px con cualquier zoom, o un menú `⋯` si no caben.
-- **Fichas minimizadas:** muestran el icono del tipo y el título.
+- **Fichas minimizadas:** muestran el icono elegido o el del tipo y el título.
 - **Proyectos:** pestañas a la derecha para cambiar entre los espacios reales; en móvil se abren desde «Proyectos».
+
+**Posición fina, iconos y accesos de tablero (ADR 0046):**
+- Con «Ajustar a celdas» activo, las tarjetas se colocan en celdas completas. Al desactivarlo, la subgrilla y el guardado usan cuartos de celda; mover, redimensionar, deshacer y reabrir conservan esa posición.
+- Apariencia permite elegir entre seis iconos portables. Solo el documento que usa icono, acceso o posición fina pasa a formato v4.
+- «Tablero» en la barra crea una tarjeta de acceso a otro tablero. Se mueve como cualquier ficha y se abre con doble clic/toque o con «Abrir tablero».
 
 **Configuración, tarjetas e imágenes (ADR 0014, ADR 0015):**
 - **Configuración del lienzo:** modal en escritorio y hoja en móvil. Incluye grilla, imán, zoom, alto de fila y separación entre fichas. Son preferencias del dispositivo: no viajan con el workspace.

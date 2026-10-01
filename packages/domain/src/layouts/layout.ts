@@ -74,12 +74,13 @@ function collectFrameIssues(value: unknown, path: string, issues: DomainIssue[])
 }
 
 // Enteros seguros: valores mayores no se pueden sumar ni comparar de forma exacta (ADR 0004).
-function isNonNegativeInteger(value: unknown): boolean {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+export const GRID_SUBDIVISIONS = 4;
+function isGridUnit(value: unknown): value is number {
+  return typeof value === 'number' && (Number.isSafeInteger(value) || Number.isSafeInteger(value * GRID_SUBDIVISIONS));
 }
 
-function isCoordinate(value: unknown): boolean {
-  return typeof value === 'number' && Number.isSafeInteger(value);
+function isPositiveGridUnit(value: unknown): boolean {
+  return isGridUnit(value) && value > 0;
 }
 
 function collectRectIssues(rect: unknown, path: string, issues: DomainIssue[]): void {
@@ -88,13 +89,13 @@ function collectRectIssues(rect: unknown, path: string, issues: DomainIssue[]): 
     return;
   }
   for (const axis of ['x', 'y'] as const) {
-    if (!isCoordinate(rect[axis])) {
-      issues.push(issue('invalid-layout', `${path}.${axis}`, 'Debe ser un entero seguro de grilla.'));
+    if (!isGridUnit(rect[axis])) {
+      issues.push(issue('invalid-layout', `${path}.${axis}`, 'Debe usar unidades de grilla en cuartos.'));
     }
   }
   for (const size of ['w', 'h'] as const) {
-    if (!isNonNegativeInteger(rect[size]) || rect[size] === 0) {
-      issues.push(issue('invalid-layout', `${path}.${size}`, 'Debe ser un entero mayor o igual que 1.'));
+    if (!isPositiveGridUnit(rect[size])) {
+      issues.push(issue('invalid-layout', `${path}.${size}`, 'Debe ser positivo y usar unidades de grilla en cuartos.'));
     }
   }
 }

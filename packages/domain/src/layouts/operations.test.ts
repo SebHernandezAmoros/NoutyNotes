@@ -52,7 +52,7 @@ describe('mover', () => {
     ['fuera por la derecha', { x: 11, y: 0 }, 'out-of-bounds@to'],
     ['fuera por arriba', { x: 0, y: -2 }, 'out-of-bounds@to'],
     ['contra otra tarjeta', { x: 3, y: 1 }, 'grid-collision@placements[1]'],
-    ['posición fraccionaria', { x: 1.5, y: 0 }, 'invalid-layout@to.x'],
+    ['posición fuera de la subdivisión', { x: 1.1, y: 0 }, 'invalid-layout@to.x'],
     ['posición no finita', { x: 0, y: Number.NaN }, 'invalid-layout@to.y'],
   ])('rechaza mover %s sin cambios parciales', (_case, to, expected) => {
     const result = moveCard(base, card('a'), to, DESKTOP_GRID);
@@ -89,7 +89,7 @@ describe('redimensionar', () => {
   it.each([
     ['ancho cero', { w: 0, h: 1 }, 'invalid-layout@size.w'],
     ['alto negativo', { w: 1, h: -1 }, 'invalid-layout@size.h'],
-    ['fraccionario', { w: 1.5, h: 1 }, 'invalid-layout@size.w'],
+    ['fuera de la subdivisión', { w: 1.1, h: 1 }, 'invalid-layout@size.w'],
     ['no finito', { w: Number.POSITIVE_INFINITY, h: 1 }, 'invalid-layout@size.w'],
     ['sale de la grilla', { w: 13, h: 1 }, 'out-of-bounds@size'],
     ['colisión', { w: 5, h: 1 }, 'grid-collision@placements[1]'],
@@ -380,6 +380,6 @@ describe('mover un conjunto (ADR 0025)', () => {
     expect(codes(moveCards(layout, [card('a'), card('b')], { x: 9, y: 0 }, DESKTOP_GRID))).toContain('out-of-bounds');
     expect(codes(moveCards(layout, [card('a'), card('zzz')], { x: 1, y: 0 }, DESKTOP_GRID))).toContain('missing-reference');
     expect(codes(moveCards(layout, [], { x: 1, y: 0 }, DESKTOP_GRID))).toContain('invalid-value');
-    expect(codes(moveCards(layout, [card('a')], { x: 0.5, y: 0 }, DESKTOP_GRID))).toContain('invalid-layout');
+    expect(codes(moveCards(layout, [card('a')], { x: 0.1, y: 0 }, DESKTOP_GRID))).toContain('invalid-layout');
   });
 });

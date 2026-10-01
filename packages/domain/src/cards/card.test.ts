@@ -21,6 +21,11 @@ describe('tarjetas', () => {
     expect(result.ok && result.value).toBe(ideaA);
   });
 
+  it('acepta solo iconos del catálogo y un identificador de tablero válido', () => {
+    expect(validateCard({ ...ideaA, icon: 'star', boardTargetId: 'research' as NonNullable<Card['boardTargetId']> }, noteType).ok).toBe(true);
+    expect(problems(validateCard(unsafe({ ...ideaA, icon: 'emoji-libre' }), noteType))).toContain('invalid-value@card.icon');
+  });
+
   it.each([
     ['id inválido', { id: 'Idea A' }, 'invalid-id@card.id'],
     ['id de tipo inválido', { typeId: '' }, 'invalid-id@card.typeId'],

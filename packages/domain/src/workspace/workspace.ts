@@ -135,6 +135,9 @@ export function validateWorkspace(workspace: Workspace): ValidationResult<Worksp
     const type = isValidId(typeId) ? usableCardTypes.get(typeId) : undefined;
     collectCardIssues(card, type, `cards[${i}]`, issues);
     checkReference(typeId, cardTypeIndex, `cards[${i}].typeId`, 'el tipo de tarjeta', issues);
+    if (isRecord(card) && card.boardTargetId !== undefined) {
+      checkReference(card.boardTargetId, boardIndex, `cards[${i}].boardTargetId`, 'el board', issues);
+    }
   });
 
   boards.forEach((board, i) => {

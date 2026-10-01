@@ -8,7 +8,7 @@ import type { CanvasMetrics } from './geometry';
  */
 export interface ViewPreferences {
   readonly showGrid: boolean;
-  /** Vista previa del arrastre por celdas; al soltar siempre se guarda la celda entera. */
+  /** Con imán ajusta a celdas; sin él persiste cuartos de celda (ADR 0046). */
   readonly snap: boolean;
   /** Alto de fila al 100 % en escritorio; en móvil se usa 8 px menos. */
   readonly rowHeight: number;

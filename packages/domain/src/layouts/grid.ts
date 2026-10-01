@@ -1,7 +1,7 @@
 import { isRecord, issue, resultOf } from '../errors';
 import type { DomainIssue, ValidationResult } from '../errors';
 import { collectLayoutIssues } from './layout';
-import type { BoardLayout, CardPlacement } from './layout';
+import { GRID_SUBDIVISIONS, type BoardLayout, type CardPlacement } from './layout';
 
 /**
  * Configuración que recibe el motor. No depende del ancho de pantalla: la presentación elige
@@ -72,6 +72,13 @@ export function snapUnit(value: number, path = 'value'): ValidationResult<number
   return resultOf(Math.round(value) + 0, []);
 }
 
+export function snapFineUnit(value: number, path = 'value'): ValidationResult<number> {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return resultOf(value, [issue('invalid-layout', path, 'Debe ser un número finito.')]);
+  }
+  return resultOf(Math.round(value * GRID_SUBDIVISIONS) / GRID_SUBDIVISIONS + 0, []);
+}
+
 function snapPair<K extends string>(value: Readonly<Record<K, number>>, keys: readonly [K, K], path: string): ValidationResult<Record<K, number>> {
   const issues: DomainIssue[] = [];
   const snapped = {} as Record<K, number>;
@@ -116,7 +123,8 @@ export function cellsOverlap(a: GridCell, b: GridCell): boolean {
  * aunque su huella reducida quepa donde el rect no cabe (ADR 0004).
  */
 export function isRepresentable(cell: GridCell): boolean {
-  return Number.isSafeInteger(cell.x + cell.w) && Number.isSafeInteger(cell.y + cell.h);
+  const safe = (value: number) => Number.isSafeInteger(value) || Number.isSafeInteger(value * GRID_SUBDIVISIONS);
+  return safe(cell.x + cell.w) && safe(cell.y + cell.h);
 }
 
 /**
@@ -135,10 +143,11 @@ export function candidateRows(cells: readonly GridCell[], from: number, extra: r
 export function fitsGrid(cell: GridCell, config: GridConfig): boolean {
   const right = cell.x + cell.w;
   const bottom = cell.y + cell.h;
-  if (config.world) return Number.isSafeInteger(right) && Number.isSafeInteger(bottom)
+  const safe = (value: number) => Number.isSafeInteger(value) || Number.isSafeInteger(value * GRID_SUBDIVISIONS);
+  if (config.world) return safe(right) && safe(bottom)
     && cell.x >= -MAX_WORLD_CELL && cell.y >= -MAX_WORLD_CELL
     && right <= MAX_WORLD_CELL && bottom <= MAX_WORLD_CELL;
-  return cell.x >= 0 && cell.y >= 0 && Number.isSafeInteger(right) && Number.isSafeInteger(bottom)
+  return cell.x >= 0 && cell.y >= 0 && safe(right) && safe(bottom)
     && right <= config.columns && (config.rows === undefined || bottom <= config.rows);
 }
 

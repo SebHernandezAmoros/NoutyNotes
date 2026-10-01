@@ -25,6 +25,7 @@ export const metadataSchema = z.strictObject({ name: text, description: text.opt
 export const cardSchema = z.strictObject({
   id: text, typeId: text, title: text.optional(), content: text.optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
+  icon: text.optional(), boardTargetId: text.optional(),
 });
 export const boardSchema = z.strictObject({ id: text, title: text, description: text.optional(), cardIds: z.array(text) });
 
@@ -60,7 +61,7 @@ export const workspaceSchema = z.strictObject({
 // Documentos del formato v1.
 // v1: sin flecha. v2: con `arrow` distinto de «forward» (ADR 0034).
 export const relationsFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2)]), relations: z.array(relationSchema) });
-export const layoutFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), layouts: z.array(layoutSchema) });
+export const layoutFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), layouts: z.array(layoutSchema) });
 export const workspaceManifestSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, metadata: metadataSchema,
   cardTypes: z.array(cardTypeSchema), relationTypes: z.array(relationTypeSchema),
@@ -68,8 +69,9 @@ export const workspaceManifestSchema = z.strictObject({
 });
 /** v1: sin etiquetas ni fecha. v2: con `tags` (ADR 0019). v3: con `createdAt`, con o sin `tags` (ADR 0024). */
 export const cardFrontmatterSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), id: text, typeId: text, title: text.optional(),
-  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(), contentPresent: z.boolean(),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), id: text, typeId: text, title: text.optional(),
+  fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
+  icon: text.optional(), boardTargetId: text.optional(), contentPresent: z.boolean(),
 });
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),

@@ -24,8 +24,14 @@ describe('layouts en unidades de grilla', () => {
     expect(validateLayout(withPlacement({ rect: { x: -1, y: -3, w: 1, h: 1 } })).ok).toBe(true);
   });
 
+  it('acepta cuartos de celda y rechaza fracciones no portables', () => {
+    expect(validateLayout(withPlacement({ rect: { x: 0.25, y: -0.5, w: 3.75, h: 2.25 } })).ok).toBe(true);
+    expect(problems(validateLayout(withPlacement({ rect: { x: 0.1, y: 0, w: 1, h: 1 } }))))
+      .toContain('invalid-layout@layout.placements[0].rect.x');
+  });
+
   it.each([
-    ['coordenada fraccionaria (píxeles)', { rect: { x: 12.5, y: 0, w: 1, h: 1 } }, 'invalid-layout@layout.placements[0].rect.x'],
+    ['coordenada fuera de la subdivisión', { rect: { x: 12.1, y: 0, w: 1, h: 1 } }, 'invalid-layout@layout.placements[0].rect.x'],
     ['ancho cero', { rect: { x: 0, y: 0, w: 0, h: 1 } }, 'invalid-layout@layout.placements[0].rect.w'],
     ['alto negativo', { rect: { x: 0, y: 0, w: 1, h: -2 } }, 'invalid-layout@layout.placements[0].rect.h'],
     ['medida como texto', { rect: { x: '0', y: 0, w: 1, h: 1 } }, 'invalid-layout@layout.placements[0].rect.x'],

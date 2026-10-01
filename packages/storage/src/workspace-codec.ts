@@ -43,10 +43,11 @@ function markdownDocument(frontmatter: unknown, body: string): GeneratedDocument
 /** Una tarjeta con etiquetas se escribe en v2 (ADR 0019); sin ellas, v1 con los mismos bytes de siempre. */
 function cardDocument(card: Card): GeneratedDocument {
   const tags = card.tags !== undefined && card.tags.length > 0 ? card.tags : undefined;
-  // Versión selectiva: v3 con fecha de creación (ADR 0024), v2 con solo etiquetas (ADR 0019), v1 sin nada.
+  // Versión selectiva: v4 con icono/atajo (ADR 0046); las anteriores conservan sus bytes.
   return markdownDocument(compact({
-    schemaVersion: card.createdAt ? 3 : tags ? 2 : 1, id: card.id, typeId: card.typeId, title: card.title,
-    fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, contentPresent: card.content !== undefined,
+    schemaVersion: card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1, id: card.id, typeId: card.typeId, title: card.title,
+    fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
+    boardTargetId: card.boardTargetId, contentPresent: card.content !== undefined,
   }), card.content ?? '');
 }
 
@@ -54,7 +55,7 @@ function cardDocument(card: Card): GeneratedDocument {
 function trashData(entry: TrashedCard): unknown {
   const { card } = entry;
   return compact({
-    card: { id: card.id, typeId: card.typeId, title: card.title, fields: card.fields, assetRefs: card.assetRefs, tags: card.tags?.length ? card.tags : undefined, createdAt: card.createdAt, content: card.content },
+    card: { id: card.id, typeId: card.typeId, title: card.title, fields: card.fields, assetRefs: card.assetRefs, tags: card.tags?.length ? card.tags : undefined, createdAt: card.createdAt, icon: card.icon, boardTargetId: card.boardTargetId, content: card.content },
     boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
     placements: entry.placements.map(({ boardId, rect, display }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
     relations: entry.relations.map(relationData),
@@ -225,7 +226,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -238,7 +239,8 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     // v1 no admite etiquetas y v2 existe para ellas: una etiqueta en v1 o una v2 sin etiquetas es incoherente.
     const hasTags = front.tags !== undefined && front.tags.length > 0;
     const hasDate = front.createdAt !== undefined;
-    const expected = hasDate ? 3 : hasTags ? 2 : 1;
+    const hasAppearance = front.icon !== undefined || front.boardTargetId !== undefined;
+    const expected = hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -246,6 +248,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     // El marcador distingue contenido ausente de contenido vacío; el cuerpo se toma literal.
     cards.push(compact({
       id, typeId: front.typeId, title: front.title, fields: front.fields, assetRefs: front.assetRefs, tags: front.tags, createdAt: front.createdAt,
+      icon: front.icon, boardTargetId: front.boardTargetId,
       content: front.contentPresent ? body : undefined,
     }) as unknown as Card);
   }

@@ -1,5 +1,6 @@
 
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { openMore, openSettings } from './support';
 
@@ -54,6 +55,14 @@ const fakeFolder = `
   window.showDirectoryPicker = async () => directory();
 })();`;
 
+async function openCardEditor(page: Page, id: number) {
+  if (await page.getByTestId('card-inspector').isVisible()) return;
+  const edit = page.getByTestId(`card-edit-tarjeta-${id}`);
+  await edit.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+}
+
 test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas', async ({ page }, testInfo) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -66,7 +75,7 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openCardEditor(page, 1);
   await page.getByLabel('Título de la tarjeta').fill('Nota persistente');
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota persistente');
   await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado en la carpeta');
@@ -144,11 +153,12 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
   await press('Mover arriba');
   await expect(geometry).toHaveText('X -1, Y -2 · 4 × 3');
   await expect.poll(layoutText).toContain('schemaVersion: 2');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
 
   // Otra tarjeta, lejos: más allá de la columna 12 del formato antiguo y muy abajo.
   await press('Añadir nota');
   await expect(page.getByTestId('card-tarjeta-2')).toHaveAttribute('aria-pressed', 'true');
-  await page.getByTestId('card-edit-tarjeta-2').click();
+  await openCardEditor(page, 2);
   // La geometría se lee «Columna c, fila f» o, con alguna coordenada negativa, «X x, Y y».
   const cell = async () => {
     const text = await geometry.innerText();
@@ -185,12 +195,13 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
   await page.getByTestId('card-edit-tarjeta-2').focus();
   await page.keyboard.press('Enter');
   await expect(geometry).toHaveText('Columna 21, fila 31 · 4 × 3');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   const far = await page.getByTestId('card-tarjeta-2').boundingBox();
   const frame = await page.getByTestId('board-canvas').boundingBox();
   expect(far && frame && far.y >= frame.y && far.y < frame.y + frame.height).toBe(true);
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openCardEditor(page, 1);
   await expect(geometry).toHaveText('X -1, Y -2 · 4 × 3');
 });
 
@@ -217,8 +228,9 @@ test('P2: una tarjeta a casi un millón de celdas se pinta con coordenadas peque
   await press('Abrir Lejos');
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openCardEditor(page, 1);
   await expect(page.getByTestId('card-geometry')).toHaveText('X 999000, Y -999000 · 4 × 3');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   // Con la cámara allí, lo pintado usa números pequeños: el compositor trabaja en coma flotante de
   // 32 bits (unos 16,7 millones exactos) y a -96 millones de píxeles la tarjeta se pintaba rota.
   const painted = await page.evaluate(() => {
@@ -499,6 +511,7 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
   expect((await files())['galeria/assets/images/tarjeta-1.png']).toEqual([...icon.buffer]);
   for (const [index, title] of ['Mínima', 'Borrador'].entries()) {
     const cardId = `card-tarjeta-${index + 2}`;
+    if (await page.getByTestId('card-inspector').isVisible()) await button('Cerrar el editor de la tarjeta').click();
     await button('Añadir nota').click();
     // Esperar a que la tarjeta nueva quede seleccionada y abrir su editor antes de escribir (crear ya
     // no lo abre por sí solo, auditoría de interacción, 2026-09-29).
@@ -529,7 +542,7 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
   // La imagen a la Papelera y eliminada definitivamente: su binario sale de la carpeta.
   await page.getByTestId('card-tarjeta-1').click();
   await page.getByTestId('card-edit-tarjeta-1').click();
-  await button('Enviar app-icon a la Papelera').click();
+  await button('Enviar la tarjeta app-icon a la Papelera').click();
   expect(Object.keys(await files())).toContain('galeria/assets/images/tarjeta-1.png');
   await button('Abrir la Papelera (2)').click();
   await button('Eliminar definitivamente app-icon').click();

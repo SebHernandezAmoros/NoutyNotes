@@ -133,7 +133,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / 18) - (link ? 1 : 0));
   const headerColor = image ? colors.headerImage : colors.headerNote;
-  const icon = miniIcon(type?.base);
+  const icon = card.icon ?? miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
   // Con los controles ocupando la cabecera, si no cabe «001 // TIPO» se muestra solo el número.
   const tabLabel = box.width - props.reserveRight - 16 >= 110 ? `${number3} // ${(type?.label ?? 'Tarjeta').toUpperCase()}` : number3;

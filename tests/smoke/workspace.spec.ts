@@ -5,7 +5,7 @@ import { themeColors } from '../../packages/ui/src/theme';
 import { activeLabel, borderColor, hasHorizontalOverflow, rgb, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
-// 56 × 56 px; desde 800 px: barra sobre el lienzo, inspector a la derecha y celdas de 96 × 64 px;
+// 56 × 56 px; desde 800 px: barra sobre el lienzo, editor contextual y celdas cuadradas de 64 × 64 px;
 // desde 1100 px, barra lateral de espacios y tableros.
 const desktop = { width: 1366, height: 900 };
 const phone = { width: 390, height: 844 };
@@ -21,7 +21,8 @@ const card = (page: Page, id: number) => page.getByTestId(`card-tarjeta-${id}`);
  * o tapada: el foco la trae con el pan y Espacio dispara el mismo onPress que un toque. Un clic en su
  * centro «pulsaría» algo que la persona no ve.
  */
-async function tapCard(page: Page, id: number) {
+async function tapCard(page: Page, id: number, edit = true) {
+  if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
   // Al cerrar un diálogo, el foco vuelve (de forma asíncrona) al botón que lo abrió: se espera a que
   // la tarjeta tenga el foco de verdad antes de pulsar Espacio, o Espacio activaría ese botón.
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -33,11 +34,11 @@ async function tapCard(page: Page, id: number) {
   // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): esta suite
   // asume el editor abierto tras «tocar» una tarjeta, así que este ayudante pulsa «Editar» a continuación.
   // Sin efecto (a propósito) en una ficha minimizada: no tiene ese botón, solo «Expandir».
-  await page.getByTestId(`card-edit-tarjeta-${id}`).click({ timeout: 2000 }).catch(() => {});
+  if (edit && await page.getByTestId(`card-edit-tarjeta-${id}`).count()) await openCardEditor(page, id);
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
 const geometry = (page: Page) => page.getByTestId('card-geometry');
-const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 96, y: 64 } : { x: 56, y: 56 });
+const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 64, y: 64 } : { x: 56, y: 56 });
 
 async function createWorkspace(page: Page, name: string) {
   await page.getByLabel('Nombre del nuevo espacio').fill(name);
@@ -56,6 +57,26 @@ async function addCards(page: Page, kinds: readonly ('nota' | 'imagen')[]) {
 async function closeEditor(page: Page) {
   await button(page, 'Cerrar el editor de la tarjeta').click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+}
+
+/** Activa con teclado el control de edición aunque una cabecera compacta no lo pinte en pantalla. */
+async function openCardEditor(page: Page, id: number) {
+  if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
+  await card(page, id).focus();
+  if (await card(page, id).getAttribute('aria-pressed') !== 'true') {
+    // El lienzo descarta durante 400 ms el click sintético que web emite al terminar un gesto. Si el
+    // editor se consulta justo después, reintenta la activación hasta que esa guarda haya vencido.
+    await expect(async () => {
+      if (await card(page, id).getAttribute('aria-pressed') !== 'true') {
+        await card(page, id).evaluate((element) => (element as HTMLButtonElement).click());
+      }
+      await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
+    }).toPass({ intervals: [100, 100, 100, 100, 100] });
+  }
+  const edit = page.getByTestId(`card-edit-tarjeta-${id}`);
+  await edit.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
 }
 
 async function box(locator: Locator) {
@@ -93,7 +114,8 @@ async function touchDrag(page: Page, locator: Locator, dx: number, dy: number, h
 /** En móvil el editor ocupa parte de la pantalla: se oculta para usar las asas del lienzo. */
 async function revealCanvas(page: Page) {
   const hide = button(page, 'Ocultar el editor de la tarjeta');
-  if (await hide.count() > 0) await hide.click();
+  if (await button(page, 'Volver al tablero').isVisible()) await button(page, 'Volver al tablero').click();
+  if (await hide.isVisible()) await hide.click();
 }
 
 const isCompact = (page: Page) => (page.viewportSize()?.width ?? 0) < at.width;
@@ -177,10 +199,17 @@ async function setSwitch(page: Page, name: string, on: boolean) {
 }
 
 async function expectGeometry(page: Page, cardNumber: number, text: string) {
-  // `card-geometry` vive dentro del editor: seleccionar ya no lo abre por sí solo (auditoría de
-  // interacción, 2026-09-29), así que hace falta «Editar» además de tocar la tarjeta.
-  await card(page, cardNumber).click();
-  await page.getByTestId(`card-edit-tarjeta-${cardNumber}`).click();
+  if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
+  // `card-geometry` vive dentro del editor. El foco trae al viewport una tarjeta que quedó fuera de
+  // cámara. Tras terminar un gesto, el controlador ignora brevemente el clic que ese gesto genera;
+  // por eso se confirma la selección observable antes de pulsar el botón explícito «Editar».
+  await card(page, cardNumber).focus();
+  await expect(card(page, cardNumber)).toBeInViewport();
+  await expect(async () => {
+    await card(page, cardNumber).click();
+    await expect(card(page, cardNumber)).toHaveAttribute('aria-pressed', 'true', { timeout: 300 });
+  }).toPass();
+  await openCardEditor(page, cardNumber);
   await expect(geometry(page)).toHaveText(text);
 }
 
@@ -208,9 +237,10 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
   await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeAttached();
   await expect(feedback(page)).toHaveText('Imagen de ejemplo añadida. Guardado en memoria.');
-  // Con los controles en la cabecera, en una tarjeta estrecha solo cabe el número.
-  await expect(card(page, 1)).toContainText(isCompact(page) ? '001' : '001 // NOTA');
-  await expect(card(page, 3)).toContainText(isCompact(page) ? '003' : '003 // IMAGEN');
+  // La grilla cuadrada y los controles reservan la cabecera: el número siempre permanece legible;
+  // el tipo completo solo aparece cuando el ancho real de la ficha deja espacio suficiente.
+  await expect(card(page, 1)).toContainText('001');
+  await expect(card(page, 3)).toContainText('003');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await page.getByTestId('card-edit-tarjeta-3').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
@@ -232,9 +262,9 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(geometry(page)).toHaveText('X -1, Y 0 · 4 × 3');
   await button(page, 'Mover a la derecha').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
-  // Reproducido el 2026-09-29: dónde nace la segunda nota depende del viewport (a la derecha en
-  // escritorio, debajo en móvil, ADR 0004), pero en ambos «abajo» choca con la tarjeta más próxima.
-  await button(page, 'Mover abajo').click();
+  // Dónde nace la segunda nota depende del viewport: a la derecha en escritorio y debajo en móvil
+  // (ADR 0004). Se intenta el movimiento que realmente la invade en cada distribución.
+  await button(page, isCompact(page) ? 'Mover abajo' : 'Mover a la derecha').click();
   await expect(page.getByRole('alert')).toHaveText('Ahí se solaparía con otra tarjeta.');
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
   await button(page, 'Más estrecha').click();
@@ -254,16 +284,16 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.getByTestId('connect-hint-tarjeta-3')).toHaveText('+ Conectar');
   await expect(feedback(page)).toContainText('Origen: «Escena inicial»');
   await page.screenshot({ path: testInfo.outputPath('workspace-connecting.png') });
-  await tapCard(page, 2);
+  await tapCard(page, 2, false);
   await expect(feedback(page)).toHaveText('Conexión eliminada. Guardado en memoria.');
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(0);
-  await tapCard(page, 1);
-  await tapCard(page, 3);
+  await tapCard(page, 1, false);
+  await tapCard(page, 3, false);
   await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
   await expect(card(page, 3)).toContainText('1 conexión');
   // Tocar el origen cancela sin cambiar nada.
-  await tapCard(page, 1);
-  await tapCard(page, 1);
+  await tapCard(page, 1, false);
+  await tapCard(page, 1, false);
   await expect(page.getByTestId('connect-hint-tarjeta-2')).toHaveCount(0);
   await button(page, 'Herramienta Seleccionar').click();
 
@@ -329,14 +359,19 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await expectGeometry(page, 1, 'Columna 1, fila 1 · 4 × 3');
   await closeEditor(page);
 
-  // Sin imán la vista previa sigue al puntero; con imán, salta a la celda.
-  await setSwitch(page, 'Imán en la vista previa', false);
+  // Sin ajuste, soltar conserva cuartos de celda; deshacer recupera el origen. Con ajuste, la
+  // vista previa salta a la celda completa. Así la subgrilla visible representa posiciones reales.
+  await setSwitch(page, 'Ajustar a celdas', false);
   const before = await box(card(page, 1));
-  await mouseDrag(page, card(page, 1), 0, Math.round(1.3 * cell.y), { release: false });
-  await expect.poll(async () => Math.round((await box(card(page, 1))).y - before.y)).toBe(Math.round(1.3 * cell.y));
-  await page.keyboard.press('Escape');
-  await page.mouse.up();
-  await setSwitch(page, 'Imán en la vista previa', true);
+  await mouseDrag(page, card(page, 1), 0, Math.round(1.3 * cell.y));
+  await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
+  await expectGeometry(page, 1, 'Columna 1, fila 2.25 · 4 × 3');
+  await closeEditor(page);
+  await page.keyboard.press('Control+z');
+  await resetView(page);
+  await expectGeometry(page, 1, 'Columna 1, fila 1 · 4 × 3');
+  await closeEditor(page);
+  await setSwitch(page, 'Ajustar a celdas', true);
   await mouseDrag(page, card(page, 1), 0, Math.round(1.3 * cell.y), { release: false });
   await expect.poll(async () => Math.round((await box(card(page, 1))).y - before.y)).toBe(cell.y);
   await page.keyboard.press('Escape');
@@ -346,6 +381,8 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await mouseDrag(page, card(page, 1), 0, 4 * cell.y);
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
   await expectGeometry(page, 1, 'Columna 1, fila 5 · 4 × 3');
+  await closeEditor(page);
+  await card(page, 1).click();
 
   // Asas: la esquina cambia ancho y alto; el mundo admite pasar de 12 columnas. Soltar no
   // selecciona otra vez ni abre nada: la tarjeta sigue seleccionada.
@@ -356,7 +393,9 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   if (compact) await zoomBy(page, 'out');
   await mouseDrag(page, page.getByTestId('resize-se-tarjeta-1'), cell.x * scale, cell.y * scale, { header: false });
   await expect(feedback(page)).toHaveText('Tamaño cambiado. Guardado en memoria.');
-  await expect(geometry(page)).toHaveText('Columna 1, fila 5 · 5 × 4');
+  await expectGeometry(page, 1, 'Columna 1, fila 5 · 5 × 4');
+  await closeEditor(page);
+  await card(page, 1).click();
   // Ancho 5 + 8 = 13 > 12 columnas. Al 50 % el puntero no sale de la ventana (Firefox no informa bien fuera de ella).
   await zoomBy(page, 'out', 3);
   await expectZoom(page, '50 %');
@@ -364,8 +403,39 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await expect(page.getByTestId('drag-status')).toHaveText('Nuevo tamaño: 13 × 4. Escape cancela.');
   await page.keyboard.press('Escape');
   await page.mouse.up();
-  await expect(geometry(page)).toHaveText('Columna 1, fila 5 · 5 × 4');
+  await expectGeometry(page, 1, 'Columna 1, fila 5 · 5 × 4');
   await page.screenshot({ path: testInfo.outputPath('drag-resized.png') });
+});
+
+test('icono propio y acceso rápido: se crea una ficha de tablero, cambia de icono y abre su destino', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Atajos');
+  const createBoard = async () => {
+    if (isCompact(page)) await button(page, 'Abrir un tablero').click();
+    await button(page, 'Crear un tablero').click();
+  };
+  const chooseBoard = async (title: string) => {
+    await button(page, `Tablero ${title}`).click();
+  };
+  await createBoard();
+  await createBoard();
+  await chooseBoard('Tablero 1');
+
+  await button(page, 'Crear acceso rápido a un tablero').click();
+  await expect(page.getByTestId('board-shortcut-dialog')).toBeVisible();
+  await button(page, 'Crear acceso a Tablero 2').click();
+  await expect(feedback(page)).toHaveText('Acceso a tablero creado. Guardado en memoria.');
+  await expect(card(page, 1)).toContainText('Tablero 2');
+
+  await openCardEditor(page, 1);
+  await button(page, 'Usar icono star').click();
+  await expect(button(page, 'Usar icono star')).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Mostrar minimizada').click();
+  await closeEditor(page);
+  await expect(page.getByTestId('minimized-icon-tarjeta-1')).toBeVisible();
+
+  await card(page, 1).dblclick();
+  await expect(button(page, 'Tablero Tablero 2')).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('táctil: arrastrar una tarjeta y redimensionar con el dedo', async ({ page, browserName }, testInfo) => {
@@ -381,7 +451,7 @@ test('táctil: arrastrar una tarjeta y redimensionar con el dedo', async ({ page
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
   await expectGeometry(page, 1, 'Columna 2, fila 3 · 4 × 3');
   // En el móvil el editor se oculta para dejar el lienzo (y las asas) a la vista, sin perder la selección.
-  await button(page, 'Ocultar el editor de la tarjeta').click();
+  await revealCanvas(page);
   await expect(page.getByLabel('Título de la tarjeta')).toBeHidden();
   await touchDrag(page, page.getByTestId('resize-s-tarjeta-1'), 0, cell.y, false);
   await expect(feedback(page)).toHaveText('Tamaño cambiado. Guardado en memoria.');
@@ -392,7 +462,7 @@ test('táctil: arrastrar una tarjeta y redimensionar con el dedo', async ({ page
   await closeEditor(page);
   await page.getByTestId('card-tarjeta-1').tap();
   await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openCardEditor(page, 1);
   await expect(geometry(page)).toHaveText('Columna 2, fila 3 · 4 × 4');
 });
 
@@ -452,6 +522,7 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   expect(Math.abs(first.x - second.x)).toBeLessThan(1);
   await card(page, 2).click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await closeEditor(page);
   await button(page, 'Vista de lista').click();
   await expect(page.getByTestId('board-canvas')).toBeVisible();
   expect(await hasHorizontalOverflow(page)).toBe(false);
@@ -647,26 +718,25 @@ test('recargar pierde los datos en memoria y la interfaz lo indica', async ({ pa
 /** Incumplimientos de la distribución para un ancho; vacío si todo está bien. Se reintenta tras redimensionar. */
 async function layoutProblems(page: Page, width: number): Promise<string[]> {
   const problems: string[] = [];
-  const [canvas, toolbar, inspector] = await Promise.all(['board-canvas', 'workspace-toolbar', 'card-inspector']
+  const [canvas, toolbar] = await Promise.all(['board-canvas', 'workspace-toolbar']
     .map((id) => page.getByTestId(id).boundingBox()));
-  if (!canvas || !toolbar || !inspector) return ['falta el lienzo, la barra o el inspector'];
+  if (!canvas || !toolbar) return ['falta el lienzo o la barra'];
   const height = page.viewportSize()?.height ?? 0;
   if (width >= at.width) {
     if (toolbar.y + toolbar.height > canvas.y) problems.push('la barra no está sobre el lienzo');
-    // El editor flota centrado sobre el lienzo y no reparte su ancho con él.
-    if (Math.abs(inspector.x + inspector.width / 2 - (canvas.x + canvas.width / 2)) > 1) problems.push('el editor no está centrado sobre el lienzo');
-    if (await page.getByTestId('inspector-panel').count() !== 1) problems.push('sin editor contextual');
   } else {
     if (toolbar.y < canvas.y + canvas.height) problems.push('la barra no está bajo el lienzo');
-    if (inspector.y < canvas.y + canvas.height) problems.push('el editor tapa el lienzo');
-    if (await page.getByTestId('inspector-sheet').count() !== 1) problems.push('sin hoja de edición');
-    for (const control of await page.getByTestId('workspace-toolbar').getByRole('button').all()) {
-      const found = await control.boundingBox();
-      if (!found || found.x + found.width > width + 0.5) problems.push('un control de la barra se sale');
-    }
+    const escaped = await page.getByTestId('workspace-toolbar').getByRole('button').evaluateAll(
+      (controls, viewportWidth) => controls.some((control) => {
+        const found = control.getBoundingClientRect();
+        return found.width === 0 || found.right > viewportWidth + 0.5;
+      }),
+      width,
+    );
+    if (escaped) problems.push('un control de la barra se sale');
   }
   if (await page.getByTestId('workspace-sidebar').count() !== (width >= 1100 ? 1 : 0)) problems.push('barra lateral incorrecta');
-  // En escritorio el lienzo ocupa la mayor parte del ancho aun con el inspector abierto.
+  // En escritorio el lienzo ocupa la mayor parte del ancho.
   if (width >= 1100 && canvas.width <= width * 0.5) problems.push('el lienzo no domina');
   if (canvas.height <= 150) problems.push('lienzo demasiado bajo');
   // La barra de herramientas queda entera dentro de la pantalla.
@@ -691,6 +761,7 @@ test('distribución responsive: carga inicial, tablet, 799/800 y redimensionado 
   await addCards(page, ['nota', 'nota', 'imagen']);
   // La última tarjeta creada se reveló; la primera puede quedar fuera de la vista: se activa con el teclado.
   await tapCard(page, 1);
+  await closeEditor(page);
   // Primera medida con el tamaño inicial, antes de redimensionar.
   await expectLayout(page, initial.width);
   await page.screenshot({ path: testInfo.outputPath('responsive-initial.png') });
@@ -727,7 +798,7 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await page.keyboard.press('Space');
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openCardEditor(page, 1);
   // Dónde nace la segunda tarjeta depende del viewport (a la derecha en escritorio, debajo en móvil,
   // ADR 0004), así que «arriba» es la única dirección libre en ambos para probar que Enter activa el
   // botón igual que un clic (reproducido el 2026-09-29).
@@ -737,8 +808,9 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await expect(geometry(page)).toHaveText('X 0, Y -1 · 4 × 3');
   expect(await activeLabel(page)).toBe('Mover arriba');
   // Escape cancela una conexión a medias.
+  await revealCanvas(page);
   await button(page, 'Herramienta Conectar').click();
-  await tapCard(page, 2);
+  await tapCard(page, 2, false);
   await expect(page.getByTestId('connect-hint-tarjeta-2')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('connect-hint-tarjeta-2')).toHaveCount(0);
@@ -760,9 +832,9 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
     expect(hundredths(found.width), `ancho de «${name}»`).toBeGreaterThanOrEqual(44);
     expect(hundredths(found.height), `alto de «${name}»`).toBeGreaterThanOrEqual(44);
   }
-  for (const label of ['Título de la tarjeta', 'Contenido Markdown']) {
-    expect((await box(page.getByLabel(label))).height).toBeGreaterThanOrEqual(44);
-  }
+  await openCardEditor(page, 1);
+  for (const label of ['Título de la tarjeta', 'Contenido Markdown']) expect((await box(page.getByLabel(label))).height).toBeGreaterThanOrEqual(44);
+  await revealCanvas(page);
   // Las asas tienen un área táctil de 44 px.
   const handle = await box(page.getByTestId('resize-se-tarjeta-1'));
   expect(handle.width).toBeGreaterThanOrEqual(44);
@@ -784,11 +856,11 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
   await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
   await expect(count).toHaveText('1 SELECCIONADA');
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
-  await tapCard(page, 2);
+  await tapCard(page, 2, false);
   await expect(count).toHaveText('2 SELECCIONADAS');
-  await tapCard(page, 2);
+  await tapCard(page, 2, false);
   await expect(count).toHaveText('1 SELECCIONADA');
-  await tapCard(page, 2);
+  await tapCard(page, 2, false);
   await expect(count).toHaveText('2 SELECCIONADAS');
   await expect(page.getByTestId('resize-s-tarjeta-1')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('multi-select.png') });
@@ -924,7 +996,7 @@ test('marcos: agrupar la selección, renombrar, mover con sus tarjetas (flechas 
   // Agrupar: el marco rodea la selección con una fila más arriba para el título y se abre su editor.
   await tapCard(page, 1);
   await button(page, 'Seleccionar varias tarjetas empezando por esta').click();
-  await tapCard(page, 2);
+  await tapCard(page, 2, false);
   await button(page, 'Agrupar las 2 seleccionadas en un marco').click();
   await expect(feedback(page)).toHaveText('Marco creado con 2 tarjetas. Guardado en memoria.');
   await expect(page.getByTestId('frame-inspector')).toBeVisible();

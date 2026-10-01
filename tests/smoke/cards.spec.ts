@@ -14,7 +14,8 @@ const card = (page: Page, id: number) => page.getByTestId(`card-tarjeta-${id}`);
  * o tapada: el foco la trae con el pan y Espacio dispara el mismo onPress que un toque. Un clic en su
  * centro «pulsaría» algo que la persona no ve.
  */
-async function tapCard(page: Page, id: number) {
+async function tapCard(page: Page, id: number, edit = true) {
+  if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
   // Al cerrar un diálogo, el foco vuelve (de forma asíncrona) al botón que lo abrió: se espera a que
   // la tarjeta tenga el foco de verdad antes de pulsar Espacio, o Espacio activaría ese botón.
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -22,11 +23,17 @@ async function tapCard(page: Page, id: number) {
     await card(page, id).focus();
     await expect(card(page, id)).toBeFocused({ timeout: 200 });
   }).toPass();
-  await page.keyboard.press('Space');
+  await expect(async () => {
+    if (await card(page, id).getAttribute('aria-pressed') !== 'true') {
+      await card(page, id).focus();
+      await page.keyboard.press('Space');
+    }
+    await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
+  }).toPass({ intervals: [100, 100, 100, 100, 100] });
   // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): el resto de
   // esta suite asume el editor abierto tras «tocar» una tarjeta, así que este ayudante pulsa «Editar» a
   // continuación. Sin efecto (a propósito) en una ficha minimizada: no tiene ese botón, solo «Expandir».
-  await page.getByTestId(`card-edit-tarjeta-${id}`).click({ timeout: 2000 }).catch(() => {});
+  if (edit) await openCardEditor(page, id);
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
 const geometry = (page: Page) => page.getByTestId('card-geometry');
@@ -46,13 +53,16 @@ async function createWorkspace(page: Page, name: string) {
 
 /** Añade una nota, la abre para editar y le pone título; queda seleccionada. */
 async function addNote(page: Page, title: string) {
+  // En móvil el editor ocupa la pantalla completa: hay que volver al tablero antes de crear otra.
+  // En escritorio mantiene el mismo recorrido explícito y evita operar a través del panel superpuesto.
+  if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
   const before = await page.locator('[data-testid^="card-tarjeta-"]').count();
   await button(page, 'Añadir nota').click();
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(before + 1);
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): la tarjeta nueva
   // queda seleccionada y «Editar» es el paso explícito para escribir su contenido.
   await expect(card(page, before + 1)).toHaveAttribute('aria-pressed', 'true');
-  await page.getByTestId(`card-edit-tarjeta-${before + 1}`).click();
+  await openCardEditor(page, before + 1);
   await page.getByLabel('Título de la tarjeta').fill(title);
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
@@ -61,6 +71,24 @@ async function addNote(page: Page, title: string) {
 async function closeEditor(page: Page) {
   await button(page, 'Cerrar el editor de la tarjeta').click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+}
+
+/** Activa con teclado el control de edición aunque una cabecera compacta no lo pinte en pantalla. */
+async function openCardEditor(page: Page, id: number) {
+  if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
+  await card(page, id).focus();
+  if (await card(page, id).getAttribute('aria-pressed') !== 'true') {
+    await expect(async () => {
+      if (await card(page, id).getAttribute('aria-pressed') !== 'true') {
+        await card(page, id).evaluate((element) => (element as HTMLButtonElement).click());
+      }
+      await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
+    }).toPass({ intervals: [100, 100, 100, 100, 100] });
+  }
+  const edit = page.getByTestId(`card-edit-tarjeta-${id}`);
+  await edit.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
 }
 
 test('configuración: modal o panel, cambios al instante, restablecer, Escape y preferencias del dispositivo', async ({ page }, testInfo) => {
@@ -94,8 +122,8 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await grid.click();
   await expect(grid).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByTestId('canvas-grid')).toHaveCount(0);
-  await page.getByRole('switch', { name: 'Imán en la vista previa' }).click();
-  await expect(page.getByRole('switch', { name: 'Imán en la vista previa' })).toHaveAttribute('aria-checked', 'false');
+  await page.getByRole('switch', { name: 'Ajustar a celdas' }).click();
+  await expect(page.getByRole('switch', { name: 'Ajustar a celdas' })).toHaveAttribute('aria-checked', 'false');
 
   // Densidad cuadrada: la ficha crece en ambos ejes al subir la unidad; reducir la separación suma 2 px.
   await button(page, 'Aumentar alto de fila').click();
@@ -147,13 +175,15 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   await addNote(page, 'Primera');
   await addNote(page, 'Segunda');
   await tapCard(page, 1);
-  await button(page, 'Minimizar Primera').click();
+  await button(page, 'Mostrar minimizada').click();
   await expect(feedback(page)).toHaveText('Tarjeta minimizada. Guardado en memoria.');
+  // El tamaño expandido se conserva aunque la huella sea 1 × 1; en móvil se comprueba antes de
+  // volver al tablero porque el editor enfocado ocupa la pantalla completa.
+  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
+  if ((page.viewportSize()?.width ?? 0) < 800) await button(page, 'Volver al tablero').click();
   // Icono de nota y título, no una inicial (ADR 0016).
   await expect(page.getByTestId('minimized-icon-tarjeta-1')).toBeVisible();
   await expect(page.getByTestId('minimized-tarjeta-1')).toContainText('Primera');
-  // El tamaño expandido se conserva aunque la huella sea 1 × 1.
-  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Primera, minimizada');
   // Una ficha minimizada sigue siendo tocable en móvil.
   const tile = await box(card(page, 1));
@@ -268,6 +298,7 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
   await tapCard(page, 1);
   for (let step = 0; step < 2; step += 1) await button(page, 'Más estrecha').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 2 × 3');
+  if (compact) await button(page, 'Volver al tablero').click();
   const narrow = await box(card(page, 1));
   // Umbral real de chromeFor (auditoría visual, 2026-09-29): 3 controles de 44 px más una franja libre
   // de 80 px para el tipo/arrastrar (antes 44 px; con solo eso, los controles dominaban la cabecera).
@@ -367,10 +398,11 @@ test('imagen real: vista previa, formato inválido, cancelación y ejemplo separ
   await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
   await expect(page.getByTestId('image-preview-tarjeta-1')).toHaveAttribute('aria-label', 'Imagen app-icon');
   await expect(page.getByTestId('image-preview-tarjeta-1')).toHaveAttribute('role', 'img');
-  // «card-asset» vive en el editor: hace falta «Editar» para verlo.
-  await page.getByTestId('card-edit-tarjeta-1').click();
-  await expect(page.getByTestId('card-asset')).toHaveText('assets/images/tarjeta-1.png');
   await expect(page.getByTestId('export-status')).toContainText('CAMBIOS SIN EXPORTAR');
+  // «card-asset» vive en el editor: hace falta «Editar» para verlo.
+  await openCardEditor(page, 1);
+  await expect(page.getByTestId('card-asset')).toHaveText('assets/images/tarjeta-1.png');
+  await closeEditor(page);
 
   // El ejemplo sigue disponible y claramente separado: sin archivo.
   await button(page, 'Añadir imagen de ejemplo').click();
@@ -386,10 +418,13 @@ test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con 
   await createWorkspace(page, 'Limpieza');
   await addNote(page, 'Primera');
   await addNote(page, 'Segunda');
+  await closeEditor(page);
   // En móvil «Primera» queda por encima de la vista tras revelar «Segunda»: se activa con el teclado.
   await tapCard(page, 1);
   await button(page, 'Conectar con Segunda').click();
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
+  await closeEditor(page);
+  await card(page, 1).click();
 
   await button(page, 'Enviar Primera a la Papelera').click();
   await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
@@ -407,8 +442,7 @@ test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con 
 
   // Eliminar definitivamente pide confirmación con el nombre; cancelar no cambia nada. Ese botón
   // («…la tarjeta X…») es del editor, distinto del de la cabecera («Enviar X…»): hace falta «Editar».
-  await card(page, 1).click();
-  await page.getByTestId('card-edit-tarjeta-1').click();
+  await openCardEditor(page, 1);
   await button(page, 'Enviar la tarjeta Primera a la Papelera').click();
   await button(page, 'Abrir la Papelera (1)').click();
   await button(page, 'Eliminar definitivamente Primera').click();
@@ -461,11 +495,10 @@ test('regresión: enfocar una tarjeta fuera del lienzo la trae con el pan, nunca
   await expect.poll(offset).toBe(panned);
   expect(await canvas.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([0, 0]);
   // El foco del teclado la trae con el pan y después se puede activar.
-  await tapCard(page, 1);
+  await tapCard(page, 1, false);
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(async () => (await box(card(page, 1))).x).toBeGreaterThanOrEqual(visible.x);
   expect(await canvas.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([0, 0]);
-  await closeEditor(page);
 
   // A la derecha: tampoco la muestra el scroll nativo, sino el foco.
   await panBy(visible.width - 16);
@@ -499,9 +532,17 @@ test('regresión: «Restablecer vista» vuelve al origen aunque haya una tarjeta
   };
   const origin = await offset();
   await addNote(page, 'Lejana');
-  // Los botones del inspector la llevan lejos: la cámara la sigue para que no se pierda de vista.
-  for (let step = 0; step < 10; step += 1) await button(page, 'Mover a la derecha').click();
-  await expect(geometry(page)).toContainText('Columna 11');
+  await closeEditor(page);
+  await tapCard(page, 1, false);
+  await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
+  // Desplaza la cámara con Mano y conserva una tarjeta seleccionada: restablecer debe respetar la
+  // orden explícita de volver al origen, sin reenfocar automáticamente la selección.
+  await button(page, 'Herramienta Mano').click();
+  const frame = await box(canvas);
+  await page.mouse.move(frame.x + frame.width - 20, frame.y + frame.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(frame.x + frame.width - 180, frame.y + frame.height / 2, { steps: 10 });
+  await page.mouse.up();
   await expect.poll(async () => (await offset())[0]).toBeLessThan(origin[0] ?? 0);
   // Acercar y restablecer: vuelve al origen y a 100 %, sin que la selección vuelva a mover la cámara.
   if (compact) {
@@ -576,6 +617,7 @@ test('P3: listas con teclado (continuar, terminar, renumerar sin perder el curso
   await expect(card(page, 1)).toContainText('<script>window.__pwned=2</script>');
   expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
   expect(await card(page, 1).locator('script, img[src="x"], style').count()).toBe(0);
+  await closeEditor(page);
   await expect(page.getByTestId('board-canvas')).toBeVisible();
 });
 
@@ -590,6 +632,8 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
   await button(page, 'Mover abajo').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
+  await closeEditor(page);
+  await card(page, 1).click();
   await button(page, 'Minimizar Proyecto Solace').click();
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Proyecto Solace, minimizada');
   await button(page, 'Acciones de Proyecto Solace').click();
@@ -835,6 +879,7 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   await button(page, 'Insertar una imagen en la nota').click();
   await second;
   await expect(editor).toHaveValue('Llegada.\n\n![mapa](assets/images/tarjeta-1-2.png)\n\nTemplos y <b>jardines</b>.\n\n![portada](assets/images/tarjeta-1-1.png)');
+  await closeEditor(page);
   // La ficha muestra los bloques en orden: el HTML sigue siendo texto.
   const preview = page.getByTestId('note-preview-tarjeta-1');
   // En una ficha de tamaño inicial caben el primer párrafo y la primera imagen; el resto se indica.
@@ -843,6 +888,7 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   await expect(preview.getByRole('img', { name: 'portada' })).toHaveCount(0);
   await expect(preview).toContainText('+2 bloques más');
   await page.screenshot({ path: testInfo.outputPath('note-images.png') });
+  await openCardEditor(page, 1);
 
   // Reordenar y texto alternativo: van al borrador y se guardan con «Guardar texto».
   await button(page, 'Subir la imagen portada').click();
@@ -866,7 +912,7 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
 
   // Editor enfocado: ocupa el sitio del lienzo y vuelve sin perder el borrador.
   await editor.fill(`${await editor.inputValue()}\n\nBorrador sin guardar`);
-  await button(page, 'Ampliar el editor').click();
+  if (await button(page, 'Ampliar el editor').isVisible()) await button(page, 'Ampliar el editor').click();
   await expect(page.getByTestId('board-canvas')).toBeHidden();
   await expect(editor).toHaveValue(/Borrador sin guardar$/);
   await page.screenshot({ path: testInfo.outputPath('note-focus.png') });
@@ -1480,7 +1526,9 @@ test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la fich
   await page.getByLabel('Contenido Markdown').fill('Otro cuerpo.');
   await expect.poll(bodyInEditor).toMatch(/monospace|Menlo|Consolas/);
 
+  await closeEditor(page);
   await settings(async () => { await button(page, 'Usar tipografía sistema en las notas').click(); });
+  await tapCard(page, 1);
   await expect.poll(bodyInEditor).toBe(systemBody);
   expect(runtimeErrors).toEqual([]);
 });

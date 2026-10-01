@@ -34,6 +34,11 @@ describe('geometría del lienzo (ADR 0013)', () => {
     expect(dragTarget(rect, -500, -500, 1, WIDE_METRICS)).toEqual({ x: -3, y: -7 });
   });
 
+  it('sin imán guarda el destino en cuartos de celda', () => {
+    const rect = { x: 2, y: 1, w: 4, h: 3 };
+    expect(dragTarget(rect, 20, 36, 1, { cell: 64, row: 64, gap: 8 }, false)).toEqual({ x: 2.25, y: 1.5 });
+  });
+
   it('las asas cambian ancho, alto o ambos y nunca bajan de 1 × 1', () => {
     const rect = { x: 0, y: 0, w: 4, h: 3 };
     expect(resizeTarget(rect, 'e', 96, 999, 1, WIDE_METRICS)).toEqual({ w: 5, h: 3 });

@@ -108,10 +108,10 @@ export const TRANSLATIONS = {
   'settings.canvas': { es: 'Lienzo y grilla', en: 'Canvas and grid' },
   'settings.grid.show': { es: 'Mostrar grilla', en: 'Show grid' },
   'settings.grid.show.description': { es: 'Líneas de columnas y filas sobre el papel.', en: 'Column and row lines over the paper.' },
-  'settings.snap': { es: 'Imán en la vista previa', en: 'Snap in the preview' },
+  'settings.snap': { es: 'Ajustar a celdas', en: 'Snap to cells' },
   'settings.snap.description': {
-    es: 'Al arrastrar, la ficha salta de celda en celda. Sin imán sigue al puntero; al soltar se guarda siempre la celda entera.',
-    en: 'While dragging, the card jumps from cell to cell. Without snap it follows the pointer; releasing always saves the whole cell.',
+    es: 'Activo: celdas completas. Desactivado: posición fina persistente en cuartos de celda.',
+    en: 'On: whole cells. Off: persistent fine positioning in quarter cells.',
   },
   'settings.zoom': { es: 'Zoom', en: 'Zoom' },
   'settings.zoom.description': { es: 'Solo para esta sesión.', en: 'For this session only.' },

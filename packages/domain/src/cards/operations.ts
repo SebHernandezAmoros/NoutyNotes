@@ -8,7 +8,7 @@ import { findFreeSpace } from '../layouts/operations';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
-import type { Card } from './card';
+import { cardIconNames, type Card, type CardIconName } from './card';
 
 export interface DeleteCardOptions {
   /** Por defecto no permite borrar una tarjeta conectada; cascade elimina sus vínculos explícitamente. */
@@ -126,4 +126,38 @@ export function updateCard(workspace: Workspace, cardId: CardId, changes: CardCo
     ...(changes.content === undefined ? {} : { content: changes.content }),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? edited : candidate)) });
+}
+
+export interface CardAppearanceChanges {
+  readonly icon?: CardIconName | null;
+  readonly boardTargetId?: BoardId | null;
+}
+
+/** Cambia icono y destino de tablero sin abrir el contenido de la tarjeta (ADR 0046). */
+export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
+  const source = validateWorkspace(workspace);
+  if (!source.ok) return source;
+  if (!isValidId(cardId)) return failure([issue('invalid-id', 'cardId', 'Identificador de tarjeta inválido.')]);
+  const card = workspace.cards.find((candidate) => candidate.id === cardId);
+  if (!card) return failure([issue('missing-reference', 'cardId', 'La tarjeta no existe en el workspace.')]);
+  if (!isRecord(changes)) return failure([issue('invalid-value', 'changes', 'Debe ser un objeto de cambios.')]);
+  const unknown = Object.keys(changes).filter((key) => key !== 'icon' && key !== 'boardTargetId');
+  if (unknown.length > 0) return failure(unknown.map((key) => issue('unknown-property', `changes.${key}`, 'Propiedad no editable.')));
+  const nextIcon = changes.icon;
+  const nextTarget = changes.boardTargetId;
+  if (nextIcon !== undefined && nextIcon !== null && !cardIconNames.includes(nextIcon as CardIconName)) {
+    return failure([issue('invalid-value', 'changes.icon', 'Icono desconocido.')]);
+  }
+  if (nextTarget !== undefined && nextTarget !== null
+    && !workspace.boards.some((board) => board.id === nextTarget)) {
+    return failure([issue('missing-reference', 'changes.boardTargetId', 'El tablero destino no existe.')]);
+  }
+  const { icon: _icon, boardTargetId: _target, ...base } = card;
+  const edited: Card = {
+    ...base,
+    ...(nextIcon === undefined ? (card.icon === undefined ? {} : { icon: card.icon }) : nextIcon === null ? {} : { icon: nextIcon as CardIconName }),
+    ...(nextTarget === undefined ? (card.boardTargetId === undefined ? {} : { boardTargetId: card.boardTargetId })
+      : nextTarget === null ? {} : { boardTargetId: nextTarget as BoardId }),
+  };
+  return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => candidate === card ? edited : candidate) });
 }

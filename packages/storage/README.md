@@ -38,6 +38,8 @@ boards/<id>.md          frontmatter + descripción Markdown literal
 README.md, assets/**    extras admitidos, conservados sin interpretar
 ```
 
+Los codecs conservan versiones anteriores y elevan solo el documento que usa una capacidad nueva. `layout.yaml` v4 admite coordenadas y tamaños en cuartos de celda; una tarjeta Markdown v4 puede guardar `icon` y `boardTargetId` (ADR 0046). Un workspace que no usa estas propiedades mantiene los bytes/versiones previos mediante `previousFiles`.
+
 - **Salida:** determinista, con claves YAML ordenadas, listas en su orden y LF. Los cuerpos Markdown se conservan carácter a carácter, incluidos CRLF. `contentPresent` y `descriptionPresent` distinguen ausente de vacío.
 - **Lectura:** YAML 1.2 core estricto y claves cerradas. Se rechazan versiones distintas de 1, claves duplicadas, anchors, aliases, tags, `__proto__`, BOM y archivos no declarados. También se rechazan las identidades que no coinciden entre manifiesto, ruta y documento, y las rutas no portables o que colisionan sin distinguir mayúsculas.
 - **Con `previousFiles`:** el paquete anterior se valida primero. Cada documento sin cambios semánticos conserva sus bytes (comentarios incluidos), solo se regeneran los modificados y se conservan los extras admitidos. Un documento regenerado pierde sus comentarios YAML.

@@ -38,6 +38,13 @@ export function archiveBoard(workspace: Workspace, boardId: BoardId, archivedAt:
   };
   return validateWorkspace({
     ...current,
+    // Un acceso desde otro tablero no puede conservar una referencia activa a un tablero archivado.
+    // Se mantiene la ficha, su título y su icono; solo deja de navegar (ADR 0046).
+    cards: current.cards.map((card) => {
+      if (card.boardTargetId !== boardId) return card;
+      const { boardTargetId: _target, ...withoutTarget } = card;
+      return withoutTarget;
+    }),
     boards: current.boards.filter((candidate) => candidate.id !== boardId),
     layouts: current.layouts.filter((layout) => layout.boardId !== boardId),
     archivedBoards: [...(workspace.archivedBoards ?? []), entry],

@@ -3,7 +3,7 @@ import type { AssetRef } from '../assets/asset-ref';
 import { checkOptionalText, isRecord, issue, listAt, resultOf } from '../errors';
 import type { DomainIssue, ValidationResult } from '../errors';
 import { checkId } from '../ids';
-import type { CardId, CardTypeId } from '../ids';
+import type { BoardId, CardId, CardTypeId } from '../ids';
 import { collectCardTypeIssues } from './card-type';
 import type { CardTypeDefinition } from './card-type';
 import { collectFieldValueIssues } from './field-values';
@@ -28,7 +28,14 @@ export interface Card {
   readonly tags?: readonly string[];
   /** Creación real (ADR 0024): instante ISO 8601 en UTC puesto al crearla. Ausente en las anteriores. */
   readonly createdAt?: string;
+  /** Icono portable de un catálogo cerrado (ADR 0046). */
+  readonly icon?: CardIconName;
+  /** Destino de un atajo a otro tablero del mismo workspace (ADR 0046). */
+  readonly boardTargetId?: BoardId;
 }
+
+export const cardIconNames = ['note', 'image', 'folder', 'link', 'check', 'star'] as const;
+export type CardIconName = (typeof cardIconNames)[number];
 
 /**
  * Invariantes propias de la tarjeta. Si se conoce su tipo, también la compatibilidad de campos;
@@ -54,6 +61,10 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   if (card.createdAt !== undefined && !isArchiveInstant(card.createdAt)) {
     issues.push(issue('invalid-value', `${path}.createdAt`, 'Debe ser una fecha y hora ISO 8601 en UTC.'));
   }
+  if (card.icon !== undefined && !cardIconNames.includes(card.icon as CardIconName)) {
+    issues.push(issue('invalid-value', `${path}.icon`, 'Debe ser un icono del catálogo admitido.'));
+  }
+  if (card.boardTargetId !== undefined) checkId(card.boardTargetId, `${path}.boardTargetId`, issues);
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);
     refs.forEach((ref, index) => checkAssetRef(ref, `${path}.assetRefs[${index}]`, issues));

@@ -134,14 +134,14 @@ interface CanvasProps {
 const FLOATING_TITLE = 'titulo-flotante';
 
 /** Destino de un gesto en curso y su validez según el motor de grilla, antes de guardar nada. */
-function evaluate(layout: BoardLayout, placement: CardPlacement, gesture: Gesture, zoom: number, metrics: CanvasMetrics) {
+function evaluate(layout: BoardLayout, placement: CardPlacement, gesture: Gesture, zoom: number, metrics: CanvasMetrics, snap: boolean) {
   if (gesture.kind === 'move' && gesture.group) {
-    const to = dragTarget(placement.rect, gesture.dx, gesture.dy, zoom, metrics);
+    const to = dragTarget(placement.rect, gesture.dx, gesture.dy, zoom, metrics, snap);
     const delta = { x: to.x - placement.rect.x, y: to.y - placement.rect.y };
     return { rect: { ...placement.rect, ...to }, delta, changed: delta.x !== 0 || delta.y !== 0, check: checkMoveMany(layout, gesture.group, delta) };
   }
   if (gesture.kind === 'move') {
-    const to = dragTarget(placement.rect, gesture.dx, gesture.dy, zoom, metrics);
+    const to = dragTarget(placement.rect, gesture.dx, gesture.dy, zoom, metrics, snap);
     return { rect: { ...placement.rect, ...to }, changed: to.x !== placement.rect.x || to.y !== placement.rect.y, check: checkMove(layout, placement.cardId, to) };
   }
   const size = resizeTarget(placement.rect, gesture.handle, gesture.dx, gesture.dy, zoom, metrics);
@@ -273,7 +273,7 @@ export function Canvas(props: CanvasProps) {
         const currentLayout = current.props.layout;
         const placement = currentLayout?.placements.find((candidate) => candidate.cardId === done.cardId);
         if (!currentLayout || !placement) return;
-        const result = evaluate(currentLayout, placement, { ...done, dx, dy }, current.props.zoom, current.props.metrics);
+        const result = evaluate(currentLayout, placement, { ...done, dx, dy }, current.props.zoom, current.props.metrics, current.props.snap);
         if (!result.changed) return;
         if (!result.check.ok) {
           current.props.onRejected(`No se guardó el cambio. ${rejection(result.check, current.names)}`);
@@ -515,7 +515,7 @@ export function Canvas(props: CanvasProps) {
   }).panHandlers);
 
   const active = gesture ? placements.find((placement) => placement.cardId === gesture.cardId) : undefined;
-  const preview = gesture && active && layout ? evaluate(layout, active, gesture, zoom, metrics) : null;
+  const preview = gesture && active && layout ? evaluate(layout, active, gesture, zoom, metrics, snap) : null;
   const colliding = new Set(preview && !preview.check.ok ? preview.check.colliding : []);
   const draggedFrame = frameDrag ? layout?.frames?.find((frame) => frame.id === frameDrag.frameId) : undefined;
   const framePreview = frameDrag && draggedFrame && layout ? (() => {
@@ -638,13 +638,12 @@ export function Canvas(props: CanvasProps) {
       <View testID="canvas-background" style={StyleSheet.absoluteFill} {...background} />
       {showGrid ? (
         <View testID="canvas-grid" style={styles.overlay} pointerEvents="none">
-          {/* Solo se dibujan destinos que el motor puede guardar. La antigua subgrilla de cuartos era
-              decorativa y prometía puntos de ajuste inexistentes. */}
-          {visibleGridLines(pan.x, zoom, metrics.cell, viewport.width).map((left) => (
-            <View key={`c${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine }]} />
+          {/* Sin imán, los cuartos son destinos persistibles reales (ADR 0046). */}
+          {visibleGridLines(pan.x, zoom, snap ? metrics.cell : metrics.cell / 4, viewport.width).map((left) => (
+            <View key={`c${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine, opacity: snap ? 1 : 0.45 }]} />
           ))}
-          {visibleGridLines(pan.y, zoom, metrics.row, viewport.height).map((top) => (
-            <View key={`r${top}`} style={[styles.gridRow, { top, backgroundColor: colors.gridLine }]} />
+          {visibleGridLines(pan.y, zoom, snap ? metrics.row : metrics.row / 4, viewport.height).map((top) => (
+            <View key={`r${top}`} style={[styles.gridRow, { top, backgroundColor: colors.gridLine, opacity: snap ? 1 : 0.45 }]} />
           ))}
         </View>
       ) : null}

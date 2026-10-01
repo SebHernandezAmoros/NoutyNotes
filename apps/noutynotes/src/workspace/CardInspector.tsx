@@ -1,6 +1,6 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
-import { linkUrlField } from '@noutynotes/domain';
+import { cardIconNames, linkUrlField } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -46,6 +46,7 @@ interface CardInspectorProps {
   /** Editor enfocado (ADR 0021): ampliar o volver al tablero. En la hoja móvil lo ofrece su barra. */
   readonly focused?: boolean;
   readonly onToggleFocus?: () => void;
+  readonly onOpenBoard?: (boardId: BoardId) => void;
 }
 
 const displayKeys: readonly { display: CardDisplayMode; labelKey: 'inspector.display.expanded' | 'inspector.display.collapsed' | 'inspector.display.minimized' }[] = [
@@ -72,7 +73,7 @@ const resizeKeys = [
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, focused = false, onToggleFocus }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -376,6 +377,22 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.display.hint', locale)}</Text>
         </View>
       ) : null}
+
+      <View testID="card-icon-picker" style={styles.section}>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>ICONO</Text>
+        <View style={styles.row}>
+          {cardIconNames.map((icon) => (
+            <ActionButton key={icon} label={icon === 'note' ? 'Nota' : icon === 'image' ? 'Imagen' : icon === 'folder' ? 'Carpeta' : icon === 'link' ? 'Enlace' : icon === 'check' ? 'Tarea' : 'Estrella'}
+              accessibilityLabel={`Usar icono ${icon}`}
+              pressed={card.icon === icon}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { icon }), { label: 'Apariencia actualizada' })} />
+          ))}
+        </View>
+        {card.boardTargetId ? (
+          <ActionButton label="Abrir tablero" accessibilityLabel={`Abrir tablero ${workspace.boards.find((candidate) => candidate.id === card.boardTargetId)?.title ?? card.boardTargetId}`}
+            tone="primary" onPress={() => onOpenBoard?.(card.boardTargetId as BoardId)} />
+        ) : null}
+      </View>
 
       {(card.assetRefs?.length ?? 0) > 0 ? (
         <View style={styles.section}>

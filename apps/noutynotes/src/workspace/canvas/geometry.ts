@@ -46,11 +46,13 @@ export function canvasSize(layout: BoardLayout | undefined, metrics: CanvasMetri
   return { width: CANONICAL_GRID.columns * metrics.cell, height: rows * metrics.row, rows };
 }
 
-const cells = (pixels: number, zoom: number, unit: number) => Math.round(pixels / zoom / unit) + 0;
+const cells = (pixels: number, zoom: number, unit: number, subdivisions = 1) =>
+  Math.round(pixels / zoom / unit * subdivisions) / subdivisions + 0;
 
 /** Esquina de destino de un arrastre de (dx, dy) px de pantalla. No recorta: eso lo decide el motor. */
-export function dragTarget(cell: GridPoint, dx: number, dy: number, zoom: number, metrics: CanvasMetrics): GridPoint {
-  return { x: cell.x + cells(dx, zoom, metrics.cell), y: cell.y + cells(dy, zoom, metrics.row) };
+export function dragTarget(cell: GridPoint, dx: number, dy: number, zoom: number, metrics: CanvasMetrics, snap = true): GridPoint {
+  const subdivisions = snap ? 1 : 4;
+  return { x: cell.x + cells(dx, zoom, metrics.cell, subdivisions), y: cell.y + cells(dy, zoom, metrics.row, subdivisions) };
 }
 
 export type ResizeHandle = 'e' | 's' | 'se';

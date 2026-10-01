@@ -23,7 +23,7 @@ Las pruebas `*.test.ts` están junto a cada módulo. `src/__fixtures__/` contien
 
 - **Propiedad.** El workspace posee tarjetas, tipos y relaciones. La tarjeta posee su contenido Markdown (opaco), sus campos y sus referencias a assets.
 - **Boards.** Un board referencia tarjetas por ID y define su orden. Una tarjeta puede estar en varios boards o en ninguno. Quitarla de un board no la elimina.
-- **Layouts.** Hay un layout por board, identificado por `boardId`. Cada colocación se identifica por `(boardId, cardId)` y guarda un rectángulo entero en unidades de grilla y el modo `expanded`, `collapsed` o `minimized`. Solo puede colocar tarjetas que pertenecen a ese board.
+- **Layouts.** Hay un layout por board, identificado por `boardId`. Cada colocación se identifica por `(boardId, cardId)` y guarda un rectángulo en unidades de grilla, con precisión de cuartos de celda, y el modo `expanded`, `collapsed` o `minimized`. Solo puede colocar tarjetas que pertenecen a ese board.
 - **Relaciones.** Enlazan dos tarjetas del workspace mediante un tipo declarado, sin depender de boards ni posiciones.
 - **Campos.** Cada tarjeta usa un tipo declarado. Solo admite los campos que ese tipo define, con valores del tipo correcto, y exige los obligatorios.
 - **Identificadores.** Minúsculas, dígitos, `-` y `_`; como máximo 64 caracteres. Son únicos dentro de su colección y se validan sin transformarlos.
@@ -43,7 +43,7 @@ Recibe un `BoardLayout` y una `GridConfig` y devuelve un resultado nuevo o incid
 - **Restaurar:** al expandir o descontraer, `setDisplay` falla si no hay sitio, o busca el primer hueco con `{ ifOccupied: 'relocate' }`.
 - **Proyección:** `projectLayout(layout, from, to)` deriva la vista para otra cantidad de columnas (por ejemplo, móvil de una columna) sin modificar el layout canónico.
 
-Todas las operaciones validan antes el layout de entrada, no lo mutan y producen el mismo resultado con los mismos datos. Los componentes del `rect` son enteros seguros y sus sumas deben ser representables en cualquier modo. Ninguna salida exitosa tiene geometría inválida. La búsqueda y la proyección recorren solo filas candidatas (bordes inferiores de las huellas), así que su coste no depende de la altura. Las entradas nulas o mal formadas devuelven incidencias en lugar de excepciones.
+Todas las operaciones validan antes el layout de entrada, no lo mutan y producen el mismo resultado con los mismos datos. Los componentes de posición y tamaño del `rect` son múltiplos seguros de `0.25`; `w` y `h` son positivos y las sumas deben ser representables en cualquier modo. Ninguna salida exitosa tiene geometría inválida. La búsqueda y la proyección recorren solo filas candidatas (bordes inferiores de las huellas), así que su coste no depende de la altura. Las entradas nulas o mal formadas devuelven incidencias en lugar de excepciones.
 
 ## Relaciones y borrado
 

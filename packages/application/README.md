@@ -26,7 +26,8 @@ Todas devuelven `Promise<WorkspaceStorageResult<T>>` y nunca rechazan por datos 
 
 - `createEmptyWorkspaceNamed(storage, name)`: deriva un ID legible y libre del nombre.
 - `addCardToBoard(storage, id, { kind: 'note' | 'image', title? })`: añade la tarjeta al primer board (lo crea si falta) en el primer hueco libre y devuelve su ID. Crea bajo demanda los tipos `nota` o `imagen`.
-- `editCardContent`, `moveCardOnBoard`, `resizeCardOnBoard` (grilla canónica `CANONICAL_GRID`), `connectCards` (tipo `relacionada`, que se crea si falta) y `disconnectCards`.
+- `editCardContent`, `editCardAppearance`, `moveCardOnBoard`, `resizeCardOnBoard` (grilla canónica `CANONICAL_GRID`), `connectCards` (tipo `relacionada`, que se crea si falta) y `disconnectCards`.
+- `addBoardShortcut`: crea en un tablero una tarjeta normal y navegable cuyo `boardTargetId` apunta a otro tablero activo del mismo workspace.
 - `ids.ts`: `nextSequentialId` y `workspaceIdFromName`, deterministas y sin reloj ni aleatoriedad. El dominio nunca genera IDs.
 
 Los adaptadores disponibles están en `@noutynotes/storage`: `MemoryStorage`, `FolderStorage` (carpetas web) y `ArchiveStorage` (espacios del navegador con ZIP). Todo adaptador debe pasar la suite `tests/contracts/workspace-storage-contract.ts`.

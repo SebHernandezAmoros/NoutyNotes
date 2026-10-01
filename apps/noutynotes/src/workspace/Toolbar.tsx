@@ -18,6 +18,7 @@ interface ToolbarProps {
   readonly onAddLink: () => void;
   readonly onImportImage: () => void;
   readonly onAddExample: () => void;
+  readonly onAddBoardShortcut: () => void;
   readonly zoom: number;
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
@@ -86,6 +87,7 @@ export function Toolbar(props: ToolbarProps) {
     <View style={styles.group}>
       <ToolButton glyph="+" label={t('add.note', locale)} accessibilityLabel={t('add.note.label', locale)} onPress={props.onAddNote} style={cell} />
       <ToolButton glyph="T" label={t('add.title', locale)} accessibilityLabel={t('add.title.label', locale)} onPress={props.onAddTitle} style={cell} />
+      <ToolButton glyph="▣" label="Tablero" accessibilityLabel="Crear acceso rápido a un tablero" onPress={props.onAddBoardShortcut} style={cell} />
       <ToolButton glyph="↗" label={t('add.link', locale)} accessibilityLabel={t('add.link.label', locale)} accessibilityHint={t('add.link.hint', locale)} onPress={props.onAddLink} style={cell} />
       <ToolButton glyph="⤒" label={t('add.image', locale)} accessibilityLabel={t('add.image.label', locale)} accessibilityHint={t('add.image.hint', locale)} onPress={props.onImportImage} style={cell} />
       <ToolButton glyph="▣" label={t('add.example', locale)} accessibilityLabel={t('add.example.label', locale)} accessibilityHint={t('add.example.hint', locale)} onPress={props.onAddExample} style={cell} />

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardContent, moveCardOnBoard, resizeCardOnBoard,
+  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, resizeCardOnBoard,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId, CardId, RelationId, WorkspaceId } from '../../packages/domain/src/index';
@@ -108,6 +108,21 @@ describe('añadir tarjetas (fase 7)', () => {
 });
 
 describe('editar, mover, redimensionar y relacionar a través del puerto (fase 7)', () => {
+  it('persiste posiciones finas, iconos y atajos a tableros con formato selectivo', async () => {
+    const { storage, workspaceId } = await session();
+    const note = ok(await addCardToBoard(storage, workspaceId, { kind: 'note' }));
+    const secondBoard = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Referencias' }));
+    ok(await editCardAppearance(storage, workspaceId, note, { icon: 'star' }));
+    ok(await moveCardOnBoard(storage, workspaceId, { boardId: board, cardId: note, to: { x: 0.25, y: 0.5 } }));
+    const shortcut = ok(await addBoardShortcut(storage, workspaceId, { boardId: board, targetBoardId: secondBoard }));
+    const opened = ok(await storage.open(workspaceId));
+    expect(opened.cards.find((candidate) => candidate.id === note)?.icon).toBe('star');
+    expect(opened.cards.find((candidate) => candidate.id === shortcut)).toMatchObject({ icon: 'folder', boardTargetId: secondBoard });
+    expect(opened.layouts[0]?.placements.find((placement) => placement.cardId === note)?.rect).toMatchObject({ x: 0.25, y: 0.5 });
+    const files = ok(storage.exportPackage(workspaceId));
+    expect(files['.nouty/layout.yaml']).toContain('schemaVersion: 4');
+    expect(files[`cards/${shortcut}.md`]).toContain('schemaVersion: 4');
+  });
   it('edita título y Markdown y lo conserva al reabrir', async () => {
     const { storage, workspaceId } = await session();
     const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'note' }));

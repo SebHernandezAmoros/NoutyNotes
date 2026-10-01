@@ -42,8 +42,10 @@ Lienzo en dos ejes, listas y pulido (ADR 0017, ADR 0018):
   - la hoja móvil del editor tiene una sola barra (`CardInspector` con `inSheet`).
 
 Controles de tarjeta y proyectos (ADR 0016):
-- `src/workspace/canvas/cardChrome.ts` (puro): acciones y posición de los controles en píxeles de pantalla. `CardControls.tsx` los dibuja fuera de la escala del zoom, junto con el menú `⋯`, y `CardIcon.tsx` dibuja los iconos de nota e imagen;
+- `src/workspace/canvas/cardChrome.ts` (puro): acciones y posición de los controles en píxeles de pantalla. `CardControls.tsx` los dibuja fuera de la escala del zoom, junto con el menú `⋯`, y `CardIcon.tsx` dibuja el catálogo portable de iconos;
 - `src/workspace/ProjectTabs.tsx`: pestañas verticales de proyectos (≥ 800 px) y hoja «Proyectos» en móvil. Cambiar de proyecto guarda antes el borrador.
+
+ADR 0046 conecta el interruptor de imán con el contrato persistente: activo usa celdas completas y desactivado cuartos de celda. `WorkspaceScreen` ofrece el selector de icono y el diálogo «Tablero» para crear una tarjeta que abre otro tablero, sin código de filesystem en la interfaz.
 
 Configuración y fechas (ADR 0029):
 - `ThemeProvider` (`@noutynotes/ui`) recibe `load` y `save`; la app los implementa en `session/viewPreferencesStore(.android).ts`. Se lee con `useSyncExternalStore`: al hidratar el export estático vale «system» y después lo guardado, sin errores de hidratación.

@@ -3,7 +3,7 @@ import type { DomainIssue, ValidationResult } from '../errors';
 import type { CardId } from '../ids';
 import { candidateRows, cellsOverlap, compareReadingOrder, fitsGrid, footprint, isRepresentable, validateGridLayout } from './grid';
 import type { GridCell, GridConfig, GridPoint, GridSize } from './grid';
-import { cardDisplayModes } from './layout';
+import { GRID_SUBDIVISIONS, cardDisplayModes } from './layout';
 import type { BoardLayout, CardDisplayMode, CardPlacement } from './layout';
 
 export interface FindFreeSpaceOptions {
@@ -39,7 +39,7 @@ function locate(layout: BoardLayout, cardId: CardId, config: GridConfig): Valida
 function checkIntegers<K extends string>(value: Readonly<Record<K, number>>, keys: readonly K[], path: string, minimum: number): DomainIssue[] {
   if (!isRecord(value)) return [issue('invalid-layout', path, 'Debe ser un objeto con valores numéricos.')];
   return keys
-    .filter((key) => !Number.isSafeInteger(value[key]) || value[key] < minimum)
+    .filter((key) => !(Number.isSafeInteger(value[key]) || Number.isSafeInteger(value[key] * GRID_SUBDIVISIONS)) || value[key] < minimum)
     .map((key) => issue('invalid-layout', `${path}.${key}`,
       minimum > 0 ? 'Debe ser un entero mayor o igual que 1.' : 'Debe ser un entero; aplicar snap antes de operar.'));
 }

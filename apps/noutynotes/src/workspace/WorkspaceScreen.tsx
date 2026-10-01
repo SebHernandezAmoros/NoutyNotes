@@ -1,5 +1,5 @@
 import {
-  PROTOTYPE_BOARD, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
+  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, updateConnection,
 } from '@noutynotes/application';
 import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
@@ -128,6 +128,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
   // Tarjeta del tablero sin posición a la que se llegó desde la búsqueda: se ofrece colocarla (ADR 0020).
   const [placeOffer, setPlaceOffer] = useState<{ readonly cardId: CardId; readonly boardId: BoardId; readonly title: string } | null>(null);
   const [projectsOpen, setProjectsOpen] = useState(false);
@@ -236,6 +237,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       return;
     }
     if (!await flushPendingText()) return;
+    const target = workspace?.cards.find((candidate) => candidate.id === cardId)?.boardTargetId;
+    if (target) {
+      setEditingId(null);
+      setSelectedId(null);
+      void chooseBoard(target);
+      return;
+    }
     setSelectedId(cardId);
     setEditingId(cardId);
     setSheetHidden(false);
@@ -442,6 +450,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const createBoard = () => {
     void run((storage, workspaceId) => addBoardToWorkspace(storage, workspaceId, {}), 'action.boardCreated')
       .then((result) => { if (result.ok) void chooseBoard(result.value); });
+  };
+
+  const createShortcut = (targetBoardId: BoardId) => {
+    if (!board) return;
+    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    void run((storage, workspaceId) => addBoardShortcut(storage, workspaceId, {
+      boardId: board.id, targetBoardId, createdAt: new Date().toISOString(), ...(near ? { near } : {}),
+    }), { label: 'Acceso a tablero creado' }).then((result) => {
+      if (result.ok) { setShortcutOpen(false); void select(result.value); }
+    });
   };
 
   const assetPlacement = () => {
@@ -808,6 +826,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
+      onOpenBoard={(target) => { setEditingId(null); void chooseBoard(target); }}
     />
   ) : null;
   const inspector = frameInspector ?? cardInspector;
@@ -924,6 +943,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onAddLink={() => setLinkOpen(true)}
       onImportImage={() => void importImage()}
       onAddExample={() => void add('image')}
+      onAddBoardShortcut={() => setShortcutOpen(true)}
       zoom={zoom}
       onZoomIn={() => setZoom(zoomIn)}
       onZoomOut={() => setZoom(zoomOut)}
@@ -1262,6 +1282,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onClose={() => setTrashOpen(false)}
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
+          <Dialog visible={shortcutOpen} title="Acceso a tablero" compact={compact} onClose={() => setShortcutOpen(false)} testID="board-shortcut-dialog">
+            <Text style={[styles.body, { color: colors.textSecondary }]}>Elige el tablero que abrirá esta ficha.</Text>
+            <View style={styles.multiRow}>
+              {workspace.boards.filter((candidate) => candidate.id !== board?.id).map((candidate) => (
+                <ActionButton key={candidate.id} label={candidate.title} accessibilityLabel={`Crear acceso a ${candidate.title}`} onPress={() => createShortcut(candidate.id)} />
+              ))}
+            </View>
+            {workspace.boards.filter((candidate) => candidate.id !== board?.id).length === 0 ? (
+              <Text style={[styles.body, { color: colors.textSecondary }]}>Crea otro tablero para poder enlazarlo.</Text>
+            ) : null}
+          </Dialog>
           <SearchPanel
             visible={searchOpen}
             compact={compact}

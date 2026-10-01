@@ -10,12 +10,12 @@ export { ASSET_REF_MAX_LENGTH, isValidAssetRef, parseAssetRef } from './assets/a
 export type { AssetRef } from './assets/asset-ref';
 export { validateBoard } from './boards/board';
 export type { Board } from './boards/board';
-export { validateCard } from './cards/card';
+export { cardIconNames, validateCard } from './cards/card';
 export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export { linkDisplay, linkUrlField, normalizeLinkUrl } from './cards/links';
-export type { Card } from './cards/card';
-export { addCard, deleteCard, updateCard } from './cards/operations';
-export type { AddCardOptions, CardContentChanges, DeleteCardOptions } from './cards/operations';
+export type { Card, CardIconName } from './cards/card';
+export { addCard, deleteCard, updateCard, updateCardAppearance } from './cards/operations';
+export type { AddCardOptions, CardAppearanceChanges, CardContentChanges, DeleteCardOptions } from './cards/operations';
 export { purgeTrashedCard, restoreTrashedCard, trashCard } from './cards/trash';
 export { archiveCard, archivedToTrash, restoreArchivedCard } from './cards/archive';
 export { isArchiveInstant } from './cards/trashed-card';
@@ -28,12 +28,12 @@ export { baseCardKinds, fieldKinds, validateCardType } from './cards/card-type';
 export type { BaseCardKind, CardTypeDefinition, FieldDefinition, FieldKind } from './cards/card-type';
 export { isCalendarDate } from './cards/field-values';
 export type { FieldValue } from './cards/field-values';
-export { MAX_FRAME_TITLE, cardDisplayModes, isFrameTitle, validateLayout } from './layouts/layout';
+export { GRID_SUBDIVISIONS, MAX_FRAME_TITLE, cardDisplayModes, isFrameTitle, validateLayout } from './layouts/layout';
 export { frameAround, frameMembers, moveFrame, removeFrame, renameFrame, resizeFrame } from './layouts/frames';
 export type { BoardLayout, CardDisplayMode, CardPlacement, Frame, GridRect } from './layouts/layout';
 export {
   DESKTOP_GRID, MAX_GRID_COLUMNS, MOBILE_GRID, TABLET_GRID,
-  cellsOverlap, compareReadingOrder, footprint, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,
+  cellsOverlap, compareReadingOrder, footprint, snapFineUnit, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,
 } from './layouts/grid';
 export type { GridCell, GridConfig, GridPoint, GridSize } from './layouts/grid';
 export { compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './layouts/operations';

@@ -1,9 +1,9 @@
 import {
   WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setDisplay, trashCard,
-  isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, validateWorkspace,
+  isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
-  AssetRef, BoardId, BoardLayout, Card, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, GridConfig, GridPoint, GridSize, RestoreReport,
+  AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, GridConfig, GridPoint, GridSize, RestoreReport,
   RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, ValidationResult, Workspace, WorkspaceId,
 } from '@noutynotes/domain';
 
@@ -35,6 +35,9 @@ interface CardPreset {
   readonly title: string;
   readonly content?: string;
   readonly size?: GridSize;
+  /** Apariencia y navegación portable (ADR 0046). */
+  readonly icon?: Card['icon'];
+  readonly boardTargetId?: BoardId;
 }
 
 /** Tipos mínimos que el prototipo añade a demanda. La imagen es un marcador de posición sin asset. */
@@ -65,6 +68,9 @@ export interface AddCardInput {
   readonly near?: { readonly x: number; readonly y: number; readonly columns: number };
   /** Tamaño inicial en celdas; por defecto, el del preset (una nota dentro de un marco estrecho, ADR 0027). */
   readonly size?: GridSize;
+  /** Apariencia y navegación portable (ADR 0046). */
+  readonly icon?: Card['icon'];
+  readonly boardTargetId?: BoardId;
 }
 
 export interface AddBoardInput {
@@ -144,6 +150,8 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const assetRef = isObject(input) ? ownValue(input, 'assetRef') : undefined;
   const createdAt = isObject(input) ? ownValue(input, 'createdAt') : undefined;
   const size = isObject(input) ? ownValue(input, 'size') : undefined;
+  const icon = isObject(input) ? ownValue(input, 'icon') : undefined;
+  const boardTargetId = isObject(input) ? ownValue(input, 'boardTargetId') : undefined;
   if (size !== undefined && !(isObject(size) && [ownValue(size, 'w'), ownValue(size, 'h')].every((side) => Number.isSafeInteger(side) && (side as number) >= 1))) {
     return storageFailure('invalid-workspace', 'size', 'El tamaño debe ser de enteros mayores o iguales que 1.');
   }
@@ -164,6 +172,9 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const cardSize = size === undefined ? preset.size ?? DEFAULT_CARD_SIZE : { w: ownValue(size, 'w') as number, h: ownValue(size, 'h') as number };
   let created: CardId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
+    if (boardTargetId !== undefined && (typeof boardTargetId !== 'string' || !workspace.boards.some((board) => board.id === boardTargetId))) {
+      return { ok: false, issues: [{ code: 'missing-reference', path: 'input.boardTargetId', message: 'El tablero destino no existe.' }] };
+    }
     const type = kind === 'link' ? linkCardTypeFor(workspace) : preset.type;
     const typed = withCardType(workspace, type);
     // Con tablero indicado, addCard comprueba que existe; sin él, se usa el primero o se crea el del prototipo.
@@ -176,6 +187,8 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       // Imagen de la biblioteca: la tarjeta referencia el mismo archivo, sin copiarlo (ADR 0022).
       ...(typeof assetRef === 'string' ? { assetRefs: [assetRef as AssetRef] } : {}),
       ...(typeof createdAt === 'string' ? { createdAt } : {}),
+      ...(typeof icon === 'string' ? { icon: icon as NonNullable<Card['icon']> } : {}),
+      ...(typeof boardTargetId === 'string' ? { boardTargetId: boardTargetId as BoardId } : {}),
       ...(preset.content === undefined ? {} : { content: preset.content }),
     };
     const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID });
@@ -276,6 +289,27 @@ export function editCardContent(
       const { assetRefs: _previous, ...rest } = card;
       return refs.length > 0 ? { ...rest, assetRefs: refs } : rest;
     }) });
+  });
+}
+
+export function editCardAppearance(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId, changes: CardAppearanceChanges,
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => updateCardAppearance(workspace, cardId, changes));
+}
+
+/** Crea una ficha navegable al tablero destino; no duplica el tablero ni sus tarjetas. */
+export async function addBoardShortcut(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId,
+  input: { readonly boardId: BoardId; readonly targetBoardId: BoardId; readonly near?: AddCardInput['near']; readonly createdAt?: string },
+): Promise<WorkspaceStorageResult<CardId>> {
+  const opened = await storage.open(workspaceId);
+  if (!opened.ok) return failed(opened);
+  const target = opened.value.boards.find((board) => board.id === input.targetBoardId);
+  if (!target) return storageFailure('invalid-workspace', 'targetBoardId', 'El tablero destino no existe.');
+  return addCardToBoard(storage, workspaceId, {
+    kind: 'note', boardId: input.boardId, title: target.title, icon: 'folder', boardTargetId: input.targetBoardId,
+    ...(input.near ? { near: input.near } : {}), ...(input.createdAt ? { createdAt: input.createdAt } : {}),
   });
 }
 
