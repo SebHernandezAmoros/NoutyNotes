@@ -15,7 +15,7 @@ test('los handles reales de Chromium guardan y reabren un workspace v1', async (
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Persistió');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);

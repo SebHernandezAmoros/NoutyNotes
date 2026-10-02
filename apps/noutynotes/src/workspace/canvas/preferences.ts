@@ -23,10 +23,10 @@ export interface ViewPreferences {
   readonly customFontRef: string | null;
 }
 
-export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 64, cardGap: 8, showDates: false, noteFont: 'system', customFontRef: null };
+export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 56, cardGap: 6, showDates: false, noteFont: 'system', customFontRef: null };
 
 export const PREFERENCE_LIMITS = {
-  rowHeight: { min: 56, max: 96, step: 8 },
+  rowHeight: { min: 48, max: 96, step: 8 },
   cardGap: { min: 4, max: 16, step: 2 },
 } as const;
 

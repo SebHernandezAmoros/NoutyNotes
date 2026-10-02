@@ -109,12 +109,15 @@ export function CanvasCard(props: CanvasCardProps) {
     }).panHandlers;
   });
   const image = isImageCard(workspace, card);
-  // Resumen a zoom bajo (auditoría visual, 2026-09-29): solo cabecera, título e imagen; ver umbral arriba.
+  // A zoom bajo el contenido sigue visible: se compensa la tipografía en vez de convertir la ficha en
+  // una caja vacía. La persona trabaja habitualmente al 50 %, así que ocultar Markdown era engañoso.
   const zoomFactor = Math.min(1, Math.max(props.zoom, 0.1));
-  const summarize = display === 'expanded' && zoomFactor < ZOOM_SUMMARY_THRESHOLD;
-  const titleSize = summarize ? Math.min(MAX_SUMMARY_TITLE_SIZE, BASE_TITLE_SIZE / zoomFactor) : BASE_TITLE_SIZE;
+  const lowZoom = display === 'expanded' && zoomFactor < ZOOM_SUMMARY_THRESHOLD;
+  const titleSize = lowZoom ? Math.min(MAX_SUMMARY_TITLE_SIZE, BASE_TITLE_SIZE / zoomFactor) : BASE_TITLE_SIZE;
+  const contentSize = lowZoom ? Math.min(20, 13 / zoomFactor) : 13;
+  const contentLine = Math.round(contentSize * 1.35);
   // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden.
-  const blocks = image || summarize ? [] : parseNoteBlocks(card.content ?? '');
+  const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const floatingTitle = card.typeId === 'titulo-flotante';
@@ -131,7 +134,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const linkKey = linkUrlField(type);
   const linkValue = linkKey ? card.fields[linkKey] : undefined;
   const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
-  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / 18) - (link ? 1 : 0));
+  const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
   const headerColor = image ? colors.headerImage : colors.headerNote;
   const icon = card.icon ?? miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
@@ -191,7 +194,7 @@ export function CanvasCard(props: CanvasCardProps) {
             </View>
             <View style={styles.body}>
               <Text
-                numberOfLines={summarize ? 3 : 2}
+                numberOfLines={lowZoom ? 3 : 2}
                 style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: Math.round(titleSize * 1.25) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
               >
                 {cardTitle(card)}
@@ -211,25 +214,25 @@ export function CanvasCard(props: CanvasCardProps) {
               ) : (card.assetRefs?.length ?? 0) > 0 ? (
                 <Text style={[styles.content, { color: colors.textSecondary }]}>Cargando imagen…</Text>
               ) : <ImagePlaceholder />) : null}
-              {!summarize && !image && link ? (
+              {!image && link ? (
                 <Text testID={`card-link-${card.id}`} numberOfLines={1} style={[styles.link, { color: colors.cardText }]}>
                   {`↗ ${link.host}${link.rest}`}
                 </Text>
               ) : null}
-              {!summarize && mixed ? (
+              {mixed ? (
                 <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
-              {!summarize && !image && !mixed && bodyLines > 0 ? (
-                <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>{markdownExcerpt(card.content ?? '')}</Text>
+              {!image && !mixed && bodyLines > 0 ? (
+                <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>{markdownExcerpt(card.content ?? '')}</Text>
               ) : null}
-              {!summarize && tags.length > 0 ? (
+              {!lowZoom && tags.length > 0 ? (
                 // Pie de etiquetas (ADR 0019): hasta tres y el resto como «+n»; el nombre completo va en el inspector.
                 <Text testID={`card-tags-${card.id}`} numberOfLines={1} style={[styles.tags, { color: colors.cardText }]}>
                   {tags.slice(0, 3).map((tag) => `#${tag}`).join('  ')}{tags.length > 3 ? `  +${tags.length - 3}` : ''}
                 </Text>
               ) : null}
-              {!summarize && meta !== '' ? (
+              {!lowZoom && meta !== '' ? (
                 <Text testID={`card-meta-${card.id}`} numberOfLines={1} style={[styles.badge, { color: colors.cardText }, tags.length > 0 ? { marginTop: 2 } : null]}>{meta}</Text>
               ) : null}
             </View>

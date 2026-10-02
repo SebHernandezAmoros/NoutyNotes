@@ -69,10 +69,8 @@ export function Toolbar(props: ToolbarProps) {
     <View style={styles.group}>
       <ToolButton icon="select" label={t('tool.select', locale)} accessibilityLabel={t('tool.select.label', locale)} accessibilityHint={t('tool.select.hint', locale)}
         active={props.tool === 'select'} disabled={!onCanvas} onPress={() => props.onTool('select')} style={cell} />
-      <ToolButton icon="pan" label={t('tool.pan', locale)} accessibilityLabel={t('tool.pan.label', locale)} accessibilityHint={t('tool.pan.hint', locale)}
-        active={props.tool === 'pan'} disabled={!onCanvas} onPress={() => props.onTool('pan')} style={cell} />
-      <ToolButton icon="connect" label={t('tool.connect', locale)} accessibilityLabel={t('tool.connect.label', locale)} accessibilityHint={t('tool.connect.hint', locale)}
-        active={props.tool === 'connect'} disabled={!onCanvas} onPress={() => props.onTool('connect')} style={cell} />
+      {props.compact ? <ToolButton icon="pan" label={t('tool.pan', locale)} accessibilityLabel={t('tool.pan.label', locale)} accessibilityHint={t('tool.pan.hint', locale)}
+        active={props.tool === 'pan'} disabled={!onCanvas} onPress={() => props.onTool('pan')} style={cell} /> : null}
       <ToolButton testID="open-search" icon="search" label={t('tool.search', locale)} accessibilityLabel={t('tool.search.label', locale)} accessibilityHint={t('tool.search.hint', locale)}
         onPress={props.onOpenSearch} style={cell} />
       {props.compact ? (
@@ -90,9 +88,9 @@ export function Toolbar(props: ToolbarProps) {
       <ToolButton icon="board" label="Tablero" accessibilityLabel="Crear acceso rápido a un tablero" onPress={props.onAddBoardShortcut} style={cell} />
       <ToolButton icon="link" label={t('add.link', locale)} accessibilityLabel={t('add.link.label', locale)} accessibilityHint={t('add.link.hint', locale)} onPress={props.onAddLink} style={cell} />
       <ToolButton icon="upload" label={t('add.image', locale)} accessibilityLabel={t('add.image.label', locale)} accessibilityHint={t('add.image.hint', locale)} onPress={props.onImportImage} style={cell} />
-      <ToolButton icon="image" label={t('add.example', locale)} accessibilityLabel={t('add.example.label', locale)} accessibilityHint={t('add.example.hint', locale)} onPress={props.onAddExample} style={cell} />
       {props.compact ? (
         <>
+          <ToolButton icon="image" label={t('add.example', locale)} accessibilityLabel={t('add.example.label', locale)} accessibilityHint={t('add.example.hint', locale)} onPress={props.onAddExample} style={cell} />
           <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
         </>
       ) : null}

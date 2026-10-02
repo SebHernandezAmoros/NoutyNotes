@@ -327,14 +327,62 @@ export function Canvas(props: CanvasProps) {
       if (node.scrollLeft !== 0) node.scrollLeft = 0;
       if (node.scrollTop !== 0) node.scrollTop = 0;
     };
+    let middle: { x: number; y: number; pan: Point } | null = null;
+    const cardAt = (target: EventTarget | null): CardId | null => {
+      const ids = new Set(latest.current.props.layout?.placements.map((placement) => placement.cardId) ?? []);
+      for (let element = target as HTMLElement | null; element && element !== node; element = element.parentElement) {
+        const testId = element.getAttribute('data-testid') ?? '';
+        const cardId = testId.startsWith('card-') ? (testId.slice(5) as CardId) : null;
+        if (cardId && ids.has(cardId)) return cardId;
+      }
+      return null;
+    };
     const press = (event: PointerEvent) => {
       pointerDown.current = true;
       modifierDown.current = event.ctrlKey || event.metaKey || event.shiftKey;
+      if (event.button === 1) {
+        event.preventDefault();
+        middle = { x: event.clientX, y: event.clientY, pan: latest.current.props.pan };
+        return;
+      }
       // Con el lienzo enfocado, pulsar una tarjeta le quita el foco al lienzo y RN Web termina el
       // responder de la tarjeta («ancestor blur»): el toque no seleccionaba. Se suelta antes del mousedown.
       if (document.activeElement === node && event.target !== node) node.blur();
     };
-    const release = () => { pointerDown.current = false; };
+    const moveMiddle = (event: PointerEvent) => {
+      if (!middle) return;
+      event.preventDefault();
+      latest.current.props.onPan(worldPan({ x: middle.pan.x + event.clientX - middle.x, y: middle.pan.y + event.clientY - middle.y }));
+    };
+    const release = (event: PointerEvent) => {
+      if (event.button === 1) middle = null;
+      pointerDown.current = false;
+    };
+    const contextMenu = (event: MouseEvent) => {
+      const cardId = cardAt(event.target);
+      if (!cardId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      controller.resetTap();
+      latest.current.props.onCardPress(cardId);
+      setMenuAnchor({ left: event.clientX, top: event.clientY });
+      setMenuFor(cardId);
+    };
+    // El menú contextual también tiene una ruta de teclado. Las tarjetas ya son enfocables;
+    // Menú contextual o Mayús+F10 abre las mismas acciones junto a la ficha enfocada.
+    const contextMenuKey = (event: KeyboardEvent) => {
+      if (!(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) return;
+      const cardId = cardAt(event.target);
+      if (!cardId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.target as HTMLElement;
+      const bounds = target.getBoundingClientRect();
+      controller.resetTap();
+      latest.current.props.onCardPress(cardId);
+      setMenuAnchor({ left: bounds.left + Math.min(24, bounds.width / 2), top: bounds.top + Math.min(24, bounds.height / 2) });
+      setMenuFor(cardId);
+    };
     // Un arrastre nativo del navegador (de una selección de texto que quedó en la página o de una
     // <img> de tarjeta) cancela el puntero con `pointercancel` y deja la Mano o el arrastre de la
     // tarjeta a medias. En el lienzo nunca se quiere: se anula.
@@ -344,33 +392,35 @@ export function Canvas(props: CanvasProps) {
     // el onPress de la tarjeta no debe seleccionarla además.
     const ctrlClick = (event: MouseEvent) => {
       if (!event.ctrlKey || event.button !== 0) return;
-      const ids = new Set(latest.current.props.layout?.placements.map((placement) => placement.cardId) ?? []);
-      for (let element = event.target as HTMLElement | null; element && element !== node; element = element.parentElement) {
-        const testId = element.getAttribute('data-testid') ?? '';
-        const cardId = testId.startsWith('card-') ? (testId.slice(5) as CardId) : null;
-        if (cardId && ids.has(cardId)) {
+      const cardId = cardAt(event.target);
+      if (cardId) {
           event.preventDefault();
           event.stopPropagation();
           if (latest.current.props.tool === 'select') latest.current.props.onCardToggle(cardId);
           return;
-        }
       }
     };
     node.addEventListener('click', ctrlClick, true);
+    node.addEventListener('contextmenu', contextMenu, true);
+    node.addEventListener('keydown', contextMenuKey, true);
     node.addEventListener('dragstart', noNativeDrag, true);
     node.addEventListener('scroll', reset);
     node.addEventListener('pointerdown', press as EventListener, true);
     window.addEventListener('pointerup', release, true);
     window.addEventListener('pointercancel', release, true);
+    window.addEventListener('pointermove', moveMiddle, true);
     return () => {
       node.removeEventListener('dragstart', noNativeDrag, true);
       node.removeEventListener('click', ctrlClick, true);
+      node.removeEventListener('contextmenu', contextMenu, true);
+      node.removeEventListener('keydown', contextMenuKey, true);
       node.removeEventListener('scroll', reset);
       node.removeEventListener('pointerdown', press as EventListener, true);
       window.removeEventListener('pointerup', release, true);
       window.removeEventListener('pointercancel', release, true);
+      window.removeEventListener('pointermove', moveMiddle, true);
     };
-  }, []);
+  }, [controller]);
 
   // Rueda y trackpad desplazan el mundo en ambos ejes. Shift+rueda permite desplazamiento lateral
   // con un ratón de una sola rueda; el listener no es pasivo para evitar que la página robe el scroll.
@@ -826,7 +876,7 @@ export function Canvas(props: CanvasProps) {
           {unplacedText}
         </Text>
       ) : null}
-      {placements.map((placement) => {
+      {Platform.OS === 'web' && !props.compact ? null : placements.map((placement) => {
         const found = chrome.get(placement.cardId);
         if (!found) return null;
         return (

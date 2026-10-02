@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { hasHorizontalOverflow, isCompactWidth, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
+import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -34,6 +34,15 @@ async function tapCard(page: Page, id: number, edit = true) {
   // esta suite asume el editor abierto tras «tocar» una tarjeta, así que este ayudante pulsa «Editar» a
   // continuación. Sin efecto (a propósito) en una ficha minimizada: no tiene ese botón, solo «Expandir».
   if (edit) await openCardEditor(page, id);
+}
+/**
+ * Toca una tarjeta mientras la herramienta Conectar está activa (ADR 0048): a diferencia de `tapCard`,
+ * no espera `aria-pressed`, porque conectar no selecciona el destino — lo conecta o desconecta. Esperar
+ * esa marca reintentaría Espacio sin parar y alternaría la conexión en cada intento.
+ */
+async function tapConnectTarget(page: Page, id: number) {
+  await card(page, id).focus();
+  await page.keyboard.press('Space');
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
 const geometry = (page: Page) => page.getByTestId('card-geometry');
@@ -85,7 +94,7 @@ async function openCardEditor(page: Page, id: number) {
       await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
     }).toPass({ intervals: [100, 100, 100, 100, 100] });
   }
-  await openFullCardEditor(page, page.getByTestId(`card-edit-tarjeta-${id}`));
+  await openFullCardEditor(page, card(page, id));
 }
 
 test('configuración: modal o panel, cambios al instante, restablecer, Escape y preferencias del dispositivo', async ({ page }, testInfo) => {
@@ -123,17 +132,21 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await expect(page.getByRole('switch', { name: 'Ajustar a celdas' })).toHaveAttribute('aria-checked', 'false');
 
   // Densidad cuadrada: la ficha crece en ambos ejes al subir la unidad; reducir la separación suma 2 px.
+  // Deltas en píxeles del mundo (filas/columnas, sin zoom; en pantalla, al 75 % inicial, ADR 0048). En
+  // móvil la fila de partida (48 px) deja la separación nominal de 6 px recortada al mínimo táctil
+  // (44 px, ADR 0046): la separación real empieza en 4 px, no en 6, así que los deltas no son los mismos
+  // que en escritorio (fila de partida 56 px, sin recorte).
   await button(page, 'Aumentar alto de fila').click();
-  await expect(panel).toContainText('72 px');
-  await expect.poll(async () => Math.round((await box(card(page, 1))).height - initial.height)).toBe(24);
+  await expect(panel).toContainText('64 px');
+  await expect.poll(async () => Math.round((await box(card(page, 1))).height - initial.height)).toBe(Math.round((compact ? 22 : 24) * 0.75));
   await button(page, 'Reducir separación entre fichas').click();
-  await expect(panel).toContainText('6 px');
-  await expect.poll(async () => Math.round((await box(card(page, 1))).width - initial.width)).toBe(34);
+  await expect(panel).toContainText('4 px');
+  await expect.poll(async () => Math.round((await box(card(page, 1))).width - initial.width)).toBe(Math.round((compact ? 32 : 34) * 0.75));
   // Zoom desde la configuración (en móvil es el único sitio) y restablecer vista.
   await button(page, 'Acercar el lienzo').click();
-  await expect(page.getByTestId('settings-zoom')).toHaveText('125 %');
-  await button(page, 'Restablecer la vista del lienzo').click();
   await expect(page.getByTestId('settings-zoom')).toHaveText('100 %');
+  await button(page, 'Restablecer la vista del lienzo').click();
+  await expect(page.getByTestId('settings-zoom')).toHaveText('75 %');
 
   // Escape cierra; al reabrir la configuración se conserva, y tras recargar sigue en este dispositivo.
   await page.keyboard.press('Escape');
@@ -142,10 +155,10 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await button(page, 'Volver a mis espacios').click();
   await createWorkspace(page, 'Otro');
   await openSettings(page);
-  await expect(page.getByTestId('settings-panel')).toContainText('72 px');
+  await expect(page.getByTestId('settings-panel')).toContainText('64 px');
   await expect(page.getByRole('switch', { name: 'Mostrar grilla' })).toHaveAttribute('aria-checked', 'false');
   await button(page, 'Restablecer los valores de lienzo y grilla').click();
-  await expect(page.getByTestId('settings-panel')).toContainText('64 px');
+  await expect(page.getByTestId('settings-panel')).toContainText('56 px');
   await expect(page.getByRole('switch', { name: 'Mostrar grilla' })).toHaveAttribute('aria-checked', 'true');
 
   // Controles táctiles y nombres accesibles dentro del panel.
@@ -171,22 +184,52 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   await createWorkspace(page, 'Formas');
   await addNote(page, 'Primera');
   await addNote(page, 'Segunda');
-  await tapCard(page, 1);
-  await button(page, 'Mostrar minimizada').click();
+  const compact = (page.viewportSize()?.width ?? 0) < 800;
+  if (compact) {
+    await tapCard(page, 1);
+    await button(page, 'Mostrar minimizada').click();
+  } else {
+    // En escritorio, minimizar/contraer/expandir y conectar viven solo en el menú contextual (ADR 0048):
+    // ya no son secciones fijas del editor completo.
+    await tapCard(page, 1, false);
+    await openCardActions(page, card(page, 1), 'Primera');
+    await button(page, 'Minimizar Primera').click();
+  }
   await expect(feedback(page)).toHaveText('Tarjeta minimizada. Guardado en memoria.');
-  // El tamaño expandido se conserva aunque la huella sea 1 × 1; en móvil se comprueba antes de
-  // volver al tablero porque el editor enfocado ocupa la pantalla completa.
-  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
-  if ((page.viewportSize()?.width ?? 0) < 800) await button(page, 'Volver al tablero').click();
+  if (compact) {
+    // El tamaño expandido se conserva aunque la huella sea 1 × 1; en móvil se comprueba antes de
+    // volver al tablero porque el editor enfocado ocupa la pantalla completa. En escritorio se
+    // confirma más abajo, al volver a expandirla (misma huella 4 × 3), sin repetir la comprobación.
+    await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
+    await button(page, 'Volver al tablero').click();
+  }
   // Icono de nota y título, no una inicial (ADR 0016).
   await expect(page.getByTestId('minimized-icon-tarjeta-1')).toBeVisible();
   await expect(page.getByTestId('minimized-tarjeta-1')).toContainText('Primera');
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Primera, minimizada');
-  // Una ficha minimizada sigue siendo tocable en móvil.
+  // Una ficha minimizada sigue siendo tocable: la huella mínima de 44 px es una garantía de la
+  // densidad a 100 %, no del zoom inicial (ahora configurable y a 75 % por defecto, ADR 0048); se fija
+  // aquí para medirla de forma determinista, igual que antes cuando 100 % era siempre el zoom de salida.
+  if (compact) {
+    await openSettings(page);
+    await button(page, 'Acercar el lienzo').click();
+    await button(page, 'Cerrar configuración').click();
+  } else {
+    await button(page, 'Acercar').click();
+  }
   const tile = await box(card(page, 1));
   expect(tile.width).toBeGreaterThanOrEqual(44);
   expect(tile.height).toBeGreaterThanOrEqual(44);
   await page.screenshot({ path: testInfo.outputPath('minimized.png') });
+  // Vuelve al zoom inicial: el resto de la prueba no necesita 100 % y las posiciones de más abajo se
+  // leen y mueven en relación con lo que se ve, sin depender de un zoom concreto.
+  if (compact) {
+    await openSettings(page);
+    await button(page, 'Alejar el lienzo').click();
+    await button(page, 'Cerrar configuración').click();
+  } else {
+    await button(page, 'Alejar').click();
+  }
 
   // Segunda ocupa parte del sitio que Primera necesita para expandirse, pegada a su huella minimizada
   // (1 × 1, columna 1 fila 1) sin pisarla. Dónde nace depende del viewport (a la derecha en escritorio
@@ -210,7 +253,7 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   while ((await cell()).y < 0) await step('Mover abajo');
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
   await tapCard(page, 1, false);
-  await button(page, 'Acciones de Primera').click();
+  await openCardActions(page, card(page, 1), 'Primera');
   await button(page, 'Expandir Primera').click();
   await expect(feedback(page)).toHaveText('Ahí se solaparía con otra tarjeta.');
   await expect(page.getByTestId('relocate-offer')).toBeVisible();
@@ -220,16 +263,30 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   await expect(page.getByTestId('minimized-tarjeta-1')).toHaveCount(0);
   // Ya expandida, «Editar» abre su editor (antes minimizada, sin ese botón, ver `tapCard`). El primer
   // hueco libre queda tras Segunda (columnas 2-5): columna 6.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, card(page, 1));
   await expect(geometry(page)).toHaveText('Columna 6, fila 1 · 4 × 3');
 
-  // Contraer desde el inspector; conexiones intactas.
-  await button(page, 'Conectar con Segunda').click();
-  await button(page, 'Mostrar contraída').click();
-  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Primera, contraída');
-  await expect(card(page, 1)).toContainText('Primera');
-  await expect(button(page, 'Mostrar contraída')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('card-connections')).toContainText('→ Segunda');
+  if (compact) {
+    // Contraer desde el inspector; conexiones intactas.
+    await button(page, 'Conectar con Segunda').click();
+    await button(page, 'Mostrar contraída').click();
+    await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Primera, contraída');
+    await expect(card(page, 1)).toContainText('Primera');
+    await expect(button(page, 'Mostrar contraída')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('card-connections')).toContainText('→ Segunda');
+  } else {
+    // Contraer y conectar desde el menú contextual (ADR 0048): ya no viven en el editor de escritorio.
+    await closeEditor(page);
+    await openCardActions(page, card(page, 1), 'Primera');
+    await button(page, 'Conectar desde Primera').click();
+    await tapConnectTarget(page, 2);
+    await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+    await openCardActions(page, card(page, 1), 'Primera');
+    await button(page, 'Contraer Primera').click();
+    await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Primera, contraída');
+    await expect(card(page, 1)).toContainText('Primera');
+    await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(1);
+  }
 });
 
 test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú «⋯» si no caben; 44 px con cualquier zoom (ADR 0016)', async ({ page }, testInfo) => {
@@ -245,85 +302,126 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
   await card(page, 1).focus();
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'false');
   await expect.poll(async () => (await box(card(page, 1))).y).toBeGreaterThanOrEqual((await box(page.getByTestId('board-canvas'))).y);
-  // Sin selección, cada tarjeta ya muestra sus controles en la cabecera, dentro de su rectángulo.
-  const controls = page.getByTestId('card-controls-tarjeta-1');
-  await expect(controls.getByRole('button')).toHaveCount(3);
-  const [head, face] = [await box(controls), await box(card(page, 1))];
-  expect(head.x).toBeGreaterThanOrEqual(face.x);
-  expect(head.x + head.width).toBeLessThanOrEqual(face.x + face.width + 0.5);
-  expect(head.y).toBeGreaterThanOrEqual(face.y);
-  for (const control of await controls.getByRole('button').all()) {
-    const found = await box(control);
-    expect([Math.round(found.width), Math.round(found.height)]).toEqual([44, 44]);
-  }
-  await page.screenshot({ path: testInfo.outputPath('header-controls.png') });
+  if (compact) {
+    // Sin selección, cada tarjeta ya muestra sus controles en la cabecera, dentro de su rectángulo. Con
+    // la densidad inicial (56 px, ADR 0048) y el zoom de salida (75 %), una ficha de ancho por defecto
+    // (4 columnas) ya no deja sitio para los tres: se acerca un paso (125 %) para verla con la cabecera
+    // completa, como se vería en una ficha más ancha; se vuelve al zoom inicial después.
+    await openSettings(page);
+    await button(page, 'Acercar el lienzo').click();
+    await button(page, 'Acercar el lienzo').click();
+    await button(page, 'Cerrar configuración').click();
+    const controls = page.getByTestId('card-controls-tarjeta-1');
+    await expect(controls.getByRole('button')).toHaveCount(3);
+    const [head, face] = [await box(controls), await box(card(page, 1))];
+    expect(head.x).toBeGreaterThanOrEqual(face.x);
+    expect(head.x + head.width).toBeLessThanOrEqual(face.x + face.width + 0.5);
+    expect(head.y).toBeGreaterThanOrEqual(face.y);
+    for (const control of await controls.getByRole('button').all()) {
+      const found = await box(control);
+      expect([Math.round(found.width), Math.round(found.height)]).toEqual([44, 44]);
+    }
+    await page.screenshot({ path: testInfo.outputPath('header-controls.png') });
 
-  // «▭» contrae a una barra de título y «□» la expande.
-  await button(page, 'Contraer Guion').click();
-  await expect(feedback(page)).toHaveText('Tarjeta contraída. Guardado en memoria.');
-  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion, contraída');
-  await button(page, 'Expandir Guion').click();
-  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion');
+    // «▭» contrae a una barra de título y «□» la expande. Sigue al 125 % para que estos botones
+    // directos de la cabecera, también de ancho por defecto, estén disponibles.
+    await button(page, 'Contraer Guion').click();
+    await expect(feedback(page)).toHaveText('Tarjeta contraída. Guardado en memoria.');
+    await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion, contraída');
+    await button(page, 'Expandir Guion').click();
+    await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion');
 
-  // «−» minimiza: icono y título; sin selección no hay controles y seleccionada solo ofrece «⋯».
-  await button(page, 'Minimizar Notas').click();
-  await expect(page.getByTestId('minimized-icon-tarjeta-2')).toBeVisible();
-  await expect(page.getByTestId('card-controls-tarjeta-2')).toHaveCount(0);
-  await tapCard(page, 2, false);
-  await expect(page.getByTestId('card-controls-tarjeta-2').getByRole('button')).toHaveCount(1);
-  await page.screenshot({ path: testInfo.outputPath('minimized-menu.png') });
-  // Sin asas de redimensionado: no se solapan con el menú ni cambian un tamaño que no se ve.
-  await expect(page.locator('[data-testid^="resize-"][data-testid$="-tarjeta-2"]')).toHaveCount(0);
-  await button(page, 'Acciones de Notas').click();
-  await expect(button(page, 'Expandir Notas')).toBeVisible();
-  await expect(button(page, 'Editar Notas dentro de la ficha')).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('minimized-menu-open.png') });
-  if (!compact) {
+    // «−» minimiza: icono y título; sin selección no hay controles y seleccionada solo ofrece «⋯».
+    await button(page, 'Minimizar Notas').click();
+    await expect(page.getByTestId('minimized-icon-tarjeta-2')).toBeVisible();
+    await expect(page.getByTestId('card-controls-tarjeta-2')).toHaveCount(0);
+    await tapCard(page, 2, false);
+    await expect(page.getByTestId('card-controls-tarjeta-2').getByRole('button')).toHaveCount(1);
+    await page.screenshot({ path: testInfo.outputPath('minimized-menu.png') });
+    // Sin asas de redimensionado: no se solapan con el menú ni cambian un tamaño que no se ve.
+    await expect(page.locator('[data-testid^="resize-"][data-testid$="-tarjeta-2"]')).toHaveCount(0);
+    await button(page, 'Acciones de Notas').click();
+    await expect(button(page, 'Expandir Notas')).toBeVisible();
+    // La edición rápida «dentro de la ficha» es solo de escritorio (ADR 0047); en móvil «Editar»
+    // siempre abre el editor completo, aquí además minimizada.
+    await expect(button(page, 'Editar Notas en el editor completo')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('minimized-menu-open.png') });
+    await button(page, 'Cerrar acciones de notas').click();
+    // «Notas» sigue minimizada: solo seleccionada, sin editor que cerrar (`tapCard` no lo abre ahí).
+
+    // Con Conectar no hay controles de cabecera: no compiten con esa herramienta. «Conectar» ya no es
+    // un botón de la barra (ADR 0048): se activa desde el menú de la propia ficha.
+    await button(page, 'Acciones de Notas').click();
+    await button(page, 'Conectar desde Notas').click();
+    await expect(page.locator('[data-testid^="card-controls-"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await button(page, 'Herramienta Seleccionar').click();
+    // Vuelve al zoom inicial: el umbral de ancho de más abajo se calibra contra él.
+    await openSettings(page);
+    await button(page, 'Alejar el lienzo').click();
+    await button(page, 'Alejar el lienzo').click();
+    await button(page, 'Cerrar configuración').click();
+
+    // Si no caben los tres, un único «⋯» abre el menú con las mismas acciones.
+    await tapCard(page, 1);
+    for (let step = 0; step < 2; step += 1) await button(page, 'Más estrecha').click();
+    await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 2 × 3');
+    await button(page, 'Volver al tablero').click();
+    const narrow = await box(card(page, 1));
+    // Umbral real de chromeFor (auditoría visual, 2026-09-29): 3 controles de 44 px más una franja libre
+    // de 80 px para el tipo/arrastrar (antes 44 px; con solo eso, los controles dominaban la cabecera).
+    const needsMenu = narrow.width < 3 * 44 + 4 + 80;
+    if (needsMenu) {
+      await button(page, 'Acciones de Guion').click();
+      await expect(page.getByTestId('card-menu')).toBeVisible();
+      await button(page, 'Minimizar Guion').click();
+      await expect(page.getByTestId('card-menu')).toHaveCount(0);
+      await expect(page.getByTestId('minimized-tarjeta-1')).toBeVisible();
+      await button(page, 'Acciones de Guion').click();
+      await button(page, 'Expandir Guion').click();
+    }
+
+    // «×» envía a la Papelera existente, no elimina definitivamente (en una tarjeta estrecha, desde «⋯»).
+    if (needsMenu) await button(page, 'Acciones de Guion').click();
+    await button(page, 'Enviar Guion a la Papelera').click();
+    await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
+    await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
+  } else {
+    // Escritorio: ninguna ficha dibuja controles permanentes en la cabecera, seleccionada o no, quepan
+    // o no (ADR 0048); las mismas acciones (verbo + título) se alcanzan por clic derecho o Shift+F10,
+    // sin depender del ancho de la ficha ni del zoom, porque el menú es un overlay fuera de su escala.
+    await expect(page.locator('[data-testid^="card-controls-"]')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('header-controls.png') });
+
+    // «Contraer»/«Expandir» desde el menú contextual.
+    await openCardActions(page, card(page, 1), 'Guion');
+    await button(page, 'Contraer Guion').click();
+    await expect(feedback(page)).toHaveText('Tarjeta contraída. Guardado en memoria.');
+    await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion, contraída');
+    await openCardActions(page, card(page, 1), 'Guion');
+    await button(page, 'Expandir Guion').click();
+    await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion');
+
+    // «Minimizar» desde el menú; minimizada sigue sin controles permanentes ni asas de redimensionado.
+    await openCardActions(page, card(page, 2), 'Notas');
+    await button(page, 'Minimizar Notas').click();
+    await expect(page.getByTestId('minimized-icon-tarjeta-2')).toBeVisible();
+    await expect(page.getByTestId('card-controls-tarjeta-2')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('minimized-menu.png') });
+    await expect(page.locator('[data-testid^="resize-"][data-testid$="-tarjeta-2"]')).toHaveCount(0);
+    await openCardActions(page, card(page, 2), 'Notas');
+    await expect(button(page, 'Expandir Notas')).toBeVisible();
+    await expect(button(page, 'Editar Notas en el editor completo')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('minimized-menu-open.png') });
     const menu = await box(page.getByTestId('card-menu'));
     expect(menu.width).toBeLessThanOrEqual(280);
-  }
-  await button(page, 'Cerrar acciones de notas').click();
-  // «Notas» sigue minimizada: solo seleccionada, sin editor que cerrar (`tapCard` no lo abre ahí).
+    await button(page, 'Cerrar acciones de notas').click();
 
-  // Con Conectar o Mano no hay controles: no compiten con esas herramientas.
-  await button(page, 'Herramienta Conectar').click();
-  await expect(page.locator('[data-testid^="card-controls-"]')).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await button(page, 'Herramienta Seleccionar').click();
-
-  // Si no caben los tres, un único «⋯» abre el menú con las mismas acciones.
-  await tapCard(page, 1);
-  for (let step = 0; step < 2; step += 1) await button(page, 'Más estrecha').click();
-  await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 2 × 3');
-  if (compact) await button(page, 'Volver al tablero').click();
-  const narrow = await box(card(page, 1));
-  // Umbral real de chromeFor (auditoría visual, 2026-09-29): 3 controles de 44 px más una franja libre
-  // de 80 px para el tipo/arrastrar (antes 44 px; con solo eso, los controles dominaban la cabecera).
-  const needsMenu = narrow.width < 3 * 44 + 4 + 80;
-  if (needsMenu) {
-    await button(page, 'Acciones de Guion').click();
-    await expect(page.getByTestId('card-menu')).toBeVisible();
-    await button(page, 'Minimizar Guion').click();
-    await expect(page.getByTestId('card-menu')).toHaveCount(0);
-    await expect(page.getByTestId('minimized-tarjeta-1')).toBeVisible();
-    await button(page, 'Acciones de Guion').click();
-    await button(page, 'Expandir Guion').click();
-  }
-
-  // «×» envía a la Papelera existente, no elimina definitivamente (en una tarjeta estrecha, desde «⋯»).
-  if (needsMenu) await button(page, 'Acciones de Guion').click();
-  await button(page, 'Enviar Guion a la Papelera').click();
-  await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
-  await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
-
-  // Con el zoom alejado siguen midiendo 44 px reales (escritorio: zoom en la barra).
-  if (!compact) {
-    await button(page, 'Alejar').click();
-    await button(page, 'Alejar').click();
-    await tapCard(page, 2);
-    for (const control of await page.getByTestId('card-controls-tarjeta-2').getByRole('button').all()) {
-      expect(Math.round((await box(control)).width)).toBe(44);
-    }
+    // «Enviar a la Papelera» desde el menú, sin tener que estrechar la ficha primero.
+    await openCardActions(page, card(page, 1), 'Guion');
+    await button(page, 'Enviar Guion a la Papelera').click();
+    await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
+    await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
   }
 });
 
@@ -335,14 +433,26 @@ test('menú de ficha minimizada: editar y empezar una conexión sin abrir el ins
   await addNote(page, 'Segunda');
   await closeEditor(page);
 
-  // La primera ficha puede quedar detrás de la barra de exportación en móvil; el teclado conserva
-  // una vía accesible hasta que se ajuste esa geometría responsive.
-  await button(page, 'Minimizar Primera').focus();
-  await page.keyboard.press('Enter');
+  const compact = (page.viewportSize()?.width ?? 0) < 800;
+  if (compact) {
+    // Con la densidad inicial (56 px, ADR 0048) una ficha de ancho por defecto ya no deja sitio para
+    // los tres controles de cabecera: el «⋯» es la vía, también accesible por teclado.
+    await button(page, 'Acciones de Primera').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('card-menu')).toBeVisible();
+    await button(page, 'Minimizar Primera').click();
+  } else {
+    // Escritorio: Shift+F10 sobre la ficha enfocada abre el mismo menú que el clic derecho (ADR 0048).
+    await card(page, 1).focus();
+    await page.keyboard.press('Shift+F10');
+    await expect(page.getByTestId('card-menu')).toBeVisible();
+    await button(page, 'Minimizar Primera').click();
+  }
   await card(page, 1).focus();
   await page.keyboard.press('Space');
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
-  await button(page, 'Acciones de Primera').click();
+  if (compact) await button(page, 'Acciones de Primera').click();
+  else await openCardActions(page, card(page, 1), 'Primera');
   const menu = page.getByTestId('card-menu');
   await expect(menu).toContainText('TRABAJAR');
   await expect(menu).toContainText('APARIENCIA');
@@ -361,7 +471,8 @@ test('menú de ficha minimizada: editar y empezar una conexión sin abrir el ins
 
   await card(page, 1).focus();
   await page.keyboard.press('Space');
-  await button(page, 'Acciones de Primera').click();
+  if (compact) await button(page, 'Acciones de Primera').click();
+  else await openCardActions(page, card(page, 1), 'Primera');
   await button(page, 'Conectar desde Primera').click();
   await card(page, 2).click();
   await expect(feedback(page)).toContainText('conectadas');
@@ -401,10 +512,13 @@ test('imagen real: vista previa, formato inválido, cancelación y ejemplo separ
   await expect(page.getByTestId('card-asset')).toHaveText('assets/images/tarjeta-1.png');
   await closeEditor(page);
 
-  // El ejemplo sigue disponible y claramente separado: sin archivo.
-  await button(page, 'Añadir imagen de ejemplo').click();
-  await expect(card(page, 2)).toContainText('IMAGEN DE EJEMPLO');
-  await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeVisible();
+  // El ejemplo sigue disponible y claramente separado: sin archivo. En escritorio esa muestra ya no
+  // está en la barra (ADR 0048): solo queda la importación real, ya cubierta arriba.
+  if (isCompactWidth(page)) {
+    await button(page, 'Añadir imagen de ejemplo').click();
+    await expect(card(page, 2)).toContainText('IMAGEN DE EJEMPLO');
+    await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeVisible();
+  }
   await page.screenshot({ path: testInfo.outputPath('image-imported.png') });
   expect(runtimeErrors).toEqual([]);
 });
@@ -416,13 +530,26 @@ test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con 
   await addNote(page, 'Primera');
   await addNote(page, 'Segunda');
   await closeEditor(page);
+  const compact = (page.viewportSize()?.width ?? 0) < 800;
   // En móvil «Primera» queda por encima de la vista tras revelar «Segunda»: se activa con el teclado.
-  await tapCard(page, 1);
-  await button(page, 'Conectar con Segunda').click();
+  await tapCard(page, 1, false);
+  if (compact) {
+    await openCardEditor(page, 1);
+    await button(page, 'Conectar con Segunda').click();
+    await closeEditor(page);
+  } else {
+    // Escritorio: «Conectar» vive solo en el menú contextual (ADR 0048), no en el editor.
+    await openCardActions(page, card(page, 1), 'Primera');
+    await button(page, 'Conectar desde Primera').click();
+    await tapConnectTarget(page, 2);
+    // Conectar deja activa la herramienta Conectar (ADR 0048): se vuelve a Seleccionar para que el
+    // toque de más abajo seleccione en vez de iniciar otra conexión.
+    await button(page, 'Herramienta Seleccionar').click();
+  }
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
-  await closeEditor(page);
   await card(page, 1).click();
-  await button(page, 'Acciones de Primera').click();
+  if (compact) await button(page, 'Acciones de Primera').click();
+  else await openCardActions(page, card(page, 1), 'Primera');
   await button(page, 'Enviar Primera a la Papelera').click();
   await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
   await expect(card(page, 1)).toHaveCount(0);
@@ -437,10 +564,16 @@ test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con 
   await expect(card(page, 1)).toBeVisible();
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
 
-  // Eliminar definitivamente pide confirmación con el nombre; cancelar no cambia nada. Ese botón
-  // («…la tarjeta X…») es del editor, distinto del de la cabecera («Enviar X…»): hace falta «Editar».
-  await openCardEditor(page, 1);
-  await button(page, 'Enviar la tarjeta Primera a la Papelera').click();
+  // Eliminar definitivamente pide confirmación con el nombre; cancelar no cambia nada.
+  if (compact) {
+    // Ese botón («…la tarjeta X…») es del editor, distinto del de la cabecera («Enviar X…»): hace
+    // falta «Editar».
+    await openCardEditor(page, 1);
+    await button(page, 'Enviar la tarjeta Primera a la Papelera').click();
+  } else {
+    await openCardActions(page, card(page, 1), 'Primera');
+    await button(page, 'Enviar Primera a la Papelera').click();
+  }
   await button(page, 'Abrir la Papelera (1)').click();
   await button(page, 'Eliminar definitivamente Primera').click();
   await expect(page.getByTestId('purge-confirmation')).toContainText('¿Eliminar definitivamente «Primera»? No se puede deshacer.');
@@ -468,17 +601,18 @@ test('regresión: enfocar una tarjeta fuera del lienzo la trae con el pan, nunca
   await addNote(page, 'Escondida');
   await closeEditor(page);
   // Desde P2 las tarjetas nuevas aparecen dentro de lo que se ve. Para esconderla, la persona
-  // desplaza el lienzo con la Mano, como haría para explorar el tablero.
+  // desplaza el lienzo con la Mano (móvil) o el botón central del ratón (escritorio, ADR 0048).
+  const compact = (page.viewportSize()?.width ?? 0) < 800;
   const panBy = async (dx: number) => {
-    await button(page, 'Herramienta Mano').click();
     // Se agarra por el borde opuesto al sentido del arrastre: el puntero no sale de la ventana.
     const frame = await box(canvas);
     const [x, y] = [dx < 0 ? frame.x + frame.width - 8 : frame.x + 8, frame.y + frame.height / 2];
+    if (compact) await button(page, 'Herramienta Mano').click();
     await page.mouse.move(x, y);
-    await page.mouse.down();
+    await page.mouse.down(compact ? {} : { button: 'middle' });
     for (let step = 1; step <= 10; step += 1) await page.mouse.move(x + (dx * step) / 10, y);
-    await page.mouse.up();
-    await button(page, 'Herramienta Seleccionar').click();
+    await page.mouse.up(compact ? {} : { button: 'middle' });
+    if (compact) await button(page, 'Herramienta Seleccionar').click();
   };
   const visible = await box(canvas);
 
@@ -502,6 +636,10 @@ test('regresión: enfocar una tarjeta fuera del lienzo la trae con el pan, nunca
   await panBy(visible.width - 16);
   const right = await box(card(page, 1));
   expect(right.x).toBeGreaterThanOrEqual(visible.x + visible.width);
+  // El botón central no quita el foco (a propósito: no es un clic sobre la tarjeta ni el lienzo lo
+  // pierde). Sigue enfocada desde el toque anterior: se desenfoca para que el siguiente «focus()» sea
+  // un cambio real y dispare el pan que la trae de vuelta, en vez de un no-op sobre el mismo elemento.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await card(page, 1).focus();
   await expect.poll(async () => (await box(card(page, 1))).x + (await box(card(page, 1))).width).toBeLessThanOrEqual(visible.x + visible.width);
   expect(await canvas.evaluate((element) => element.scrollLeft)).toBe(0);
@@ -512,7 +650,7 @@ test('regresión: enfocar una tarjeta fuera del lienzo la trae con el pan, nunca
     await button(page, 'Restablecer la vista del lienzo').click();
     await button(page, 'Cerrar configuración').click();
   } else {
-    await button(page, 'Zoom 100 %, restablecer a 100 %').click();
+    await button(page, 'Zoom 75 %, restablecer a 75 %').click();
   }
   await expect.poll(offset).toBe(origin);
   expect(await canvas.evaluate((element) => element.scrollLeft)).toBe(0);
@@ -532,16 +670,17 @@ test('regresión: «Restablecer vista» vuelve al origen aunque haya una tarjeta
   await closeEditor(page);
   await tapCard(page, 1, false);
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
-  // Desplaza la cámara con Mano y conserva una tarjeta seleccionada: restablecer debe respetar la
-  // orden explícita de volver al origen, sin reenfocar automáticamente la selección.
-  await button(page, 'Herramienta Mano').click();
+  // Desplaza la cámara con Mano (móvil) o el botón central del ratón (escritorio, ADR 0048) y conserva
+  // una tarjeta seleccionada: restablecer debe respetar la orden explícita de volver al origen, sin
+  // reenfocar automáticamente la selección.
+  if (compact) await button(page, 'Herramienta Mano').click();
   const frame = await box(canvas);
   await page.mouse.move(frame.x + frame.width - 20, frame.y + frame.height / 2);
-  await page.mouse.down();
+  await page.mouse.down(compact ? {} : { button: 'middle' });
   await page.mouse.move(frame.x + frame.width - 180, frame.y + frame.height / 2, { steps: 10 });
-  await page.mouse.up();
+  await page.mouse.up(compact ? {} : { button: 'middle' });
   await expect.poll(async () => (await offset())[0]).toBeLessThan(origin[0] ?? 0);
-  // Acercar y restablecer: vuelve al origen y a 100 %, sin que la selección vuelva a mover la cámara.
+  // Acercar y restablecer: vuelve al origen y a 75 %, sin que la selección vuelva a mover la cámara.
   if (compact) {
     await openSettings(page);
     await button(page, 'Acercar el lienzo').click();
@@ -549,7 +688,7 @@ test('regresión: «Restablecer vista» vuelve al origen aunque haya una tarjeta
     await button(page, 'Cerrar configuración').click();
   } else {
     await button(page, 'Acercar').click();
-    await button(page, 'Zoom 125 %, restablecer a 100 %').click();
+    await button(page, 'Zoom 100 %, restablecer a 75 %').click();
   }
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(offset).toEqual(origin);
@@ -623,7 +762,7 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await createWorkspace(page, 'Rótulo');
   await button(page, 'Añadir título flotante').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toBeVisible();
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, card(page, 1));
   await page.getByLabel('Título de la tarjeta').fill('Proyecto Solace');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
@@ -631,13 +770,13 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
   await closeEditor(page);
   await card(page, 1).click();
-  await button(page, 'Acciones de Proyecto Solace').click();
+  await openCardActions(page, card(page, 1), 'Proyecto Solace');
   await button(page, 'Minimizar Proyecto Solace').click();
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Proyecto Solace, minimizada');
-  await button(page, 'Acciones de Proyecto Solace').click();
+  await openCardActions(page, card(page, 1), 'Proyecto Solace');
   await button(page, 'Expandir Proyecto Solace').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
-  await button(page, 'Acciones de Proyecto Solace').click();
+  await openCardActions(page, card(page, 1), 'Proyecto Solace');
   await button(page, 'Enviar Proyecto Solace a la Papelera').click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toHaveCount(0);
   await button(page, 'Abrir la Papelera (1)').click();
@@ -691,7 +830,7 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   if (isCompactWidth(page)) await button(page, 'Abrir un tablero').click();
   await button(page, 'Crear un tablero').click();
   await button(page, 'Crear la primera nota').click();
-  await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
+  await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
   await page.getByLabel('Título de la tarjeta').fill('Osaka');
   await button(page, 'Guardar texto').click();
   await tagInput.fill('japon');
@@ -785,7 +924,7 @@ test('enlaces: crear con validación, abrir en pestaña nueva con noopener, edit
   await expect(card(page, 1)).toContainText('ejemplo.com');
   await expect(page.getByTestId('card-link-tarjeta-1')).toHaveText('↗ ejemplo.com/guia');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «link-input» vive ahí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, card(page, 1));
   await expect(page.getByTestId('link-input')).toHaveValue('https://ejemplo.com/guia');
 
   await button(page, 'Abrir el enlace https://ejemplo.com/guia').click();
@@ -881,11 +1020,18 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   await closeEditor(page);
   // La ficha muestra los bloques en orden: el HTML sigue siendo texto.
   const preview = page.getByTestId('note-preview-tarjeta-1');
-  // En una ficha de tamaño inicial caben el primer párrafo y la primera imagen; el resto se indica.
+  // En una ficha de tamaño inicial cabe el primer párrafo y, en escritorio (fila de 56 px), también la
+  // primera imagen; el resto se indica. En móvil, la fila de partida es más baja (48 px, ADR 0048) y ya
+  // no deja sitio para ninguna imagen: solo el primer párrafo cabe.
   // (RN Web dibuja dentro un <img> accesible: se busca por nombre, no por número de roles.)
-  await expect(preview.getByRole('img', { name: 'mapa' }).first()).toBeVisible();
-  await expect(preview.getByRole('img', { name: 'portada' })).toHaveCount(0);
-  await expect(preview).toContainText('+2 bloques más');
+  if (isCompactWidth(page)) {
+    await expect(preview.getByRole('img')).toHaveCount(0);
+    await expect(preview).toContainText('+3 bloques más');
+  } else {
+    await expect(preview.getByRole('img', { name: 'mapa' }).first()).toBeVisible();
+    await expect(preview.getByRole('img', { name: 'portada' })).toHaveCount(0);
+    await expect(preview).toContainText('+2 bloques más');
+  }
   await page.screenshot({ path: testInfo.outputPath('note-images.png') });
   await openCardEditor(page, 1);
 
@@ -1185,10 +1331,27 @@ test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar 
   await createWorkspace(page, 'Estudio');
   await addNote(page, 'Borrador viejo');
   await addNote(page, 'Plan');
-  await tapCard(page, 1);
-  await button(page, 'Conectar con Plan').click();
+  const compact = isCompactWidth(page);
+  await tapCard(page, 1, false);
+  if (compact) {
+    await openCardEditor(page, 1);
+    await button(page, 'Conectar con Plan').click();
+  } else {
+    // Escritorio: conectar y archivar viven en el menú contextual (ADR 0048), no en el editor.
+    await openCardActions(page, card(page, 1), 'Borrador viejo');
+    await button(page, 'Conectar desde Borrador viejo').click();
+    await tapConnectTarget(page, 2);
+    // Conectar deja activa la herramienta Conectar (ADR 0048): se vuelve a Seleccionar para que los
+    // toques normales de más abajo seleccionen en vez de iniciar otra conexión.
+    await button(page, 'Herramienta Seleccionar').click();
+  }
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
-  await button(page, 'Archivar la tarjeta Borrador viejo').click();
+  if (compact) {
+    await button(page, 'Archivar la tarjeta Borrador viejo').click();
+  } else {
+    await openCardActions(page, card(page, 1), 'Borrador viejo');
+    await button(page, 'Archivar Borrador viejo').click();
+  }
   await expect(feedback(page)).toHaveText('Tarjeta archivada. Guardado en memoria.');
   await expect(card(page, 1)).toHaveCount(0);
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(0);
@@ -1224,8 +1387,14 @@ test('Archivo: archivar sin destruir, fuera de la búsqueda, buscar y restaurar 
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
 
   // «Eliminar» desde el Archivo = enviar a la Papelera, con confirmación; solo la Papelera borra.
-  await tapCard(page, 1);
-  await button(page, 'Archivar la tarjeta Borrador viejo').click();
+  await tapCard(page, 1, false);
+  if (compact) {
+    await openCardEditor(page, 1);
+    await button(page, 'Archivar la tarjeta Borrador viejo').click();
+  } else {
+    await openCardActions(page, card(page, 1), 'Borrador viejo');
+    await button(page, 'Archivar Borrador viejo').click();
+  }
   await openArchive(1);
   await button(page, 'Enviar Borrador viejo a la Papelera desde el Archivo').click();
   await expect(page.getByTestId('archive-trash-confirmation')).toContainText('Desde allí aún podrás restaurarla o eliminarla definitivamente.');
@@ -1247,7 +1416,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
     await button(page, 'Añadir nota').click();
     // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): solo hay un botón
     // «Editar» visible a la vez, el de la tarjeta recién creada y seleccionada.
-    await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
+    await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
     await page.getByLabel('Título de la tarjeta').fill(title);
     await button(page, 'Guardar texto').click();
     await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
@@ -1293,17 +1462,23 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
   await expect(button(page, 'Tablero Tablero 2')).toBeVisible();
 
   // Selección múltiple: archivar dos tarjetas del tablero principal y restaurarlas juntas.
-  // «Archivar la tarjeta X» es del editor (distinto del de cabecera): hace falta «Editar».
-  const editSelected = () => openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
+  // En móvil, «Archivar la tarjeta X» es del editor (distinto del de cabecera): hace falta «Editar».
+  // En escritorio, Archivar vive solo en el menú contextual (ADR 0048), sin abrir el editor.
+  const archiveByTitle = async (title: string) => {
+    await selectCardByTitle(title).click();
+    if (isCompactWidth(page)) {
+      await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
+      await button(page, `Archivar la tarjeta ${title}`).click();
+    } else {
+      await openCardActions(page, selectCardByTitle(title), title);
+      await button(page, `Archivar ${title}`).click();
+    }
+  };
   await button(page, 'Tablero Tablero principal').click();
-  await selectCardByTitle('Idea original').click();
-  await editSelected();
-  await button(page, 'Archivar la tarjeta Idea original').click();
+  await archiveByTitle('Idea original');
   await addNoteAnywhere('Otra idea');
   await closeEditor(page);
-  await selectCardByTitle('Otra idea').click();
-  await editSelected();
-  await button(page, 'Archivar la tarjeta Otra idea').click();
+  await archiveByTitle('Otra idea');
   await openArchive();
   await expect(page.getByTestId('archive-count')).toHaveText('2 TARJETAS');
   await button(page, 'Añadir a la selección a Idea original').click();
@@ -1317,12 +1492,8 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
   await expect(selectCardByTitle('Otra idea')).toBeVisible();
 
   // Ahora, seleccionar y enviar juntas a la Papelera.
-  await selectCardByTitle('Idea original').click();
-  await editSelected();
-  await button(page, 'Archivar la tarjeta Idea original').click();
-  await selectCardByTitle('Otra idea').click();
-  await editSelected();
-  await button(page, 'Archivar la tarjeta Otra idea').click();
+  await archiveByTitle('Idea original');
+  await archiveByTitle('Otra idea');
   await openArchive();
   await button(page, 'Añadir a la selección a Idea original').click();
   await button(page, 'Añadir a la selección a Otra idea').click();
@@ -1385,7 +1556,13 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
   await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 1 TARJETA CREADA · 0 ARCHIVADAS');
   await button(page, 'Ir a Idea del día').click();
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
-  await button(page, 'Archivar la tarjeta Idea del día').click();
+  if (isCompactWidth(page)) {
+    await openCardEditor(page, 1);
+    await button(page, 'Archivar la tarjeta Idea del día').click();
+  } else {
+    await openCardActions(page, card(page, 1), 'Idea del día');
+    await button(page, 'Archivar Idea del día').click();
+  }
   await openDiary();
   await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 0 TARJETAS CREADAS · 1 ARCHIVADA');
   await expect(page.getByTestId('log-archived-tarjeta-1')).toContainText('ARCHIVADA · NOTA');
@@ -1737,7 +1914,7 @@ test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian 
 
   await button(page, 'Add note').click();
   // Creating no longer opens the editor by itself (interaction audit, 2026-09-29): «Editar»/«Edit» does.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, card(page, 1));
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   // En móvil el encabezado propio del inspector se oculta (la hoja ya muestra título y «Close»).
   if (!isCompactWidth(page)) await expect(page.getByText('SELECTED CARD', { exact: true })).toBeVisible();
@@ -1750,10 +1927,25 @@ test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian 
   // La fecha de creación cambia de orden, no solo de palabras (ADR 0040): «28 sep 2026» -> «Sep 28, 2026».
   await expect(page.getByTestId('card-created')).toContainText(/^Created [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{2}:\d{2}$/);
   await expect(page.getByTestId('card-geometry')).toContainText(/^Column \d+, row \d+/);
-  await expect(page.getByText('CONNECTIONS', { exact: true })).toBeVisible();
-  await expect(page.getByText('No connections.', { exact: true })).toBeVisible();
-  await expect(button(page, 'Archive the card English card')).toBeVisible();
-  await expect(button(page, 'Send the card English card to the Trash')).toBeVisible();
+  if (isCompactWidth(page)) {
+    await expect(page.getByText('CONNECTIONS', { exact: true })).toBeVisible();
+    await expect(page.getByText('No connections.', { exact: true })).toBeVisible();
+    await expect(button(page, 'Archive the card English card')).toBeVisible();
+    await expect(button(page, 'Send the card English card to the Trash')).toBeVisible();
+  } else {
+    // Escritorio: conectar, archivar y Papelera viven en el menú contextual (ADR 0048), también en
+    // inglés. El menú se abre sobre la ficha ya seleccionada: se cierra el editor antes para que el
+    // clic derecho no la reseleccione y lo cierre, y se vuelve a abrir después. `closeEditor` da por
+    // hecho el texto en español: aquí la interfaz ya está en inglés.
+    await button(page, 'Close the card editor').click();
+    await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+    await openCardActions(page, card(page, 1), 'English card');
+    await expect(button(page, 'Connect from English card')).toBeVisible();
+    await expect(button(page, 'Archive English card')).toBeVisible();
+    await expect(button(page, 'Send English card to the Trash')).toBeVisible();
+    await button(page, 'Close actions for english card').click();
+    await openFullCardEditor(page, card(page, 1));
+  }
 
   // Los avisos de acción y las etiquetas de deshacer/rehacer también se traducen (ADR 0044),
   // incluida la barra compacta de móvil, que antes quedaba fija en español.
@@ -1784,33 +1976,86 @@ test('Conexiones: tipo y rótulo al crear, editarlos después, elegir el estilo 
   await addNote(page, 'B');
   await closeEditor(page);
 
-  // Crear con un tipo nuevo y conectar.
-  await tapCard(page, 1);
-  await page.getByTestId('connect-type-input').fill('Bloquea');
-  await button(page, 'Conectar con B').click();
-  await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
-  const connections = page.getByTestId('card-connections');
-  await expect(connections).toContainText('→ B (Bloquea)');
+  const compact = isCompactWidth(page);
+  if (compact) {
+    // Crear con un tipo nuevo y conectar.
+    await tapCard(page, 1);
+    await page.getByTestId('connect-type-input').fill('Bloquea');
+    await button(page, 'Conectar con B').click();
+    await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+    const connections = page.getByTestId('card-connections');
+    await expect(connections).toContainText('→ B (Bloquea)');
 
-  // Editar tipo y rótulo de la conexión ya creada.
-  await button(page, 'Editar el tipo y el rótulo de la conexión con B').click();
-  await page.getByLabel('Rótulo sobre la línea').fill('hasta el jueves');
-  await button(page, 'Guardar los cambios de la conexión').click();
-  await expect(feedback(page)).toHaveText('Conexión actualizada. Guardado en memoria.');
-  await expect(connections).toContainText('→ B (Bloquea: hasta el jueves)');
+    // Editar tipo y rótulo de la conexión ya creada.
+    await button(page, 'Editar el tipo y el rótulo de la conexión con B').click();
+    await page.getByLabel('Rótulo sobre la línea').fill('hasta el jueves');
+    await button(page, 'Guardar los cambios de la conexión').click();
+    await expect(feedback(page)).toHaveText('Conexión actualizada. Guardado en memoria.');
+    await expect(connections).toContainText('→ B (Bloquea: hasta el jueves)');
 
-  // Estilo de flecha: se aplica al instante y se ve en el lienzo (rótulo como texto, no solo color).
-  await expect(page.getByTestId(/^relation-label-/)).toHaveText('hasta el jueves');
-  await button(page, 'Usar doble flecha en esta conexión').click();
-  await expect(feedback(page)).toHaveText('Estilo de la conexión cambiado. Guardado en memoria.');
-  await expect(button(page, 'Usar doble flecha en esta conexión')).toHaveAttribute('aria-pressed', 'true');
-  await closeEditor(page);
+    // Estilo de flecha: se aplica al instante y se ve en el lienzo (rótulo como texto, no solo color).
+    await expect(page.getByTestId(/^relation-label-/)).toHaveText('hasta el jueves');
+    await button(page, 'Usar doble flecha en esta conexión').click();
+    await expect(feedback(page)).toHaveText('Estilo de la conexión cambiado. Guardado en memoria.');
+    await expect(button(page, 'Usar doble flecha en esta conexión')).toHaveAttribute('aria-pressed', 'true');
+    await closeEditor(page);
+  } else {
+    // Escritorio: conectar desde el menú contextual (tipo por defecto) y editar tipo, rótulo y flecha
+    // desde el menú de la línea (ADR 0048), sin pasar por el editor de ninguna tarjeta.
+    await openCardActions(page, card(page, 1), 'A');
+    await button(page, 'Conectar desde A').click();
+    await tapConnectTarget(page, 2);
+    await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+    // Conectar deja activa la herramienta Conectar y A seleccionada (ADR 0048): se vuelve a Seleccionar
+    // y se toca el fondo del lienzo para quitar la selección, o las asas de A (seguiría seleccionada)
+    // taparían la línea.
+    await button(page, 'Herramienta Seleccionar').click();
+    // Esquina superior derecha: la inferior derecha tiene «Ver todo»/minimapa (canvas-controls).
+    const canvasBox = await box(page.getByTestId('board-canvas'));
+    await page.mouse.click(canvasBox.x + canvasBox.width - 20, canvasBox.y + 20);
+    const line = page.getByTestId(/^relation-line-/);
+
+    await line.click();
+    await expect(page.getByTestId('relation-menu')).toBeVisible();
+    await page.getByLabel('Tipo de la conexión').fill('Bloquea');
+    await button(page, 'Guardar los cambios de la conexión').click();
+    await expect(feedback(page)).toHaveText('Conexión actualizada. Guardado en memoria.');
+    // Guardar no cierra el menú (sigue abierto para seguir editando): se cierra a mano para que el
+    // siguiente toque de la línea no choque con su fondo.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('relation-menu')).toHaveCount(0);
+    await expect(line).toHaveAccessibleName('Conexión Bloquea');
+
+    await line.click();
+    await expect(page.getByTestId('relation-menu')).toBeVisible();
+    await page.getByLabel('Rótulo sobre la línea').fill('hasta el jueves');
+    await button(page, 'Guardar los cambios de la conexión').click();
+    await expect(feedback(page)).toHaveText('Conexión actualizada. Guardado en memoria.');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('relation-menu')).toHaveCount(0);
+    await expect(page.getByTestId(/^relation-label-/)).toHaveText('hasta el jueves');
+    await expect(line).toHaveAccessibleName('Conexión Bloquea: hasta el jueves');
+
+    // Estilo de flecha: se aplica al instante y se ve en el lienzo (rótulo como texto, no solo color).
+    await line.click();
+    await expect(page.getByTestId('relation-menu')).toBeVisible();
+    await button(page, 'Usar doble flecha en esta conexión').click();
+    await expect(feedback(page)).toHaveText('Estilo de la conexión cambiado. Guardado en memoria.');
+    await expect(button(page, 'Usar doble flecha en esta conexión')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('relation-menu')).toHaveCount(0);
+  }
   await page.screenshot({ path: testInfo.outputPath('connection.png') });
 
   // Minimizada, la línea y el rótulo siguen visibles (la huella se reduce a 1 × 1, no desaparece).
-  await tapCard(page, 1);
-  await button(page, 'Mostrar minimizada').click();
-  await closeEditor(page);
+  if (compact) {
+    await tapCard(page, 1);
+    await button(page, 'Mostrar minimizada').click();
+    await closeEditor(page);
+  } else {
+    await openCardActions(page, card(page, 1), 'A');
+    await button(page, 'Minimizar A').click();
+  }
   await expect(page.getByTestId(/^relation-line-/)).toBeVisible();
   await expect(page.getByTestId(/^relation-label-/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('connection-minimized.png') });
@@ -1818,6 +2063,9 @@ test('Conexiones: tipo y rótulo al crear, editarlos después, elegir el estilo 
 });
 
 test('Conexiones: con muchas tarjetas conectables, hace falta buscar por título en vez de una pared de botones', async ({ page }) => {
+  // La lista de conexiones (con su buscador) vive solo en el editor de la hoja móvil (ADR 0048): en
+  // escritorio, conectar es tocar la tarjeta destino directamente en el lienzo, sin lista que acotar.
+  test.skip(!isCompactWidth(page), 'El buscador de conexiones es del editor de la hoja móvil.');
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await createWorkspace(page, 'Huerto');
@@ -1855,11 +2103,18 @@ test('Conexiones: tocar la línea abre su menú (flechas, tipo, rótulo, descone
   await closeEditor(page);
   await addNote(page, 'B');
   await closeEditor(page);
-  await tapCard(page, 1);
-  await page.getByTestId('connect-type-input').fill('Bloquea');
-  await button(page, 'Conectar con B').click();
+  if (isCompactWidth(page)) {
+    await tapCard(page, 1);
+    await page.getByTestId('connect-type-input').fill('Bloquea');
+    await button(page, 'Conectar con B').click();
+    await closeEditor(page);
+  } else {
+    // Escritorio: conectar desde el menú contextual (ADR 0048), sin pasar por el editor.
+    await openCardActions(page, card(page, 1), 'A');
+    await button(page, 'Conectar desde A').click();
+    await tapConnectTarget(page, 2);
+  }
   await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
-  await closeEditor(page);
 
   // Tocar la línea abre su menú, sin pasar por el inspector de A ni de B.
   await page.getByTestId(/^relation-line-/).click();

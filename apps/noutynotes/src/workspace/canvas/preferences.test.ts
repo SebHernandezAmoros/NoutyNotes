@@ -21,14 +21,14 @@ describe('preferencias de vista del dispositivo (ADR 0014)', () => {
   });
 
   it('sube y baja por pasos sin salir de los límites', () => {
-    expect(stepPreference(DEFAULT_PREFERENCES, 'rowHeight', 1).rowHeight).toBe(72);
-    expect(stepPreference({ ...DEFAULT_PREFERENCES, rowHeight: 56 }, 'rowHeight', -1).rowHeight).toBe(56);
+    expect(stepPreference(DEFAULT_PREFERENCES, 'rowHeight', 1).rowHeight).toBe(64);
+    expect(stepPreference({ ...DEFAULT_PREFERENCES, rowHeight: 48 }, 'rowHeight', -1).rowHeight).toBe(48);
     expect(stepPreference({ ...DEFAULT_PREFERENCES, cardGap: 16 }, 'cardGap', 1).cardGap).toBe(16);
   });
 
   it('la densidad cambia filas y separación; en móvil una ficha minimizada sigue midiendo al menos 44 px', () => {
-    expect(metricsFor('wide', DEFAULT_PREFERENCES)).toEqual({ cell: 64, row: 64, gap: 8 });
-    expect(metricsFor('compact', DEFAULT_PREFERENCES)).toEqual({ cell: 56, row: 56, gap: 8 });
+    expect(metricsFor('wide', DEFAULT_PREFERENCES)).toEqual({ cell: 56, row: 56, gap: 6 });
+    expect(metricsFor('compact', DEFAULT_PREFERENCES)).toEqual({ cell: 48, row: 48, gap: 4 });
     expect(metricsFor('wide', { ...DEFAULT_PREFERENCES, rowHeight: 96, cardGap: 16 })).toEqual({ cell: 96, row: 96, gap: 16 });
     // Compacto con fila 48 (56 − 8): la separación se limita para que 56 − gap y 48 − gap ≥ 44.
     expect(metricsFor('compact', { ...DEFAULT_PREFERENCES, rowHeight: 56, cardGap: 16 })).toEqual({ cell: 48, row: 48, gap: 4 });

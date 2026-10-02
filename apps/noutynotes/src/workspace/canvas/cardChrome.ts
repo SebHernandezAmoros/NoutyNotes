@@ -1,6 +1,9 @@
 /** Controles de la cabecera de las tarjetas y cara de la ficha minimizada (ADR 0016). Puro. */
 import type { BaseCardKind, CardDisplayMode } from '@noutynotes/domain';
+import type { Locale } from '@noutynotes/ui';
 
+import { t } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
 import type { Size } from './viewport';
 
 /** Lado de cada control, en píxeles reales: fuera de la escala del zoom. */
@@ -18,14 +21,14 @@ const HEADER_FREE_SPACE = 80;
 export interface CardAction {
   readonly kind: CardDisplayMode | 'trash';
   readonly glyph: string;
-  /** Verbo del nombre accesible: «Minimizar X», … La Papelera usa «Enviar X a la Papelera». */
-  readonly verb: string;
+  /** Clave i18n del verbo del nombre accesible: «Minimizar X», … La Papelera usa «Enviar X a la Papelera». */
+  readonly verbKey: TranslationKey;
 }
 
-const MINIMIZE: CardAction = { kind: 'minimized', glyph: '−', verb: 'Minimizar' };
-const COLLAPSE: CardAction = { kind: 'collapsed', glyph: '▭', verb: 'Contraer' };
-const EXPAND: CardAction = { kind: 'expanded', glyph: '□', verb: 'Expandir' };
-const TRASH: CardAction = { kind: 'trash', glyph: '×', verb: 'Enviar a la Papelera' };
+const MINIMIZE: CardAction = { kind: 'minimized', glyph: '−', verbKey: 'cardAction.minimize' };
+const COLLAPSE: CardAction = { kind: 'collapsed', glyph: '▭', verbKey: 'cardAction.collapse' };
+const EXPAND: CardAction = { kind: 'expanded', glyph: '□', verbKey: 'cardAction.expand' };
+const TRASH: CardAction = { kind: 'trash', glyph: '×', verbKey: 'cardAction.trashVerb' };
 
 /** Acciones de cada estado. «×» envía a la Papelera; eliminar definitivamente solo se hace desde ella. */
 export function cardActions(display: CardDisplayMode): readonly CardAction[] {
@@ -34,8 +37,12 @@ export function cardActions(display: CardDisplayMode): readonly CardAction[] {
   return [EXPAND, TRASH];
 }
 
-export function actionLabel(action: CardAction, title: string): string {
-  return action.kind === 'trash' ? `Enviar ${title} a la Papelera` : `${action.verb} ${title}`;
+export function actionVerb(action: CardAction, locale: Locale): string {
+  return t(action.verbKey, locale);
+}
+
+export function actionLabel(action: CardAction, title: string, locale: Locale): string {
+  return action.kind === 'trash' ? t('cardAction.trash.label', locale, { title }) : `${actionVerb(action, locale)} ${title}`;
 }
 
 /** Rectángulo en píxeles de pantalla (ya con pan y zoom). */

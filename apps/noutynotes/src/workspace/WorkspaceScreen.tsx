@@ -31,7 +31,7 @@ import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { Board } from './Board';
-import { BoardTabs } from './BoardTabs';
+import { BoardRail } from './BoardTabs';
 import { OpenTabs } from './OpenTabs';
 import { Canvas } from './canvas/Canvas';
 import type { CanvasTool } from './canvas/Canvas';
@@ -43,7 +43,7 @@ import { visibleCells, zoomIn, zoomOut } from './canvas/viewport';
 import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
 import { FrameInspector } from './FrameInspector';
-import { ProjectRail, ProjectSheet } from './ProjectTabs';
+import { ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
 import { ArchiveView } from './ArchiveView';
 import { DiaryView } from './DiaryView';
@@ -62,6 +62,7 @@ import { composeSavedWithNotes } from './actionFeedback';
 /** Desde este ancho la navegación de espacios y tableros va en una barra lateral. */
 const SIDEBAR_MIN_WIDTH = 1100;
 const START_PAN: Point = { x: 16, y: 16 };
+const DEFAULT_ZOOM = 0.75;
 
 const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
   expanded: 'action.cardExpanded',
@@ -155,7 +156,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [openBoardIds, setOpenBoardIds] = useState<readonly BoardId[]>([]);
   const [tool, setTool] = useState<CanvasTool>('select');
   const [connectSource, setConnectSource] = useState<CardId | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState<Point>(START_PAN);
   const [boardView, setBoardView] = useState<BoardView>('canvas');
   // Posición/tamaño optimistas mientras se guarda un movimiento o redimensionado (auditoría de
@@ -255,8 +256,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const activeBoard = workspace?.boards.find((candidate) => candidate.id === boardId) ?? workspace?.boards[0];
     const activeLayout = workspace?.layouts.find((candidate) => candidate.boardId === activeBoard?.id);
     const placement = activeLayout?.placements.find((candidate) => candidate.cardId === cardId);
-    const canEditInline = !compact && placement?.display === 'expanded'
-      && placement.rect.w * metrics.cell * zoom >= 240 && placement.rect.h * metrics.row * zoom >= 180;
+    // La edición rápida crece sobre su ficha con un mínimo propio de 240 × 180 px (`InlineCardEditor`,
+    // ADR 0048): no hace falta que la ficha YA mida eso. Reproducido el 2026-10-02: con el zoom inicial
+    // de 75 % y el tamaño por defecto (4 × 3 celdas de 56 px), la huella real es 168 × 126 px, por debajo
+    // del umbral antiguo, así que «Editar dentro de la ficha» abría el editor completo sin avisarlo.
+    const canEditInline = !compact && placement?.display === 'expanded';
     setSelectedId(cardId);
     setEditingId(cardId);
     setInlineEditing(canEditInline);
@@ -886,7 +890,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null
       ) : (
         <>
-          {!sidebar && workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null}
+          {/* Proyectos ya no tiene su propia franja vertical (ADR 0048): el selector compacto de
+              cabecera, antes solo de 800–1099 px, cubre también el escritorio con barra lateral. */}
+          {workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null}
           {showArchive && workspace ? (
             <View testID="export-bar" style={styles.headerExport}>
               {exportStatus}
@@ -967,7 +973,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       zoom={zoom}
       onZoomIn={() => setZoom(zoomIn)}
       onZoomOut={() => setZoom(zoomOut)}
-      onZoomReset={() => { setZoom(1); setPan(START_PAN); }}
+      onZoomReset={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
       view={boardView}
       onToggleView={() => { setMulti(null); setBoardView((current) => (current === 'canvas' ? 'list' : 'canvas')); }}
       trashCount={workspace.trash?.length ?? 0}
@@ -1054,7 +1060,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onFrameMove={moveFrame}
         onZoom={setZoom}
         onView={(nextZoom, nextPan) => { setZoom(nextZoom); setPan(nextPan); }}
-        onResetView={() => { setZoom(1); setPan(START_PAN); }}
+        onResetView={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
         onAreaSelect={(cardIds) => void startMulti(cardIds)}
         showDates={preferences.showDates}
         noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
@@ -1138,9 +1144,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             </View>
             {workspace ? (
               <>
-                <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t("workspace.sidebar.boards", locale)}</Text>
-                <BoardTabs boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} vertical />
-                <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
                 <NavItem icon="trash" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
                 <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => openView('diary')} />
                 <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
@@ -1259,7 +1262,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             </View>
           ) : null}
         </View>
-        {sidebar && workspace ? <ProjectRail projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} /> : null}
+        {/* Una sola franja vertical (ADR 0048): tableros a la derecha; proyectos usan el selector
+            compacto de cabecera («Proyectos» arriba) en vez de una segunda franja permanente. */}
+        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} /> : null}
       </View>
       {workspace ? (
         <>
@@ -1273,7 +1278,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             zoom={zoom}
             onZoomIn={() => setZoom(zoomIn)}
             onZoomOut={() => setZoom(zoomOut)}
-            onResetView={() => { setZoom(1); setPan(START_PAN); }}
+            onResetView={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
             onOpenFontLibrary={() => { setSettingsOpen(false); openView('assets'); }}
             onClose={() => setSettingsOpen(false)}
           />

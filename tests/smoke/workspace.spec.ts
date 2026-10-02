@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, hasHorizontalOverflow, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
+import { activeLabel, borderColor, expandPosition, hasHorizontalOverflow, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
 // 56 × 56 px; desde 800 px: barra sobre el lienzo, editor contextual y celdas cuadradas de 64 × 64 px;
@@ -49,7 +49,8 @@ async function selectCard(page: Page, id: number) {
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
 const geometry = (page: Page) => page.getByTestId('card-geometry');
-const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 64, y: 64 } : { x: 56, y: 56 });
+// Celda cuadrada (ADR 0048): 56 px de fila (48 en compacto) al zoom inicial de 75 %.
+const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 42, y: 42 } : { x: 36, y: 36 });
 
 async function createWorkspace(page: Page, name: string) {
   await page.getByLabel('Nombre del nuevo espacio').fill(name);
@@ -84,7 +85,7 @@ async function openCardEditor(page: Page, id: number) {
       await expect(card(page, id)).toHaveAttribute('aria-pressed', 'true', { timeout: 100 });
     }).toPass({ intervals: [100, 100, 100, 100, 100] });
   }
-  await openFullCardEditor(page, page.getByTestId(`card-actions-tarjeta-${id}`));
+  await openFullCardEditor(page, card(page, id));
 }
 
 async function box(locator: Locator) {
@@ -103,6 +104,20 @@ async function mouseDrag(page: Page, locator: Locator, dx: number, dy: number, o
   await page.mouse.down();
   for (let step = 1; step <= 10; step += 1) await page.mouse.move(x + (dx * step) / 10, y + (dy * step) / 10);
   if (options.release !== false) await page.mouse.up();
+}
+
+/**
+ * Botón central del ratón (ADR 0048): desplaza el lienzo en ambos ejes desde cualquier punto, incluida
+ * una ficha, sin activar Mano, mover la tarjeta ni cambiar la selección. Es el equivalente de escritorio
+ * a la herramienta Mano, que la barra de escritorio ya no muestra.
+ */
+async function middleDrag(page: Page, locator: Locator, dx: number, dy: number) {
+  const found = await box(locator);
+  const [x, y] = [found.x + found.width / 2, found.y + found.height / 2];
+  await page.mouse.move(x, y);
+  await page.mouse.down({ button: 'middle' });
+  for (let step = 1; step <= 10; step += 1) await page.mouse.move(x + (dx * step) / 10, y + (dy * step) / 10);
+  await page.mouse.up({ button: 'middle' });
 }
 
 /** Arrastre táctil real (eventos touch de Chromium), no simulado con ratón. */
@@ -128,7 +143,7 @@ async function revealCanvas(page: Page) {
 
 const isCompact = (page: Page) => (page.viewportSize()?.width ?? 0) < at.width;
 
-/** «Restablecer vista»: zoom 100 % y cámara en el origen (barra en escritorio, Configuración en móvil). */
+/** «Restablecer vista»: zoom 75 % y cámara en el origen (barra en escritorio, Configuración en móvil). */
 async function resetView(page: Page) {
   if (isCompact(page)) await inSettings(page, async () => { await button(page, 'Restablecer la vista del lienzo').click(); });
   else await page.getByTestId('zoom-level').click();
@@ -142,9 +157,10 @@ async function resetView(page: Page) {
  */
 async function sideBySide(page: Page) {
   await addCards(page, ['nota', 'nota']);
-  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): solo hay un botón
-  // «Editar» visible, el de la tarjeta recién creada, y se abre para leer y ajustar su posición.
-  await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
+  // Crear ya no abre el editor por sí sola (auditoría de interacción, 2026-10-02): la tarjeta recién
+  // creada queda seleccionada (sin botón permanente en escritorio); se abre su editor completo para
+  // leer y ajustar su posición.
+  await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
   const cell = async () => {
     const text = await geometry(page).innerText();
     const grid = /Columna (\d+), fila (\d+)/.exec(text);
@@ -240,17 +256,23 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.getByTestId('board-empty')).toHaveCount(0);
   await expect(feedback(page)).toHaveText('Nota añadida. Guardado en memoria.');
 
-  // 2. Más tarjetas, incluida una imagen de ejemplo sin archivo, con cabecera numerada por tipo.
-  await addCards(page, ['nota', 'imagen']);
+  // 2. Más tarjetas, con cabecera numerada por tipo. En móvil incluye la imagen de ejemplo sin archivo;
+  // en escritorio esa muestra ya no está en la barra (ADR 0048) y la importación real de imagen tiene
+  // su propia prueba dedicada («imagen real…», cards.spec.ts), así que aquí se usa otra nota.
+  if (isCompact(page)) {
+    await addCards(page, ['nota', 'imagen']);
+    await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeAttached();
+    await expect(feedback(page)).toHaveText('Imagen de ejemplo añadida. Guardado en memoria.');
+  } else {
+    await addCards(page, ['nota', 'nota']);
+  }
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
-  await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeAttached();
-  await expect(feedback(page)).toHaveText('Imagen de ejemplo añadida. Guardado en memoria.');
   // La grilla cuadrada y los controles reservan la cabecera: el número siempre permanece legible;
   // el tipo completo solo aparece cuando el ancho real de la ficha deja espacio suficiente.
   await expect(card(page, 1)).toContainText('001');
   await expect(card(page, 3)).toContainText('003');
-  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-3'));
+  // Crear ya no abre el editor por sí sola (auditoría de interacción, 2026-10-02): se abre a mano.
+  await openFullCardEditor(page, card(page, 3));
   await expect(page.getByTestId('card-inspector')).toBeVisible();
 
   // 3. Editar título y Markdown.
@@ -278,20 +300,22 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await button(page, 'Más estrecha').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 3 × 3');
 
-  // 5. Conectar desde el inspector y con la herramienta Conectar, que también desconecta.
-  const connections = page.getByTestId('card-connections');
-  await button(page, 'Conectar con Nueva nota').click();
-  await expect(connections).toContainText('→ Nueva nota');
-  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
+  // 5. Conectar desde el menú contextual (clic derecho o «⋯»): fija el origen y activa la herramienta
+  // en un solo paso (ADR 0048, en vez de la lista de conexiones del editor y la antigua herramienta de
+  // la barra); tocar otra tarjeta conecta o desconecta, y tocar el origen cancela sin cambiar nada.
   await closeEditor(page);
-  await button(page, 'Herramienta Conectar').click();
-  await expect(button(page, 'Herramienta Conectar')).toHaveAttribute('aria-pressed', 'true');
-  await card(page, 1).click();
+  await openCardActions(page, card(page, 1), 'Escena inicial');
+  await button(page, 'Conectar desde Escena inicial').click();
   await expect(page.getByTestId('connect-hint-tarjeta-1')).toHaveText('Origen · toca otra tarjeta');
-  await expect(page.getByTestId('connect-hint-tarjeta-2')).toHaveText('× Desconectar');
+  await expect(page.getByTestId('connect-hint-tarjeta-2')).toHaveText('+ Conectar');
   await expect(page.getByTestId('connect-hint-tarjeta-3')).toHaveText('+ Conectar');
   await expect(feedback(page)).toContainText('Origen: «Escena inicial»');
   await page.screenshot({ path: testInfo.outputPath('workspace-connecting.png') });
+  await tapCard(page, 2, false);
+  await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
+  await tapCard(page, 1, false);
+  await expect(page.getByTestId('connect-hint-tarjeta-2')).toHaveText('× Desconectar');
   await tapCard(page, 2, false);
   await expect(feedback(page)).toHaveText('Conexión eliminada. Guardado en memoria.');
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(0);
@@ -309,7 +333,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await button(page, 'Volver a mis espacios').click();
   await expect(button(page, 'Abrir Guion corto')).toBeVisible();
   await createWorkspace(page, 'Otro espacio');
-  await addCards(page, ['imagen']);
+  await addCards(page, ['nota']);
   await button(page, 'Volver a mis espacios').click();
   await button(page, 'Tema oscuro').click();
   await button(page, 'Abrir Guion corto').click();
@@ -318,7 +342,9 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.getByTestId('board-canvas')).toHaveCSS('background-color', rgb(themeColors.dark.canvas));
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
   await expectGeometry(page, 1, 'Columna 1, fila 1 · 3 × 3');
-  await expect(page.getByTestId('card-connections')).toContainText('→ Imagen de ejemplo');
+  // La lista de conexiones ya no vive en el editor de escritorio (ADR 0048): su línea en el lienzo
+  // basta para confirmar que la conexión sobrevivió a reabrir con el tema cambiado.
+  await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(1);
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('# Plano\n\n- abierto');
   await page.screenshot({ path: testInfo.outputPath('workspace-reopened-dark.png') });
 
@@ -333,7 +359,7 @@ test('edición rápida: título y Markdown se editan sobre la ficha y el editor 
   await createWorkspace(page, 'Edición directa');
   await addCards(page, ['nota']);
   await selectCard(page, 1);
-  await button(page, 'Acciones de Nueva nota').click();
+  await openCardActions(page, card(page, 1), 'Nueva nota');
   await page.screenshot({ path: testInfo.outputPath('card-actions-menu.png') });
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
 
@@ -349,9 +375,10 @@ test('edición rápida: título y Markdown se editan sobre la ficha y el editor 
   await button(page, 'Guardar y cerrar la edición rápida').click();
   await expect(inline).toHaveCount(0);
   await expect(card(page, 1)).toContainText('Idea editada aquí');
+  await expect(card(page, 1)).toContainText('una línea');
 
   await selectCard(page, 1);
-  await button(page, 'Acciones de Idea editada aquí').click();
+  await openCardActions(page, card(page, 1), 'Idea editada aquí');
   await button(page, 'Abrir el editor completo de Idea editada aquí').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   expect(runtimeErrors).toEqual([]);
@@ -426,9 +453,12 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   // Asas: la esquina cambia ancho y alto; el mundo admite pasar de 12 columnas. Soltar no
   // selecciona otra vez ni abre nada: la tarjeta sigue seleccionada.
   await revealCanvas(page);
-  // En móvil la esquina queda bajo el borde visible: se aleja la vista (75 %) como haría el usuario.
+  // `cell` se capturó al zoom inicial de 75 % (ADR 0048): cada cambio posterior de zoom escala el
+  // arrastre en píxeles por `nuevoZoom / 0.75`, no por el nuevo zoom a secas.
   const compact = (page.viewportSize()?.width ?? 0) < at.width;
-  const scale = compact ? 0.75 : 1;
+  // En móvil la esquina queda bajo el borde visible: se aleja la vista un paso (a 50 %, el siguiente
+  // paso por debajo de 75 %) como haría el usuario.
+  const scale = compact ? 0.5 / 0.75 : 1;
   if (compact) await zoomBy(page, 'out');
   await mouseDrag(page, page.getByTestId('resize-se-tarjeta-1'), cell.x * scale, cell.y * scale, { header: false });
   await expect(feedback(page)).toHaveText('Tamaño cambiado. Guardado en memoria.');
@@ -438,7 +468,7 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   // Ancho 5 + 8 = 13 > 12 columnas. Al 50 % el puntero no sale de la ventana (Firefox no informa bien fuera de ella).
   await zoomBy(page, 'out', 3);
   await expectZoom(page, '50 %');
-  await mouseDrag(page, page.getByTestId('resize-e-tarjeta-1'), 8 * cell.x * 0.5, 0, { header: false, release: false });
+  await mouseDrag(page, page.getByTestId('resize-e-tarjeta-1'), 8 * cell.x * (0.5 / 0.75), 0, { header: false, release: false });
   await expect(page.getByTestId('drag-status')).toHaveText('Nuevo tamaño: 13 × 4. Escape cancela.');
   await page.keyboard.press('Escape');
   await page.mouse.up();
@@ -469,8 +499,15 @@ test('icono propio y acceso rápido: se crea una ficha de tablero, cambia de ico
   await openCardEditor(page, 1);
   await button(page, 'Usar icono star').click();
   await expect(button(page, 'Usar icono star')).toHaveAttribute('aria-pressed', 'true');
-  await button(page, 'Mostrar minimizada').click();
-  await closeEditor(page);
+  if (isCompact(page)) {
+    await button(page, 'Mostrar minimizada').click();
+    await closeEditor(page);
+  } else {
+    // Minimizar vive solo en el menú contextual en escritorio (ADR 0048).
+    await closeEditor(page);
+    await openCardActions(page, card(page, 1), 'Tablero 2');
+    await button(page, 'Minimizar Tablero 2').click();
+  }
   await expect(page.getByTestId('minimized-icon-tarjeta-1')).toBeVisible();
 
   await card(page, 1).dblclick();
@@ -512,23 +549,34 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   await sideBySide(page);
   const cell = cellSize(page);
 
-  // Mano: desplaza el lienzo; las tarjetas no se mueven ni se seleccionan.
-  await button(page, 'Herramienta Mano').click();
+  // Mano: desplaza el lienzo; las tarjetas no se mueven ni se seleccionan. En escritorio la barra ya no
+  // muestra Mano (ADR 0048): el botón central del ratón pana desde cualquier punto sin activar ninguna
+  // herramienta, seleccionar ni mover una ficha.
   const start = await box(card(page, 1));
-  await mouseDrag(page, page.getByTestId('board-canvas'), -40, -30, { header: false });
-  await expect.poll(async () => Math.round((await box(card(page, 1))).x - start.x)).toBe(-40);
-  await card(page, 1).click();
-  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
-  await button(page, 'Herramienta Seleccionar').click();
+  if (isCompact(page)) {
+    await button(page, 'Herramienta Mano').click();
+    await mouseDrag(page, page.getByTestId('board-canvas'), -40, -30, { header: false });
+    await expect.poll(async () => Math.round((await box(card(page, 1))).x - start.x)).toBe(-40);
+    await card(page, 1).click();
+    await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+    await button(page, 'Herramienta Seleccionar').click();
+  } else {
+    await expect(button(page, 'Herramienta Mano')).toHaveCount(0);
+    await middleDrag(page, page.getByTestId('board-canvas'), -40, -30);
+    await expect.poll(async () => Math.round((await box(card(page, 1))).x - start.x)).toBe(-40);
+    await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+    await expect(button(page, 'Herramienta Seleccionar')).toHaveAttribute('aria-pressed', 'true');
+  }
   await expectGeometry(page, 1, 'Columna 1, fila 1 · 4 × 3');
   await closeEditor(page);
 
-  // Zoom por pasos con lectura del porcentaje; restablecer vuelve a 100 % y al origen.
-  await expectZoom(page, '100 %');
-  const width100 = (await box(card(page, 1))).width;
+  // Zoom por pasos con lectura del porcentaje; restablecer vuelve a 75 % y al origen.
+  await expectZoom(page, '75 %');
+  const widthStart = (await box(card(page, 1))).width;
   await zoomBy(page, 'in');
-  await expectZoom(page, '125 %');
-  await expect.poll(async () => Math.round((await box(card(page, 1))).width)).toBe(Math.round(width100 * 1.25));
+  await expectZoom(page, '100 %');
+  await expect.poll(async () => Math.round((await box(card(page, 1))).width)).toBe(Math.round(widthStart * (1 / 0.75)));
   await zoomBy(page, 'out', 3);
   await expectZoom(page, '50 %');
   // En escritorio la barra desactiva «Alejar» en el mínimo; en la Configuración el valor no baja de 50 %.
@@ -542,8 +590,8 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   await closeEditor(page);
   await page.screenshot({ path: testInfo.outputPath('tools-zoom-50.png') });
   if (isCompact(page)) await inSettings(page, async () => { await button(page, 'Restablecer la vista del lienzo').click(); });
-  else await button(page, 'Zoom 50 %, restablecer a 100 %').click();
-  await expectZoom(page, '100 %');
+  else await button(page, 'Zoom 50 %, restablecer a 75 %').click();
+  await expectZoom(page, '75 %');
 
   // Grilla: interruptor real (en la Configuración).
   await expect(page.getByTestId('canvas-grid')).toHaveCount(1);
@@ -555,7 +603,7 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   await button(page, 'Vista de lista').click();
   await expect(page.getByTestId('board-list')).toHaveAttribute('aria-label', 'Lista del tablero en una columna');
   await expect(page.getByTestId('board-canvas')).toHaveCount(0);
-  await expect(button(page, 'Herramienta Mano')).toBeDisabled();
+  if (isCompact(page)) await expect(button(page, 'Herramienta Mano')).toBeDisabled();
   const [first, second] = [await box(card(page, 1)), await box(card(page, 2))];
   expect(second.y).toBeGreaterThanOrEqual(first.y + first.height);
   expect(Math.abs(first.x - second.x)).toBeLessThan(1);
@@ -574,7 +622,7 @@ test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; l
   await addCards(page, ['nota']);
   // Gesto de escritorio (ratón/trackpad con Ctrl); el táctil usa pellizco o los controles de la barra.
   test.skip(isCompact(page), 'Ctrl + rueda es un gesto de escritorio.');
-  await expectZoom(page, '100 %');
+  await expectZoom(page, '75 %');
   const before = await box(card(page, 1));
   // El cursor se sitúa justo en la esquina superior izquierda de la tarjeta: ese punto del mundo debe
   // seguir en el mismo píxel de pantalla tras acercar, solo cambia el tamaño.
@@ -582,7 +630,7 @@ test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; l
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -600);
   await page.keyboard.up('Control');
-  await expect(page.getByTestId('zoom-level')).not.toContainText('100 %');
+  await expect(page.getByTestId('zoom-level')).not.toContainText('75 %');
   const after = await box(card(page, 1));
   expect(Math.abs(after.x - before.x)).toBeLessThan(2);
   expect(Math.abs(after.y - before.y)).toBeLessThan(2);
@@ -595,12 +643,12 @@ test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; l
   await page.mouse.wheel(0, -6000);
   await expectZoom(page, '50 %');
   // Sin Ctrl, la rueda sigue desplazando el lienzo en vez de hacer zoom.
-  await button(page, 'Zoom 50 %, restablecer a 100 %').click();
-  await expectZoom(page, '100 %');
+  await button(page, 'Zoom 50 %, restablecer a 75 %').click();
+  await expectZoom(page, '75 %');
   const beforePan = await box(card(page, 1));
   await page.getByTestId('board-canvas').hover();
   await page.mouse.wheel(0, 80);
-  await expectZoom(page, '100 %');
+  await expectZoom(page, '75 %');
   const afterPan = await box(card(page, 1));
   expect(afterPan.y).toBeLessThan(beforePan.y);
 });
@@ -703,29 +751,17 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
     await expect(page.getByRole('button', { name: 'Cerrar la pestaña de Tablero 2' })).toHaveCount(0);
   }
 
-  // Proyectos (ADR 0016): pestañas a la derecha cuando también cabe la navegación lateral (≥1100 px);
-  // por debajo, la lista se abre desde la cabecera para no recortar el lienzo en tablet.
+  // Proyectos (ADR 0048): el selector compacto de cabecera cubre todas las anchuras; ya no hay una
+  // segunda franja vertical para proyectos, solo la de tableros (`BoardRail`), en ninguna de ellas.
   // Son los espacios reales de la sesión y cambiar de uno a otro es navegación real.
-  if ((page.viewportSize()?.width ?? 0) < 1100) {
-    await expect(page.getByTestId('project-tabs')).toHaveCount(0);
-    await button(page, 'Cambiar de proyecto').click();
-    await expect(page.getByTestId('project-sheet')).toBeVisible();
-    await expect(button(page, 'Guion, proyecto actual')).toBeVisible();
-    await button(page, 'Ir al proyecto Primero').click();
-  } else {
-    const rail = page.getByTestId('project-tabs');
-    await expect(rail).toBeVisible();
-    await expect(rail.getByRole('button')).toHaveCount(2);
-    await expect(button(page, 'Guion, proyecto actual')).toHaveAttribute('aria-pressed', 'true');
-    // A la derecha del área de trabajo, sin tapar el lienzo.
-    const [tabs, canvas] = [await rail.boundingBox(), await page.getByTestId('board-canvas').boundingBox()];
-    expect(tabs && canvas && tabs.x >= canvas.x + canvas.width).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath('projects-rail.png') });
-    await button(page, 'Ir al proyecto Primero').click();
-  }
+  await expect(page.getByTestId('project-tabs')).toHaveCount(0);
+  await button(page, 'Cambiar de proyecto').click();
+  await expect(page.getByTestId('project-sheet')).toBeVisible();
+  await expect(button(page, 'Guion, proyecto actual')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('projects-sheet.png') });
+  await button(page, 'Ir al proyecto Primero').click();
   await expect(page.getByRole('heading', { name: 'Primero', exact: true })).toBeVisible();
   await expect(page.getByTestId('board-empty')).toBeVisible();
-  if (!isCompact(page)) await expect(button(page, 'Primero, proyecto actual')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('workspace-sidebar')).toHaveCount((page.viewportSize()?.width ?? 0) >= 1100 ? 1 : 0);
 });
 
@@ -797,7 +833,9 @@ test('distribución responsive: carga inicial, tablet, 799/800 y redimensionado 
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await createWorkspace(page, 'Responsive');
-  await addCards(page, ['nota', 'nota', 'imagen']);
+  // «Imagen de ejemplo» ya no está en la barra de escritorio (ADR 0048, cubierta aparte); aquí solo
+  // hacen falta tres fichas genéricas para medir la distribución.
+  await addCards(page, isCompact(page) ? ['nota', 'nota', 'imagen'] : ['nota', 'nota', 'nota']);
   // La última tarjeta creada se reveló; la primera puede quedar fuera de la vista: se activa con el teclado.
   await tapCard(page, 1);
   await closeEditor(page);
@@ -817,18 +855,21 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await page.goto('./');
   await createWorkspace(page, 'Teclado');
   const addNote = button(page, 'Añadir nota');
-  const addImage = button(page, 'Añadir imagen de ejemplo');
+  // «Imagen de ejemplo» ya no está en la barra de escritorio (ADR 0048): «Título flotante» también
+  // crea una ficha sin diálogo nativo y sigue cubriendo la activación por Espacio.
+  const addTitle = button(page, 'Añadir título flotante');
 
   // Activación con Enter y Espacio y foco visible en la barra de herramientas.
   await addNote.focus();
   await expect.poll(() => borderColor(addNote)).toBe(rgb(themeColors.light.selection));
   await page.keyboard.press('Enter');
   await expect(card(page, 1)).toBeVisible();
-  await addImage.focus();
+  await addTitle.focus();
   await page.keyboard.press('Space');
   await expect(card(page, 2)).toBeVisible();
   await expect(button(page, 'Herramienta Seleccionar')).toHaveAttribute('aria-pressed', 'true');
-  await expect(button(page, 'Herramienta Mano')).toHaveAttribute('aria-pressed', 'false');
+  if (isCompact(page)) await expect(button(page, 'Herramienta Mano')).toHaveAttribute('aria-pressed', 'false');
+  else await expect(button(page, 'Herramienta Mano')).toHaveCount(0);
 
   // Las tarjetas se alcanzan con el teclado y se seleccionan con Espacio; los botones del inspector mueven.
   await card(page, 2).focus();
@@ -846,10 +887,17 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await page.keyboard.press('Enter');
   await expect(geometry(page)).toHaveText('X 0, Y -1 · 4 × 3');
   expect(await activeLabel(page)).toBe('Mover arriba');
-  // Escape cancela una conexión a medias.
+  // Escape cancela una conexión a medias. «Conectar» ya no es una herramienta de la barra (ADR 0048):
+  // se inicia desde el menú contextual de la propia tarjeta de origen.
   await revealCanvas(page);
-  await button(page, 'Herramienta Conectar').click();
-  await tapCard(page, 2, false);
+  await closeEditor(page);
+  // Un título flotante solo dibuja sus controles mientras está seleccionado (es un rótulo editorial):
+  // se selecciona antes de abrir sus acciones, aunque en escritorio el clic derecho ya la seleccione.
+  await card(page, 2).focus();
+  await page.keyboard.press('Space');
+  const title2 = ((await card(page, 2).getAttribute('aria-label')) ?? '').replace(/^Tarjeta /, '');
+  await openCardActions(page, card(page, 2), title2);
+  await button(page, `Conectar desde ${title2}`).click();
   await expect(page.getByTestId('connect-hint-tarjeta-2')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('connect-hint-tarjeta-2')).toHaveCount(0);
@@ -874,7 +922,15 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await openCardEditor(page, 1);
   for (const label of ['Título de la tarjeta', 'Contenido Markdown']) expect((await box(page.getByLabel(label))).height).toBeGreaterThanOrEqual(44);
   await revealCanvas(page);
-  // Las asas tienen un área táctil de 44 px.
+  // Las asas tienen un área táctil de 44 px: garantía de densidad a 100 %, no del zoom inicial (75 %
+  // por defecto y configurable, ADR 0048); se fija aquí para medirla de forma determinista.
+  if (isCompact(page)) {
+    await openSettings(page);
+    await button(page, 'Acercar el lienzo').click();
+    await button(page, 'Cerrar configuración').click();
+  } else {
+    await button(page, 'Acercar').click();
+  }
   const handle = await box(page.getByTestId('resize-se-tarjeta-1'));
   expect(handle.width).toBeGreaterThanOrEqual(44);
   expect(handle.height).toBeGreaterThanOrEqual(44);
@@ -891,9 +947,16 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
   const count = page.getByTestId('multi-count');
 
   // Táctil y teclado: «Selección» vive en el menú ligero de la ficha; tocar otra la añade y tocarla de nuevo la quita.
+  // En escritorio, Shift+F10 sobre la ficha enfocada abre el mismo menú (ADR 0048): no hay botón «⋯» fijo.
   await selectCard(page, 1);
-  await button(page, 'Acciones de Nueva nota').focus();
-  await page.keyboard.press('Enter');
+  if (isCompact(page)) {
+    // Las dos fichas se llaman «Nueva nota»: «Acciones de Nueva nota» sería ambiguo entre ambas.
+    await page.getByTestId('card-actions-tarjeta-1').focus();
+    await page.keyboard.press('Enter');
+  } else {
+    await card(page, 1).focus();
+    await page.keyboard.press('Shift+F10');
+  }
   await button(page, 'Seleccionar Nueva nota junto con otras tarjetas').click();
   await expect(count).toHaveText('1 SELECCIONADA');
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
@@ -938,8 +1001,14 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
 
   // «Todas» y archivar el conjunto de una vez: el tablero queda vacío y el Archivo cuenta 2.
   await selectCard(page, 1);
-  await button(page, 'Acciones de Nueva nota').focus();
-  await page.keyboard.press('Enter');
+  if (isCompact(page)) {
+    // Las dos fichas se llaman «Nueva nota»: «Acciones de Nueva nota» sería ambiguo entre ambas.
+    await page.getByTestId('card-actions-tarjeta-1').focus();
+    await page.keyboard.press('Enter');
+  } else {
+    await card(page, 1).focus();
+    await page.keyboard.press('Shift+F10');
+  }
   await button(page, 'Seleccionar Nueva nota junto con otras tarjetas').click();
   await button(page, 'Seleccionar todas las tarjetas del tablero').click();
   await expect(count).toHaveText('2 SELECCIONADAS');
@@ -960,25 +1029,36 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
   await expect(undoButton).toHaveAttribute('aria-disabled', 'true');
   await addCards(page, ['nota']);
   await expect(undoButton).toHaveAccessibleName('Deshacer: Nota añadida');
-  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Mover a la
+  // Crear ya no abre el editor por sí sola (auditoría de interacción, 2026-10-02): «Mover a la
   // derecha» es del editor.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, card(page, 1));
   await button(page, 'Mover a la derecha').click();
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
 
-  // Deshacer con el editor abierto: vuelve a su sitio y el editor muestra lo guardado.
+  // Deshacer con el editor abierto: vuelve a su sitio y el editor muestra lo guardado. Deshacer/rehacer
+  // remonta el editor (cambia su `key` con la revisión): la sección de posición vuelve a su estado
+  // cerrado por defecto en escritorio y hay que expandirla de nuevo para leer `card-geometry`.
   await button(page, 'Deshacer: Tarjeta movida').click();
   await expect(feedback(page)).toHaveText('Deshecho: Tarjeta movida. Guardado en memoria.');
+  await expandPosition(page);
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
   await page.screenshot({ path: testInfo.outputPath('undo.png') });
   await button(page, 'Rehacer: Tarjeta movida').click();
   await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
+  await expandPosition(page);
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
   await expect(redoButton).toHaveAttribute('aria-disabled', 'true');
 
   // Archivar y deshacer: la tarjeta vuelve al tablero y sale del Archivo.
-  await button(page, 'Archivar la tarjeta Nueva nota').click();
+  if (isCompact(page)) {
+    await button(page, 'Archivar la tarjeta Nueva nota').click();
+  } else {
+    // Escritorio: Archivar vive solo en el menú contextual (ADR 0048), no en el editor.
+    await closeEditor(page);
+    await openCardActions(page, card(page, 1), 'Nueva nota');
+    await button(page, 'Archivar Nueva nota').click();
+  }
   await expect(feedback(page)).toHaveText('Tarjeta archivada. Guardado en memoria.');
   await expect(card(page, 1)).toHaveCount(0);
   await button(page, 'Deshacer: Tarjeta archivada').click();
@@ -993,7 +1073,7 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
     await page.keyboard.press('Control+Shift+z');
     await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
     await card(page, 1).click();
-    await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+    await openFullCardEditor(page, card(page, 1));
     await page.getByLabel('Título de la tarjeta').focus();
     await page.keyboard.press('Control+z');
     await expect(feedback(page)).toHaveText('Rehecho: Tarjeta movida. Guardado en memoria.');
@@ -1079,8 +1159,9 @@ test('marcos: agrupar la selección, renombrar, mover con sus tarjetas (flechas 
   await expect(frameGeometry).toHaveText('Columna 1, fila 3 · 8 × 7');
   await button(page, 'Añadir nota en el marco').click();
   await expect(feedback(page)).toHaveText('Nota añadida en el marco. Guardado en memoria.');
-  // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.locator('[data-testid^="card-edit-tarjeta-"]'));
+  // Crear ya no abre el editor por sí sola (auditoría de interacción, 2026-10-02): la nota añadida
+  // al marco queda seleccionada; se abre su editor completo a mano.
+  await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   await closeEditor(page);
 
@@ -1170,7 +1251,7 @@ test('vista general: selección por área, un toque en el fondo cierra el editor
     await button(page, 'Acercar la vista').click();
     await expect(page.getByTestId('canvas-zoom')).toHaveText('75 %');
     await page.getByTestId('canvas-zoom').click();
-    await expect(page.getByTestId('canvas-zoom')).toHaveText('100 %');
+    await expect(page.getByTestId('canvas-zoom')).toHaveText('75 %');
   }
   expect(runtimeErrors).toEqual([]);
 });

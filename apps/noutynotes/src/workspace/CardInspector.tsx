@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { AppIcon } from '../components/AppIcon';
 import { t } from '../i18n';
 import { formatCreated } from './dates';
 import { describeFailure } from '../session/messages';
@@ -218,6 +219,48 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     }), 'action.connectionUpdated').then((result) => { if (result.ok) setEditingRelation(null); });
   };
   const rect = placement?.rect;
+  // Posición y tamaño por teclado (ADR 0048): en escritorio el ratón y las asas ya resuelven mover y
+  // redimensionar, así que esta sección no es fija; se ofrece agrupada y cerrada por defecto para quien
+  // la necesite por teclado o accesibilidad, sin dominar el editor. En la hoja móvil sigue siempre visible.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const geometryBlock = (
+    <>
+      <Text testID="card-geometry" style={[styles.body, { color: colors.textPrimary }]}>
+        {rect ? rect.x < 0 || rect.y < 0
+          ? t('inspector.geometry.negative', locale, { x: String(rect.x), y: String(rect.y), w: String(rect.w), h: String(rect.h) })
+          : t('inspector.geometry.cell', locale, { col: String(rect.x + 1), row: String(rect.y + 1), w: String(rect.w), h: String(rect.h) })
+          : t('inspector.geometry.none', locale)}
+      </Text>
+      {rect ? (
+        <>
+          <View style={styles.row}>
+            {moveKeys.map((move) => (
+              <ActionButton
+                key={move.nameKey}
+                label={move.label}
+                accessibilityLabel={t(move.nameKey, locale)}
+                onPress={() => void run((storage, id) => moveCardOnBoard(storage, id, {
+                  boardId, cardId: card.id, to: { x: rect.x + move.dx, y: rect.y + move.dy },
+                }), 'action.cardMoved')}
+              />
+            ))}
+          </View>
+          <View style={styles.row}>
+            {resizeKeys.map((resize) => (
+              <ActionButton
+                key={resize.nameKey}
+                label={t(resize.labelKey, locale)}
+                accessibilityLabel={t(resize.nameKey, locale)}
+                onPress={() => void run((storage, id) => resizeCardOnBoard(storage, id, {
+                  boardId, cardId: card.id, size: { w: rect.w + resize.dw, h: rect.h + resize.dh },
+                }), 'action.sizeChanged')}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+    </>
+  );
 
   return (
     <View testID="card-inspector" style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -322,45 +365,25 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.position.section', locale)}</Text>
-        <Text testID="card-geometry" style={[styles.body, { color: colors.textPrimary }]}>
-          {rect ? rect.x < 0 || rect.y < 0
-            ? t('inspector.geometry.negative', locale, { x: String(rect.x), y: String(rect.y), w: String(rect.w), h: String(rect.h) })
-            : t('inspector.geometry.cell', locale, { col: String(rect.x + 1), row: String(rect.y + 1), w: String(rect.w), h: String(rect.h) })
-            : t('inspector.geometry.none', locale)}
-        </Text>
-        {rect ? (
-          <>
-            <View style={styles.row}>
-              {moveKeys.map((move) => (
-                <ActionButton
-                  key={move.nameKey}
-                  label={move.label}
-                  accessibilityLabel={t(move.nameKey, locale)}
-                  onPress={() => void run((storage, id) => moveCardOnBoard(storage, id, {
-                    boardId, cardId: card.id, to: { x: rect.x + move.dx, y: rect.y + move.dy },
-                  }), 'action.cardMoved')}
-                />
-              ))}
-            </View>
-            <View style={styles.row}>
-              {resizeKeys.map((resize) => (
-                <ActionButton
-                  key={resize.nameKey}
-                  label={t(resize.labelKey, locale)}
-                  accessibilityLabel={t(resize.nameKey, locale)}
-                  onPress={() => void run((storage, id) => resizeCardOnBoard(storage, id, {
-                    boardId, cardId: card.id, size: { w: rect.w + resize.dw, h: rect.h + resize.dh },
-                  }), 'action.sizeChanged')}
-                />
-              ))}
-            </View>
-          </>
-        ) : null}
-      </View>
+      {inSheet ? (
+        <View style={styles.section}>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.position.section', locale)}</Text>
+          {geometryBlock}
+        </View>
+      ) : (
+        <View style={styles.section}>
+          <ActionButton
+            testID="card-position-toggle"
+            label={advancedOpen ? t('inspector.position.toggle.hide', locale) : t('inspector.position.toggle.show', locale)}
+            accessibilityLabel={advancedOpen ? t('inspector.position.toggle.hide.accessibilityLabel', locale) : t('inspector.position.toggle.show.accessibilityLabel', locale)}
+            pressed={advancedOpen}
+            onPress={() => setAdvancedOpen((open) => !open)}
+          />
+          {advancedOpen ? geometryBlock : null}
+        </View>
+      )}
 
-      {placement ? (
+      {placement && inSheet ? (
         <View testID="card-display" style={styles.section}>
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.display.section', locale)}</Text>
           <View style={styles.row}>
@@ -380,6 +403,12 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
       <View testID="card-icon-picker" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>ICONO</Text>
+        <View style={styles.row}>
+          <AppIcon name={card.icon ?? 'note'} size={24} color={colors.textPrimary} />
+          <Text testID="selected-card-icon" style={[styles.body, { color: colors.textPrimary }]}>
+            {`Seleccionado: ${card.icon === 'image' ? 'Imagen' : card.icon === 'folder' ? 'Carpeta' : card.icon === 'link' ? 'Enlace' : card.icon === 'check' ? 'Tarea' : card.icon === 'star' ? 'Estrella' : 'Nota'}`}
+          </Text>
+        </View>
         <View style={styles.row}>
           {cardIconNames.map((icon) => (
             <ActionButton key={icon} label={icon === 'note' ? 'Nota' : icon === 'image' ? 'Imagen' : icon === 'folder' ? 'Carpeta' : icon === 'link' ? 'Enlace' : icon === 'check' ? 'Tarea' : 'Estrella'}
@@ -401,7 +430,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       ) : null}
 
-      <View testID="card-connections" style={styles.section}>
+      {inSheet ? <View testID="card-connections" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.connections.section', locale)}</Text>
         {connected.length === 0 ? (
           <Text style={[styles.body, { color: colors.textSecondary }]}>{t('inspector.connections.empty', locale)}</Text>
@@ -484,13 +513,13 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               : t('inspector.connect.more.many', locale).replace('#', String(matchingTargets.length - visibleTargets.length))}
           </Text>
         ) : null}
-      </View>
-      <View style={styles.section}>
+      </View> : null}
+      {inSheet ? <View style={styles.section}>
         <ActionButton label={t('inspector.archive', locale)} accessibilityLabel={t('inspector.archive.accessibilityLabel', locale, { title: cardTitle(card) })} onPress={onArchive} />
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.archive.hint', locale)}</Text>
         <ActionButton label={t('inspector.trash', locale)} accessibilityLabel={t('inspector.trash.accessibilityLabel', locale, { title: cardTitle(card) })} onPress={onTrash} />
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.trash.hint', locale)}</Text>
-      </View>
+      </View> : null}
     </View>
   );
 }

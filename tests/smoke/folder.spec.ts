@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-import { openFullCardEditor, openMore, openSettings } from './support';
+import { expandPosition, openCardActions, openFullCardEditor, openMore, openSettings } from './support';
 
 const fakeFolder = `
 (() => {
@@ -57,7 +57,7 @@ const fakeFolder = `
 
 async function openCardEditor(page: Page, id: number) {
   if (await page.getByTestId('card-inspector').isVisible()) return;
-  await openFullCardEditor(page, page.getByTestId(`card-edit-tarjeta-${id}`));
+  await openFullCardEditor(page, page.getByTestId(`card-tarjeta-${id}`));
 }
 
 test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas', async ({ page }, testInfo) => {
@@ -143,7 +143,7 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
   await press('Añadir nota');
   await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   // A la izquierda y por encima del origen: coordenadas negativas en ambos ejes.
   await press('Mover a la izquierda');
   await press('Mover arriba');
@@ -189,7 +189,7 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
   // Un clic normal fallaría aquí: a esta distancia el botón «Editar» (esquina inferior izquierda de la
   // tarjeta) puede coincidir en pantalla con el minimapa/zoom flotante (zIndex superior a propósito,
   // para que las tarjetas nunca lo tapen). El teclado activa el mismo botón sin depender de su posición.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-2'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await expect(geometry).toHaveText('Columna 21, fila 31 · 4 × 3');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   const far = await page.getByTestId('card-tarjeta-2').boundingBox();
@@ -249,12 +249,12 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   await page.getByRole('button', { name: 'Añadir título flotante' }).click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toBeVisible();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Proyecto Solace');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
   await page.getByRole('button', { name: 'Añadir nota' }).click();
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-2'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   const editor = page.getByLabel('Contenido Markdown');
   await page.getByRole('button', { name: 'Insertar lista de tareas' }).click();
   await expect(editor).toHaveValue('- [ ] ');
@@ -278,7 +278,7 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   await page.getByRole('button', { name: 'Abrir Editorial' }).click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
   await page.getByTestId('card-tarjeta-2').click();
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-2'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('- [x] Primera\n- [ ] ');
 });
 
@@ -326,7 +326,7 @@ test('salir del editor inmediatamente conserva el texto pendiente en la carpeta'
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Título pendiente');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
@@ -342,7 +342,7 @@ test('volver al inicio inmediatamente espera al guardado del borrador', async ({
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Antes de salir');
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByRole('button', { name: 'Abrir Navegación' }).click();
@@ -363,10 +363,11 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Borrador sin guardar');
-  // Sin pulsar «Guardar texto»: cambiar de proyecto desde las pestañas (o la lista en móvil).
-  if ((page.viewportSize()?.width ?? 0) < 1100) await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
+  // Sin pulsar «Guardar texto»: cambiar de proyecto desde el selector de cabecera (ADR 0048, ya no hay
+  // franja de proyectos aparte en ningún ancho).
+  await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
   await page.getByRole('button', { name: 'Ir al proyecto Uno', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Uno', exact: true })).toBeVisible();
   const card = new TextDecoder().decode(new Uint8Array((await files())['dos/cards/tarjeta-1.md'] ?? []));
@@ -381,7 +382,7 @@ test('recargar con texto pendiente exige confirmar la salida', async ({ page }) 
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Pendiente');
   const warning = page.waitForEvent('dialog');
   void page.evaluate(() => window.location.reload());
@@ -399,7 +400,7 @@ test('un fallo al guardar el borrador mantiene abierto el editor y conserva el t
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     const path = 'borrador-en-conflicto/.nouty/workspace.yaml';
@@ -432,7 +433,7 @@ test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ning�
   const press = (name: string) => page.getByRole('button', { name, exact: true }).click();
   const geometry = page.getByTestId('card-geometry');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-2'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   const pos = async () => {
     const text = await geometry.innerText();
     const grid = /Columna (\d+), fila (\d+)/.exec(text);
@@ -459,7 +460,8 @@ test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ning�
   } else {
     await page.getByTestId('zoom-level').click();
   }
-  const cell = (page.viewportSize()?.width ?? 0) >= 800 ? { x: 96, y: 64 } : { x: 56, y: 56 };
+  // Celda cuadrada (ADR 0046/0048): 56 px de fila (48 en compacto) al zoom inicial de 75 %.
+  const cell = (page.viewportSize()?.width ?? 0) >= 800 ? { x: 42, y: 42 } : { x: 36, y: 36 };
   const snapshot = () => page.evaluate(() => localStorage.getItem('nouty-test-folder') ?? '');
   const layout = () => page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
@@ -512,15 +514,17 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
     // Esperar a que la tarjeta nueva quede seleccionada y abrir su editor antes de escribir (crear ya
     // no lo abre por sí solo, auditoría de interacción, 2026-09-29).
     await expect(page.getByTestId(cardId)).toHaveAttribute('aria-pressed', 'true');
-    await openFullCardEditor(page, page.getByTestId(`card-edit-${cardId.slice('card-'.length)}`));
+    await openFullCardEditor(page, page.getByTestId(cardId));
     await page.getByLabel('Título de la tarjeta').fill(title);
     await button('Guardar texto').click();
     await expect(page.getByTestId(cardId)).toContainText(title);
   }
-  await button('Enviar la tarjeta Borrador a la Papelera').click();
+  await button('Cerrar el editor de la tarjeta').click();
+  await openCardActions(page, page.getByTestId('card-tarjeta-3'), 'Borrador');
+  await button('Enviar Borrador a la Papelera').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta enviada a la Papelera. Guardado en la carpeta.');
   await page.getByTestId('card-tarjeta-2').click();
-  await button('Acciones de Mínima').click();
+  await openCardActions(page, page.getByTestId('card-tarjeta-2'), 'Mínima');
   await button('Minimizar Mínima').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta minimizada. Guardado en la carpeta.');
   expect(Object.keys(await files())).toContain('galeria/.nouty/trash.yaml');
@@ -538,8 +542,8 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
 
   // La imagen a la Papelera y eliminada definitivamente: su binario sale de la carpeta.
   await page.getByTestId('card-tarjeta-1').click();
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
-  await button('Enviar la tarjeta app-icon a la Papelera').click();
+  await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'app-icon');
+  await button('Enviar app-icon a la Papelera').click();
   expect(Object.keys(await files())).toContain('galeria/assets/images/tarjeta-1.png');
   await button('Abrir la Papelera (2)').click();
   await button('Eliminar definitivamente app-icon').click();
@@ -556,7 +560,7 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Kioto');
   await page.getByTestId('tag-input').fill('#Japón');
   await page.getByRole('button', { name: 'Añadir la etiqueta' }).click();
@@ -647,7 +651,7 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   await page.getByRole('button', { name: 'Crear un espacio' }).click();
   await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   const editor = page.getByLabel('Contenido Markdown');
   await editor.fill('Primera parte.');
   await editor.press('End');
@@ -664,12 +668,18 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
   await page.getByRole('button', { name: 'Abrir Diario' }).click();
-  await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'plano' }).first()).toBeVisible();
+  // En móvil, la fila de partida (48 px, ADR 0048) ya no deja sitio para la imagen junto al texto:
+  // solo se ve el párrafo, con «+1 bloque más» (el archivo y sus assetRefs no cambian por esto).
+  if ((page.viewportSize()?.width ?? 0) < 800) {
+    await expect(page.getByTestId('note-preview-tarjeta-1')).toContainText('+1 bloque más');
+  } else {
+    await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'plano' }).first()).toBeVisible();
+  }
   // Quitar la imagen de la nota la saca de assetRefs, pero el archivo sigue en la carpeta (ADR 0021).
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');
   // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByRole('button', { name: 'Quitar la imagen plano de la nota' }).click();
   await expect.poll(() => text('diario/cards/tarjeta-1.md')).not.toContain('assets/images/tarjeta-1-1.png');
   expect((await files())['diario/assets/images/tarjeta-1-1.png']).toBeDefined();
@@ -719,9 +729,13 @@ test('carpeta: archivar crea .nouty/archive.yaml, sobrevive a recargar y restaur
   await button('Crear un espacio').click();
   await button('Añadir nota').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Idea aparcada');
-  await button('Archivar la tarjeta Idea aparcada').click();
+  // Cerrar el editor guarda el título pendiente (ADR 0014): «Archivar» ya no vive en el editor de
+  // escritorio (ADR 0048), así que se cierra y se usa el menú contextual de la ficha.
+  await button('Cerrar el editor de la tarjeta').click();
+  await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Idea aparcada');
+  await button('Archivar Idea aparcada').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta archivada. Guardado en la carpeta.');
   await expect.poll(async () => Object.keys(await files())).toContain('cajon/.nouty/archive.yaml');
   const archived = new TextDecoder().decode(new Uint8Array((await files())['cajon/.nouty/archive.yaml'] ?? []));
@@ -788,7 +802,7 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   const where = async (id: number) => {
     await page.getByTestId(`card-tarjeta-${id}`).focus();
     await page.keyboard.press('Enter');
-    await openFullCardEditor(page, page.getByTestId(`card-actions-tarjeta-${id}`));
+    await openFullCardEditor(page, page.getByTestId(`card-tarjeta-${id}`));
     const text = await geometry.innerText();
     await button('Cerrar el editor de la tarjeta').click();
     return text;
@@ -800,7 +814,7 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   await button('Crear un espacio').click();
   await button('Añadir nota').click();
   await button('Añadir nota').click();
-  await openFullCardEditor(page, page.getByTestId('card-actions-tarjeta-2'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await button('Seleccionar varias tarjetas empezando por esta').click();
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Enter');
@@ -810,7 +824,7 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
 
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Enter');
-  await openFullCardEditor(page, page.getByTestId('card-actions-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await button('Seleccionar varias tarjetas empezando por esta').click();
   await button('Seleccionar todas las tarjetas del tablero').click();
   await button('Mover la selección hacia abajo').click();
@@ -833,13 +847,16 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   await button('Crear un espacio').click();
   await button('Añadir nota').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   const start = await geometry.innerText();
   await button('Mover abajo').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta movida. Guardado en la carpeta.');
   await expect(geometry).not.toHaveText(start);
   await button('Deshacer: Tarjeta movida').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Deshecho: Tarjeta movida. Guardado en la carpeta.');
+  // Deshacer remonta el editor (cambia su `key` con la revisión): la posición vuelve a su estado
+  // cerrado por defecto en escritorio y hay que expandirla de nuevo para leer `card-geometry`.
+  await expandPosition(page);
   await expect(geometry).toHaveText(start);
 
   await page.reload();
@@ -848,7 +865,7 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   await button('Abrir Vuelta').click();
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Enter');
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await expect(geometry).toHaveText(start);
   await expect(page.getByRole('button', { name: /^Deshacer/ })).toHaveAttribute('aria-disabled', 'true');
 });
@@ -867,7 +884,7 @@ test('carpeta: el marco se guarda en layout.yaml (v3) y reaparece al recargar; q
   await button('Añadir nota').click();
   await button('Añadir nota').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-2'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await button('Seleccionar varias tarjetas empezando por esta').click();
   await button('Seleccionar todas las tarjetas del tablero').click();
   await button('Agrupar las 2 seleccionadas en un marco').click();

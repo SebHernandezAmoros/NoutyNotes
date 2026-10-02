@@ -7,7 +7,7 @@ import type { Page } from '@playwright/test';
 
 import { buildZip, text } from '../../packages/storage/src/__fixtures__/zip';
 import { readWorkspaceArchive } from '../../packages/storage/src/index';
-import { hasHorizontalOverflow, openFullCardEditor, trackProblems } from './support';
+import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, trackProblems } from './support';
 
 /** Navegador sin File System Access: `showDirectoryPicker` no existe. */
 const withoutFolderAccess = `Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true });`;
@@ -64,7 +64,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   await expect(page.getByTestId('export-status')).toHaveText('CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Nota del ZIP');
   await page.getByLabel('Contenido Markdown').fill('## Desde el navegador\n\n- conservar **todo**');
   await button(page, 'Guardar texto').click();
@@ -78,8 +78,19 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   const bornRow = rowOf(await page.getByTestId('card-geometry').innerText());
   await button(page, 'Mover abajo').click();
   await expect(page.getByTestId('card-geometry')).toContainText(`fila ${bornRow + 1}`);
-  await button(page, 'Conectar con Idea A').click();
-  await expect(page.getByTestId('card-connections')).toContainText('→ Idea A');
+  if (isCompactWidth(page)) {
+    await button(page, 'Conectar con Idea A').click();
+    await expect(page.getByTestId('card-connections')).toContainText('→ Idea A');
+  } else {
+    // Escritorio: «Conectar» vive solo en el menú contextual (ADR 0048), no en el editor.
+    await button(page, 'Cerrar el editor de la tarjeta').click();
+    await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nota del ZIP');
+    await button(page, 'Conectar desde Nota del ZIP').click();
+    await page.getByTestId('card-idea-a').focus();
+    await page.keyboard.press('Space');
+    // El fixture ya trae una conexión propia (.nouty/relations.yaml): con la nueva, son 2 en total.
+    await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(2);
+  }
 
   // Cambiar de espacio no descarta nada y la lista marca lo pendiente.
   await button(page, 'Volver a mis espacios').click();
@@ -127,9 +138,11 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await page.getByTestId('card-tarjeta-1').focus();
   await page.getByTestId('card-tarjeta-1').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-1'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('## Desde el navegador\n\n- conservar **todo**');
-  await expect(page.getByTestId('card-connections')).toContainText('→ Idea A');
+  // La lista de conexiones ya no vive en el editor de escritorio (ADR 0048): sus líneas en el lienzo
+  // bastan para confirmar que sobrevivieron a reimportar el ZIP (la del fixture más la nueva).
+  await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(2);
   await expect(button(page, 'Quitar la etiqueta exportable')).toBeVisible();
   expect(await hasHorizontalOverflow(page)).toBe(false);
   await page.screenshot({ path: testInfo.outputPath('zip-reimported.png') });
@@ -144,7 +157,7 @@ test('una importación inválida explica el motivo y no sobrescribe ni deja esta
   await importZip(page, 'demo.zip', fixtureZip());
   await page.getByTestId('card-idea-a').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-idea-a'));
+  await openFullCardEditor(page, page.getByTestId('card-idea-a'));
   await page.getByLabel('Título de la tarjeta').fill('Editada antes del error');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('card-idea-a')).toContainText('Editada antes del error');
@@ -291,7 +304,9 @@ test('exportar no da por conservado nada si la descarga falla, se cancela o hubo
   download = page.waitForEvent('download');
   await button(page, 'Exportar este espacio como ZIP').click();
   await download;
-  await button(page, 'Añadir imagen de ejemplo').click();
+  // «Imagen de ejemplo» ya no está en la barra de escritorio (ADR 0048): otra nota basta para el
+  // cambio posterior a la exportación que prueba este paso.
+  await button(page, 'Añadir nota').click();
   await expect(page.getByTestId('card-tarjeta-2')).toBeVisible();
   await button(page, 'Confirmar que guardé demo.zip').click();
   await expect(page.getByTestId('archive-message')).toHaveText('Hubo cambios después de exportar ese ZIP: sigue sin exportar. Vuelve a exportar.');
@@ -354,10 +369,17 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
   await button(page, 'Añadir nota').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
-  await openFullCardEditor(page, page.getByTestId('card-edit-tarjeta-2'));
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await page.getByLabel('Título de la tarjeta').fill('Descartada');
   await button(page, 'Guardar texto').click();
-  await button(page, 'Enviar la tarjeta Descartada a la Papelera').click();
+  if (isCompactWidth(page)) {
+    await button(page, 'Enviar la tarjeta Descartada a la Papelera').click();
+  } else {
+    // Escritorio: la Papelera vive solo en el menú contextual (ADR 0048), no en el editor.
+    await button(page, 'Cerrar el editor de la tarjeta').click();
+    await openCardActions(page, page.getByTestId('card-tarjeta-2'), 'Descartada');
+    await button(page, 'Enviar Descartada a la Papelera').click();
+  }
   await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
 
   const download = page.waitForEvent('download');
