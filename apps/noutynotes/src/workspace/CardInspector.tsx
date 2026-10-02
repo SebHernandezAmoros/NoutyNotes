@@ -187,7 +187,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [mode, dirty]);
-  const titles = new Map(workspace.cards.map((other) => [other.id, cardTitle(other)]));
+  const titles = new Map(workspace.cards.map((other) => [other.id, cardTitle(other, locale)]));
   const typeLabels = new Map(workspace.relationTypes.map((type) => [type.id, type.label]));
   const connected = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id);
   const targets = workspace.cards.filter((other) => other.id !== card.id
@@ -199,7 +199,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const needsConnectSearch = targets.length > 6;
   const connectQuery = connectSearch.trim().toLowerCase();
   const matchingTargets = needsConnectSearch
-    ? (connectQuery === '' ? [] : targets.filter((target) => cardTitle(target).toLowerCase().includes(connectQuery)))
+    ? (connectQuery === '' ? [] : targets.filter((target) => cardTitle(target, locale).toLowerCase().includes(connectQuery)))
     : targets;
   const visibleTargets = needsConnectSearch ? matchingTargets.slice(0, 8) : targets;
   // Tipo, rótulo y flecha (ADR 0034): una conexión a la vez en edición; la flecha se aplica al instante.
@@ -271,7 +271,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               de la primera palabra aunque tuviera dos líneas permitidas. */}
           <View style={styles.headerText}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.heading.eyebrow', locale)}</Text>
-            <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card)}</Text>
+            <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{cardTitle(card, locale)}</Text>
           </View>
           <View style={styles.headerActions}>
             {onToggleFocus ? (
@@ -498,8 +498,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           {visibleTargets.map((target) => (
             <ActionButton
               key={target.id}
-              label={cardTitle(target)}
-              accessibilityLabel={t('inspector.connect.accessibilityLabel', locale, { title: cardTitle(target) })}
+              label={cardTitle(target, locale)}
+              accessibilityLabel={t('inspector.connect.accessibilityLabel', locale, { title: cardTitle(target, locale) })}
               onPress={() => void run((storage, id) => connectCards(storage, id, {
                 from: card.id, to: target.id, ...(connectTypeDraft.trim() === '' ? {} : { typeLabel: connectTypeDraft.trim() }),
               }), 'action.cardsConnected')}
@@ -515,9 +515,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         ) : null}
       </View> : null}
       {inSheet ? <View style={styles.section}>
-        <ActionButton label={t('inspector.archive', locale)} accessibilityLabel={t('inspector.archive.accessibilityLabel', locale, { title: cardTitle(card) })} onPress={onArchive} />
+        <ActionButton label={t('inspector.archive', locale)} accessibilityLabel={t('inspector.archive.accessibilityLabel', locale, { title: cardTitle(card, locale) })} onPress={onArchive} />
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.archive.hint', locale)}</Text>
-        <ActionButton label={t('inspector.trash', locale)} accessibilityLabel={t('inspector.trash.accessibilityLabel', locale, { title: cardTitle(card) })} onPress={onTrash} />
+        <ActionButton label={t('inspector.trash', locale)} accessibilityLabel={t('inspector.trash.accessibilityLabel', locale, { title: cardTitle(card, locale) })} onPress={onTrash} />
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.trash.hint', locale)}</Text>
       </View> : null}
     </View>

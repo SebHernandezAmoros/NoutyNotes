@@ -6,7 +6,7 @@ export type AppIconName =
   | 'note' | 'text' | 'board' | 'link' | 'image' | 'upload'
   | 'trash' | 'undo' | 'redo' | 'minus' | 'plus'
   | 'diary' | 'archive' | 'assets' | 'present' | 'print' | 'settings'
-  | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star';
+  | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star' | 'frame';
 
 /**
  * Catálogo de línea portable para la interfaz (ADR 0047). Usa primitivas de React Native y evita
@@ -115,6 +115,21 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
   if (name === 'expand' || name === 'collapse') return (
     <View accessibilityElementsHidden style={[styles.root, box, common]}>{name === 'collapse' ? <View style={[styles.centerLine, fill, { height: line }]} /> : <View style={[styles.innerSquare, common]} />}</View>
   );
+  if (name === 'frame') {
+    const bracket = size * 0.32;
+    return (
+      <View accessibilityElementsHidden style={[styles.root, box]}>
+        <View style={[styles.frameH, fill, { height: line, top: 0, left: 0, width: bracket }]} />
+        <View style={[styles.frameV, fill, { width: line, top: 0, left: 0, height: bracket }]} />
+        <View style={[styles.frameH, fill, { height: line, top: 0, right: 0, width: bracket }]} />
+        <View style={[styles.frameV, fill, { width: line, top: 0, right: 0, height: bracket }]} />
+        <View style={[styles.frameH, fill, { height: line, bottom: 0, left: 0, width: bracket }]} />
+        <View style={[styles.frameV, fill, { width: line, bottom: 0, left: 0, height: bracket }]} />
+        <View style={[styles.frameH, fill, { height: line, bottom: 0, right: 0, width: bracket }]} />
+        <View style={[styles.frameV, fill, { width: line, bottom: 0, right: 0, height: bracket }]} />
+      </View>
+    );
+  }
   return null;
 }
 
@@ -142,4 +157,6 @@ const styles = StyleSheet.create({
   checkLong: { position: 'absolute', left: '32%', width: '62%', transform: [{ rotate: '-45deg' }] },
   folder: { position: 'absolute', left: '4%', right: '4%', top: '30%', bottom: '5%', backgroundColor: 'transparent' },
   folderTab: { position: 'absolute', left: '4%', top: '12%', width: '44%', height: '22%', backgroundColor: 'transparent' },
+  frameH: { position: 'absolute' },
+  frameV: { position: 'absolute' },
 });

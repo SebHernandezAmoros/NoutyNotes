@@ -1,11 +1,11 @@
 import { linkDisplay, linkUrlField } from '@noutynotes/domain';
 import type { Card, CardDisplayMode, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { cardTitle, isImageCard } from '../Board';
+import { cardDisplayTitle, cardTitle, isImageCard } from '../Board';
 import { ImagePlaceholder } from '../ImagePlaceholder';
 import { markdownExcerpt } from '../markdownLists';
 import type { GestureController } from './Canvas';
@@ -76,6 +76,7 @@ const connectHints: Readonly<Record<ConnectRole, string | null>> = {
 export function CanvasCard(props: CanvasCardProps) {
   const { workspace, card, number, box, display, selected, dragging, colliding, connectRole, connectSourceName, onPress } = props;
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const { controller } = props;
@@ -152,7 +153,7 @@ export function CanvasCard(props: CanvasCardProps) {
       <Pressable
         testID={`card-${card.id}`}
         accessibilityRole="button"
-        accessibilityLabel={`Tarjeta ${cardTitle(card)}${displayNames[display]}`}
+        accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}${displayNames[display]}`}
         accessibilityHint={accessibilityHint}
         accessibilityState={{ selected }}
         {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
@@ -170,17 +171,24 @@ export function CanvasCard(props: CanvasCardProps) {
           // Ficha mínima (1 × 1): icono del tipo y título; sin icono propio, solo el título (ADR 0016).
           <View testID={`minimized-${card.id}`} style={[styles.mini, { backgroundColor: headerColor }]}>
             {icon ? <CardIcon kind={icon} testID={`minimized-icon-${card.id}`} /> : null}
-            <Text numberOfLines={icon ? (box.height >= 56 ? 2 : 1) : 3} style={[styles.miniTitle, { color: colors.headerText }]}>{cardTitle(card)}</Text>
+            {/* UX7-A4: título borrado conscientemente no dibuja relleno; el nombre accesible del botón ya anuncia «Nota sin título». */}
+            {cardDisplayTitle(card) ? (
+              <Text numberOfLines={icon ? (box.height >= 56 ? 2 : 1) : 3} style={[styles.miniTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>
+            ) : null}
           </View>
         ) : floatingTitle && display === 'expanded' ? (
           <View testID={`floating-title-${card.id}`} style={styles.floatingTitleWrap}>
-            <Text numberOfLines={Math.max(1, Math.floor((box.height - 36) / 38))} style={[styles.floatingTitle, { color: colors.textPrimary, paddingRight: box.height >= 100 ? 0 : props.reserveRight }]}>{cardTitle(card)}</Text>
+            {cardDisplayTitle(card) ? (
+              <Text numberOfLines={Math.max(1, Math.floor((box.height - 36) / 38))} style={[styles.floatingTitle, { color: colors.textPrimary, paddingRight: box.height >= 100 ? 0 : props.reserveRight }]}>{cardDisplayTitle(card)}</Text>
+            ) : null}
           </View>
         ) : display === 'collapsed' ? (
           // Contraída: una barra de título con los controles a la derecha.
           <View style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
             <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>{number3}</Text>
-            <Text numberOfLines={1} style={[styles.collapsedTitle, { color: colors.headerText }]}>{cardTitle(card)}</Text>
+            {cardDisplayTitle(card) ? (
+              <Text numberOfLines={1} style={[styles.collapsedTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>
+            ) : null}
           </View>
         ) : (
           <>
@@ -193,12 +201,14 @@ export function CanvasCard(props: CanvasCardProps) {
               </View>
             </View>
             <View style={styles.body}>
-              <Text
-                numberOfLines={lowZoom ? 3 : 2}
-                style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: Math.round(titleSize * 1.25) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
-              >
-                {cardTitle(card)}
-              </Text>
+              {cardDisplayTitle(card) ? (
+                <Text
+                  numberOfLines={lowZoom ? 3 : 2}
+                  style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: Math.round(titleSize * 1.25) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
+                >
+                  {cardDisplayTitle(card)}
+                </Text>
+              ) : null}
               {image ? (props.imageUri ? (
                 // «contain», no «cover» (auditoría visual, 2026-09-29): recortar sin que la persona lo
                 // pida oculta parte de su imagen; se ve completa, con el fondo de la tarjeta alrededor
@@ -206,7 +216,7 @@ export function CanvasCard(props: CanvasCardProps) {
                 <Image
                   testID={`image-preview-${card.id}`}
                   accessibilityRole="image"
-                  accessibilityLabel={`Imagen ${cardTitle(card)}`}
+                  accessibilityLabel={`Imagen ${cardTitle(card, locale)}`}
                   source={{ uri: props.imageUri }}
                   resizeMode="contain"
                   style={[styles.photo, { borderColor: colors.border, backgroundColor: colors.surface }]}

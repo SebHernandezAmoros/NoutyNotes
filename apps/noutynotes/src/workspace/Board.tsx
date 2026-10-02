@@ -1,17 +1,24 @@
 import type { BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
-import type { LayoutMode } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
+import type { Locale, LayoutMode } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BOARD_ROW_HEIGHT, boardBoxes, relationSegments } from './board-geometry';
 import type { CardBox } from './board-geometry';
 import { ImagePlaceholder } from './ImagePlaceholder';
+import { t } from '../i18n';
 
 const BOARD_BORDER = 2;
 
-export function cardTitle(card: Card): string {
-  return card.title ?? 'Sin título';
+/** Etiqueta útil (búsquedas, menús, listas, accesibilidad): localizada, nunca vacía. */
+export function cardTitle(card: Card, locale: Locale): string {
+  return card.title ?? t('card.untitled', locale);
+}
+
+/** Texto visible sobre la propia ficha (UX7-A4): vacío si no hay título, sin «Sin título» de relleno. */
+export function cardDisplayTitle(card: Card): string {
+  return card.title ?? '';
 }
 
 export function isImageCard(workspace: Workspace, card: Card): boolean {
@@ -100,6 +107,7 @@ interface CardViewProps {
 
 function CardView({ box, card, image, connections, selected, onPress }: CardViewProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const textColor = image ? colors.textPrimary : colors.noteText;
@@ -107,7 +115,7 @@ function CardView({ box, card, image, connections, selected, onPress }: CardView
     <Pressable
       testID={`card-${card.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`Tarjeta ${cardTitle(card)}`}
+      accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}`}
       accessibilityState={{ selected }}
       {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
       onPress={onPress}
@@ -120,7 +128,7 @@ function CardView({ box, card, image, connections, selected, onPress }: CardView
         borderWidth: selected ? 4 : focused ? 3 : 2,
       }]}
     >
-      <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor }]}>{cardTitle(card)}</Text>
+      <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor }]}>{cardTitle(card, locale)}</Text>
       {image ? <ImagePlaceholder /> : (
         <Text numberOfLines={Math.max(1, Math.floor((box.height - 56) / 18))} style={[styles.cardContent, { color: textColor }]}>
           {card.content ?? ''}

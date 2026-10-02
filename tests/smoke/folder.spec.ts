@@ -827,7 +827,8 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await button('Seleccionar varias tarjetas empezando por esta').click();
   await button('Seleccionar todas las tarjetas del tablero').click();
-  await button('Mover la selección hacia abajo').click();
+  // UX7-A1: la barra múltiple ya no tiene botones de flecha; las flechas del teclado mueven el conjunto.
+  await page.keyboard.press('ArrowDown');
   await expect(page.getByTestId('workspace-feedback')).toHaveText('2 tarjetas movidas. Guardado en la carpeta.');
 
   await page.reload();

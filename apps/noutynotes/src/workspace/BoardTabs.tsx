@@ -3,6 +3,8 @@ import { useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppIcon } from '../components/AppIcon';
+
 interface BoardTabsProps {
   readonly boards: readonly Board[];
   readonly current: BoardId | undefined;
@@ -42,7 +44,10 @@ export function BoardTabs({ boards, current, onSelect, onCreate, vertical, scrol
 }
 
 /** Escritorio: los tableros viven como pestañas verticales en el borde derecho del lienzo. */
-export function BoardRail({ boards, current, onSelect, onCreate }: Omit<BoardTabsProps, 'vertical' | 'scroll'>) {
+export function BoardRail({ boards, current, onSelect, onCreate, onInsertShortcut }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
+  /** UX7-A3: «Tablero» salió de la barra principal; el acceso rápido se crea desde aquí. */
+  readonly onInsertShortcut: () => void;
+}) {
   const { theme } = useTheme();
   const colors = theme.colors;
   return (
@@ -55,6 +60,10 @@ export function BoardRail({ boards, current, onSelect, onCreate }: Omit<BoardTab
       <Pressable accessibilityRole="button" accessibilityLabel="Crear un tablero" onPress={onCreate}
         style={[styles.railAdd, { borderColor: colors.border, backgroundColor: colors.surface }]}>
         <Text style={[styles.railAddText, { color: colors.textPrimary }]}>+</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Crear acceso rápido a un tablero" onPress={onInsertShortcut}
+        style={[styles.railAdd, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <AppIcon name="board" size={20} color={colors.textPrimary} />
       </Pressable>
     </ScrollView>
   );

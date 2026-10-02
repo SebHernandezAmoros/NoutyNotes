@@ -490,6 +490,9 @@ test('icono propio y acceso rápido: se crea una ficha de tablero, cambia de ico
   await createBoard();
   await chooseBoard('Tablero 1');
 
+  // UX7-A3: «Tablero» salió de la barra principal; el acceso rápido vive en la franja derecha
+  // (escritorio) o dentro de «Abrir un tablero» donde no hay franja (móvil/anchos intermedios).
+  if (isCompact(page)) await button(page, 'Abrir un tablero').click();
   await button(page, 'Crear acceso rápido a un tablero').click();
   await expect(page.getByTestId('board-shortcut-dialog')).toBeVisible();
   await button(page, 'Crear acceso a Tablero 2').click();
@@ -980,7 +983,8 @@ test('selección múltiple: entrar, recuento, mover el conjunto arrastrando y co
     await page.mouse.up();
   }
   await expect(feedback(page)).toHaveText('2 tarjetas movidas. Guardado en memoria.');
-  await button(page, 'Mover la selección hacia abajo').click();
+  // UX7-A1: la barra múltiple ya no tiene botones de flecha; las flechas del teclado mueven el conjunto.
+  await page.keyboard.press('ArrowDown');
   await expect(feedback(page)).toHaveText('2 tarjetas movidas. Guardado en memoria.');
   await expect(count).toHaveText('2 SELECCIONADAS');
   await button(page, 'Cancelar la selección').click();

@@ -6,6 +6,7 @@ import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 
 import { ActionButton } from '../../components/controls';
+import { t } from '../../i18n';
 import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
 import { relationSegments } from '../board-geometry';
@@ -203,7 +204,7 @@ export function Canvas(props: CanvasProps) {
   // Línea de conexión seleccionada, con su menú compacto abierto (auditoría de interacción, 2026-09-29).
   const [selectedRelationId, setSelectedRelationId] = useState<RelationId | null>(null);
   const cards = useMemo(() => new Map(workspace.cards.map((card) => [card.id, card])), [workspace.cards]);
-  const names = useMemo(() => new Map(workspace.cards.map((card) => [card.id, cardTitle(card)])), [workspace.cards]);
+  const names = useMemo(() => new Map(workspace.cards.map((card) => [card.id, cardTitle(card, locale)])), [workspace.cards, locale]);
   const relationById = useMemo(() => new Map(workspace.relations.map((relation) => [relation.id, relation])), [workspace.relations]);
   const relationTypeLabel = useMemo(() => new Map(workspace.relationTypes.map((type) => [type.id, type.label])), [workspace.relationTypes]);
   const placements = layout?.placements ?? [];
@@ -807,8 +808,8 @@ export function Canvas(props: CanvasProps) {
           return (
             <RelationMenu
               relation={relation}
-              fromTitle={names.get(relation.from) ?? 'Sin título'}
-              toTitle={names.get(relation.to) ?? 'Sin título'}
+              fromTitle={names.get(relation.from) ?? t('card.untitled', locale)}
+              toTitle={names.get(relation.to) ?? t('card.untitled', locale)}
               typeLabel={relationTypeLabel.get(relation.typeId) ?? ''}
               compact={props.compact}
               onArrow={(arrow) => props.onRelationArrow(relation.id, arrow)}
@@ -883,7 +884,7 @@ export function Canvas(props: CanvasProps) {
           <CardControls
             key={placement.cardId}
             cardId={placement.cardId}
-            title={names.get(placement.cardId) ?? 'Sin título'}
+            title={names.get(placement.cardId) ?? t('card.untitled', locale)}
             display={placement.display}
             floating={cards.get(placement.cardId)?.typeId === FLOATING_TITLE}
             chrome={found}
@@ -903,7 +904,7 @@ export function Canvas(props: CanvasProps) {
       })}
       {menuPlacement ? (
         <CardMenu
-          title={names.get(menuPlacement.cardId) ?? 'Sin título'}
+          title={names.get(menuPlacement.cardId) ?? t('card.untitled', locale)}
           display={menuPlacement.display}
           compact={props.compact}
           anchor={menuAnchor}

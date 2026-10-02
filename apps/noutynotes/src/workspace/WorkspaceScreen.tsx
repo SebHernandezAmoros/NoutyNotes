@@ -16,7 +16,7 @@ import { BrandMark } from '../components/BrandMark';
 import { AppIcon } from '../components/AppIcon';
 import type { AppIconName } from '../components/AppIcon';
 import { Dialog } from '../components/Dialog';
-import { ActionButton } from '../components/controls';
+import { ActionButton, ToolButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
 import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
@@ -281,7 +281,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const closedBoardList = workspace ? workspace.boards.filter((candidate) => !openBoards.includes(candidate.id)) : [];
   const layout = board ? workspace?.layouts.find((candidate) => candidate.boardId === board.id) : undefined;
   const visibleIds = new Set(layout?.placements.map((placement) => placement.cardId) ?? []);
-  const unplaced = unplacedCardIds(board, layout).map((cardId) => workspace?.cards.find((card) => card.id === cardId)?.title ?? 'Sin título');
+  const unplaced = unplacedCardIds(board, layout).map((cardId) => workspace?.cards.find((card) => card.id === cardId)?.title ?? t('card.untitled', locale));
   const boardCount = board?.cardIds.length ?? 0;
   // El editor se muestra por `editingId`, no por `selectedId` (auditoría de interacción, 2026-09-29):
   // seleccionar una tarjeta ya no implica editarla.
@@ -400,7 +400,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const containing = workspace.boards.filter((candidate) => candidate.cardIds.includes(cardId));
     const target = board && containing.some((candidate) => candidate.id === board.id) ? board : containing[0];
     if (!target) {
-      setFeedback({ tone: 'error', text: `«${card.title ?? 'Sin título'}» no está en ningún tablero.` });
+      setFeedback({ tone: 'error', text: `«${card.title ?? t('card.untitled', locale)}» no está en ningún tablero.` });
       return;
     }
     if (target.id !== board?.id) {
@@ -409,7 +409,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       setPan(START_PAN);
     }
     const placed = workspace.layouts.find((candidate) => candidate.boardId === target.id)?.placements.some((placement) => placement.cardId === cardId) ?? false;
-    setPlaceOffer(placed ? null : { cardId, boardId: target.id, title: card.title ?? 'Sin título' });
+    setPlaceOffer(placed ? null : { cardId, boardId: target.id, title: card.title ?? t('card.untitled', locale) });
     // «Ir a» desde la búsqueda es una navegación directa a esa tarjeta: sigue abriendo su editor, a
     // diferencia de seleccionar en el lienzo (auditoría de interacción, 2026-09-29).
     setSelectedId(placed ? cardId : null);
@@ -562,6 +562,27 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [connectSource]);
+
+  // Flechas mueven el conjunto seleccionado una celda (UX7-A1: sustituye los botones ←↑↓→ de la barra).
+  const moveManyRef = useRef(moveMany);
+  useLayoutEffect(() => { moveManyRef.current = moveMany; });
+  useEffect(() => {
+    if (Platform.OS !== 'web' || multi === null || multiIds.length === 0) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const delta = event.key === 'ArrowLeft' ? { x: -1, y: 0 }
+        : event.key === 'ArrowRight' ? { x: 1, y: 0 }
+        : event.key === 'ArrowUp' ? { x: 0, y: -1 }
+        : event.key === 'ArrowDown' ? { x: 0, y: 1 }
+        : null;
+      if (!delta) return;
+      event.preventDefault();
+      moveManyRef.current(multiIds, delta);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [multi, multiIds]);
 
   const changeDisplay = (cardId: CardId, display: CardDisplayMode, relocate = false) => {
     if (!board) return;
@@ -806,7 +827,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' ? colors.textSecondary : colors.danger;
   const hint = tool === 'pan' ? 'Mano: arrastra el lienzo para desplazarte. Las tarjetas no se mueven con esta herramienta.'
     : tool === 'connect'
-      ? connectSource ? `Origen: «${workspace?.cards.find((card) => card.id === connectSource)?.title ?? 'Sin título'}». Toca otra tarjeta para conectar o desconectar; toca el origen para cancelar.`
+      ? connectSource ? `Origen: «${workspace?.cards.find((card) => card.id === connectSource)?.title ?? t('card.untitled', locale)}». Toca otra tarjeta para conectar o desconectar; toca el origen para cancelar.`
         : 'Conectar: toca la tarjeta de origen.'
       : (layout?.placements.length ?? 0) === 0
         ? 'Tablero vacío: crea la primera nota desde el lienzo o con «Nota» en la barra.'
@@ -969,7 +990,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onAddLink={() => setLinkOpen(true)}
       onImportImage={() => void importImage()}
       onAddExample={() => void add('image')}
-      onAddBoardShortcut={() => setShortcutOpen(true)}
       zoom={zoom}
       onZoomIn={() => setZoom(zoomIn)}
       onZoomOut={() => setZoom(zoomOut)}
@@ -1004,10 +1024,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     </View>
   ) : null;
 
-  // Barra de la selección múltiple (ADR 0025): recuento, mover, todas, archivar, Papelera y cancelar.
+  // Barra de la selección múltiple (ADR 0025; UX7-A1/A2): recuento, todas, cancelar, agrupar, archivar y Papelera.
+  // Mover el conjunto ya no usa botones de flecha: las flechas del teclado lo hacen (ver el efecto más arriba).
   const multiBar = workspace && multi !== null ? (
-    <View testID="multi-bar" accessibilityRole="toolbar" accessibilityLabel="Selección múltiple" style={[styles.multiBar, { borderColor: colors.selection, backgroundColor: colors.surface }]}>
-      {/* Dos filas también en 390 px: recuento, «Todas» y «Cancelar»; debajo, mover y las acciones del conjunto. */}
+    <View testID="multi-bar" accessibilityRole="toolbar" accessibilityLabel="Selección múltiple"
+      accessibilityHint={multiIds.length > 0 ? 'Usa las flechas del teclado para mover el conjunto una celda' : undefined}
+      style={[styles.multiBar, { borderColor: colors.selection, backgroundColor: colors.surface }]}>
+      {/* Dos filas también en 390 px: recuento, «Todas» y «Cancelar»; debajo, las acciones del conjunto. */}
       <View style={styles.multiRow}>
         <Text testID="multi-count" accessibilityLiveRegion="polite" style={[styles.multiCount, { color: colors.textPrimary }]}>
           {multiIds.length === 0 ? 'NINGUNA · toca tarjetas para añadirlas' : plural(multiIds.length, '1 SELECCIONADA', '# SELECCIONADAS')}
@@ -1017,15 +1040,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       </View>
       {multiIds.length > 0 ? (
         <View style={styles.multiRow}>
-          <ActionButton label="←" accessibilityLabel="Mover la selección a la izquierda" onPress={() => moveMany(multiIds, { x: -1, y: 0 })} />
-          <ActionButton label="↑" accessibilityLabel="Mover la selección hacia arriba" onPress={() => moveMany(multiIds, { x: 0, y: -1 })} />
-          <ActionButton label="↓" accessibilityLabel="Mover la selección hacia abajo" onPress={() => moveMany(multiIds, { x: 0, y: 1 })} />
-          <ActionButton label="→" accessibilityLabel="Mover la selección a la derecha" onPress={() => moveMany(multiIds, { x: 1, y: 0 })} />
-          <View style={styles.multiGap} />
-          <ActionButton label={compact ? '▢' : 'Agrupar'} accessibilityLabel={plural(multiIds.length, 'Agrupar la seleccionada en un marco', 'Agrupar las # seleccionadas en un marco')} onPress={() => void groupMany()} />
-          {/* En móvil, los glifos de la navegación (▤ Archivo, 🗑 Papelera) con su nombre accesible completo. */}
-          <ActionButton label={compact ? '▤' : 'Archivar'} accessibilityLabel={plural(multiIds.length, 'Archivar la seleccionada', 'Archivar las # seleccionadas')} onPress={() => void archiveMany()} />
-          <ActionButton label={compact ? '🗑' : 'Papelera'} accessibilityLabel={plural(multiIds.length, 'Enviar la seleccionada a la Papelera', 'Enviar las # seleccionadas a la Papelera')} onPress={() => void trashMany()} />
+          <ToolButton icon="frame" label="Agrupar" accessibilityLabel={plural(multiIds.length, 'Agrupar la seleccionada en un marco', 'Agrupar las # seleccionadas en un marco')} onPress={() => void groupMany()} style={styles.multiToolCell} />
+          <ToolButton icon="archive" label="Archivar" accessibilityLabel={plural(multiIds.length, 'Archivar la seleccionada', 'Archivar las # seleccionadas')} onPress={() => void archiveMany()} style={styles.multiToolCell} />
+          <ToolButton icon="trash" label="Papelera" accessibilityLabel={plural(multiIds.length, 'Enviar la seleccionada a la Papelera', 'Enviar las # seleccionadas a la Papelera')} onPress={() => void trashMany()} style={styles.multiToolCell} />
         </View>
       ) : null}
     </View>
@@ -1120,6 +1137,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       closed={closedBoardList}
       onOpen={(next) => void chooseBoard(next)}
       onCreate={createBoard}
+      onInsertShortcut={() => setShortcutOpen(true)}
       compact={compact}
       scroll={compact}
     />
@@ -1264,7 +1282,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         </View>
         {/* Una sola franja vertical (ADR 0048): tableros a la derecha; proyectos usan el selector
             compacto de cabecera («Proyectos» arriba) en vez de una segunda franja permanente. */}
-        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} /> : null}
+        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onInsertShortcut={() => setShortcutOpen(true)} /> : null}
       </View>
       {workspace ? (
         <>
@@ -1441,7 +1459,7 @@ const styles = StyleSheet.create({
   multiCount: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   multiBar: { borderWidth: 2, padding: 6, gap: 6 },
   multiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  multiGap: { flexGrow: 1, minWidth: 4 },
+  multiToolCell: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', paddingHorizontal: 5 },
   // En la barra de herramientas (escritorio): mismo aviso, sin fondo propio que compita con la barra.
   feedbackRow: { flexDirection: 'row', alignItems: 'stretch', gap: 4 },
   feedbackGrow: { flex: 1, minWidth: 0 },

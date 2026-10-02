@@ -425,6 +425,30 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
   }
 });
 
+test('título visualmente vacío: borrarlo no dibuja «Sin título» en la ficha, pero el nombre accesible sigue siendo útil (UX7-A4)', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Anónima');
+  await addNote(page, 'Temporal');
+  await expect(card(page, 1)).toContainText('Temporal');
+
+  await openCardEditor(page, 1);
+  await page.getByLabel('Título de la tarjeta').fill('');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
+  await closeEditor(page);
+
+  // La ficha no dibuja «Sin título»/«Nota sin título»: el título borrado no deja relleno visible.
+  await expect(card(page, 1)).not.toContainText('Sin título');
+  await expect(card(page, 1)).not.toContainText('sin título');
+  // El nombre accesible sí anuncia una etiqueta útil para lectores de pantalla, búsquedas y menús.
+  await expect(card(page, 1)).toHaveAccessibleName(/Nota sin título/);
+
+  // Sobrevive a reabrir el editor: el campo sigue vacío, no «Sin título» como si fuera el valor guardado.
+  await openCardEditor(page, 1);
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('');
+  await closeEditor(page);
+});
+
 test('menú de ficha minimizada: editar y empezar una conexión sin abrir el inspector al seleccionar', async ({ page }) => {
   await page.goto('./');
   await createWorkspace(page, 'Menú contextual');

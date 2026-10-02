@@ -224,6 +224,8 @@ export const TRANSLATIONS = {
     es: 'Las tarjetas de la Papelera se guardan con el espacio (también en la carpeta y en el ZIP) y se pueden restaurar con su contenido, imagen, conexiones y posición.',
     en: 'Cards in the Trash are saved with the space (also in the folder and in the ZIP) and can be restored with their content, image, connections and position.',
   },
+  // UX7-A4: nombre accesible/útil cuando el título está ausente; la ficha no dibuja este texto, solo lo anuncia.
+  'card.untitled': { es: 'Nota sin título', en: 'Untitled note' },
   'trash.empty': { es: 'La Papelera está vacía.', en: 'The Trash is empty.' },
   'trash.item.image': { es: ' · CON IMAGEN', en: ' · WITH IMAGE' },
   'trash.item.untitled': { es: 'Sin título', en: 'Untitled' },
