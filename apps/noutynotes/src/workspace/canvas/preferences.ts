@@ -16,6 +16,8 @@ export interface ViewPreferences {
   readonly cardGap: number;
   /** Fecha de creación en el pie de las fichas (ADR 0029). */
   readonly showDates: boolean;
+  /** Oculta el marco de toda ficha en reposo, salvo excepción por ficha (`frameOverride`, ADR 0049). */
+  readonly hideFrames: boolean;
   /** Tipografía del texto de las notas (ADR 0030): fuentes del sistema, o una importada (ADR 0041). */
   readonly noteFont: NoteFont;
   /** Ruta del asset de la fuente activada como «custom» (ADR 0041); solo tiene sentido en el workspace
@@ -23,7 +25,13 @@ export interface ViewPreferences {
   readonly customFontRef: string | null;
 }
 
-export const DEFAULT_PREFERENCES: ViewPreferences = { showGrid: true, snap: true, rowHeight: 56, cardGap: 6, showDates: false, noteFont: 'system', customFontRef: null };
+// UX7-D1: 100 % debe ser el tamaño normal de trabajo (antes obligaba a bajar a 50-75 % habitualmente).
+// 48 px es el valor mínimo ya establecido en `PREFERENCE_LIMITS.rowHeight` (compara con 40, por debajo
+// del área táctil mínima `MIN_TOUCH`, y 44, exactamente en ese mínimo sin margen): ya convivía con el
+// área táctil mínima de 44 px (ADR 0016) y es la cifra más compacta que no la viola.
+export const DEFAULT_PREFERENCES: ViewPreferences = {
+  showGrid: true, snap: true, rowHeight: 48, cardGap: 6, showDates: false, hideFrames: false, noteFont: 'system', customFontRef: null,
+};
 
 export const PREFERENCE_LIMITS = {
   rowHeight: { min: 48, max: 96, step: 8 },
@@ -46,12 +54,15 @@ export function parsePreferences(stored: string | null): ViewPreferences {
     data = null;
   }
   const record = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {};
-  const flag = (key: 'showGrid' | 'snap' | 'showDates') => (typeof record[key] === 'boolean' ? (record[key] as boolean) : DEFAULT_PREFERENCES[key]);
+  const flag = (key: 'showGrid' | 'snap' | 'showDates' | 'hideFrames') => (typeof record[key] === 'boolean' ? (record[key] as boolean) : DEFAULT_PREFERENCES[key]);
   const number = (key: NumericPreference) => (typeof record[key] === 'number' && Number.isFinite(record[key])
     ? snapTo(record[key] as number, PREFERENCE_LIMITS[key]) : DEFAULT_PREFERENCES[key]);
   const noteFont = isNoteFont(record.noteFont) ? record.noteFont : DEFAULT_PREFERENCES.noteFont;
   const customFontRef = typeof record.customFontRef === 'string' ? record.customFontRef : DEFAULT_PREFERENCES.customFontRef;
-  return { showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'), showDates: flag('showDates'), noteFont, customFontRef };
+  return {
+    showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'),
+    showDates: flag('showDates'), hideFrames: flag('hideFrames'), noteFont, customFontRef,
+  };
 }
 
 export function stepPreference(preferences: ViewPreferences, key: NumericPreference, direction: 1 | -1): ViewPreferences {

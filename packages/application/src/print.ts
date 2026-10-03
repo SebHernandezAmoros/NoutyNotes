@@ -4,7 +4,7 @@
  * en el lienzo). Sin reloj ni acceso a archivos: se arma a partir del workspace ya cargado.
  */
 import { footprint } from '@noutynotes/domain';
-import type { BoardId, Card, CardId, Workspace } from '@noutynotes/domain';
+import type { BoardId, Card, CardId, TextSize, Workspace } from '@noutynotes/domain';
 
 import { noteImageRefs } from './note-blocks';
 
@@ -26,6 +26,9 @@ export interface PrintEntry {
   /** La imagen propia (si es una tarjeta de imagen) y las intercaladas de la nota, en orden. */
   readonly imageRefs: readonly string[];
   readonly connections: readonly PrintConnection[];
+  /** Tamaño semántico de título/cuerpo (ADR 0050); ausente = `'medium'`, el tamaño de hoy. */
+  readonly titleSize?: TextSize;
+  readonly bodySize?: TextSize;
 }
 
 const titleOf = (card: Card | undefined): string => card?.title ?? 'Sin título';
@@ -64,6 +67,8 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
     return [{
       id: card.id, number: index + 1, title: titleOf(card), typeLabel: typeLabel.get(card.typeId) ?? '',
       content: card.content ?? '', tags: card.tags ?? [], imageRefs, connections: connectionsOf(workspace, card.id, cards),
+      ...(card.titleSize === undefined ? {} : { titleSize: card.titleSize }),
+      ...(card.bodySize === undefined ? {} : { bodySize: card.bodySize }),
     }];
   });
 }

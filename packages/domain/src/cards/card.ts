@@ -32,10 +32,32 @@ export interface Card {
   readonly icon?: CardIconName;
   /** Destino de un atajo a otro tablero del mismo workspace (ADR 0046). */
   readonly boardTargetId?: BoardId;
+  /** Excepción a la preferencia global de marco (ADR 0049). Ausente: sigue la preferencia del dispositivo. */
+  readonly frameOverride?: FrameOverride;
+  /** Tamaño semántico del título (ADR 0050). Ausente: `'medium'`, el tamaño de hoy. */
+  readonly titleSize?: TextSize;
+  /** Tamaño semántico del cuerpo (ADR 0050); no afecta al título ni al pie. Ausente: `'medium'`. */
+  readonly bodySize?: TextSize;
 }
 
-export const cardIconNames = ['note', 'image', 'folder', 'link', 'check', 'star'] as const;
+/**
+ * Catálogo portable del icono de ficha (ADR 0046), ampliado en UX7-D5: todo nombre aquí también
+ * existe en `AppIcon` (interfaz), para que la vista previa del selector lo dibuje sin traducir
+ * nombres. Deliberadamente no incluye glifos de acción pura (deshacer, cerrar, buscar…) ni los que
+ * ya significan un estado distinto en la interfaz (marco, archivo): confundirían el icono de la
+ * ficha, que es identidad, con una acción o un estado.
+ */
+export const cardIconNames = [
+  'note', 'image', 'folder', 'link', 'check', 'star',
+  'text', 'board', 'diary', 'assets', 'present', 'print', 'settings',
+] as const;
 export type CardIconName = (typeof cardIconNames)[number];
+
+export const frameOverrides = ['visible', 'hidden'] as const;
+export type FrameOverride = (typeof frameOverrides)[number];
+
+export const textSizes = ['small', 'medium', 'large'] as const;
+export type TextSize = (typeof textSizes)[number];
 
 /**
  * Invariantes propias de la tarjeta. Si se conoce su tipo, también la compatibilidad de campos;
@@ -65,6 +87,15 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
     issues.push(issue('invalid-value', `${path}.icon`, 'Debe ser un icono del catálogo admitido.'));
   }
   if (card.boardTargetId !== undefined) checkId(card.boardTargetId, `${path}.boardTargetId`, issues);
+  if (card.frameOverride !== undefined && !frameOverrides.includes(card.frameOverride as FrameOverride)) {
+    issues.push(issue('invalid-value', `${path}.frameOverride`, 'Debe ser "visible" u "hidden".'));
+  }
+  if (card.titleSize !== undefined && !textSizes.includes(card.titleSize as TextSize)) {
+    issues.push(issue('invalid-value', `${path}.titleSize`, 'Debe ser "small", "medium" o "large".'));
+  }
+  if (card.bodySize !== undefined && !textSizes.includes(card.bodySize as TextSize)) {
+    issues.push(issue('invalid-value', `${path}.bodySize`, 'Debe ser "small", "medium" o "large".'));
+  }
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);
     refs.forEach((ref, index) => checkAssetRef(ref, `${path}.assetRefs[${index}]`, issues));

@@ -5,7 +5,7 @@ import { assertValid } from '../errors';
 import type { CardId, RelationId } from '../ids';
 import type { Relation } from '../relations/relation';
 import { validateWorkspace } from '../workspace/workspace';
-import { deleteCard } from './operations';
+import { deleteCard, updateCardAppearance } from './operations';
 
 describe('borrado de tarjeta con relaciones', () => {
   it('restringe el borrado con conexiones por defecto y explícitamente', () => {
@@ -62,5 +62,64 @@ describe('borrado de tarjeta con relaciones', () => {
     expect(problems(deleteCard(validWorkspace(), unsafe(null)))).toEqual(['invalid-id@cardId']);
     expect(deleteCard(unsafe(null), ideaA.id).ok).toBe(false);
     expect(deleteCard(unsafe({ ...validWorkspace(), layouts: null }), ideaA.id, { relations: 'cascade' }).ok).toBe(false);
+  });
+});
+
+describe('excepción de marco por ficha (ADR 0049)', () => {
+  it('ausente por defecto; se puede fijar a "hidden"/"visible" y volver a ausente con null', () => {
+    const base = validWorkspace();
+    expect(ideaA.frameOverride).toBeUndefined();
+    const hidden = assertValid(updateCardAppearance(base, ideaA.id, { frameOverride: 'hidden' }));
+    expect(hidden.cards.find(c => c.id === ideaA.id)?.frameOverride).toBe('hidden');
+    const visible = assertValid(updateCardAppearance(hidden, ideaA.id, { frameOverride: 'visible' }));
+    expect(visible.cards.find(c => c.id === ideaA.id)?.frameOverride).toBe('visible');
+    const cleared = assertValid(updateCardAppearance(visible, ideaA.id, { frameOverride: null }));
+    expect(cleared.cards.find(c => c.id === ideaA.id)?.frameOverride).toBeUndefined();
+    // `undefined` (ausente de los cambios) no lo toca.
+    const untouched = assertValid(updateCardAppearance(hidden, ideaA.id, { icon: 'star' }));
+    expect(untouched.cards.find(c => c.id === ideaA.id)?.frameOverride).toBe('hidden');
+    expect(base).toEqual(validWorkspace());
+  });
+  it('rechaza un valor que no sea "visible" u "hidden"', () => {
+    expect(problems(updateCardAppearance(validWorkspace(), ideaA.id, unsafe({ frameOverride: 'invisible' })))).toEqual(['invalid-value@changes.frameOverride']);
+    expect(problems(updateCardAppearance(validWorkspace(), ideaA.id, unsafe({ frameOverride: 3 })))).toEqual(['invalid-value@changes.frameOverride']);
+  });
+  it('no cambia icono ni destino de tablero al tocar solo el marco', () => {
+    const withIcon = assertValid(updateCardAppearance(validWorkspace(), ideaA.id, { icon: 'star' }));
+    const withFrame = assertValid(updateCardAppearance(withIcon, ideaA.id, { frameOverride: 'hidden' }));
+    const card = withFrame.cards.find(c => c.id === ideaA.id);
+    expect(card?.icon).toBe('star');
+    expect(card?.frameOverride).toBe('hidden');
+  });
+});
+
+describe('tamaños de título y cuerpo por ficha (ADR 0050)', () => {
+  it('ausentes por defecto; se pueden fijar a "small"/"large"/"medium" y volver a ausente con null', () => {
+    const base = validWorkspace();
+    expect(ideaA.titleSize).toBeUndefined();
+    expect(ideaA.bodySize).toBeUndefined();
+    const sized = assertValid(updateCardAppearance(base, ideaA.id, { titleSize: 'large', bodySize: 'small' }));
+    const card = sized.cards.find(c => c.id === ideaA.id);
+    expect(card?.titleSize).toBe('large');
+    expect(card?.bodySize).toBe('small');
+    const medium = assertValid(updateCardAppearance(sized, ideaA.id, { titleSize: 'medium' }));
+    expect(medium.cards.find(c => c.id === ideaA.id)?.titleSize).toBe('medium');
+    const cleared = assertValid(updateCardAppearance(medium, ideaA.id, { titleSize: null, bodySize: null }));
+    const clearedCard = cleared.cards.find(c => c.id === ideaA.id);
+    expect(clearedCard?.titleSize).toBeUndefined();
+    expect(clearedCard?.bodySize).toBeUndefined();
+    expect(base).toEqual(validWorkspace());
+  });
+  it('rechaza un valor que no sea "small", "medium" o "large"', () => {
+    expect(problems(updateCardAppearance(validWorkspace(), ideaA.id, unsafe({ titleSize: 'enorme' })))).toEqual(['invalid-value@changes.titleSize']);
+    expect(problems(updateCardAppearance(validWorkspace(), ideaA.id, unsafe({ bodySize: 3 })))).toEqual(['invalid-value@changes.bodySize']);
+  });
+  it('no cambia el marco ni el icono al tocar solo los tamaños de texto', () => {
+    const withFrame = assertValid(updateCardAppearance(validWorkspace(), ideaA.id, { frameOverride: 'hidden' }));
+    const withSizes = assertValid(updateCardAppearance(withFrame, ideaA.id, { titleSize: 'small', bodySize: 'large' }));
+    const card = withSizes.cards.find(c => c.id === ideaA.id);
+    expect(card?.frameOverride).toBe('hidden');
+    expect(card?.titleSize).toBe('small');
+    expect(card?.bodySize).toBe('large');
   });
 });

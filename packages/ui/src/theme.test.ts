@@ -20,6 +20,19 @@ describe('preferencia de tema', () => {
   });
 });
 
+describe('adaptación de color al tema oscuro (UX7-D2)', () => {
+  // `note`/`noteText` colorean la nota de ejemplo (inicio), el marcador de imagen y la ficha de nota en
+  // Lista: un acento por tipo, igual que `headerNote`/`headerImage` en el lienzo, no un «papel» que deba
+  // mantenerse igual a propósito (eso sí aplica a `cardSurface`/`cardText`, que no se comprueban aquí).
+  // Antes, `note` repetía el mismo valor del tema claro sin adaptar, a diferencia de su equivalente del
+  // lienzo.
+  it('el acento de tipo «nota» cambia entre claro y oscuro, como ya hacen sus equivalentes del lienzo', () => {
+    expect(themeColors.dark.note).not.toBe(themeColors.light.note);
+    expect(themeColors.dark.headerNote).not.toBe(themeColors.light.headerNote);
+    expect(themeColors.dark.headerImage).not.toBe(themeColors.light.headerImage);
+  });
+});
+
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((offset) => {
     const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;

@@ -10,10 +10,10 @@ export { ASSET_REF_MAX_LENGTH, isValidAssetRef, parseAssetRef } from './assets/a
 export type { AssetRef } from './assets/asset-ref';
 export { validateBoard } from './boards/board';
 export type { Board } from './boards/board';
-export { cardIconNames, validateCard } from './cards/card';
+export { cardIconNames, frameOverrides, textSizes, validateCard } from './cards/card';
 export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export { linkDisplay, linkUrlField, normalizeLinkUrl } from './cards/links';
-export type { Card, CardIconName } from './cards/card';
+export type { Card, CardIconName, FrameOverride, TextSize } from './cards/card';
 export { addCard, deleteCard, updateCard, updateCardAppearance } from './cards/operations';
 export type { AddCardOptions, CardAppearanceChanges, CardContentChanges, DeleteCardOptions } from './cards/operations';
 export { purgeTrashedCard, restoreTrashedCard, trashCard } from './cards/trash';

@@ -2,12 +2,14 @@ import { linkDisplay, linkUrlField } from '@noutynotes/domain';
 import type { Card, CardDisplayMode, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { View as RNView } from 'react-native';
 
 import { cardDisplayTitle, cardTitle, isImageCard } from '../Board';
 import { ImagePlaceholder } from '../ImagePlaceholder';
-import { markdownExcerpt } from '../markdownLists';
+import { markdownExcerpt, parseChecklistLine } from '../markdownLists';
+import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from '../textSizes';
 import type { GestureController } from './Canvas';
 import { miniIcon } from './cardChrome';
 import { CardIcon } from './CardIcon';
@@ -50,7 +52,13 @@ interface CanvasCardProps {
   readonly controlsOverBody: boolean;
   /** Zoom actual del lienzo: por debajo del umbral, la ficha resume en vez de encoger su texto (ADR 0016). */
   readonly zoom: number;
+  /** UX7-B2: marca o desmarca la línea de checklist `lineIndex` de `card.content` directamente en el lienzo. */
+  readonly onToggleCheck: (cardId: Card['id'], lineIndex: number) => void;
+  /** Sin marco en reposo (preferencia global u override por ficha, ADR 0049); selección/foco/arrastre/edición lo mantienen. */
+  readonly hideFrame: boolean;
 }
+
+interface ChecklistHit { readonly top: number; readonly bottom: number; readonly left: number; readonly right: number }
 
 /**
  * Por debajo de este zoom, todo el contenido escala junto con la tarjeta (transform del lienzo) y el
@@ -60,8 +68,8 @@ interface CanvasCardProps {
  * etiquetas ni pie. Encontrado en la auditoría visual del tablero (2026-09-29).
  */
 const ZOOM_SUMMARY_THRESHOLD = 0.75;
-const BASE_TITLE_SIZE = 16;
-const MAX_SUMMARY_TITLE_SIZE = 24;
+/** El resumen compensa hasta 1,5× el tamaño semántico de la ficha (ADR 0050), no un valor fijo. */
+const MAX_SUMMARY_SCALE = 1.5;
 
 const displayNames: Readonly<Record<CardDisplayMode, string>> = { expanded: '', collapsed: ', contraída', minimized: ', minimizada' };
 
@@ -74,21 +82,51 @@ const connectHints: Readonly<Record<ConnectRole, string | null>> = {
 
 /** Ficha de papel del lienzo: cabecera por tipo, título, resumen y estado. Solo representa. */
 export function CanvasCard(props: CanvasCardProps) {
-  const { workspace, card, number, box, display, selected, dragging, colliding, connectRole, connectSourceName, onPress } = props;
+  const { workspace, card, number, box, display, selected, dragging, colliding, connectRole, connectSourceName, onPress, hideFrame } = props;
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const { controller } = props;
+  // UX7-B2: filas de checklist medidas en pantalla (coordenadas absolutas, como `gestureState.x0/y0`)
+  // para que el PanResponder de abajo las excluya y el toque llegue al Pressable de la fila, no al arrastre.
+  const checklistHitsRef = useRef<ReadonlyMap<number, ChecklistHit>>(new Map());
+  const checklistRowRefs = useRef<Map<number, RNView>>(new Map());
+  // Igual que `areaSelect`/`panner` en Canvas.tsx: la función que mira la ref vive en su propia
+  // fábrica, separada de la que la usa; así ESLint no confunde el acceso (diferido al evento) con
+  // una lectura de ref durante el pintado. `hitsChecklist` también la usa el Pressable de la ficha
+  // de abajo: en react-native-web, nada garantiza que un Pressable anidado detenga por sí solo la
+  // detección de toque del Pressable que lo envuelve (no es una simple burbuja de clic del DOM), así
+  // que ambos preguntan lo mismo por coordenadas en vez de depender de `stopPropagation`.
+  const [checklistGuard] = useState(() => ({
+    hitsChecklist: (x: number, y: number) => {
+      for (const hit of checklistHitsRef.current.values()) {
+        if (x >= hit.left && x <= hit.right && y >= hit.top && y <= hit.bottom) return true;
+      }
+      return false;
+    },
+  }));
   // Un PanResponder estable por tarjeta. Con Seleccionar captura al pulsar, para no perder un arrastre
   // rápido que sale de la tarjeta; el arrastre empieza al superar el umbral y, sin él, es un toque.
-  // Con Mano o Conectar no captura: el lienzo desplaza o el Pressable recibe el toque.
+  // Con Mano o Conectar no captura: el lienzo desplaza o el Pressable recibe el toque. Una fila de
+  // checklist tampoco captura: el toque debe marcarla, no mover ni seleccionar la ficha entera.
   const [dragHandlers] = useState(() => {
     let dragging = false;
+    // Recuerda la decisión del gesto en curso: algunos manejadores (p. ej. el toque sin arrastre, más
+    // abajo) pueden seguir llamándose aunque la captura se haya declinado.
+    let blocked = false;
     return PanResponder.create({
-      onStartShouldSetPanResponderCapture: () => controller.canDragCard(),
+      onStartShouldSetPanResponderCapture: (event) => {
+        // `gestureState.x0/y0` no es fiable para un toque simple en web (puede llegar en 0,0 sin que
+        // haya habido movimiento); se usa la posición del evento nativo, como hace el Pressable de la
+        // ficha para la misma decisión.
+        const { pageX, pageY } = event.nativeEvent;
+        blocked = !controller.canDragCard() || checklistGuard.hitsChecklist(pageX, pageY);
+        return !blocked;
+      },
       onPanResponderGrant: () => { dragging = false; },
       onPanResponderMove: (_event, state) => {
+        if (blocked) return;
         if (!dragging && isDrag(state.dx, state.dy)) {
           dragging = true;
           controller.begin({ cardId: card.id, kind: 'move', handle: 'se' });
@@ -96,12 +134,14 @@ export function CanvasCard(props: CanvasCardProps) {
         if (dragging) controller.update(state.dx, state.dy);
       },
       onPanResponderRelease: (_event, state) => {
+        if (blocked) { blocked = false; return; }
         controller.gestureEnded(card.id);
         if (dragging) controller.finish(state.dx, state.dy);
         else controller.tapCard(card.id);
         dragging = false;
       },
       onPanResponderTerminate: () => {
+        if (blocked) { blocked = false; return; }
         controller.gestureEnded(card.id);
         if (dragging) controller.abort();
         dragging = false;
@@ -114,9 +154,13 @@ export function CanvasCard(props: CanvasCardProps) {
   // una caja vacía. La persona trabaja habitualmente al 50 %, así que ocultar Markdown era engañoso.
   const zoomFactor = Math.min(1, Math.max(props.zoom, 0.1));
   const lowZoom = display === 'expanded' && zoomFactor < ZOOM_SUMMARY_THRESHOLD;
-  const titleSize = lowZoom ? Math.min(MAX_SUMMARY_TITLE_SIZE, BASE_TITLE_SIZE / zoomFactor) : BASE_TITLE_SIZE;
-  const contentSize = lowZoom ? Math.min(20, 13 / zoomFactor) : 13;
-  const contentLine = Math.round(contentSize * 1.35);
+  // Tamaño semántico por ficha (ADR 0050): el resumen de zoom bajo escala desde ese tamaño, no desde
+  // una constante fija, así que una ficha «large» resumida sigue viéndose más grande que una «small».
+  const titleBase = titleFontSize(card.titleSize);
+  const bodyBase = bodyFontSize(card.bodySize);
+  const titleSize = lowZoom ? Math.min(titleBase * MAX_SUMMARY_SCALE, titleBase / zoomFactor) : titleBase;
+  const contentSize = lowZoom ? Math.min(bodyBase * MAX_SUMMARY_SCALE, bodyBase / zoomFactor) : bodyBase;
+  const contentLine = bodyLineHeight(contentSize);
   // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden.
   const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
@@ -125,6 +169,9 @@ export function CanvasCard(props: CanvasCardProps) {
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
   const hint = connectHints[connectRole];
   const borderColor = colliding ? colors.danger : selected || focused || connectRole === 'source' ? colors.selection : colors.border;
+  // Sin marco en reposo (ADR 0049): selección, foco, colisión, arrastre y conexión en curso lo mantienen
+  // perceptible (criterio de aceptación de UX7-D3); solo desaparece cuando la ficha está, en efecto, en reposo.
+  const activeBorder = selected || colliding || focused || connectRole === 'source' || dragging;
   const tags = card.tags ?? [];
   // Con pie (etiquetas o conexiones), el texto cede sus líneas: relleno, título, hueco y bordes (48) más
   // 22 por línea de pie (hueco + 16). Sin pie se conserva el cálculo anterior.
@@ -136,6 +183,36 @@ export function CanvasCard(props: CanvasCardProps) {
   const linkValue = linkKey ? card.fields[linkKey] : undefined;
   const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
+  // UX7-B2: cada línea mostrada es texto agrupado o una fila de checklist propia (marcable sin abrir
+  // el editor). El recorte por `bodyLines` es el mismo que el bloque único anterior.
+  type BodyBlock = { readonly kind: 'text'; readonly text: string }
+    | { readonly kind: 'check'; readonly lineIndex: number; readonly checked: boolean; readonly indent: string; readonly text: string };
+  const bodyBlocks: BodyBlock[] = [];
+  if (!image && !mixed) {
+    const shown = (card.content ?? '').split('\n').slice(0, bodyLines);
+    for (const [lineIndex, line] of shown.entries()) {
+      const check = parseChecklistLine(line);
+      if (check) { bodyBlocks.push({ kind: 'check', lineIndex, checked: check.checked, indent: check.indent, text: check.text }); continue; }
+      const last = bodyBlocks[bodyBlocks.length - 1];
+      const text = markdownExcerpt(line);
+      if (last?.kind === 'text') bodyBlocks[bodyBlocks.length - 1] = { kind: 'text', text: `${last.text}\n${text}` };
+      else bodyBlocks.push({ kind: 'text', text });
+    }
+  }
+  // Mide cada fila de checklist en pantalla tras pintar: su posición real no depende de lo que haya
+  // antes (texto que puede ajustar su alto), así que no se calcula a mano.
+  useLayoutEffect(() => {
+    const next = new Map<number, ChecklistHit>();
+    let pending = checklistRowRefs.current.size;
+    if (pending === 0) { checklistHitsRef.current = next; return; }
+    for (const [lineIndex, node] of checklistRowRefs.current) {
+      node.measureInWindow((x, y, width, height) => {
+        next.set(lineIndex, { top: y, bottom: y + height, left: x, right: x + width });
+        pending -= 1;
+        if (pending === 0) checklistHitsRef.current = next;
+      });
+    }
+  });
   const headerColor = image ? colors.headerImage : colors.headerNote;
   const icon = card.icon ?? miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
@@ -157,13 +234,19 @@ export function CanvasCard(props: CanvasCardProps) {
         accessibilityHint={accessibilityHint}
         accessibilityState={{ selected }}
         {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
-        onPress={() => { if (!controller.justEndedGesture(card.id)) onPress(); }}
+        onPress={(event) => {
+          // Igual que la decisión de captura de arriba: un toque que empezó en una fila de checklist
+          // no debe seleccionar ni abrir la ficha entera.
+          const { pageX, pageY } = event.nativeEvent;
+          if (checklistGuard.hitsChecklist(pageX, pageY)) return;
+          if (!controller.justEndedGesture(card.id)) onPress();
+        }}
         onFocus={() => { setFocused(true); props.onFocus(); }}
         onBlur={() => setFocused(false)}
         style={[styles.card, {
           backgroundColor: floatingTitle && display === 'expanded' ? 'transparent' : colors.cardSurface,
-          borderColor: floatingTitle && !(selected || colliding || focused || connectRole === 'source') ? 'transparent' : borderColor,
-          borderWidth: selected || colliding || focused || connectRole === 'source' ? 3 : floatingTitle && display === 'expanded' ? 0 : 2,
+          borderColor: (floatingTitle || hideFrame) && !activeBorder ? 'transparent' : borderColor,
+          borderWidth: activeBorder ? 3 : hideFrame || (floatingTitle && display === 'expanded') ? 0 : 2,
           opacity: dragging ? 0.85 : 1,
         }]}
       >
@@ -204,7 +287,7 @@ export function CanvasCard(props: CanvasCardProps) {
               {cardDisplayTitle(card) ? (
                 <Text
                   numberOfLines={lowZoom ? 3 : 2}
-                  style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: Math.round(titleSize * 1.25) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
+                  style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
                 >
                   {cardDisplayTitle(card)}
                 </Text>
@@ -230,11 +313,35 @@ export function CanvasCard(props: CanvasCardProps) {
                 </Text>
               ) : null}
               {mixed ? (
-                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily}
+                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
-              {!image && !mixed && bodyLines > 0 ? (
-                <Text numberOfLines={bodyLines} style={[styles.content, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>{markdownExcerpt(card.content ?? '')}</Text>
+              {!image && !mixed && bodyBlocks.length > 0 ? (
+                <View style={styles.bodyBlocks}>
+                  {bodyBlocks.map((block, index) => block.kind === 'text' ? (
+                    <Text key={index} numberOfLines={block.text.split('\n').length}
+                      style={[styles.content, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>
+                      {block.text}
+                    </Text>
+                  ) : (
+                    <Pressable
+                      key={index}
+                      ref={(node) => { if (node) checklistRowRefs.current.set(block.lineIndex, node); else checklistRowRefs.current.delete(block.lineIndex); }}
+                      testID={`check-${card.id}-${block.lineIndex}`}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: block.checked }}
+                      {...(Platform.OS === 'web' ? { 'aria-checked': block.checked } : {})}
+                      accessibilityLabel={block.text || 'Elemento de la lista'}
+                      onPress={() => props.onToggleCheck(card.id, block.lineIndex)}
+                      style={styles.checkRow}
+                    >
+                      <Text style={[styles.checkGlyph, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }]}>{block.checked ? '☑' : '☐'}</Text>
+                      <Text numberOfLines={1} style={[styles.content, styles.checkText, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>
+                        {block.text}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               ) : null}
               {!lowZoom && tags.length > 0 ? (
                 // Pie de etiquetas (ADR 0019): hasta tres y el resto como «+n»; el nombre completo va en el inspector.
@@ -328,6 +435,11 @@ const styles = StyleSheet.create({
   floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },
   // Si aun así no cabe, cede el texto y no el pie.
   content: { fontSize: 13, lineHeight: 18, flexShrink: 1, overflow: 'hidden' },
+  // UX7-B2: envoltorio de texto agrupado + filas de checklist; sin relleno propio, ya lo da `body`.
+  bodyBlocks: { flexShrink: 1, overflow: 'hidden' },
+  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  checkGlyph: { flexShrink: 0 },
+  checkText: { flex: 1 },
   link: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 12, lineHeight: 18, fontWeight: '700', flexShrink: 0 },
   tags: { fontSize: 12, lineHeight: 16, fontWeight: '800', marginTop: 'auto', flexShrink: 0 },
   badge: { fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 'auto', flexShrink: 0 },

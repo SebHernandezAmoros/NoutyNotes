@@ -1,15 +1,20 @@
+import { parseNoteBlocks } from '@noutynotes/application';
 import type { BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BOARD_ROW_HEIGHT, boardBoxes, relationSegments } from './board-geometry';
 import type { CardBox } from './board-geometry';
 import { ImagePlaceholder } from './ImagePlaceholder';
 import { t } from '../i18n';
+import { markdownExcerpt } from './markdownLists';
+import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
+import { NotePreview } from './canvas/NotePreview';
 
 const BOARD_BORDER = 2;
+const emptyNoteImages: ReadonlyMap<string, string> = new Map();
 
 /** Etiqueta útil (búsquedas, menús, listas, accesibilidad): localizada, nunca vacía. */
 export function cardTitle(card: Card, locale: Locale): string {
@@ -31,13 +36,17 @@ interface BoardProps {
   readonly mode: LayoutMode;
   readonly selectedId: CardId | null;
   readonly onSelect: (cardId: CardId) => void;
+  /** Vista previa de una ficha de imagen única; sin ella, de ejemplo (UX7-C3, igual que el lienzo). */
+  readonly imageUris?: ReadonlyMap<CardId, string>;
+  /** Imágenes intercaladas en una nota (UX7-C3, igual que `CanvasCard`/`NotePreview`). */
+  readonly noteImages?: ReadonlyMap<string, string>;
 }
 
 /**
  * Vista de lista (ADR 0013): la proyección de una columna del layout canónico, en orden de lectura.
  * Solo representa y selecciona; mover y redimensionar se hacen en el lienzo o con el inspector.
  */
-export function Board({ workspace, layout, mode, selectedId, onSelect }: BoardProps) {
+export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris, noteImages }: BoardProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [width, setWidth] = useState(0);
@@ -73,6 +82,8 @@ export function Board({ workspace, layout, mode, selectedId, onSelect }: BoardPr
             box={box}
             card={card}
             image={isImageCard(workspace, card)}
+            imageUri={imageUris?.get(card.id)}
+            noteImages={noteImages ?? emptyNoteImages}
             connections={workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length}
             selected={selectedId === card.id}
             onPress={() => onSelect(card.id)}
@@ -100,17 +111,30 @@ interface CardViewProps {
   readonly box: CardBox;
   readonly card: Card;
   readonly image: boolean;
+  /** Vista previa real de una ficha de imagen única; sin ella, de ejemplo (UX7-C3). */
+  readonly imageUri: string | undefined;
+  /** Imágenes intercaladas en una nota (UX7-C3): mismo mapa que usa el lienzo. */
+  readonly noteImages: ReadonlyMap<string, string>;
   readonly connections: number;
   readonly selected: boolean;
   readonly onPress: () => void;
 }
 
-function CardView({ box, card, image, connections, selected, onPress }: CardViewProps) {
+function CardView({ box, card, image, imageUri, noteImages, connections, selected, onPress }: CardViewProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const textColor = image ? colors.textPrimary : colors.noteText;
+  // UX7-C3: antes, Lista mostraba el Markdown crudo de la nota (incluida la sintaxis `![...](...)`
+  // de una imagen) o siempre un marcador de ejemplo para una ficha de imagen única, sin la imagen real.
+  const bodyHeight = Math.max(0, box.height - 56);
+  const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
+  const mixed = blocks.some((block) => block.kind === 'image');
+  // Tamaño semántico por ficha (ADR 0050): mismo mapa que el lienzo y la impresión.
+  const titleSize = titleFontSize(card.titleSize);
+  const bodySize = bodyFontSize(card.bodySize);
+  const bodyLine = bodyLineHeight(bodySize);
   return (
     <Pressable
       testID={`card-${card.id}`}
@@ -128,10 +152,17 @@ function CardView({ box, card, image, connections, selected, onPress }: CardView
         borderWidth: selected ? 4 : focused ? 3 : 2,
       }]}
     >
-      <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor }]}>{cardTitle(card, locale)}</Text>
-      {image ? <ImagePlaceholder /> : (
-        <Text numberOfLines={Math.max(1, Math.floor((box.height - 56) / 18))} style={[styles.cardContent, { color: textColor }]}>
-          {card.content ?? ''}
+      <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }]}>{cardTitle(card, locale)}</Text>
+      {image ? (
+        imageUri ? (
+          <Image testID={`list-image-${card.id}`} accessibilityRole="image" accessibilityLabel={`Imagen ${cardTitle(card, locale)}`}
+            source={{ uri: imageUri }} resizeMode="contain" style={[styles.cardImage, { borderColor: colors.border, backgroundColor: colors.surface }]} />
+        ) : <ImagePlaceholder />
+      ) : mixed ? (
+        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} />
+      ) : (
+        <Text numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))} style={[styles.cardContent, { color: textColor, fontSize: bodySize, lineHeight: bodyLine }]}>
+          {markdownExcerpt(card.content ?? '')}
         </Text>
       )}
       {connections > 0 ? (
@@ -152,5 +183,6 @@ const styles = StyleSheet.create({
   card: { position: 'absolute', padding: 8, gap: 6, overflow: 'hidden' },
   cardTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
   cardContent: { fontSize: 13, lineHeight: 18 },
+  cardImage: { flex: 1, minHeight: 24, borderWidth: 1 },
   badge: { fontSize: 11, fontWeight: '700', marginTop: 'auto' },
 });

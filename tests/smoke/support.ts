@@ -19,6 +19,12 @@ export function rgb(hex: string): string {
 
 export const borderColor = (locator: Locator) => locator.evaluate((element) => getComputedStyle(element).borderTopColor);
 
+/** Marco oculto/visible (ADR 0049): 0 px en reposo con el marco oculto, 2 px normal, 3 px activo. */
+export const borderWidth = (locator: Locator) => locator.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderTopWidth));
+
+/** Tamaño semántico de título/cuerpo (ADR 0050), en píxeles reales de pantalla. */
+export const fontSize = (locator: Locator) => locator.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+
 export const activeLabel = (page: Page) =>
   page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? null);
 
@@ -85,9 +91,14 @@ export async function openFullCardEditor(page: Page, card: Locator) {
   await page.getByTestId('card-inspector').waitFor({ state: 'visible' });
 }
 
-/** Escritorio abre acciones con clic derecho; móvil conserva el botón táctil visible. */
-export async function openCardActions(page: Page, card: Locator, title: string) {
+/**
+ * Escritorio abre acciones con clic derecho; móvil conserva el botón táctil visible. `position`
+ * opcional: con la densidad de UX7-D1, una ficha contraída puede ser más baja que el asa de
+ * redimensionado inferior, que entonces tapa el centro por defecto; se apunta a la cabecera en vez de
+ * asumir el centro cuando haga falta esquivarla.
+ */
+export async function openCardActions(page: Page, card: Locator, title: string, position?: { x: number; y: number }) {
   if (isCompactWidth(page)) await page.getByRole('button', { name: `Acciones de ${title}`, exact: true }).click();
-  else await card.click({ button: 'right' });
+  else await card.click({ button: 'right', ...(position ? { position } : {}) });
   await page.getByTestId('card-menu').waitFor({ state: 'visible' });
 }

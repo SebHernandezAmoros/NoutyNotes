@@ -132,21 +132,22 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await expect(page.getByRole('switch', { name: 'Ajustar a celdas' })).toHaveAttribute('aria-checked', 'false');
 
   // Densidad cuadrada: la ficha crece en ambos ejes al subir la unidad; reducir la separación suma 2 px.
-  // Deltas en píxeles del mundo (filas/columnas, sin zoom; en pantalla, al 75 % inicial, ADR 0048). En
-  // móvil la fila de partida (48 px) deja la separación nominal de 6 px recortada al mínimo táctil
-  // (44 px, ADR 0046): la separación real empieza en 4 px, no en 6, así que los deltas no son los mismos
-  // que en escritorio (fila de partida 56 px, sin recorte).
+  // Deltas en píxeles del mundo (filas/columnas, sin zoom; en pantalla, al 100 % inicial, UX7-D1). Con
+  // la fila de partida en el mínimo (48 px en ancho, 40 en compacto, UX7-D1), la separación nominal de
+  // 6 px ya viene recortada al mínimo táctil (44 px, ADR 0046) en ambos anchos: el delta de alto al
+  // subir una fila sí distingue ancho/compacto (22/24 px, por cómo cada uno redondea su propio recorte
+  // de separación al crecer), pero el de ancho al bajar la separación no (32 px en ambos).
   await button(page, 'Aumentar alto de fila').click();
-  await expect(panel).toContainText('64 px');
-  await expect.poll(async () => Math.round((await box(card(page, 1))).height - initial.height)).toBe(Math.round((compact ? 22 : 24) * 0.75));
+  await expect(panel).toContainText('56 px');
+  await expect.poll(async () => Math.round((await box(card(page, 1))).height - initial.height)).toBe(compact ? 24 : 22);
   await button(page, 'Reducir separación entre fichas').click();
   await expect(panel).toContainText('4 px');
-  await expect.poll(async () => Math.round((await box(card(page, 1))).width - initial.width)).toBe(Math.round((compact ? 32 : 34) * 0.75));
+  await expect.poll(async () => Math.round((await box(card(page, 1))).width - initial.width)).toBe(32);
   // Zoom desde la configuración (en móvil es el único sitio) y restablecer vista.
   await button(page, 'Acercar el lienzo').click();
-  await expect(page.getByTestId('settings-zoom')).toHaveText('100 %');
+  await expect(page.getByTestId('settings-zoom')).toHaveText('125 %');
   await button(page, 'Restablecer la vista del lienzo').click();
-  await expect(page.getByTestId('settings-zoom')).toHaveText('75 %');
+  await expect(page.getByTestId('settings-zoom')).toHaveText('100 %');
 
   // Escape cierra; al reabrir la configuración se conserva, y tras recargar sigue en este dispositivo.
   await page.keyboard.press('Escape');
@@ -155,10 +156,10 @@ test('configuración: modal o panel, cambios al instante, restablecer, Escape y 
   await button(page, 'Volver a mis espacios').click();
   await createWorkspace(page, 'Otro');
   await openSettings(page);
-  await expect(page.getByTestId('settings-panel')).toContainText('64 px');
+  await expect(page.getByTestId('settings-panel')).toContainText('56 px');
   await expect(page.getByRole('switch', { name: 'Mostrar grilla' })).toHaveAttribute('aria-checked', 'false');
   await button(page, 'Restablecer los valores de lienzo y grilla').click();
-  await expect(page.getByTestId('settings-panel')).toContainText('56 px');
+  await expect(page.getByTestId('settings-panel')).toContainText('48 px');
   await expect(page.getByRole('switch', { name: 'Mostrar grilla' })).toHaveAttribute('aria-checked', 'true');
 
   // Controles táctiles y nombres accesibles dentro del panel.
@@ -398,7 +399,8 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
     await button(page, 'Contraer Guion').click();
     await expect(feedback(page)).toHaveText('Tarjeta contraída. Guardado en memoria.');
     await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion, contraída');
-    await openCardActions(page, card(page, 1), 'Guion');
+    // Contraída, el asa inferior puede tapar el centro a esta densidad (UX7-D1): se apunta a la cabecera.
+    await openCardActions(page, card(page, 1), 'Guion', { x: 10, y: 10 });
     await button(page, 'Expandir Guion').click();
     await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion');
 
@@ -547,6 +549,45 @@ test('imagen real: vista previa, formato inválido, cancelación y ejemplo separ
   expect(runtimeErrors).toEqual([]);
 });
 
+test('vista Lista muestra las imágenes reales, no el Markdown crudo ni siempre el marcador de ejemplo (UX7-C3)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Lista con imágenes');
+
+  // Ficha de imagen única: importada de verdad.
+  const chooser = page.waitForEvent('filechooser');
+  await button(page, 'Importar una imagen').click();
+  await (await chooser).setFiles(image);
+  await expect(feedback(page)).toHaveText('Imagen «app-icon.png» importada. Guardado en memoria.');
+
+  // Nota con una imagen y su leyenda (texto alternativo); sin más texto, para que la fila de la lista
+  // tenga sitio de sobra y la leyenda no compita por espacio con un párrafo.
+  await addNote(page, 'Con foto');
+  const chooser2 = page.waitForEvent('filechooser');
+  await button(page, 'Insertar una imagen en la nota').click();
+  await (await chooser2).setFiles(image);
+  await expect(feedback(page)).toHaveText('Imagen «app-icon.png» insertada en la nota. Guardado en memoria.');
+  await page.getByLabel('Texto alternativo de la imagen 1').fill('Foto de portada');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
+  await closeEditor(page);
+
+  // UX7-C4: la leyenda (antes solo nombre accesible, invisible) ahora se ve debajo de la imagen; se
+  // comprueba en la vista Lista, con más espacio por fila que la ficha de tamaño inicial del lienzo.
+  await button(page, 'Vista de lista').click();
+  await expect(page.getByTestId('board-list')).toBeVisible();
+  // La ficha de imagen única muestra la imagen real, no el marcador de ejemplo.
+  await expect(page.getByTestId('list-image-tarjeta-1')).toBeVisible();
+  await expect(page.getByTestId('list-image-tarjeta-1')).toHaveAttribute('role', 'img');
+  await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toHaveCount(0);
+  // La nota muestra la imagen intercalada con su leyenda, no la sintaxis Markdown cruda.
+  await expect(page.getByTestId('list-note-preview-tarjeta-2').getByRole('img').first()).toBeVisible();
+  await expect(page.getByTestId('list-note-preview-tarjeta-2')).toContainText('Foto de portada');
+  await expect(card(page, 2)).not.toContainText('![');
+  await expect(card(page, 2)).not.toContainText('assets/images');
+  await page.screenshot({ path: testInfo.outputPath('list-images.png') });
+});
+
 test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con confirmación', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
@@ -674,7 +715,7 @@ test('regresión: enfocar una tarjeta fuera del lienzo la trae con el pan, nunca
     await button(page, 'Restablecer la vista del lienzo').click();
     await button(page, 'Cerrar configuración').click();
   } else {
-    await button(page, 'Zoom 75 %, restablecer a 75 %').click();
+    await button(page, 'Zoom 100 %, restablecer a 100 %').click();
   }
   await expect.poll(offset).toBe(origin);
   expect(await canvas.evaluate((element) => element.scrollLeft)).toBe(0);
@@ -704,7 +745,7 @@ test('regresión: «Restablecer vista» vuelve al origen aunque haya una tarjeta
   await page.mouse.move(frame.x + frame.width - 180, frame.y + frame.height / 2, { steps: 10 });
   await page.mouse.up(compact ? {} : { button: 'middle' });
   await expect.poll(async () => (await offset())[0]).toBeLessThan(origin[0] ?? 0);
-  // Acercar y restablecer: vuelve al origen y a 75 %, sin que la selección vuelva a mover la cámara.
+  // Acercar y restablecer: vuelve al origen y a 100 %, sin que la selección vuelva a mover la cámara.
   if (compact) {
     await openSettings(page);
     await button(page, 'Acercar el lienzo').click();
@@ -712,7 +753,7 @@ test('regresión: «Restablecer vista» vuelve al origen aunque haya una tarjeta
     await button(page, 'Cerrar configuración').click();
   } else {
     await button(page, 'Acercar').click();
-    await button(page, 'Zoom 100 %, restablecer a 75 %').click();
+    await button(page, 'Zoom 125 %, restablecer a 100 %').click();
   }
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(offset).toEqual(origin);
@@ -779,6 +820,38 @@ test('P3: listas con teclado (continuar, terminar, renumerar sin perder el curso
   expect(await card(page, 1).locator('script, img[src="x"], style').count()).toBe(0);
   await closeEditor(page);
   await expect(page.getByTestId('board-canvas')).toBeVisible();
+});
+
+test('negrita y cursiva envuelven la selección y mantienen el foco; repetir el atajo la desenvuelve (UX7-B3)', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Formato');
+  await addNote(page, 'Nota');
+  const editor = page.getByLabel('Contenido Markdown');
+  await editor.fill('hola mundo');
+
+  // Selecciona «mundo» (las últimas 5 letras) y pulsa el botón «Negrita».
+  await editor.focus();
+  await editor.press('Control+End');
+  for (let i = 0; i < 5; i += 1) await editor.press('Shift+ArrowLeft');
+  await button(page, 'Negrita').click();
+  await expect(editor).toHaveValue('hola **mundo**');
+
+  // El mismo texto sigue seleccionado (no el cursor al final): repetir «Negrita» la desenvuelve.
+  await button(page, 'Negrita').click();
+  await expect(editor).toHaveValue('hola mundo');
+
+  // Cursiva, con el atajo de teclado Ctrl/⌘+I en vez del botón.
+  await editor.press(process.platform === 'darwin' ? 'Meta+i' : 'Control+i');
+  await expect(editor).toHaveValue('hola *mundo*');
+  await editor.press(process.platform === 'darwin' ? 'Meta+i' : 'Control+i');
+  await expect(editor).toHaveValue('hola mundo');
+
+  // Sin selección (cursor al final): abre el par y deja el cursor listo para escribir dentro.
+  await editor.press('Control+End');
+  await button(page, 'Negrita').click();
+  await expect(editor).toHaveValue('hola mundo****');
+  await editor.pressSequentially('ya');
+  await expect(editor).toHaveValue('hola mundo**ya**');
 });
 
 test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Papelera en su sitio', async ({ page }) => {
@@ -922,6 +995,29 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   expect(runtimeErrors).toEqual([]);
 });
 
+test('etiquetas: el campo sugiere las ya usadas en el proyecto, un toque la añade sin retiparla y deja de sugerir la que la ficha ya tiene (UX7-B4)', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Sugerencias');
+  await addNote(page, 'Primera');
+  const tagInput = page.getByTestId('tag-input');
+  // Sin ninguna etiqueta todavía en el proyecto, no hay nada que sugerir.
+  await expect(page.getByTestId('tag-suggestions')).toHaveCount(0);
+  await tagInput.fill('receta');
+  await button(page, 'Añadir la etiqueta').click();
+  await expect(feedback(page)).toHaveText('Etiqueta añadida. Guardado en memoria.');
+
+  await addNote(page, 'Segunda');
+  // Al escribir una parte de «receta», aparece como sugerencia; un toque la añade sin escribirla entera.
+  await tagInput.fill('rec');
+  await expect(button(page, 'Añadir la etiqueta receta (1)')).toBeVisible();
+  await button(page, 'Añadir la etiqueta receta (1)').click();
+  await expect(feedback(page)).toHaveText('Etiqueta añadida. Guardado en memoria.');
+  await expect(page.getByTestId('card-tags-tarjeta-2')).toHaveText('#receta');
+  await expect(tagInput).toHaveValue('');
+  // La ficha ya tiene «receta»: deja de aparecer en las sugerencias para esta misma ficha.
+  await expect(page.getByTestId('tag-suggestions')).toHaveCount(0);
+});
+
 test('enlaces: crear con validación, abrir en pestaña nueva con noopener, editar la dirección y buscarla; filtro por tipo (ADR 0020)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);
@@ -1044,20 +1140,17 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   await closeEditor(page);
   // La ficha muestra los bloques en orden: el HTML sigue siendo texto.
   const preview = page.getByTestId('note-preview-tarjeta-1');
-  // En una ficha de tamaño inicial cabe el primer párrafo y, en escritorio (fila de 56 px), también la
-  // primera imagen; el resto se indica. En móvil, la fila de partida es más baja (48 px, ADR 0048) y ya
-  // no deja sitio para ninguna imagen: solo el primer párrafo cabe.
-  // (RN Web dibuja dentro un <img> accesible: se busca por nombre, no por número de roles.)
-  if (isCompactWidth(page)) {
-    await expect(preview.getByRole('img')).toHaveCount(0);
-    await expect(preview).toContainText('+3 bloques más');
-  } else {
-    await expect(preview.getByRole('img', { name: 'mapa' }).first()).toBeVisible();
-    await expect(preview.getByRole('img', { name: 'portada' })).toHaveCount(0);
-    await expect(preview).toContainText('+2 bloques más');
-  }
+  // Con la densidad de UX7-D1 (fila de 48 px en ancho, 40 en compacto; antes 56/48) ya no queda sitio
+  // para ninguna imagen en ningún ancho. En escritorio todavía cabe el primer párrafo («+3 bloques
+  // más»); en compacto la fila de partida es aún más baja y ya no cabe ni ese párrafo («+4»). La
+  // proporción completa (UX7-C2) se comprueba en la vista Lista, con más espacio por fila (prueba
+  // «vista Lista muestra las imágenes reales…»).
+  await expect(preview.getByRole('img')).toHaveCount(0);
+  await expect(preview).toContainText(isCompactWidth(page) ? '+4 bloques más' : '+3 bloques más');
   await page.screenshot({ path: testInfo.outputPath('note-images.png') });
   await openCardEditor(page, 1);
+  // La miniatura del editor de bloques tampoco recorta (UX7-C2).
+  await expect(page.getByTestId('note-blocks').getByRole('img').first().locator('> div').first()).toHaveCSS('background-size', 'contain');
 
   // Reordenar y texto alternativo: van al borrador y se guardan con «Guardar texto».
   await button(page, 'Subir la imagen portada').click();
@@ -1187,7 +1280,11 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   await expect(page.getByTestId('asset-tarjeta-1-1.png')).toHaveCount(0);
   expect(await hasHorizontalOverflow(page)).toBe(false);
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'mapa' }).first()).toBeVisible();
+  // Con la densidad de UX7-D1 (fila más baja) la ficha de tamaño inicial ya no tiene sitio para una
+  // imagen en compacto, solo en ancho (igual que en la prueba de varias imágenes, ADR 0021).
+  if (!isCompactWidth(page)) {
+    await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'mapa' }).first()).toBeVisible();
+  }
   expect(runtimeErrors).toEqual([]);
 });
 
@@ -1735,6 +1832,40 @@ test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la fich
   await settings(async () => { await button(page, 'Usar tipografía sistema en las notas').click(); });
   await tapCard(page, 1);
   await expect.poll(bodyInEditor).toBe(systemBody);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Imprimir: una imagen intercalada aparece una sola vez, en su sitio y con su leyenda, no como Markdown crudo duplicado (UX7-C5)', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Lectura con imagen');
+  await addNote(page, 'Con foto');
+  const editor = page.getByLabel('Contenido Markdown');
+  await editor.fill('# Encabezado\n\n- uno\n- dos');
+  await editor.press('End');
+  const chooser = page.waitForEvent('filechooser');
+  await button(page, 'Insertar una imagen en la nota').click();
+  await (await chooser).setFiles(image);
+  await expect(feedback(page)).toHaveText('Imagen «app-icon.png» insertada en la nota. Guardado en memoria.');
+  await page.getByLabel('Texto alternativo de la imagen 1').fill('Captura');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  if (isCompactWidth(page)) {
+    await button(page, 'Más secciones').click();
+    await expect(page.getByTestId('more-sheet')).toBeVisible();
+  }
+  test.skip(testInfo.project.name.startsWith('firefox'), 'window.open tras un clic simulado no se abre en Firefox (activación de usuario); ver testing.md.');
+  const [tab] = await Promise.all([page.waitForEvent('popup'), button(page, 'Imprimir este tablero').click()]);
+  await tab.waitForLoadState();
+  await expect(tab.getByRole('img').first()).toBeVisible();
+  await expect(tab.getByText('Captura')).toBeVisible();
+  // El encabezado y la lista se leen como texto, no como «#»/«-» crudos; la línea Markdown de la
+  // imagen no aparece duplicada como texto suelto.
+  await expect(tab.getByText('Encabezado')).toBeVisible();
+  await expect(tab.locator('body')).not.toContainText('![Captura]');
+  await expect(tab.locator('body')).not.toContainText('# Encabezado');
+  await tab.close();
   expect(runtimeErrors).toEqual([]);
 });
 

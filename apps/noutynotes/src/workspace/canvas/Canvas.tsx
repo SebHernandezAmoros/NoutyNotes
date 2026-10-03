@@ -88,10 +88,14 @@ interface CanvasProps {
   readonly onAreaSelect: (cardIds: readonly CardId[]) => void;
   /** Fecha de creación en el pie de las fichas (ADR 0029). */
   readonly showDates: boolean;
+  /** Oculta el marco en reposo de toda ficha, salvo excepción por ficha (ADR 0049). */
+  readonly hideFrames: boolean;
   /** Tipografía de las notas (ADR 0030), ya resuelta para esta plataforma. */
   readonly noteFontFamily?: string | undefined;
   readonly connectSource: CardId | null;
   readonly onCardPress: (cardId: CardId) => void;
+  /** UX7-B2: marca o desmarca una línea de checklist directamente en el lienzo. */
+  readonly onToggleCheck: (cardId: CardId, lineIndex: number) => void;
   readonly onBackgroundPress: () => void;
   readonly onMove: (cardId: CardId, to: GridPoint) => void;
   readonly onResize: (cardId: CardId, size: GridSize) => void;
@@ -765,6 +769,7 @@ export function Canvas(props: CanvasProps) {
               display={placement.display}
               selected={selected}
               createdLabel={props.showDates && card.createdAt ? formatDay(card.createdAt, new Date(card.createdAt).getTimezoneOffset(), locale) : undefined}
+              hideFrame={card.frameOverride === 'hidden' || (props.hideFrames && card.frameOverride !== 'visible')}
               noteFontFamily={props.noteFontFamily}
               dragging={dragging}
               colliding={colliding.has(card.id)}
@@ -773,6 +778,7 @@ export function Canvas(props: CanvasProps) {
               imageUri={props.imageUris.get(card.id)}
               noteImages={props.noteImages}
               onPress={() => props.onCardPress(card.id)}
+              onToggleCheck={props.onToggleCheck}
               onFocus={() => reveal(card.id)}
               reserveRight={(() => {
                 const found = chrome.get(card.id);

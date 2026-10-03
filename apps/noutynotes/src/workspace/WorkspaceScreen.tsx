@@ -37,6 +37,7 @@ import { Canvas } from './canvas/Canvas';
 import type { CanvasTool } from './canvas/Canvas';
 import { unplacedCardIds } from './canvas/boardCards';
 import { connectTap } from './canvas/connect';
+import { toggleChecklistLine } from './markdownLists';
 import { DEFAULT_PREFERENCES, metricsFor, parsePreferences } from './canvas/preferences';
 import type { ViewPreferences } from './canvas/preferences';
 import { visibleCells, zoomIn, zoomOut } from './canvas/viewport';
@@ -62,7 +63,9 @@ import { composeSavedWithNotes } from './actionFeedback';
 /** Desde este ancho la navegación de espacios y tableros va en una barra lateral. */
 const SIDEBAR_MIN_WIDTH = 1100;
 const START_PAN: Point = { x: 16, y: 16 };
-const DEFAULT_ZOOM = 0.75;
+// UX7-D1: el 100 % es ahora el tamaño normal de trabajo (antes 75 %, ADR 0048); la densidad visual
+// equivalente la da el nuevo `rowHeight` por defecto (48 px, en `preferences.ts`), no el zoom.
+const DEFAULT_ZOOM = 1;
 
 const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
   expanded: 'action.cardExpanded',
@@ -878,6 +881,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const result = await run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { title, content }), 'action.textSaved', { mergeKey: `text:${cardId}` });
     return result.ok;
   }, [run]);
+  // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor (`toggleChecklistLine`)
+  // y el mismo caso de uso de guardado; no abre el editor ni cambia la selección.
+  const toggleCheck = (cardId: CardId, lineIndex: number) => {
+    const target = workspace?.cards.find((candidate) => candidate.id === cardId);
+    if (!target) return;
+    const next = toggleChecklistLine(target.content ?? '', lineIndex);
+    if (next === null) return;
+    void run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { content: next }), 'action.textSaved');
+  };
 
   // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
   // y el lienzo recupera la fila de la barra; en móvil siguen en su barra compacta.
@@ -1080,9 +1092,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onResetView={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
         onAreaSelect={(cardIds) => void startMulti(cardIds)}
         showDates={preferences.showDates}
+        hideFrames={preferences.hideFrames}
         noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
         connectSource={connectSource}
         onCardPress={pressCard}
+        onToggleCheck={toggleCheck}
         onCardEdit={(cardId) => void editCard(cardId)}
         onCardStartConnect={(cardId) => {
           setEditingId(null);
@@ -1120,7 +1134,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       <ScrollView testID="board-list-scroll" contentContainerStyle={styles.listPage}>
         {/* La vista de lista no tiene un botón «Editar» propio (a diferencia del lienzo): seleccionar
             sigue abriendo el editor directamente aquí, fuera del alcance de esta corrección. */}
-        <Board workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)} />
+        <Board workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)}
+          imageUris={previews.cards} noteImages={previews.refs} />
       </ScrollView>
     )
   ) : null;

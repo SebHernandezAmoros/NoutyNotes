@@ -35,4 +35,28 @@ describe('documento de impresión (ADR 0031)', () => {
     expect(html).toContain('Vacío');
     expect(html).toMatch(/sin tarjetas|no tiene tarjetas/i);
   });
+
+  it('una imagen intercalada en una nota no se duplica como sintaxis Markdown cruda, y el texto no muestra «#»/«-» crudos (UX7-C5)', () => {
+    const html = buildPrintHtml('T', [
+      {
+        id: id('a'), number: 1, title: 'A', typeLabel: 'Nota',
+        content: '# Título\n\n- uno\n- dos\n\n![mapa](assets/images/x.png)\n\nMás texto.',
+        tags: [], imageRefs: ['assets/images/x.png'], connections: [],
+      },
+    ] satisfies PrintEntry[], new Map([['assets/images/x.png', 'data:image/png;base64,AAA']]));
+    expect(html).toContain('data:image/png;base64,AAA');
+    expect(html).not.toContain('![mapa]');
+    expect(html).not.toContain('assets/images/x.png</pre>');
+    expect(html).not.toMatch(/<pre>[^<]*#\s*Título/);
+    expect(html).toContain('Título');
+    expect(html).toContain('• uno');
+  });
+
+  it('el título y el cuerpo reflejan el tamaño semántico de la tarjeta, no un valor fijo (ADR 0050)', () => {
+    const html = buildPrintHtml('T', [
+      { id: id('a'), number: 1, title: 'A', typeLabel: 'Nota', content: 'Cuerpo', tags: [], imageRefs: [], connections: [], titleSize: 'large', bodySize: 'small' },
+    ] satisfies PrintEntry[], new Map());
+    expect(html).toMatch(/<h2 style="font-size:20px;line-height:25px;">A<\/h2>/);
+    expect(html).toMatch(/<pre style="font-size:11px;line-height:15px;">Cuerpo<\/pre>/);
+  });
 });

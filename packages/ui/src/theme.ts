@@ -67,7 +67,9 @@ const dark: ThemeColors = {
   accentText: '#243016',
   selection: '#93D7C9',
   relationLine: '#D9E3C3',
-  note: '#E9C2B1',
+  // UX7-D2: antes idéntico al claro (sin adaptar), a diferencia de `headerNote`/`headerImage`, que sí
+  // tenían su propio tono para oscuro; se sigue el mismo criterio (más oscuro y menos saturado).
+  note: '#D9A48F',
   noteText: '#392D24',
   brand: '#DCEFD9',
   brandText: '#0A2A20',

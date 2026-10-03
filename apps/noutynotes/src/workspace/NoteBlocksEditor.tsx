@@ -47,8 +47,11 @@ export function NoteBlocksEditor({ content, onChange, images, onInsert, onReplac
           {block.kind === 'image' ? (
             <>
               {images.get(block.ref) ? (
-                <Image accessibilityRole="image" accessibilityLabel={block.alt || 'Imagen de la nota'} source={{ uri: images.get(block.ref) }} resizeMode="cover"
-                  style={[styles.thumb, { borderColor: colors.border }]} />
+                <Image accessibilityRole="image" accessibilityLabel={block.alt || 'Imagen de la nota'} source={{ uri: images.get(block.ref) }}
+                  // «contain», no «cover» (UX7-C2, mismo criterio que la ficha de imagen única en CanvasCard):
+                  // recortar sin que la persona lo pida oculta parte de su imagen.
+                  resizeMode="contain"
+                  style={[styles.thumb, { borderColor: colors.border, backgroundColor: colors.background }]} />
               ) : (
                 <Text style={[styles.hint, { color: colors.danger }]}>{`Imagen no disponible: ${block.ref}`}</Text>
               )}

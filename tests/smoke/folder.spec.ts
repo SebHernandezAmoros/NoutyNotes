@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-import { expandPosition, openCardActions, openFullCardEditor, openMore, openSettings } from './support';
+import { borderWidth, expandPosition, fontSize, openCardActions, openFullCardEditor, openMore, openSettings } from './support';
 
 const fakeFolder = `
 (() => {
@@ -277,7 +277,9 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
   await page.getByRole('button', { name: 'Abrir Editorial' }).click();
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
-  await page.getByTestId('card-tarjeta-2').click();
+  // En la cabecera, no en el cuerpo: con la ficha mostrando su checklist (UX7-B2), un clic en el centro
+  // caería sobre una fila y la marcaría/desmarcaría en vez de solo seleccionar la tarjeta.
+  await page.getByTestId('card-tarjeta-2').click({ position: { x: 10, y: 10 } });
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('- [x] Primera\n- [ ] ');
 });
@@ -460,8 +462,8 @@ test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ning�
   } else {
     await page.getByTestId('zoom-level').click();
   }
-  // Celda cuadrada (ADR 0046/0048): 56 px de fila (48 en compacto) al zoom inicial de 75 %.
-  const cell = (page.viewportSize()?.width ?? 0) >= 800 ? { x: 42, y: 42 } : { x: 36, y: 36 };
+  // Celda cuadrada (UX7-D1): 48 px de fila (40 en compacto) al zoom inicial de 100 %.
+  const cell = (page.viewportSize()?.width ?? 0) >= 800 ? { x: 48, y: 48 } : { x: 40, y: 40 };
   const snapshot = () => page.evaluate(() => localStorage.getItem('nouty-test-folder') ?? '');
   const layout = () => page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
@@ -601,6 +603,75 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   expect((await cards())[0]).toContain('schemaVersion: 3');
 });
 
+test('carpeta: la excepción de marco por ficha se guarda en la tarjeta como v5, sobrevive a recargar y, al quitarla, vuelve a la versión anterior (UX7-D3, ADR 0049)', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Marcos');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  await page.getByRole('button', { name: 'Ocultar siempre' }).click();
+  await expect(page.getByRole('button', { name: 'Ocultar siempre' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Apariencia actualizada. Guardado en la carpeta.');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  const card = () => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return new TextDecoder().decode(new Uint8Array(files['marcos/cards/tarjeta-1.md'] ?? []));
+  });
+  // La tarjeta ya llevaba fecha de creación (v3, ADR 0024); la excepción de marco la sube a v5.
+  await expect.poll(card).toContain('schemaVersion: 5');
+  expect(await card()).toContain('frameOverride: hidden');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Marcos' }).click();
+  await expect.poll(() => borderWidth(page.getByTestId('card-tarjeta-1'))).toBe(0);
+
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  await page.getByRole('button', { name: 'Según preferencia' }).click();
+  await expect(page.getByRole('button', { name: 'Según preferencia' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await expect.poll(card).not.toContain('frameOverride');
+  expect(await card()).toContain('schemaVersion: 3');
+});
+
+test('carpeta: el tamaño de título/cuerpo por ficha se guarda en la tarjeta como v6, sobrevive a recargar y, al volver a mediano, vuelve a la versión anterior (UX7-D4, ADR 0050)', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Medidas');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  await page.getByLabel('Título de la tarjeta').fill('Medidas');
+  await page.getByRole('button', { name: 'Título grande' }).click();
+  await expect(page.getByRole('button', { name: 'Título grande' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Apariencia actualizada. Guardado en la carpeta.');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  const card = () => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return new TextDecoder().decode(new Uint8Array(files['medidas/cards/tarjeta-1.md'] ?? []));
+  });
+  // La tarjeta ya llevaba fecha de creación (v3, ADR 0024); el tamaño de título la sube a v6.
+  await expect.poll(card).toContain('schemaVersion: 6');
+  expect(await card()).toContain('titleSize: large');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Medidas' }).click();
+  await expect.poll(() => fontSize(page.getByTestId('card-tarjeta-1').getByText('Medidas'))).toBe(20);
+
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  await page.getByRole('button', { name: 'Título mediano' }).click();
+  await expect(page.getByRole('button', { name: 'Título mediano' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await expect.poll(card).not.toContain('titleSize');
+  expect(await card()).toContain('schemaVersion: 3');
+});
+
 test('carpeta: el enlace se guarda en fields de la tarjeta y la búsqueda global lee los proyectos de la carpeta (ADR 0020)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -664,17 +735,28 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   expect(await text('diario/cards/tarjeta-1.md')).toContain('schemaVersion: 3');
   expect((await files())['diario/assets/images/tarjeta-1-1.png']).toEqual([...png('x').buffer]);
 
+  // UX7-C1: una segunda imagen en la misma nota, en una carpeta real (no en memoria) — el único
+  // escenario de varias imágenes que esta suite no cubría todavía.
+  await editor.press('Control+End');
+  const chooser2 = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Insertar una imagen en la nota' }).click();
+  await (await chooser2).setFiles(png('mapa.png'));
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Imagen «mapa.png» insertada en la nota. Guardado en la carpeta.');
+  await expect.poll(() => text('diario/cards/tarjeta-1.md')).toContain('![mapa](assets/images/tarjeta-1-2.png)');
+  expect(await text('diario/cards/tarjeta-1.md')).toMatch(/assetRefs:\s*\n\s*- assets\/images\/tarjeta-1-1\.png\s*\n\s*- assets\/images\/tarjeta-1-2\.png/);
+  expect((await files())['diario/assets/images/tarjeta-1-1.png']).toEqual([...png('x').buffer]);
+  expect((await files())['diario/assets/images/tarjeta-1-2.png']).toEqual([...png('x').buffer]);
+
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
   await page.getByRole('button', { name: 'Abrir Diario' }).click();
-  // En móvil, la fila de partida (48 px, ADR 0048) ya no deja sitio para la imagen junto al texto:
-  // solo se ve el párrafo, con «+1 bloque más» (el archivo y sus assetRefs no cambian por esto).
-  if ((page.viewportSize()?.width ?? 0) < 800) {
-    await expect(page.getByTestId('note-preview-tarjeta-1')).toContainText('+1 bloque más');
-  } else {
-    await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'plano' }).first()).toBeVisible();
-  }
+  // Con la densidad de UX7-D1 (fila de 48 px en ancho, 40 en compacto; antes 56/48) ya no queda sitio
+  // para ninguna imagen junto al texto en ningún ancho (el archivo y sus assetRefs no cambian por
+  // esto). En escritorio todavía cabe el párrafo («+2 bloques más»); en compacto la fila de partida es
+  // aún más baja y ya no cabe ni ese párrafo («+3»).
+  await expect(page.getByTestId('note-preview-tarjeta-1'))
+    .toContainText((page.viewportSize()?.width ?? 0) < 800 ? '+3 bloques más' : '+2 bloques más');
   // Quitar la imagen de la nota la saca de assetRefs, pero el archivo sigue en la carpeta (ADR 0021).
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');

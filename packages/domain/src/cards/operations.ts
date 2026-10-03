@@ -8,7 +8,7 @@ import { findFreeSpace } from '../layouts/operations';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
-import { cardIconNames, type Card, type CardIconName } from './card';
+import { cardIconNames, frameOverrides, textSizes, type Card, type CardIconName, type FrameOverride, type TextSize } from './card';
 
 export interface DeleteCardOptions {
   /** Por defecto no permite borrar una tarjeta conectada; cascade elimina sus vínculos explícitamente. */
@@ -131,9 +131,16 @@ export function updateCard(workspace: Workspace, cardId: CardId, changes: CardCo
 export interface CardAppearanceChanges {
   readonly icon?: CardIconName | null;
   readonly boardTargetId?: BoardId | null;
+  /** Excepción a la preferencia global de marco (ADR 0049); `null` vuelve a seguirla. */
+  readonly frameOverride?: FrameOverride | null;
+  /** Tamaño semántico del título/cuerpo (ADR 0050); `null` vuelve a `'medium'` (ausente). */
+  readonly titleSize?: TextSize | null;
+  readonly bodySize?: TextSize | null;
 }
 
-/** Cambia icono y destino de tablero sin abrir el contenido de la tarjeta (ADR 0046). */
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize'];
+
+/** Cambia icono, destino de tablero, excepción de marco y tamaños de texto sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
   const source = validateWorkspace(workspace);
   if (!source.ok) return source;
@@ -141,10 +148,13 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const card = workspace.cards.find((candidate) => candidate.id === cardId);
   if (!card) return failure([issue('missing-reference', 'cardId', 'La tarjeta no existe en el workspace.')]);
   if (!isRecord(changes)) return failure([issue('invalid-value', 'changes', 'Debe ser un objeto de cambios.')]);
-  const unknown = Object.keys(changes).filter((key) => key !== 'icon' && key !== 'boardTargetId');
+  const unknown = Object.keys(changes).filter((key) => !appearanceKeys.includes(key));
   if (unknown.length > 0) return failure(unknown.map((key) => issue('unknown-property', `changes.${key}`, 'Propiedad no editable.')));
   const nextIcon = changes.icon;
   const nextTarget = changes.boardTargetId;
+  const nextFrame = changes.frameOverride;
+  const nextTitleSize = changes.titleSize;
+  const nextBodySize = changes.bodySize;
   if (nextIcon !== undefined && nextIcon !== null && !cardIconNames.includes(nextIcon as CardIconName)) {
     return failure([issue('invalid-value', 'changes.icon', 'Icono desconocido.')]);
   }
@@ -152,12 +162,27 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
     && !workspace.boards.some((board) => board.id === nextTarget)) {
     return failure([issue('missing-reference', 'changes.boardTargetId', 'El tablero destino no existe.')]);
   }
-  const { icon: _icon, boardTargetId: _target, ...base } = card;
+  if (nextFrame !== undefined && nextFrame !== null && !frameOverrides.includes(nextFrame as FrameOverride)) {
+    return failure([issue('invalid-value', 'changes.frameOverride', 'Debe ser "visible" u "hidden".')]);
+  }
+  if (nextTitleSize !== undefined && nextTitleSize !== null && !textSizes.includes(nextTitleSize as TextSize)) {
+    return failure([issue('invalid-value', 'changes.titleSize', 'Debe ser "small", "medium" o "large".')]);
+  }
+  if (nextBodySize !== undefined && nextBodySize !== null && !textSizes.includes(nextBodySize as TextSize)) {
+    return failure([issue('invalid-value', 'changes.bodySize', 'Debe ser "small", "medium" o "large".')]);
+  }
+  const { icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize, ...base } = card;
   const edited: Card = {
     ...base,
     ...(nextIcon === undefined ? (card.icon === undefined ? {} : { icon: card.icon }) : nextIcon === null ? {} : { icon: nextIcon as CardIconName }),
     ...(nextTarget === undefined ? (card.boardTargetId === undefined ? {} : { boardTargetId: card.boardTargetId })
       : nextTarget === null ? {} : { boardTargetId: nextTarget as BoardId }),
+    ...(nextFrame === undefined ? (card.frameOverride === undefined ? {} : { frameOverride: card.frameOverride })
+      : nextFrame === null ? {} : { frameOverride: nextFrame as FrameOverride }),
+    ...(nextTitleSize === undefined ? (card.titleSize === undefined ? {} : { titleSize: card.titleSize })
+      : nextTitleSize === null ? {} : { titleSize: nextTitleSize as TextSize }),
+    ...(nextBodySize === undefined ? (card.bodySize === undefined ? {} : { bodySize: card.bodySize })
+      : nextBodySize === null ? {} : { bodySize: nextBodySize as TextSize }),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => candidate === card ? edited : candidate) });
 }

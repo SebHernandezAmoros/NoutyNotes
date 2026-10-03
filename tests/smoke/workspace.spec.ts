@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, expandPosition, hasHorizontalOverflow, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
+import { activeLabel, borderColor, borderWidth, expandPosition, fontSize, hasHorizontalOverflow, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
 // 56 × 56 px; desde 800 px: barra sobre el lienzo, editor contextual y celdas cuadradas de 64 × 64 px;
@@ -49,8 +49,8 @@ async function selectCard(page: Page, id: number) {
 }
 const feedback = (page: Page) => page.getByTestId('workspace-feedback');
 const geometry = (page: Page) => page.getByTestId('card-geometry');
-// Celda cuadrada (ADR 0048): 56 px de fila (48 en compacto) al zoom inicial de 75 %.
-const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 42, y: 42 } : { x: 36, y: 36 });
+// Celda cuadrada (UX7-D1): 48 px de fila (40 en compacto) al zoom inicial de 100 %.
+const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 48, y: 48 } : { x: 40, y: 40 });
 
 async function createWorkspace(page: Page, name: string) {
   await page.getByLabel('Nombre del nuevo espacio').fill(name);
@@ -143,7 +143,7 @@ async function revealCanvas(page: Page) {
 
 const isCompact = (page: Page) => (page.viewportSize()?.width ?? 0) < at.width;
 
-/** «Restablecer vista»: zoom 75 % y cámara en el origen (barra en escritorio, Configuración en móvil). */
+/** «Restablecer vista»: zoom 100 % y cámara en el origen (barra en escritorio, Configuración en móvil). */
 async function resetView(page: Page) {
   if (isCompact(page)) await inSettings(page, async () => { await button(page, 'Restablecer la vista del lienzo').click(); });
   else await page.getByTestId('zoom-level').click();
@@ -229,8 +229,14 @@ async function expectGeometry(page: Page, cardNumber: number, text: string) {
   // por eso se confirma la selección observable antes de pulsar el botón explícito «Editar».
   await card(page, cardNumber).focus();
   await expect(card(page, cardNumber)).toBeInViewport();
+  // Espacio, no clic: si el gesto anterior (p. ej. un arrastre) ya la dejó seleccionada, un clic la
+  // des-seleccionaría, y dos clics seguidos podrían leerse como doble toque y abrir el editor en
+  // móvil. Mismo patrón que `tapCard` en cards.spec.ts.
   await expect(async () => {
-    await card(page, cardNumber).click();
+    if (await card(page, cardNumber).getAttribute('aria-pressed') !== 'true') {
+      await card(page, cardNumber).focus();
+      await page.keyboard.press('Space');
+    }
     await expect(card(page, cardNumber)).toHaveAttribute('aria-pressed', 'true', { timeout: 300 });
   }).toPass();
   await openCardEditor(page, cardNumber);
@@ -384,6 +390,93 @@ test('edición rápida: título y Markdown se editan sobre la ficha y el editor 
   expect(runtimeErrors).toEqual([]);
 });
 
+test('edición rápida: Enter continúa una lista con guiones y termina en un elemento vacío (UX7-B1, misma regla que el editor completo)', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
+  await page.goto('./');
+  await createWorkspace(page, 'Listas en ficha');
+  await addCards(page, ['nota']);
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  const content = page.getByTestId('inline-card-content');
+  await content.fill('- Harina');
+  await content.focus();
+  await content.press('End');
+  await content.press('Enter');
+  await expect(content).toHaveValue('- Harina\n- ');
+  // Un elemento vacío termina la lista: la segunda línea queda vacía, sin un tercer guion.
+  await content.press('Enter');
+  await expect(content).toHaveValue('- Harina\n\n');
+});
+
+test('edición rápida: negrita y cursiva envuelven la selección con el botón o Ctrl/⌘+B/I (UX7-B3, misma regla que el editor completo)', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
+  await page.goto('./');
+  await createWorkspace(page, 'Formato en ficha');
+  await addCards(page, ['nota']);
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  const content = page.getByTestId('inline-card-content');
+  await content.fill('hola mundo');
+  await content.focus();
+  await content.press('Control+End');
+  for (let i = 0; i < 5; i += 1) await content.press('Shift+ArrowLeft');
+  await page.getByTestId('inline-format-bold').click();
+  await expect(content).toHaveValue('hola **mundo**');
+
+  await content.fill('hola mundo');
+  await content.focus();
+  await content.press('Control+End');
+  for (let i = 0; i < 5; i += 1) await content.press('Shift+ArrowLeft');
+  await content.press(process.platform === 'darwin' ? 'Meta+i' : 'Control+i');
+  await expect(content).toHaveValue('hola *mundo*');
+});
+
+test('checklist en el lienzo: un toque marca la línea sin abrir el editor ni arrastrar la ficha, y persiste al reabrir el espacio (UX7-B2)', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Checklist en ficha');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  // Más alta: con la densidad de UX7-D1 (fila más baja) el tamaño inicial ya no deja sitio para dos
+  // líneas de checklist a la vez, y esta prueba necesita las dos (toca una y confirma que la otra no
+  // cambia).
+  await button(page, 'Más alta').click();
+  await button(page, 'Más alta').click();
+  await page.getByLabel('Contenido Markdown').fill('- [ ] Harina\n- [ ] Agua');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
+  await closeEditor(page);
+
+  const first = page.getByTestId('check-tarjeta-1-0');
+  const second = page.getByTestId('check-tarjeta-1-1');
+  await expect(first).toBeVisible();
+  await expect(first).toHaveAttribute('aria-checked', 'false');
+  await expect(second).toHaveAttribute('aria-checked', 'false');
+  await page.screenshot({ path: testInfo.outputPath('checklist-unchecked.png') });
+
+  // La selección de la ficha (heredada de `tapCard` al editarla) no debe cambiar con el toque: se
+  // captura antes para comparar, en vez de asumir un valor fijo.
+  const selectedBefore = await card(page, 1).getAttribute('aria-pressed');
+  await first.click();
+  await expect(first).toHaveAttribute('aria-checked', 'true');
+  // El toque marcó la línea sin abrir ningún editor ni arrastrar/cambiar la selección de la ficha
+  // entera, y sin activar la otra casilla (interacción exigida por UX7-B2).
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+  await expect(page.getByTestId('inline-card-editor')).toHaveCount(0);
+  await expect(card(page, 1)).toHaveAttribute('aria-pressed', selectedBefore ?? '');
+  await expect(second).toHaveAttribute('aria-checked', 'false');
+  await page.screenshot({ path: testInfo.outputPath('checklist-checked.png') });
+
+  // El estado sobrevive a cerrar y reabrir el espacio: no es un cambio solo visual del lienzo. Este
+  // espacio solo vive en memoria (sin ZIP exportado), así que la prueba usa el mismo camino que ya
+  // cubre la persistencia del resto de la edición (volver a la lista y reabrir), no una recarga dura.
+  await button(page, 'Volver a mis espacios').click();
+  await button(page, 'Abrir Checklist en ficha').click();
+  await expect(page.getByTestId('check-tarjeta-1-0')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('check-tarjeta-1-1')).toHaveAttribute('aria-checked', 'false');
+});
+
 test('arrastrar con ratón: vista previa con imán, colisión y límites visibles, Escape cancela y soltar guarda', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
@@ -453,12 +546,12 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   // Asas: la esquina cambia ancho y alto; el mundo admite pasar de 12 columnas. Soltar no
   // selecciona otra vez ni abre nada: la tarjeta sigue seleccionada.
   await revealCanvas(page);
-  // `cell` se capturó al zoom inicial de 75 % (ADR 0048): cada cambio posterior de zoom escala el
-  // arrastre en píxeles por `nuevoZoom / 0.75`, no por el nuevo zoom a secas.
+  // `cell` se capturó al zoom inicial de 100 % (UX7-D1): cada cambio posterior de zoom escala el
+  // arrastre en píxeles por `nuevoZoom / 1`, el nuevo zoom a secas.
   const compact = (page.viewportSize()?.width ?? 0) < at.width;
   // En móvil la esquina queda bajo el borde visible: se aleja la vista un paso (a 50 %, el siguiente
-  // paso por debajo de 75 %) como haría el usuario.
-  const scale = compact ? 0.5 / 0.75 : 1;
+  // paso por debajo de 100 %) como haría el usuario.
+  const scale = compact ? 0.5 : 1;
   if (compact) await zoomBy(page, 'out');
   await mouseDrag(page, page.getByTestId('resize-se-tarjeta-1'), cell.x * scale, cell.y * scale, { header: false });
   await expect(feedback(page)).toHaveText('Tamaño cambiado. Guardado en memoria.');
@@ -468,7 +561,7 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   // Ancho 5 + 8 = 13 > 12 columnas. Al 50 % el puntero no sale de la ventana (Firefox no informa bien fuera de ella).
   await zoomBy(page, 'out', 3);
   await expectZoom(page, '50 %');
-  await mouseDrag(page, page.getByTestId('resize-e-tarjeta-1'), 8 * cell.x * (0.5 / 0.75), 0, { header: false, release: false });
+  await mouseDrag(page, page.getByTestId('resize-e-tarjeta-1'), 8 * cell.x * 0.5, 0, { header: false, release: false });
   await expect(page.getByTestId('drag-status')).toHaveText('Nuevo tamaño: 13 × 4. Escape cancela.');
   await page.keyboard.press('Escape');
   await page.mouse.up();
@@ -500,8 +593,13 @@ test('icono propio y acceso rápido: se crea una ficha de tablero, cambia de ico
   await expect(card(page, 1)).toContainText('Tablero 2');
 
   await openCardEditor(page, 1);
-  await button(page, 'Usar icono star').click();
-  await expect(button(page, 'Usar icono star')).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Usar icono Estrella').click();
+  await expect(button(page, 'Usar icono Estrella')).toHaveAttribute('aria-pressed', 'true');
+  // UX7-D5: el catálogo se amplió más allá de los 6 iconos originales.
+  await button(page, 'Usar icono Texto').click();
+  await expect(button(page, 'Usar icono Texto')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('selected-card-icon')).toHaveText('Seleccionado: Texto');
+  await button(page, 'Usar icono Estrella').click();
   if (isCompact(page)) {
     await button(page, 'Mostrar minimizada').click();
     await closeEditor(page);
@@ -574,12 +672,12 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   await expectGeometry(page, 1, 'Columna 1, fila 1 · 4 × 3');
   await closeEditor(page);
 
-  // Zoom por pasos con lectura del porcentaje; restablecer vuelve a 75 % y al origen.
-  await expectZoom(page, '75 %');
+  // Zoom por pasos con lectura del porcentaje; restablecer vuelve a 100 % y al origen.
+  await expectZoom(page, '100 %');
   const widthStart = (await box(card(page, 1))).width;
   await zoomBy(page, 'in');
-  await expectZoom(page, '100 %');
-  await expect.poll(async () => Math.round((await box(card(page, 1))).width)).toBe(Math.round(widthStart * (1 / 0.75)));
+  await expectZoom(page, '125 %');
+  await expect.poll(async () => Math.round((await box(card(page, 1))).width)).toBe(Math.round(widthStart * 1.25));
   await zoomBy(page, 'out', 3);
   await expectZoom(page, '50 %');
   // En escritorio la barra desactiva «Alejar» en el mínimo; en la Configuración el valor no baja de 50 %.
@@ -593,8 +691,8 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   await closeEditor(page);
   await page.screenshot({ path: testInfo.outputPath('tools-zoom-50.png') });
   if (isCompact(page)) await inSettings(page, async () => { await button(page, 'Restablecer la vista del lienzo').click(); });
-  else await button(page, 'Zoom 50 %, restablecer a 75 %').click();
-  await expectZoom(page, '75 %');
+  else await button(page, 'Zoom 50 %, restablecer a 100 %').click();
+  await expectZoom(page, '100 %');
 
   // Grilla: interruptor real (en la Configuración).
   await expect(page.getByTestId('canvas-grid')).toHaveCount(1);
@@ -618,6 +716,83 @@ test('herramientas: mano, zoom con porcentaje, grilla y vista de lista', async (
   expect(await hasHorizontalOverflow(page)).toBe(false);
 });
 
+test('marco de las fichas: preferencia global y excepción por ficha, con el foco siempre visible (UX7-D3, ADR 0049)', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Marcos');
+  await addCards(page, ['nota', 'nota', 'nota']);
+  const blur = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+  // Por defecto (sin excepción, preferencia global apagada): marco normal en reposo.
+  await expect.poll(() => borderWidth(card(page, 1))).toBe(2);
+
+  // Preferencia global: sin marco en reposo, pero el foco lo sigue mostrando.
+  await setSwitch(page, 'Ocultar el marco de las fichas', true);
+  await expect.poll(() => borderWidth(card(page, 1))).toBe(0);
+  await card(page, 1).focus();
+  await expect.poll(() => borderWidth(card(page, 1))).toBe(3);
+  await blur();
+  await expect.poll(() => borderWidth(card(page, 1))).toBe(0);
+
+  // Excepción por ficha «Mostrar siempre»: vence a la preferencia global oculta.
+  await openFullCardEditor(page, card(page, 1));
+  await button(page, 'Mostrar siempre').click();
+  await expect(button(page, 'Mostrar siempre')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+  await expect.poll(() => borderWidth(card(page, 1))).toBe(2);
+
+  // Excepción por ficha «Ocultar siempre» en otra tarjeta, con la preferencia global ya apagada: sigue oculta.
+  await openFullCardEditor(page, card(page, 2));
+  await button(page, 'Ocultar siempre').click();
+  await expect(button(page, 'Ocultar siempre')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+  await setSwitch(page, 'Ocultar el marco de las fichas', false);
+  await expect.poll(() => borderWidth(card(page, 2))).toBe(0);
+  // La ficha 1 (excepción «Mostrar siempre») y la 3 (sin excepción) siguen la preferencia global, ya apagada: marco normal.
+  await expect.poll(() => borderWidth(card(page, 1))).toBe(2);
+  await expect.poll(() => borderWidth(card(page, 3))).toBe(2);
+
+  // Quitar la excepción vuelve a seguir la preferencia global.
+  await openFullCardEditor(page, card(page, 2));
+  await button(page, 'Según preferencia').click();
+  await expect(button(page, 'Según preferencia')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+  await expect.poll(() => borderWidth(card(page, 2))).toBe(2);
+});
+
+test('tamaño semántico de título y cuerpo por ficha, igual en el lienzo y en Lista (UX7-D4, ADR 0050)', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Medidas');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await page.getByLabel('Título de la tarjeta').fill('Medidas');
+  await page.getByLabel('Contenido Markdown').fill('Cuerpo de prueba.');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText(/Guardado/);
+
+  // Por defecto (sin excepción): mediano en ambos, el tamaño de hoy.
+  const cardTitleNode = () => card(page, 1).getByText('Medidas');
+  const cardBodyNode = () => card(page, 1).getByText('Cuerpo de prueba.');
+  await expect.poll(() => fontSize(cardTitleNode())).toBe(16);
+  await expect.poll(() => fontSize(cardBodyNode())).toBe(13);
+
+  // Título grande, cuerpo pequeño: independientes entre sí.
+  await button(page, 'Título grande').click();
+  await expect(button(page, 'Título grande')).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Cuerpo pequeño').click();
+  await expect(button(page, 'Cuerpo pequeño')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+  await expect.poll(() => fontSize(cardTitleNode())).toBe(20);
+  await expect.poll(() => fontSize(cardBodyNode())).toBe(11);
+
+  // Lista representa el mismo tamaño elegido, no una escala distinta por superficie.
+  await button(page, 'Vista de lista').click();
+  await expect.poll(() => fontSize(cardTitleNode())).toBe(20);
+  await expect.poll(() => fontSize(cardBodyNode())).toBe(11);
+  await button(page, 'Vista de lista').click();
+});
+
 test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; la rueda normal sigue paneando', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
@@ -625,7 +800,7 @@ test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; l
   await addCards(page, ['nota']);
   // Gesto de escritorio (ratón/trackpad con Ctrl); el táctil usa pellizco o los controles de la barra.
   test.skip(isCompact(page), 'Ctrl + rueda es un gesto de escritorio.');
-  await expectZoom(page, '75 %');
+  await expectZoom(page, '100 %');
   const before = await box(card(page, 1));
   // El cursor se sitúa justo en la esquina superior izquierda de la tarjeta: ese punto del mundo debe
   // seguir en el mismo píxel de pantalla tras acercar, solo cambia el tamaño.
@@ -633,7 +808,7 @@ test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; l
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -600);
   await page.keyboard.up('Control');
-  await expect(page.getByTestId('zoom-level')).not.toContainText('75 %');
+  await expect(page.getByTestId('zoom-level')).not.toContainText('100 %');
   const after = await box(card(page, 1));
   expect(Math.abs(after.x - before.x)).toBeLessThan(2);
   expect(Math.abs(after.y - before.y)).toBeLessThan(2);
@@ -646,12 +821,12 @@ test('Ctrl + rueda: zoom alrededor del cursor sin desplazar el punto enfocado; l
   await page.mouse.wheel(0, -6000);
   await expectZoom(page, '50 %');
   // Sin Ctrl, la rueda sigue desplazando el lienzo en vez de hacer zoom.
-  await button(page, 'Zoom 50 %, restablecer a 75 %').click();
-  await expectZoom(page, '75 %');
+  await button(page, 'Zoom 50 %, restablecer a 100 %').click();
+  await expectZoom(page, '100 %');
   const beforePan = await box(card(page, 1));
   await page.getByTestId('board-canvas').hover();
   await page.mouse.wheel(0, 80);
-  await expectZoom(page, '75 %');
+  await expectZoom(page, '100 %');
   const afterPan = await box(card(page, 1));
   expect(afterPan.y).toBeLessThan(beforePan.y);
 });
@@ -925,8 +1100,8 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await openCardEditor(page, 1);
   for (const label of ['Título de la tarjeta', 'Contenido Markdown']) expect((await box(page.getByLabel(label))).height).toBeGreaterThanOrEqual(44);
   await revealCanvas(page);
-  // Las asas tienen un área táctil de 44 px: garantía de densidad a 100 %, no del zoom inicial (75 %
-  // por defecto y configurable, ADR 0048); se fija aquí para medirla de forma determinista.
+  // Las asas tienen un área táctil de 44 px: garantía de densidad a 100 %, no del zoom (100 % por
+  // defecto y configurable, UX7-D1); se acerca un paso más para medirla de forma determinista.
   if (isCompact(page)) {
     await openSettings(page);
     await button(page, 'Acercar el lienzo').click();
@@ -1252,10 +1427,12 @@ test('vista general: selección por área, un toque en el fondo cierra el editor
 
   // Móvil: el zoom está en los controles del lienzo, sin abrir Configuración.
   if (isCompact(page)) {
+    // «Ver todo» calcula un zoom propio (no uno de los pasos fijos) para encuadrar las dos fichas;
+    // «Acercar» sube al siguiente paso fijo desde ahí, no desde el 100 % por defecto (UX7-D1).
     await button(page, 'Acercar la vista').click();
     await expect(page.getByTestId('canvas-zoom')).toHaveText('75 %');
     await page.getByTestId('canvas-zoom').click();
-    await expect(page.getByTestId('canvas-zoom')).toHaveText('75 %');
+    await expect(page.getByTestId('canvas-zoom')).toHaveText('100 %');
   }
   expect(runtimeErrors).toEqual([]);
 });

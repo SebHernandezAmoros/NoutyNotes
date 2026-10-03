@@ -1,10 +1,11 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { WorkspaceStorageResult } from '@noutynotes/application';
 import { cardIconNames, linkUrlField } from '@noutynotes/domain';
-import type { BoardId, Card, CardDisplayMode, CardId, CardPlacement, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
+import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
+import type { NativeSyntheticEvent, TextInputKeyPressEventData } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { AppIcon } from '../components/AppIcon';
@@ -14,10 +15,10 @@ import { describeFailure } from '../session/messages';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { cardTitle } from './Board';
-import { applyListCommand, normalizeListChange, toggleChecklistLine } from './markdownLists';
+import { applyInlineMark, applyListCommand, normalizeListChange, parseChecklistLine, toggleChecklistLine } from './markdownLists';
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
-import type { ListKind, TextSelection } from './markdownLists';
+import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
@@ -70,6 +71,12 @@ const resizeKeys = [
   { labelKey: 'inspector.resize.heightPlus.label', nameKey: 'inspector.resize.heightPlus.name', dw: 0, dh: 1 },
 ] as const;
 
+/** Catálogo ampliado de iconos de ficha (UX7-D5): mismo nombre que en `AppIcon`, con su etiqueta en español (ADR 0032: el editor de tarjeta no se traduce). */
+const iconLabels: Record<CardIconName, string> = {
+  note: 'Nota', image: 'Imagen', folder: 'Carpeta', link: 'Enlace', check: 'Tarea', star: 'Estrella',
+  text: 'Texto', board: 'Tablero', diary: 'Diario', assets: 'Archivos', present: 'Presentar', print: 'Imprimir', settings: 'Ajustes',
+};
+
 /**
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
@@ -102,16 +109,39 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     setForcedSelection(selectionRef.current);
     if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: edit.text });
   };
+  // UX7-B3: negrita/cursiva envuelven la selección y la mantienen (en vez de colapsar el cursor como
+  // las listas), para que escribir reemplace el texto formateado o repetir el atajo lo desenvuelva.
+  const applyFormat = (kind: InlineMarkKind) => {
+    const edit = applyInlineMark(content, selectionRef.current, kind);
+    setContent(edit.text);
+    selectionRef.current = edit.selection;
+    setForcedSelection(edit.selection);
+    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: edit.text });
+  };
+  const onContentKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }>) => {
+    const { ctrlKey, metaKey, key } = event.nativeEvent;
+    if (!(ctrlKey || metaKey)) return;
+    const lower = key.toLowerCase();
+    if (lower === 'b') { event.preventDefault(); applyFormat('bold'); }
+    else if (lower === 'i') { event.preventDefault(); applyFormat('italic'); }
+  };
   // Etiquetas (ADR 0019): se guardan al momento, aparte del texto; lo escrito se normaliza (#Idea → idea).
   const [tagDraft, setTagDraft] = useState('');
-  const addTag = () => {
-    const input = tagDraft;
-    void run((storage, id) => addCardTag(storage, id, card.id, input), 'action.tagAdded')
+  const addTag = (value: string = tagDraft) => {
+    void run((storage, id) => addCardTag(storage, id, card.id, value), 'action.tagAdded')
       .then((result) => { if (result.ok) setTagDraft(''); });
   };
   const removeTag = (tag: string) => {
     void run((storage, id) => removeCardTag(storage, id, card.id, tag), { key: 'action.tagRemoved', params: { tag } });
   };
+  // UX7-B4: sugiere etiquetas ya usadas en el proyecto (no las que la ficha ya tiene), filtradas por lo
+  // escrito; un toque la añade sin volver a escribirla entera. La deduplicación ya la hace el dominio
+  // (`normalizeTag`/`withTag`), así que esto es solo descubrimiento, no una segunda validación.
+  const appliedTags = new Set(card.tags ?? []);
+  const tagQuery = tagDraft.trim().toLowerCase();
+  const tagSuggestions = workspaceTags(workspace)
+    .filter(({ tag }) => !appliedTags.has(tag) && tag.toLowerCase().includes(tagQuery))
+    .slice(0, 6);
   // Enlace (ADR 0020): la dirección se guarda al pulsar «Guardar enlace», normalizada; abrir usa el sistema.
   const linkKey = linkUrlField(workspace.cardTypes.find((type) => type.id === card.typeId));
   const savedLink = linkKey ? card.fields[linkKey] : undefined;
@@ -315,10 +345,22 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.tags.empty', locale)}</Text>}
           <View style={styles.tagAdd}>
             <View style={styles.tagInput}>
-              <TextField label={t('inspector.tag.new.label', locale)} value={tagDraft} onChangeText={setTagDraft} placeholder="#idea" onSubmitEditing={addTag} testID="tag-input" />
+              <TextField label={t('inspector.tag.new.label', locale)} value={tagDraft} onChangeText={setTagDraft} placeholder="#idea" onSubmitEditing={() => addTag()} testID="tag-input" />
             </View>
-            <ActionButton label={t('inspector.tag.add', locale)} accessibilityLabel={t('inspector.tag.add.accessibilityLabel', locale)} onPress={addTag} />
+            <ActionButton label={t('inspector.tag.add', locale)} accessibilityLabel={t('inspector.tag.add.accessibilityLabel', locale)} onPress={() => addTag()} />
           </View>
+          {tagSuggestions.length > 0 ? (
+            <View testID="tag-suggestions" style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.tag.suggestions.accessibilityLabel', locale)}>
+              {tagSuggestions.map(({ tag, count }) => (
+                <ActionButton key={tag} label={`#${tag}`} accessibilityLabel={t('inspector.tag.suggestion.accessibilityLabel', locale, { tag, count: String(count) })} onPress={() => addTag(tag)} />
+              ))}
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.format.section', locale)}</Text>
+          <ActionButton label="B" accessibilityLabel={t('inspector.format.bold.accessibilityLabel', locale)} onPress={() => applyFormat('bold')} style={styles.listButton} />
+          <ActionButton label="I" accessibilityLabel={t('inspector.format.italic.accessibilityLabel', locale)} onPress={() => applyFormat('italic')} style={styles.listButton} />
         </View>
         <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.lists.section', locale)}</Text>
@@ -330,6 +372,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         <TextField label={t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
+          onKeyPress={onContentKeyPress}
           onSelectionChange={(selection) => {
             selectionRef.current = selection;
             if (forcedSelection && selection.start === forcedSelection.start && selection.end === forcedSelection.end) setForcedSelection(undefined);
@@ -340,17 +383,16 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             onReplace={(index) => void placeImage({ kind: 'replace', index })} />
         ) : null}
         {imageProblem ? <Text testID="note-image-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{imageProblem}</Text> : null}
-        {content.split('\n').some((line) => /^\s*[-*+]\s+\[[ xX]\]/.test(line)) ? (
+        {content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
           <View testID="checklist-preview" style={styles.preview}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.checklist.section', locale)}</Text>
             {content.split('\n').map((line, index) => {
-              const check = /^(\s*[-*+]\s+)\[([ xX])\]\s*(.*)$/.exec(line);
+              const check = parseChecklistLine(line);
               if (!check) return <Text key={index} style={[styles.body, { color: colors.textPrimary }]}>{line || ' '}</Text>;
-              const checked = check[2]?.toLowerCase() === 'x';
               return <View key={index} style={styles.checkRow}>
-                <ActionButton label={checked ? '☑' : '☐'} accessibilityLabel={t(checked ? 'inspector.checklist.uncheck.accessibilityLabel' : 'inspector.checklist.check.accessibilityLabel', locale, { text: check[3] ?? '' })}
-                  pressed={checked} onPress={() => toggleCheck(index)} />
-                <Text style={[styles.body, styles.checkText, { color: colors.textPrimary }]}>{check[3]}</Text>
+                <ActionButton label={check.checked ? '☑' : '☐'} accessibilityLabel={t(check.checked ? 'inspector.checklist.uncheck.accessibilityLabel' : 'inspector.checklist.check.accessibilityLabel', locale, { text: check.text })}
+                  pressed={check.checked} onPress={() => toggleCheck(index)} />
+                <Text style={[styles.body, styles.checkText, { color: colors.textPrimary }]}>{check.text}</Text>
               </View>;
             })}
           </View>
@@ -406,13 +448,13 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         <View style={styles.row}>
           <AppIcon name={card.icon ?? 'note'} size={24} color={colors.textPrimary} />
           <Text testID="selected-card-icon" style={[styles.body, { color: colors.textPrimary }]}>
-            {`Seleccionado: ${card.icon === 'image' ? 'Imagen' : card.icon === 'folder' ? 'Carpeta' : card.icon === 'link' ? 'Enlace' : card.icon === 'check' ? 'Tarea' : card.icon === 'star' ? 'Estrella' : 'Nota'}`}
+            {`Seleccionado: ${iconLabels[card.icon ?? 'note']}`}
           </Text>
         </View>
         <View style={styles.row}>
           {cardIconNames.map((icon) => (
-            <ActionButton key={icon} label={icon === 'note' ? 'Nota' : icon === 'image' ? 'Imagen' : icon === 'folder' ? 'Carpeta' : icon === 'link' ? 'Enlace' : icon === 'check' ? 'Tarea' : 'Estrella'}
-              accessibilityLabel={`Usar icono ${icon}`}
+            <ActionButton key={icon} label={iconLabels[icon]}
+              accessibilityLabel={`Usar icono ${iconLabels[icon]}`}
               pressed={card.icon === icon}
               onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { icon }), { label: 'Apariencia actualizada' })} />
           ))}
@@ -421,6 +463,41 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton label="Abrir tablero" accessibilityLabel={`Abrir tablero ${workspace.boards.find((candidate) => candidate.id === card.boardTargetId)?.title ?? card.boardTargetId}`}
             tone="primary" onPress={() => onOpenBoard?.(card.boardTargetId as BoardId)} />
         ) : null}
+      </View>
+
+      <View testID="card-frame-picker" style={styles.section}>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.frame.section', locale)}</Text>
+        <View style={styles.row}>
+          <ActionButton label={t('inspector.frame.followGlobal', locale)} pressed={card.frameOverride === undefined}
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: null }), { label: 'Apariencia actualizada' })} />
+          <ActionButton label={t('inspector.frame.visible', locale)} pressed={card.frameOverride === 'visible'}
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'visible' }), { label: 'Apariencia actualizada' })} />
+          <ActionButton label={t('inspector.frame.hidden', locale)} pressed={card.frameOverride === 'hidden'}
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'hidden' }), { label: 'Apariencia actualizada' })} />
+        </View>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.frame.hint', locale)}</Text>
+      </View>
+
+      <View testID="card-text-size-picker" style={styles.section}>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.textSize.section', locale)}</Text>
+        <View style={styles.row}>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.titleRow', locale)}</Text>
+          {(['small', 'medium', 'large'] as const).map((size) => (
+            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
+              accessibilityLabel={t(`inspector.textSize.title.${size}.accessibilityLabel`, locale)}
+              pressed={(card.titleSize ?? 'medium') === size}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleSize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' })} />
+          ))}
+        </View>
+        <View style={styles.row}>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.bodyRow', locale)}</Text>
+          {(['small', 'medium', 'large'] as const).map((size) => (
+            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
+              accessibilityLabel={t(`inspector.textSize.body.${size}.accessibilityLabel`, locale)}
+              pressed={(card.bodySize ?? 'medium') === size}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodySize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' })} />
+          ))}
+        </View>
       </View>
 
       {(card.assetRefs?.length ?? 0) > 0 ? (

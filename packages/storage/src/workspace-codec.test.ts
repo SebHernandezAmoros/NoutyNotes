@@ -61,6 +61,29 @@ describe('workspace ↔ archivos', () => {
     expect(absent && 'content' in absent).toBe(false);
   });
 
+  it('hace round-trip de la excepción de marco en v5; sin ella, conserva la versión anterior (ADR 0049)', () => {
+    const files = valueOf(serializeWorkspace(withCard(base(), { ...ideaA, frameOverride: 'hidden' })));
+    expect(files['cards/idea-a.md']).toContain('schemaVersion: 5');
+    expect(valueOf(parseWorkspace(files)).cards[0]?.frameOverride).toBe('hidden');
+    // Sin la propiedad, una tarjeta sin icono/fecha/etiquetas sigue en v1, bytes idénticos a siempre.
+    expect(canonical()['cards/idea-b.md']).toContain('schemaVersion: 1');
+    const unchanged = valueOf(parseWorkspace(canonical())).cards[1];
+    expect(unchanged && 'frameOverride' in unchanged).toBe(false);
+  });
+
+  it('hace round-trip del tamaño de título/cuerpo en v6; sin ellos, conserva la versión anterior (ADR 0050)', () => {
+    const files = valueOf(serializeWorkspace(withCard(base(), { ...ideaA, titleSize: 'large', bodySize: 'small' })));
+    expect(files['cards/idea-a.md']).toContain('schemaVersion: 6');
+    const parsed = valueOf(parseWorkspace(files)).cards[0];
+    expect(parsed?.titleSize).toBe('large');
+    expect(parsed?.bodySize).toBe('small');
+    // Sin la propiedad, una tarjeta sin icono/fecha/etiquetas sigue en v1, bytes idénticos a siempre.
+    expect(canonical()['cards/idea-b.md']).toContain('schemaVersion: 1');
+    const unchanged = valueOf(parseWorkspace(canonical())).cards[1];
+    expect(unchanged && 'titleSize' in unchanged).toBe(false);
+    expect(unchanged && 'bodySize' in unchanged).toBe(false);
+  });
+
   it('conserva descripciones de board ausentes o presentes con Markdown literal', () => {
     const description = '## Board\r\n\r\n- punto\n';
     const workspace = { ...base(), boards: base().boards.map((b, i) => (i === 0 ? { ...b, description } : b)) };
@@ -101,7 +124,9 @@ describe('lectura de paquetes inválidos', () => {
     ['sin frontmatter', (f) => edit(f, 'cards/idea-b.md', '# Nota\n'), 'invalid-document@cards/idea-b.md'],
     ['contenido con contentPresent false', (f) => edit(f, 'cards/idea-b.md', `${f['cards/idea-b.md'] ?? ''}texto`), 'invalid-document@cards/idea-b.md'],
     ['descripción con descriptionPresent false', (f) => edit(f, 'boards/research.md', `${f['boards/research.md'] ?? ''}texto`), 'invalid-document@boards/research.md'],
-    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 5')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
+    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 7')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
+    ['frameOverride sin la versión 5 (ADR 0049)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\nframeOverride: hidden')), 'invalid-document@cards/idea-b.md#schemaVersion'],
+    ['titleSize sin la versión 6 (ADR 0050)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ntitleSize: large')), 'invalid-document@cards/idea-b.md#schemaVersion'],
     ['versión de manifiesto posterior', (f) => edit(f, '.nouty/workspace.yaml', (f['.nouty/workspace.yaml'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 2')), 'unsupported-schema-version@.nouty/workspace.yaml#schemaVersion'],
     ['clave desconocida en frontmatter', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ncolor: red')), 'unknown-property@cards/idea-b.md#color'],
     ['clave desconocida en manifiesto', (f) => edit(f, '.nouty/workspace.yaml', `${f['.nouty/workspace.yaml'] ?? ''}plugins: []\n`), 'unknown-property@.nouty/workspace.yaml#plugins'],

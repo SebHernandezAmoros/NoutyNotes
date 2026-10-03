@@ -2,6 +2,8 @@
 export type ListKind = 'dash' | 'bullet' | 'number' | 'check';
 export interface TextSelection { readonly start: number; readonly end: number }
 export interface TextEdit { readonly text: string; readonly caret: number }
+export type InlineMarkKind = 'bold' | 'italic';
+export interface InlineMarkEdit { readonly text: string; readonly selection: TextSelection }
 
 const marker = /^(\s*)(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/;
 const continuation = /^(\s*)(?:(-\s+\[[ xX]\]\s+)|([-*+]\s+)|(\d+)([.)]\s+))(.*)$/;
@@ -106,13 +108,28 @@ function keptStarts(previous: string, next: string): Map<number, number> {
   return starts;
 }
 
+const checklistLine = /^(\s*)[-*+]\s+\[([ xX])\]\s*(.*)$/;
+
+/** Única regla para reconocer una línea de checklist: la usan el lienzo, el editor y el resumen. */
+export function isChecklistLine(line: string): boolean {
+  return checklistLine.test(line);
+}
+
 /** Alterna una casilla de la vista sin modificar otras líneas ni ejecutar Markdown. */
 export function toggleChecklistLine(source: string, index: number): string | null {
   const lines = source.split('\n');
   const line = lines[index];
-  if (line === undefined || !/^\s*[-*+]\s+\[[ xX]\]/.test(line)) return null;
+  if (line === undefined || !isChecklistLine(line)) return null;
   lines[index] = line.replace(/^(\s*[-*+]\s+)\[([ xX])\]/, (_all, prefix: string, checked: string) => `${prefix}[${checked.toLowerCase() === 'x' ? ' ' : 'x'}]`);
   return lines.join('\n');
+}
+
+/** Línea de checklist descompuesta para pintarla como fila interactiva (sangría, estado, texto). */
+export function parseChecklistLine(line: string): { readonly indent: string; readonly checked: boolean; readonly text: string } | null {
+  const found = checklistLine.exec(line);
+  if (!found) return null;
+  const [, indent = '', mark = ' ', text = ''] = found;
+  return { indent, checked: mark.toLowerCase() === 'x', text };
 }
 
 /** Resumen visual de texto puro: nunca interpreta etiquetas ni ejecuta bloques de código. */
@@ -121,8 +138,30 @@ export function markdownExcerpt(source: string): string {
   return source.split('\n').map((line) => {
     if (fence(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
-    const check = /^(\s*)[-*+]\s+\[([ xX])\]\s*(.*)$/.exec(line);
-    if (check) return `${check[1] ?? ''}${check[2]?.toLowerCase() === 'x' ? '☑' : '☐'} ${check[3] ?? ''}`;
+    const check = parseChecklistLine(line);
+    if (check) return `${check.indent}${check.checked ? '☑' : '☐'} ${check.text}`;
     return line.replace(/^\s*#{1,6}\s+/, '').replace(/^(\s*)[-*+]\s+/, '$1• ');
   }).join('\n');
+}
+
+const inlineMark: Readonly<Record<InlineMarkKind, string>> = { bold: '**', italic: '*' };
+
+/**
+ * Envuelve la selección en negrita/cursiva (UX7-B3): el texto seleccionado se conserva, ahora entre
+ * marcas, para que escribir lo reemplace o repetir el atajo lo desenvuelva. Si ya está envuelta
+ * exactamente en esa marca, la quita (alternar). Sin selección, abre el par y deja el cursor en medio.
+ */
+export function applyInlineMark(source: string, selection: TextSelection, kind: InlineMarkKind): InlineMarkEdit {
+  const mark = inlineMark[kind];
+  const len = mark.length;
+  const start = Math.max(0, Math.min(source.length, selection.start));
+  const end = Math.max(start, Math.min(source.length, selection.end));
+  const before = source.slice(Math.max(0, start - len), start);
+  const after = source.slice(end, end + len);
+  if (before === mark && after === mark) {
+    const text = source.slice(0, start - len) + source.slice(start, end) + source.slice(end + len);
+    return { text, selection: { start: start - len, end: end - len } };
+  }
+  const text = source.slice(0, start) + mark + source.slice(start, end) + mark + source.slice(end);
+  return { text, selection: { start: start + len, end: end + len } };
 }

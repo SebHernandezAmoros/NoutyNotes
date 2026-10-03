@@ -105,6 +105,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
           value={preferences.snap}
           onChange={(snap) => props.onChange({ ...preferences, snap })}
         />
+        <Toggle
+          label={t('settings.hideFrames', locale)}
+          description={t('settings.hideFrames.description', locale)}
+          value={preferences.hideFrames}
+          onChange={(hideFrames) => props.onChange({ ...preferences, hideFrames })}
+        />
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={[styles.label, { color: colors.textPrimary }]}>{t('settings.zoom', locale)}</Text>

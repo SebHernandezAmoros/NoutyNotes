@@ -26,6 +26,29 @@ describe('tarjetas', () => {
     expect(problems(validateCard(unsafe({ ...ideaA, icon: 'emoji-libre' }), noteType))).toContain('invalid-value@card.icon');
   });
 
+  it('acepta el catálogo ampliado de iconos (UX7-D5); los glifos de acción pura del catálogo de interfaz siguen fuera', () => {
+    for (const icon of ['text', 'board', 'diary', 'assets', 'present', 'print', 'settings']) {
+      expect(validateCard({ ...ideaA, icon: icon as Card['icon'] }, noteType).ok).toBe(true);
+    }
+    for (const icon of ['trash', 'undo', 'close', 'search', 'edit', 'frame', 'archive']) {
+      expect(problems(validateCard(unsafe({ ...ideaA, icon }), noteType))).toContain('invalid-value@card.icon');
+    }
+  });
+
+  it('acepta "visible"/"hidden" como excepción de marco, nada más (ADR 0049)', () => {
+    expect(validateCard({ ...ideaA, frameOverride: 'hidden' }, noteType).ok).toBe(true);
+    expect(validateCard({ ...ideaA, frameOverride: 'visible' }, noteType).ok).toBe(true);
+    expect(validateCard(ideaA, noteType).ok).toBe(true);
+    expect(problems(validateCard(unsafe({ ...ideaA, frameOverride: 'oculto' }), noteType))).toContain('invalid-value@card.frameOverride');
+  });
+
+  it('acepta "small"/"medium"/"large" como tamaño de título y cuerpo, nada más (ADR 0050)', () => {
+    expect(validateCard({ ...ideaA, titleSize: 'large', bodySize: 'small' }, noteType).ok).toBe(true);
+    expect(validateCard({ ...ideaA, titleSize: 'medium' }, noteType).ok).toBe(true);
+    expect(problems(validateCard(unsafe({ ...ideaA, titleSize: 'enorme' }), noteType))).toContain('invalid-value@card.titleSize');
+    expect(problems(validateCard(unsafe({ ...ideaA, bodySize: 'enorme' }), noteType))).toContain('invalid-value@card.bodySize');
+  });
+
   it.each([
     ['id inválido', { id: 'Idea A' }, 'invalid-id@card.id'],
     ['id de tipo inválido', { typeId: '' }, 'invalid-id@card.typeId'],

@@ -1,7 +1,7 @@
 import { useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { NativeSyntheticEvent, StyleProp, TextInputKeyPressEventData, ViewStyle } from 'react-native';
 
 import { AppIcon } from './AppIcon';
 import type { AppIconName } from './AppIcon';
@@ -115,10 +115,16 @@ interface TextFieldProps {
   readonly onSelectionChange?: (selection: { start: number; end: number }) => void;
   /** Tipografía de las notas (ADR 0030): solo en el campo de contenido. */
   readonly fontFamily?: string | undefined;
+  /**
+   * Atajos de teclado (UX7-B3, p. ej. Ctrl/⌘+B): `ctrlKey`/`metaKey` no están en el tipo oficial de
+   * React Native porque son propias del evento de teclado web; en web, react-native-web reenvía el
+   * evento sintético completo sin recortarlo, así que están presentes en tiempo de ejecución.
+   */
+  readonly onKeyPress?: (event: NativeSyntheticEvent<TextInputKeyPressEventData & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }>) => void;
 }
 
 /** Campo con etiqueta visible, nombre accesible y foco visible. */
-export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true, selection, onSelectionChange, fontFamily }: TextFieldProps) {
+export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true, selection, onSelectionChange, fontFamily, onKeyPress }: TextFieldProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
@@ -136,6 +142,7 @@ export function TextField({ label, value, onChangeText, placeholder, multiline =
         {...(placeholder === undefined ? {} : { placeholder })}
         {...(testID === undefined ? {} : { testID })}
         {...(onSubmitEditing === undefined ? {} : { onSubmitEditing })}
+        {...(onKeyPress === undefined ? {} : { onKeyPress })}
         placeholderTextColor={colors.textSecondary}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}

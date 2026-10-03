@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyListCommand, continueListOnChange, markdownExcerpt, normalizeListChange, renumberOrderedLists, toggleChecklistLine } from './markdownLists';
+import { applyInlineMark, applyListCommand, continueListOnChange, isChecklistLine, markdownExcerpt, normalizeListChange, parseChecklistLine, renumberOrderedLists, toggleChecklistLine } from './markdownLists';
 
 describe('herramientas Markdown portables', () => {
   it('inserta guiones, viñetas, enumeración y casillas en la selección', () => {
@@ -31,6 +31,29 @@ describe('herramientas Markdown portables', () => {
     expect(toggleChecklistLine('- [ ] uno\n- [x] dos', 0)).toBe('- [x] uno\n- [x] dos');
     expect(toggleChecklistLine('- [ ] uno\n- [x] dos', 1)).toBe('- [ ] uno\n- [ ] dos');
     expect(toggleChecklistLine('texto', 0)).toBeNull();
+  });
+
+  it('reconoce y descompone una línea de checklist (UX7-B2: misma regla para lienzo, editor y resumen)', () => {
+    expect(isChecklistLine('- [ ] uno')).toBe(true);
+    expect(isChecklistLine('  * [x] con sangría')).toBe(true);
+    expect(isChecklistLine('- uno')).toBe(false);
+    expect(isChecklistLine('texto')).toBe(false);
+    expect(parseChecklistLine('- [ ] comprar leche')).toEqual({ indent: '', checked: false, text: 'comprar leche' });
+    expect(parseChecklistLine('  - [x] hecho')).toEqual({ indent: '  ', checked: true, text: 'hecho' });
+    expect(parseChecklistLine('- comprar leche')).toBeNull();
+  });
+
+  it('envuelve o quita negrita/cursiva en la selección, manteniéndola; sin selección abre el par (UX7-B3)', () => {
+    // Envolver una selección: el texto seleccionado se conserva, ahora entre marcas.
+    expect(applyInlineMark('un texto', { start: 3, end: 8 }, 'bold')).toEqual({ text: 'un **texto**', selection: { start: 5, end: 10 } });
+    expect(applyInlineMark('un texto', { start: 3, end: 8 }, 'italic')).toEqual({ text: 'un *texto*', selection: { start: 4, end: 9 } });
+    // Alternar: la misma selección ya envuelta exactamente en esa marca la pierde.
+    expect(applyInlineMark('un **texto**', { start: 5, end: 10 }, 'bold')).toEqual({ text: 'un texto', selection: { start: 3, end: 8 } });
+    expect(applyInlineMark('un *texto*', { start: 4, end: 9 }, 'italic')).toEqual({ text: 'un texto', selection: { start: 3, end: 8 } });
+    // Sin selección: abre el par y deja el cursor en medio, listo para escribir.
+    expect(applyInlineMark('', { start: 0, end: 0 }, 'bold')).toEqual({ text: '****', selection: { start: 2, end: 2 } });
+    // Negrita no confunde una cursiva ya puesta (marcas de distinta longitud): la envuelve a su vez.
+    expect(applyInlineMark('un *texto*', { start: 4, end: 9 }, 'bold')).toEqual({ text: 'un ***texto***', selection: { start: 6, end: 11 } });
   });
 
   it('muestra listas y títulos como texto seguro, sin interpretar HTML ni código', () => {

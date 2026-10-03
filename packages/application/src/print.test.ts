@@ -25,7 +25,7 @@ const workspace: Workspace = {
   }],
   cards: [
     // assetRefs ya trae la misma imagen (así la mantiene sincronizada la edición, ADR 0021): no debe duplicarse.
-    card('a', { title: 'A', content: 'Texto de A.\n\n![foto](assets/images/x.png)\n\nMás texto.', tags: ['viaje'], assetRefs: ['assets/images/x.png'] }),
+    card('a', { title: 'A', content: 'Texto de A.\n\n![foto](assets/images/x.png)\n\nMás texto.', tags: ['viaje'], assetRefs: ['assets/images/x.png'], titleSize: 'large', bodySize: 'small' }),
     card('c', { title: 'C' }),
     card('b', { title: 'B' }),
     card('minimizada', { title: 'Minimizada' }),
@@ -49,6 +49,13 @@ describe('Imprimir y presentar (ADR 0031)', () => {
     expect(a?.connections).toEqual([{ direction: 'from', label: 'Relacionada con', otherTitle: 'B' }]);
     expect(b?.connections).toEqual([{ direction: 'to', label: 'Relacionada con', otherTitle: 'A' }]);
     expect(imagen).toMatchObject({ typeLabel: 'Imagen', imageRefs: ['assets/images/foto.png'] });
+  });
+
+  it('lleva el tamaño de título/cuerpo de la tarjeta (ADR 0050); ausente cuando la tarjeta no lo tiene', () => {
+    const [a, c] = printableDocument(workspace, board);
+    expect(a).toMatchObject({ titleSize: 'large', bodySize: 'small' });
+    expect(c && 'titleSize' in c).toBe(false);
+    expect(c && 'bodySize' in c).toBe(false);
   });
 
   it('un tablero sin layout o sin tarjetas da una lista vacía, no un error', () => {
