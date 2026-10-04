@@ -392,6 +392,39 @@ test('edición rápida: título y Markdown se editan sobre la ficha y el editor 
   expect(runtimeErrors).toEqual([]);
 });
 
+test('P04: el editor web visual guarda y reabre párrafos con formato, autosave e historial local', async ({ page }) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Editor visual');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  await button(page, 'Abrir editor visual').click();
+
+  const visual = page.getByLabel('Contenido visual');
+  await expect(page.getByTestId('web-rich-text-editor')).toBeVisible();
+  await expect(page.getByLabel('Contenido Markdown')).toHaveCount(0);
+  await visual.fill('Texto fuerte');
+  await visual.selectText();
+  await button(page, 'Negrita').click();
+  await expect(visual.locator('strong')).toHaveText('Texto fuerte');
+  await expect(button(page, 'Deshacer en el editor')).toBeEnabled();
+  await button(page, 'Deshacer en el editor').click();
+  await expect(visual.locator('strong')).toHaveCount(0);
+  await button(page, 'Rehacer en el editor').click();
+  await expect(visual.locator('strong')).toHaveText('Texto fuerte');
+
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.', { timeout: 3_000 });
+  await closeEditor(page);
+  await tapCard(page, 1);
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  await button(page, 'Abrir editor visual').click();
+  await expect(page.getByLabel('Contenido visual').locator('strong')).toHaveText('Texto fuerte');
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
 test('edición rápida: Enter continúa una lista con guiones y termina en un elemento vacío (UX7-B1, misma regla que el editor completo)', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');

@@ -5,7 +5,7 @@ import {
 import type { ClipboardSnapshot, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, WorkspaceId } from '@noutynotes/domain';
 import { frameMembers } from '@noutynotes/domain';
-import { serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
+import { markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -196,7 +196,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     return () => { active = false; };
   }, [workspaceIdForFont, customFontRef, session.storage]);
 
-  const { flushPendingText, setPendingText } = usePendingText(run, storageMode);
+  const { flushPendingText, setPendingText } = usePendingText(run);
 
   const goHome = async () => {
     if (!await flushPendingText()) return;
@@ -908,6 +908,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       inSheet={compact}
       noteImages={previews.refs}
       noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
+      richTextCodec={markdownRichTextCodec}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
       onOpenBoard={(target) => { setEditingId(null); setInlineEditing(false); void chooseBoard(target); }}
@@ -1452,11 +1453,10 @@ function NavItem({ icon, label, count, accessibilityLabel, onPress }: {
  * Borrador de texto de la tarjeta en modo carpeta: se guarda antes de cambiar de selección, de
  * tablero o de espacio, y antes de volver al inicio (protección del borrador de fase 8).
  */
-function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run'], storageMode: 'memory' | 'folder') {
+function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run']) {
   const pendingText = useRef<{ cardId: CardId; title: string; content: string } | null>(null);
   const pendingSave = useRef<Promise<boolean> | null>(null);
   const flushPendingText = useCallback(async (): Promise<boolean> => {
-    if (storageMode !== 'folder') return true;
     while (true) {
       if (pendingSave.current) {
         if (!await pendingSave.current) return false;
@@ -1473,7 +1473,7 @@ function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run'], stora
       pendingSave.current = task;
       if (!await task) return false;
     }
-  }, [run, storageMode]);
+  }, [run]);
   const setPendingText = useCallback((draft: { cardId: CardId; title: string; content: string }) => { pendingText.current = draft; }, []);
   return { flushPendingText, setPendingText };
 }

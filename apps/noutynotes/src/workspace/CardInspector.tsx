@@ -1,5 +1,5 @@
 import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
-import type { WorkspaceStorageResult } from '@noutynotes/application';
+import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { cardIconNames, linkUrlField } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
@@ -18,6 +18,8 @@ import { cardTitle } from './Board';
 import { applyInlineMark, applyListCommand, normalizeListChange, parseChecklistLine, toggleChecklistLine } from './markdownLists';
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
+import { isBasicWebDocument } from './richTextLexical';
+import { WebRichTextEditor } from './WebRichTextEditor';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
@@ -45,6 +47,8 @@ interface CardInspectorProps {
   readonly noteImages: ReadonlyMap<string, string>;
   /** Tipografía de las notas (ADR 0030), ya resuelta para esta plataforma. */
   readonly noteFontFamily?: string | undefined;
+  /** Implementación inyectada en la composición; el componente no conoce storage. */
+  readonly richTextCodec: RichTextCodec;
   /** Editor enfocado (ADR 0021): ampliar o volver al tablero. En la hoja móvil lo ofrece su barra. */
   readonly focused?: boolean;
   readonly onToggleFocus?: () => void;
@@ -81,16 +85,21 @@ const iconLabels: Record<CardIconName, string> = {
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
+  const [visualRequested, setVisualRequested] = useState(false);
   const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
   const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
   const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
+  const parsedRichText = focused && Platform.OS === 'web' ? richTextCodec.parse(content) : null;
+  const visualDocument = parsedRichText?.ok && isBasicWebDocument(parsedRichText.value) ? parsedRichText.value : null;
+  const visualAvailable = visualDocument !== null;
+  const visualEditing = visualRequested && visualAvailable;
   const changeTitle = (value: string) => {
     setTitle(value);
     if (mode === 'folder') onDraftChange({ cardId: card.id, title: value, content });
@@ -101,6 +110,12 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     setContent(next);
     if (edit) setForcedSelection({ start: edit.caret, end: edit.caret });
     if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
+  };
+  const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
+    const encoded = richTextCodec.serialize(document);
+    if (!encoded.ok || encoded.value === content) return;
+    setContent(encoded.value);
+    onDraftChange({ cardId: card.id, title, content: encoded.value });
   };
   const insertList = (kind: ListKind) => {
     const edit = applyListCommand(content, selectionRef.current, kind);
@@ -207,16 +222,17 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     }
   };
   useEffect(() => {
-    if (mode !== 'folder' || !dirty) return;
+    if ((mode !== 'folder' && !visualEditing) || !dirty) return;
+    onDraftChange({ cardId: card.id, title, content });
     const timer = setTimeout(() => { void flushPendingText(); }, 700);
     return () => clearTimeout(timer);
-  }, [mode, dirty, title, content, flushPendingText]);
+  }, [mode, visualEditing, dirty, card.id, title, content, onDraftChange, flushPendingText]);
   useEffect(() => {
-    if (Platform.OS !== 'web' || mode !== 'folder' || !dirty) return;
+    if (Platform.OS !== 'web' || (mode !== 'folder' && !visualEditing) || !dirty) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [mode, dirty]);
+  }, [mode, visualEditing, dirty]);
   const titles = new Map(workspace.cards.map((other) => [other.id, cardTitle(other, locale)]));
   const typeLabels = new Map(workspace.relationTypes.map((type) => [type.id, type.label]));
   const connected = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id);
@@ -357,33 +373,49 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             </View>
           ) : null}
         </View>
-        <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
+        {focused && Platform.OS === 'web' && visualAvailable && !visualEditing ? (
+          <ActionButton label={t('inspector.visual.open', locale)} accessibilityLabel={t('inspector.visual.open.accessibilityLabel', locale)} onPress={() => setVisualRequested(true)} />
+        ) : null}
+        {visualEditing ? (
+          <ActionButton label={t('inspector.visual.markdown', locale)} accessibilityLabel={t('inspector.visual.markdown.accessibilityLabel', locale)} onPress={() => {
+            void flushPendingText().then((saved) => { if (saved) setVisualRequested(false); });
+          }} />
+        ) : null}
+        {visualEditing && visualDocument ? (
+          <WebRichTextEditor cardId={card.id} document={visualDocument} onChange={changeVisualDocument} />
+        ) : null}
+        {focused && Platform.OS === 'web' && !visualAvailable ? (
+          <Text testID="visual-editor-fallback" style={[styles.hint, { color: colors.textSecondary }]}>
+            {t('inspector.visual.fallback', locale)}
+          </Text>
+        ) : null}
+        {visualEditing ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.format.section', locale)}</Text>
           <ActionButton label="B" accessibilityLabel={t('inspector.format.bold.accessibilityLabel', locale)} onPress={() => applyFormat('bold')} style={styles.listButton} />
           <ActionButton label="I" accessibilityLabel={t('inspector.format.italic.accessibilityLabel', locale)} onPress={() => applyFormat('italic')} style={styles.listButton} />
-        </View>
-        <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
+        </View>}
+        {visualEditing ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.lists.section', locale)}</Text>
           <ActionButton label="−" accessibilityLabel={t('inspector.list.dash.accessibilityLabel', locale)} onPress={() => insertList('dash')} style={styles.listButton} />
           <ActionButton label="•" accessibilityLabel={t('inspector.list.bullet.accessibilityLabel', locale)} onPress={() => insertList('bullet')} style={styles.listButton} />
           <ActionButton label="1." accessibilityLabel={t('inspector.list.number.accessibilityLabel', locale)} onPress={() => insertList('number')} style={styles.listButton} />
           <ActionButton label="☐" accessibilityLabel={t('inspector.list.check.accessibilityLabel', locale)} onPress={() => insertList('check')} style={styles.listButton} />
-        </View>
-        <TextField label={t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
+        </View>}
+        {visualEditing ? null : <TextField label={t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
           onKeyPress={onContentKeyPress}
           onSelectionChange={(selection) => {
             selectionRef.current = selection;
             if (forcedSelection && selection.start === forcedSelection.start && selection.end === forcedSelection.end) setForcedSelection(undefined);
-          }} />
-        {withBlocks ? (
+          }} />}
+        {!visualEditing && withBlocks ? (
           <NoteBlocksEditor content={content} onChange={changeBlocks} images={noteImages} canPickImages={supportsImageImport()}
             onInsert={() => void placeImage({ kind: 'insert', caret: selectionRef.current.start })}
             onReplace={(index) => void placeImage({ kind: 'replace', index })} />
         ) : null}
         {imageProblem ? <Text testID="note-image-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{imageProblem}</Text> : null}
-        {content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
+        {!visualEditing && content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
           <View testID="checklist-preview" style={styles.preview}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.checklist.section', locale)}</Text>
             {content.split('\n').map((line, index) => {
@@ -401,7 +433,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
-            onPress={() => { void (mode === 'folder' ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'action.textSaved', { mergeKey: `text:${card.id}` })); }}
+            onPress={() => { void ((mode === 'folder' || visualEditing) ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'action.textSaved', { mergeKey: `text:${card.id}` })); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
         </View>
