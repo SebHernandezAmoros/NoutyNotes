@@ -22,8 +22,11 @@ describe('fronteras de storage', () => {
     expect(storage.map(({ path }) => path)).toContain('workspace-codec.ts');
   });
 
-  it('solo importa módulos propios, el API público del dominio y de application (puerto), yaml, zod y fflate (ZIP, ADR 0011)', () => {
-    const allowed = new Set(['@noutynotes/application', '@noutynotes/domain', 'yaml', 'zod', 'fflate']);
+  it('solo importa módulos propios, APIs públicos y adaptadores de formato declarados', () => {
+    const allowed = new Set([
+      '@noutynotes/application', '@noutynotes/domain', 'yaml', 'zod', 'fflate',
+      'mdast', 'mdast-util-from-markdown', 'mdast-util-gfm', 'mdast-util-to-markdown', 'micromark-extension-gfm',
+    ]);
     const external = storage.flatMap(({ path, source }) => imports(source)
       .filter((specifier) => !specifier.startsWith('./') && !allowed.has(specifier))
       .map((specifier) => `${path}: ${specifier}`));

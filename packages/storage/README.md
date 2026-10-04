@@ -2,7 +2,7 @@
 
 Paquete `@noutynotes/storage`: formato de archivos v1 de NoutyNotes. Convierte workspaces y plantillas del dominio en archivos de texto en memoria (`TextFiles`: ruta relativa → texto) y viceversa. Los codecs son síncronos y puros: no leen ni escriben disco, no usan red ni UI y no generan fechas ni valores aleatorios. Sobre ellos, `MemoryStorage` implementa el puerto `WorkspaceStorage` de `@noutynotes/application` (fase 6). `FolderStorage` (carpetas web, fase 8) y `ArchiveStorage` (espacios del navegador con ZIP, fase 9, aceptación manual pendiente) implementan el mismo puerto; en Android, `FolderStorage` funciona sobre el árbol de documentos del SAF (fase 10).
 
-Depende del API público de `@noutynotes/domain` y `@noutynotes/application`, de `yaml` (YAML real), de `zod` (sobres y frontmatter con claves cerradas) y de `fflate` (inflado y deflado ZIP). Las invariantes semánticas las sigue validando el dominio.
+Depende del API público de `@noutynotes/domain` y `@noutynotes/application`, de `yaml` (YAML real), de `zod` (sobres y frontmatter con claves cerradas), de `fflate` (inflado y deflado ZIP) y del parser/serializador MDAST-Micromark para CommonMark/GFM. Las invariantes semánticas las sigue validando el dominio.
 
 ## API
 
@@ -15,8 +15,13 @@ Depende del API público de `@noutynotes/domain` y `@noutynotes/application`, de
 | `serializeRelations` / `parseRelations`, `serializeLayouts` / `parseLayouts` | Documentos `.nouty/relations.yaml` y `.nouty/layout.yaml` |
 | `assetRefToMarkdownLink(fromFile, assetRef)` / `markdownLinkToAssetRef(fromFile, href)` | Conversión explícita entre ruta desde la raíz y enlace relativo codificado |
 | `validateTextFiles`, `validatePortablePath` | Contenedor, límites y rutas portables |
+| `parseRichTextMarkdown` / `serializeRichTextMarkdown` | Conversión determinista entre `.md` y `RichTextDocument` |
 
 Todas devuelven `StorageResult<T>`, un `ValidationResult` con incidencias `código` + `archivo#ruta`. No lanzan excepciones ante datos inválidos.
+
+## Codec de documento enriquecido (UX7 P03)
+
+`markdownRichTextCodec` implementa el puerto de application. Interpreta CommonMark/GFM compatible con el modelo puro, mantiene Unicode y orden, y conserva cada bloque no soportado como Markdown opaco exacto. Los nodos conocidos se guardan en una forma canónica estable. Las leyendas enriquecidas y las tablas sin encabezado usan comentarios HTML inertes y versionados; el formato completo está en [ADR 0054](../../Docs/decisions/0054-rich-text-markdown-codec.md). El codec opera sobre el cuerpo de `Card.content`; el frontmatter continúa bajo el codec de workspace.
 
 ## MemoryStorage
 

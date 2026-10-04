@@ -52,3 +52,4 @@ export type { DiaryExportResult } from './diary-export';
 export { openDiaryEntry } from './diary';
 export type { DiaryEntryInput } from './diary';
 export type { DeleteAssetsResult } from './assets-library';
+export type { RichTextCodec, RichTextCodecResult } from './rich-text-codec';

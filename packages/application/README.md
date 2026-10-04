@@ -2,6 +2,10 @@
 
 Paquete `@noutynotes/application`: puertos y casos de uso. Solo depende del API público de `@noutynotes/domain`. No importa implementaciones de storage, UI ni plataforma; los adaptadores se inyectan desde la raíz de composición.
 
+## Puerto `RichTextCodec`
+
+`RichTextCodec` convierte entre Markdown durable y `RichTextDocument` mediante resultados de validación, sin exponer el parser a application ni domain. La implementación CommonMark/GFM vive en `@noutynotes/storage`; los editores de web y Android consumirán el mismo puerto durante la integración UX7.
+
 ## Puerto `WorkspaceStorage`
 
 | Operación | Requisito | Efecto |

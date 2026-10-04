@@ -26,7 +26,7 @@ export type { RestoreBoardReport } from './boards/archive';
 export type { ArchivedBoard } from './boards/archived-board';
 export { baseCardKinds, fieldKinds, validateCardType } from './cards/card-type';
 export type { BaseCardKind, CardTypeDefinition, FieldDefinition, FieldKind } from './cards/card-type';
-export { isCalendarDate } from './cards/field-values';
+export { isCalendarDate, isLinkUrl } from './cards/field-values';
 export type { FieldValue } from './cards/field-values';
 export {
   MAX_RICH_TEXT_BLOCKS, MAX_RICH_TEXT_INLINES, MAX_RICH_TEXT_LIST_DEPTH,
