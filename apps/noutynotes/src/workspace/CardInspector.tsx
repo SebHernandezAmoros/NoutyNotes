@@ -500,6 +500,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       </View>
 
+      <View testID="card-caption-position-picker" style={styles.section}>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.captionPosition.section', locale)}</Text>
+        <View style={styles.row}>
+          {(['bottom', 'top', 'left', 'right'] as const).map((position) => (
+            <ActionButton key={position} label={t(`inspector.captionPosition.${position}`, locale)}
+              accessibilityLabel={t(`inspector.captionPosition.${position}.accessibilityLabel`, locale)}
+              pressed={(card.captionPosition ?? 'bottom') === position}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { captionPosition: position === 'bottom' ? null : position }), { label: 'Apariencia actualizada' })} />
+          ))}
+        </View>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.captionPosition.hint', locale)}</Text>
+      </View>
+
       {(card.assetRefs?.length ?? 0) > 0 ? (
         <View style={styles.section}>
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.files.section', locale)}</Text>

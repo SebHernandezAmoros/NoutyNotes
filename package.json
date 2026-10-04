@@ -6,6 +6,7 @@
   "license": "MIT",
   "packageManager": "pnpm@11.17.0",
   "engines": { "node": ">=24.11.0 <25" },
+  "enriched-markdown": { "enableCodeHighlight": false, "enableMath": false },
   "scripts": {
     "start": "pnpm --filter @noutynotes/app start",
     "web": "pnpm --filter @noutynotes/app web",

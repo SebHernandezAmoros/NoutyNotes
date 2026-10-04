@@ -1,8 +1,8 @@
 import {
-  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, editCardContent, importImageCard,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, updateConnection,
+  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, duplicateSelection, editCardContent, importImageCard,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
-import type { PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
+import type { ClipboardSnapshot, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, WorkspaceId } from '@noutynotes/domain';
 import { frameMembers } from '@noutynotes/domain';
 import { serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
@@ -153,6 +153,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [inlineEditing, setInlineEditing] = useState(false);
   // Selección múltiple (ADR 0025): null fuera del modo; en el modo, tocar una tarjeta la añade o la quita.
   const [multi, setMulti] = useState<readonly CardId[] | null>(null);
+  // Portapapeles interno (ADR 0052): de interfaz, no persistido; se pierde al recargar o cambiar de pestaña.
+  const [clipboard, setClipboard] = useState<ClipboardSnapshot | null>(null);
   // Marco seleccionado (ADR 0027): excluye la tarjeta abierta y la selección múltiple.
   const [frameId, setFrameId] = useState<string | null>(null);
   const [boardId, setBoardId] = useState<BoardId | null>(null);
@@ -356,6 +358,38 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       pluralAction(multiIds.length, 'action.cardTrashed', 'action.cardsTrashed.many'));
     if (result.ok) setMulti(null);
   };
+  // Portapapeles (ADR 0052): copiar y cortar son instantáneas puras del workspace ya cargado, sin
+  // pasar por `run()`; solo pegar y duplicar escriben, cada uno en un solo paso.
+  const copyMany = () => {
+    if (!board || !workspace || multiIds.length === 0) return;
+    const snapshot = snapshotSelection(workspace, board.id, multiIds, 'copy');
+    if (!snapshot) return;
+    setClipboard(snapshot);
+    setFeedback({
+      tone: 'success',
+      text: multiIds.length === 1 ? t('action.selectionCopied', locale) : t('action.selectionCopied.many', locale, { count: String(multiIds.length) }),
+    });
+  };
+  const cutMany = async () => {
+    if (!board || !workspace || multiIds.length === 0) return;
+    const snapshot = snapshotSelection(workspace, board.id, multiIds, 'cut');
+    if (!snapshot) return;
+    const result = await run((storage, workspaceId) => moveCardsToTrash(storage, workspaceId, multiIds),
+      pluralAction(multiIds.length, 'action.selectionCut', 'action.selectionCut.many'));
+    if (result.ok) { setClipboard(snapshot); setMulti(null); }
+  };
+  const duplicateMany = async () => {
+    if (!board || multiIds.length === 0) return;
+    const result = await run((storage, workspaceId) => duplicateSelection(storage, workspaceId, board.id, multiIds),
+      pluralAction(multiIds.length, 'action.selectionDuplicated', 'action.selectionDuplicated.many'));
+    if (result.ok) setMulti(null);
+  };
+  const pasteClipboard = async () => {
+    if (!board || !clipboard) return;
+    const count = clipboard.cards.length;
+    await run((storage, workspaceId) => pasteSnapshot(storage, workspaceId, board.id, clipboard),
+      pluralAction(count, 'action.selectionPasted', 'action.selectionPasted.many'));
+  };
 
   const openBoard = (next: BoardId) => {
     setBoardId(next);
@@ -533,9 +567,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Deshacer y rehacer (ADR 0026): antes se guarda el borrador, que es un paso más.
   const undoLast = async () => { if (await flushPendingText()) await undo(); };
   const redoLast = async () => { if (await flushPendingText()) await redo(); };
-  const shortcuts = useRef({ undoLast, redoLast });
-  useLayoutEffect(() => { shortcuts.current = { undoLast, redoLast }; });
+  const shortcuts = useRef({ undoLast, redoLast, copyMany, cutMany, duplicateMany, pasteClipboard });
+  useLayoutEffect(() => { shortcuts.current = { undoLast, redoLast, copyMany, cutMany, duplicateMany, pasteClipboard }; });
   // Ctrl/⌘ + Z, Ctrl/⌘ + Mayús + Z y Ctrl + Y fuera de los campos de texto; dentro deshacen el texto del campo.
+  // Ctrl/⌘ + C/X/V/D (ADR 0052): copiar/cortar solo actúan con selección múltiple no vacía; pegar solo
+  // con portapapeles no vacío — cada función ya se protege sola, el atajo no duplica esa comprobación.
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const onKey = (event: KeyboardEvent) => {
@@ -545,6 +581,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       const key = event.key.toLowerCase();
       if (key === 'z' && !event.shiftKey) { event.preventDefault(); void shortcuts.current.undoLast(); }
       else if ((key === 'z' && event.shiftKey) || (key === 'y' && event.ctrlKey)) { event.preventDefault(); void shortcuts.current.redoLast(); }
+      else if (key === 'c') { event.preventDefault(); shortcuts.current.copyMany(); }
+      else if (key === 'x') { event.preventDefault(); void shortcuts.current.cutMany(); }
+      else if (key === 'd') { event.preventDefault(); void shortcuts.current.duplicateMany(); }
+      else if (key === 'v') { event.preventDefault(); void shortcuts.current.pasteClipboard(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -989,6 +1029,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       <View style={styles.feedbackGrow}>{feedbackText}</View>
       <ActionButton label="↶" accessibilityLabel={undoLabel ? `${t('undo', locale)}: ${undoLabel}` : t('undo', locale)} disabled={undoLabel === null} onPress={() => void undoLast()} />
       <ActionButton label="↷" accessibilityLabel={redoLabel ? `${t('redo', locale)}: ${redoLabel}` : t('redo', locale)} disabled={redoLabel === null} onPress={() => void redoLast()} />
+      <ActionButton label={t('paste', locale)} accessibilityLabel={clipboard ? t('paste', locale) : t('paste.empty', locale)} disabled={clipboard === null} onPress={() => void pasteClipboard()} />
     </View>
   ) : feedbackText;
 
@@ -1024,6 +1065,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       redoLabel={redoLabel}
       onUndo={() => void undoLast()}
       onRedo={() => void redoLast()}
+      canPaste={clipboard !== null}
+      onPaste={() => void pasteClipboard()}
       navInSidebar={sidebar}
     />
   ) : null;
@@ -1052,6 +1095,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       </View>
       {multiIds.length > 0 ? (
         <View style={styles.multiRow}>
+          <ToolButton icon="copy" label="Copiar" accessibilityLabel={plural(multiIds.length, 'Copiar la seleccionada', 'Copiar las # seleccionadas')} onPress={copyMany} style={styles.multiToolCell} />
+          <ToolButton icon="cut" label="Cortar" accessibilityLabel={plural(multiIds.length, 'Cortar la seleccionada', 'Cortar las # seleccionadas')} onPress={() => void cutMany()} style={styles.multiToolCell} />
+          <ToolButton icon="duplicate" label="Duplicar" accessibilityLabel={plural(multiIds.length, 'Duplicar la seleccionada', 'Duplicar las # seleccionadas')} onPress={() => void duplicateMany()} style={styles.multiToolCell} />
           <ToolButton icon="frame" label="Agrupar" accessibilityLabel={plural(multiIds.length, 'Agrupar la seleccionada en un marco', 'Agrupar las # seleccionadas en un marco')} onPress={() => void groupMany()} style={styles.multiToolCell} />
           <ToolButton icon="archive" label="Archivar" accessibilityLabel={plural(multiIds.length, 'Archivar la seleccionada', 'Archivar las # seleccionadas')} onPress={() => void archiveMany()} style={styles.multiToolCell} />
           <ToolButton icon="trash" label="Papelera" accessibilityLabel={plural(multiIds.length, 'Enviar la seleccionada a la Papelera', 'Enviar las # seleccionadas a la Papelera')} onPress={() => void trashMany()} style={styles.multiToolCell} />

@@ -38,6 +38,8 @@ export interface Card {
   readonly titleSize?: TextSize;
   /** Tamaño semántico del cuerpo (ADR 0050); no afecta al título ni al pie. Ausente: `'medium'`. */
   readonly bodySize?: TextSize;
+  /** Posición de la leyenda de las imágenes intercaladas (ADR 0051). Ausente: `'bottom'`. */
+  readonly captionPosition?: CaptionPosition;
 }
 
 /**
@@ -58,6 +60,9 @@ export type FrameOverride = (typeof frameOverrides)[number];
 
 export const textSizes = ['small', 'medium', 'large'] as const;
 export type TextSize = (typeof textSizes)[number];
+
+export const captionPositions = ['bottom', 'top', 'left', 'right'] as const;
+export type CaptionPosition = (typeof captionPositions)[number];
 
 /**
  * Invariantes propias de la tarjeta. Si se conoce su tipo, también la compatibilidad de campos;
@@ -95,6 +100,9 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   }
   if (card.bodySize !== undefined && !textSizes.includes(card.bodySize as TextSize)) {
     issues.push(issue('invalid-value', `${path}.bodySize`, 'Debe ser "small", "medium" o "large".'));
+  }
+  if (card.captionPosition !== undefined && !captionPositions.includes(card.captionPosition as CaptionPosition)) {
+    issues.push(issue('invalid-value', `${path}.captionPosition`, 'Debe ser "bottom", "top", "left" o "right".'));
   }
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);

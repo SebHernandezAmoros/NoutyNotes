@@ -399,8 +399,7 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
     await button(page, 'Contraer Guion').click();
     await expect(feedback(page)).toHaveText('Tarjeta contraída. Guardado en memoria.');
     await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion, contraída');
-    // Contraída, el asa inferior puede tapar el centro a esta densidad (UX7-D1): se apunta a la cabecera.
-    await openCardActions(page, card(page, 1), 'Guion', { x: 10, y: 10 });
+    await openCardActions(page, card(page, 1), 'Guion');
     await button(page, 'Expandir Guion').click();
     await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Guion');
 
@@ -425,6 +424,21 @@ test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú
     await expect(feedback(page)).toHaveText('Tarjeta enviada a la Papelera. Guardado en memoria.');
     await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
   }
+});
+
+test('regresión: clic derecho en el centro de una ficha contraída y seleccionada abre el menú, no el asa de redimensionado (UX7-D1)', async ({ page }) => {
+  await page.goto('./');
+  test.skip(isCompactWidth(page), 'El asa de redimensionado y el clic derecho son de escritorio.');
+  await createWorkspace(page, 'Asa');
+  await addNote(page, 'Nota');
+  await openCardActions(page, card(page, 1), 'Nota');
+  await button(page, 'Contraer Nota').click();
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Nota, contraída');
+  // La ficha sigue seleccionada tras contraerla (el menú contextual la selecciona al abrirse): su asa
+  // de redimensionado inferior se dibuja encima, y a esta densidad (UX7-D1) puede cubrir buena parte
+  // de su centro. El clic derecho debe seguir abriendo el menú de la ficha, no el asa.
+  await openCardActions(page, card(page, 1), 'Nota');
+  await expect(button(page, 'Expandir Nota')).toBeVisible();
 });
 
 test('título visualmente vacío: borrarlo no dibuja «Sin título» en la ficha, pero el nombre accesible sigue siendo útil (UX7-A4)', async ({ page }) => {

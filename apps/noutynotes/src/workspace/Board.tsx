@@ -159,7 +159,7 @@ function CardView({ box, card, image, imageUri, noteImages, connections, selecte
             source={{ uri: imageUri }} resizeMode="contain" style={[styles.cardImage, { borderColor: colors.border, backgroundColor: colors.surface }]} />
         ) : <ImagePlaceholder />
       ) : mixed ? (
-        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} />
+        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
       ) : (
         <Text numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))} style={[styles.cardContent, { color: textColor, fontSize: bodySize, lineHeight: bodyLine }]}>
           {markdownExcerpt(card.content ?? '')}

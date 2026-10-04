@@ -122,7 +122,7 @@ export function takenCardIds(workspace: Workspace): string[] {
   ];
 }
 
-function takenRelationIds(workspace: Workspace): string[] {
+export function takenRelationIds(workspace: Workspace): string[] {
   return [...workspace.relations.map((relation) => relation.id), ...(workspace.trash ?? []).flatMap((entry) => entry.relations.map((relation) => relation.id))];
 }
 

@@ -26,7 +26,7 @@ export const cardSchema = z.strictObject({
   id: text, typeId: text, title: text.optional(), content: text.optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
   icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
-  titleSize: text.optional(), bodySize: text.optional(),
+  titleSize: text.optional(), bodySize: text.optional(), captionPosition: text.optional(),
 });
 export const boardSchema = z.strictObject({ id: text, title: text, description: text.optional(), cardIds: z.array(text) });
 
@@ -70,13 +70,14 @@ export const workspaceManifestSchema = z.strictObject({
 });
 /**
  * v1: sin etiquetas ni fecha. v2: con `tags` (ADR 0019). v3: con `createdAt`, con o sin `tags` (ADR 0024).
- * v4: con `icon`/`boardTargetId` (ADR 0046). v5: con `frameOverride` (ADR 0049). v6: con `titleSize`/`bodySize` (ADR 0050).
+ * v4: con `icon`/`boardTargetId` (ADR 0046). v5: con `frameOverride` (ADR 0049). v6: con `titleSize`/`bodySize`
+ * (ADR 0050). v7: con `captionPosition` (ADR 0051).
  */
 export const cardFrontmatterSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), id: text, typeId: text, title: text.optional(),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]), id: text, typeId: text, title: text.optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
   icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
-  titleSize: text.optional(), bodySize: text.optional(), contentPresent: z.boolean(),
+  titleSize: text.optional(), bodySize: text.optional(), captionPosition: text.optional(), contentPresent: z.boolean(),
 });
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),

@@ -672,6 +672,49 @@ test('carpeta: el tamaño de título/cuerpo por ficha se guarda en la tarjeta co
   expect(await card()).toContain('schemaVersion: 3');
 });
 
+test('carpeta: la posición de la leyenda por ficha se guarda en la tarjeta como v7, sobrevive a recargar y, al volver a debajo, vuelve a la versión anterior (ADR 0051)', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Leyendas');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  // Más alta: a la densidad por defecto (UX7-D1) el presupuesto vertical de la ficha no deja sitio
+  // para la leyenda sin encogerla por debajo del mínimo, y UX7-C4 la omite antes que recortar la
+  // imagen — hace falta más alto para que esta prueba vea la leyenda en vez de omitirla.
+  await page.getByRole('button', { name: 'Más alta' }).click();
+  await page.getByRole('button', { name: 'Más alta' }).click();
+  await page.getByLabel('Contenido Markdown').fill('![Vista del lago](assets/images/x.png)');
+  await page.getByRole('button', { name: 'Guardar texto' }).click();
+  await page.getByRole('button', { name: 'Leyenda a la izquierda de la imagen' }).click();
+  await expect(page.getByRole('button', { name: 'Leyenda a la izquierda de la imagen' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('workspace-feedback')).toHaveText('Apariencia actualizada. Guardado en la carpeta.');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  const card = () => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return new TextDecoder().decode(new Uint8Array(files['leyendas/cards/tarjeta-1.md'] ?? []));
+  });
+  // La tarjeta ya llevaba fecha de creación (v3, ADR 0024); la posición de la leyenda la sube a v7.
+  await expect.poll(card).toContain('schemaVersion: 7');
+  expect(await card()).toContain('captionPosition: left');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Leyendas' }).click();
+  const image = page.getByTestId('note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
+  const caption = page.getByTestId('note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
+  await expect.poll(async () => ((await image.boundingBox())?.x ?? 0) > ((await caption.boundingBox())?.x ?? 0)).toBe(true);
+
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  await page.getByRole('button', { name: 'Leyenda debajo de la imagen' }).click();
+  await expect(page.getByRole('button', { name: 'Leyenda debajo de la imagen' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
+  await expect.poll(card).not.toContain('captionPosition');
+  expect(await card()).toContain('schemaVersion: 3');
+});
+
 test('carpeta: el enlace se guarda en fields de la tarjeta y la búsqueda global lee los proyectos de la carpeta (ADR 0020)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');

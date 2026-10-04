@@ -84,6 +84,17 @@ describe('workspace ↔ archivos', () => {
     expect(unchanged && 'bodySize' in unchanged).toBe(false);
   });
 
+  it('hace round-trip de la posición de leyenda en v7; sin ella, conserva la versión anterior (ADR 0051)', () => {
+    const files = valueOf(serializeWorkspace(withCard(base(), { ...ideaA, captionPosition: 'left' })));
+    expect(files['cards/idea-a.md']).toContain('schemaVersion: 7');
+    const parsed = valueOf(parseWorkspace(files)).cards[0];
+    expect(parsed?.captionPosition).toBe('left');
+    // Sin la propiedad, una tarjeta sin icono/fecha/etiquetas sigue en v1, bytes idénticos a siempre.
+    expect(canonical()['cards/idea-b.md']).toContain('schemaVersion: 1');
+    const unchanged = valueOf(parseWorkspace(canonical())).cards[1];
+    expect(unchanged && 'captionPosition' in unchanged).toBe(false);
+  });
+
   it('conserva descripciones de board ausentes o presentes con Markdown literal', () => {
     const description = '## Board\r\n\r\n- punto\n';
     const workspace = { ...base(), boards: base().boards.map((b, i) => (i === 0 ? { ...b, description } : b)) };
@@ -124,9 +135,10 @@ describe('lectura de paquetes inválidos', () => {
     ['sin frontmatter', (f) => edit(f, 'cards/idea-b.md', '# Nota\n'), 'invalid-document@cards/idea-b.md'],
     ['contenido con contentPresent false', (f) => edit(f, 'cards/idea-b.md', `${f['cards/idea-b.md'] ?? ''}texto`), 'invalid-document@cards/idea-b.md'],
     ['descripción con descriptionPresent false', (f) => edit(f, 'boards/research.md', `${f['boards/research.md'] ?? ''}texto`), 'invalid-document@boards/research.md'],
-    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 7')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
+    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 8')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
     ['frameOverride sin la versión 5 (ADR 0049)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\nframeOverride: hidden')), 'invalid-document@cards/idea-b.md#schemaVersion'],
     ['titleSize sin la versión 6 (ADR 0050)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ntitleSize: large')), 'invalid-document@cards/idea-b.md#schemaVersion'],
+    ['captionPosition sin la versión 7 (ADR 0051)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ncaptionPosition: left')), 'invalid-document@cards/idea-b.md#schemaVersion'],
     ['versión de manifiesto posterior', (f) => edit(f, '.nouty/workspace.yaml', (f['.nouty/workspace.yaml'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 2')), 'unsupported-schema-version@.nouty/workspace.yaml#schemaVersion'],
     ['clave desconocida en frontmatter', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ncolor: red')), 'unknown-property@cards/idea-b.md#color'],
     ['clave desconocida en manifiesto', (f) => edit(f, '.nouty/workspace.yaml', `${f['.nouty/workspace.yaml'] ?? ''}plugins: []\n`), 'unknown-property@.nouty/workspace.yaml#plugins'],

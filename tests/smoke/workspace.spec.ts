@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
@@ -475,6 +477,218 @@ test('checklist en el lienzo: un toque marca la línea sin abrir el editor ni ar
   await button(page, 'Abrir Checklist en ficha').click();
   await expect(page.getByTestId('check-tarjeta-1-0')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('check-tarjeta-1-1')).toHaveAttribute('aria-checked', 'false');
+});
+
+test('checklist en el lienzo sobrevive a exportar ZIP, recargar y reimportar (cierre pendiente de UX7-B2)', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Checklist ZIP');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  // Más alta: con la densidad de UX7-D1 (fila más baja) el tamaño inicial no deja sitio para dos
+  // líneas de checklist a la vez, y esta prueba necesita las dos (misma razón que la de UX7-B2).
+  await button(page, 'Más alta').click();
+  await button(page, 'Más alta').click();
+  await page.getByLabel('Contenido Markdown').fill('- [ ] Harina\n- [ ] Agua');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
+  await closeEditor(page);
+
+  const first = page.getByTestId('check-tarjeta-1-0');
+  await expect(first).toBeVisible();
+  await first.click();
+  await expect(first).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('check-tarjeta-1-1')).toHaveAttribute('aria-checked', 'false');
+
+  const download = page.waitForEvent('download');
+  await button(page, 'Exportar este espacio como ZIP').click();
+  const saved = await download;
+  const exportedPath = testInfo.outputPath('checklist-exportado.zip');
+  await saved.saveAs(exportedPath);
+  await button(page, `Confirmar que guardé ${saved.suggestedFilename()}`).click();
+  await expect(page.getByTestId('export-status')).toHaveText('SIN CAMBIOS PENDIENTES DE EXPORTAR');
+
+  // Otra sesión: recargar pierde la memoria; reimportar el ZIP exportado debe traer la casilla marcada.
+  await page.reload();
+  await button(page, 'Volver a mis espacios').click();
+  const chooser = page.waitForEvent('filechooser');
+  await button(page, 'Importar un ZIP').click();
+  await (await chooser).setFiles({ name: 'checklist-exportado.zip', mimeType: 'application/zip', buffer: readFileSync(exportedPath) });
+  await expect(page.getByRole('heading', { name: 'Checklist ZIP', exact: true })).toBeVisible();
+  await expect(page.getByTestId('check-tarjeta-1-0')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('check-tarjeta-1-1')).toHaveAttribute('aria-checked', 'false');
+});
+
+test('posición de la leyenda de imagen: debajo, arriba, izquierda y derecha, igual en el lienzo y en Lista, sin desbordamiento (ADR 0051)', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Leyendas');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  // Más alta: a la densidad por defecto (UX7-D1) el presupuesto vertical de la ficha no deja sitio
+  // para la leyenda sin encogerla por debajo del mínimo, y UX7-C4 la omite antes que recortar la
+  // imagen — hace falta más alto para que esta prueba vea la leyenda en vez de omitirla.
+  await button(page, 'Más alta').click();
+  await button(page, 'Más alta').click();
+  // Sin asset real: la imagen cae al marcador «no disponible», pero la leyenda se dibuja igual (no
+  // depende de que la imagen se resuelva, UX7-C4).
+  await page.getByLabel('Contenido Markdown').fill('![Vista del lago](assets/images/x.png)');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
+  await closeEditor(page);
+
+  const image = page.getByTestId('note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
+  const caption = page.getByTestId('note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
+  await expect(image).toBeVisible();
+  await expect(caption).toBeVisible();
+
+  // Por defecto, debajo (UX7-C4): la leyenda queda más abajo que la imagen.
+  const belowDefault = await box(image);
+  const captionDefault = await box(caption);
+  expect(captionDefault.y).toBeGreaterThan(belowDefault.y);
+
+  const setPosition = async (label: string) => {
+    await openCardEditor(page, 1);
+    await button(page, label).click();
+    await expect(button(page, label)).toHaveAttribute('aria-pressed', 'true');
+    await closeEditor(page);
+  };
+
+  await setPosition('Leyenda arriba de la imagen');
+  expect((await box(caption)).y).toBeLessThan((await box(image)).y);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+
+  await setPosition('Leyenda a la izquierda de la imagen');
+  expect((await box(caption)).x).toBeLessThan((await box(image)).x);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+
+  await setPosition('Leyenda a la derecha de la imagen');
+  expect((await box(caption)).x).toBeGreaterThan((await box(image)).x);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+
+  // Lista representa la misma posición elegida, no una disposición distinta por superficie.
+  await button(page, 'Vista de lista').click();
+  const listImage = page.getByTestId('list-note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
+  const listCaption = page.getByTestId('list-note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
+  expect((await box(listCaption)).x).toBeGreaterThan((await box(listImage)).x);
+  await button(page, 'Vista de lista').click();
+
+  await setPosition('Leyenda debajo de la imagen');
+  expect((await box(caption)).y).toBeGreaterThan((await box(image)).y);
+});
+
+/** Entra en selección múltiple con una sola ficha (por su título, que debe ser único en ese momento). */
+async function enterMultiWithOne(page: Page, id: number, title: string) {
+  await selectCard(page, id);
+  if (isCompact(page)) {
+    await page.getByTestId(`card-actions-tarjeta-${id}`).focus();
+    await page.keyboard.press('Enter');
+  } else {
+    await card(page, id).focus();
+    await page.keyboard.press('Shift+F10');
+  }
+  await button(page, `Seleccionar ${title} junto con otras tarjetas`).click();
+  await expect(page.getByTestId('multi-count')).toHaveText('1 SELECCIONADA');
+}
+
+test('portapapeles: copiar y pegar conserva la relación interna (no la externa), con IDs nuevos y un solo paso de deshacer (ADR 0052)', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Portapapeles');
+  await addCards(page, ['nota', 'nota', 'nota']);
+  const rename = async (id: number, title: string) => {
+    await openCardEditor(page, id);
+    await page.getByLabel('Título de la tarjeta').fill(title);
+    await button(page, 'Guardar texto').click();
+    await closeEditor(page);
+  };
+  await rename(1, 'A');
+  await rename(2, 'B');
+  await rename(3, 'C');
+
+  // Relación interna a la selección (A→B) y externa (B→C, C queda fuera de lo copiado).
+  await openCardActions(page, card(page, 1), 'A');
+  await button(page, 'Conectar desde A').click();
+  await card(page, 2).focus();
+  await page.keyboard.press('Space');
+  await button(page, 'Herramienta Seleccionar').click();
+  await openCardActions(page, card(page, 2), 'B');
+  await button(page, 'Conectar desde B').click();
+  await card(page, 3).focus();
+  await page.keyboard.press('Space');
+  await button(page, 'Herramienta Seleccionar').click();
+  await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(2);
+
+  // Selección múltiple: A y B.
+  await enterMultiWithOne(page, 1, 'A');
+  await card(page, 2).focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByTestId('multi-count')).toHaveText('2 SELECCIONADAS');
+
+  await button(page, 'Copiar las 2 seleccionadas').click();
+  // Copiar no escribe nada: ningún sufijo «Guardado en…» en el aviso.
+  await expect(feedback(page)).toHaveText('2 tarjetas copiadas');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
+
+  await button(page, 'Pegar').click();
+  await expect(feedback(page)).toHaveText('2 tarjetas pegadas. Guardado en memoria.');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(5);
+  await expect(card(page, 4)).toContainText('A');
+  await expect(card(page, 5)).toContainText('B');
+  // La interna (A→B) se copió hacia la pegada; la externa (B→C) no se repitió: 2 originales + 1 nueva.
+  await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(3);
+
+  // Un solo paso de deshacer para las dos fichas pegadas y su relación.
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
+  await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(2);
+  await page.keyboard.press('Control+y');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(5);
+  await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(3);
+});
+
+test('portapapeles: duplicar en un solo paso; cortar envía a la Papelera de inmediato y pegar crea una ficha nueva; sobrevive a reabrir (ADR 0052)', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Duplicar y cortar');
+  await addCards(page, ['nota']);
+  await openCardEditor(page, 1);
+  await page.getByLabel('Título de la tarjeta').fill('Original');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  await enterMultiWithOne(page, 1, 'Original');
+  await button(page, 'Duplicar la seleccionada').click();
+  await expect(feedback(page)).toHaveText('Tarjeta duplicada. Guardado en memoria.');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
+  await expect(card(page, 2)).toContainText('Original');
+  // Duplicar sale de la selección múltiple al terminar (mismo criterio que archivar/Papelera).
+  await expect(page.getByTestId('multi-bar')).toHaveCount(0);
+
+  // Título único antes de volver a entrar en selección múltiple (la duplicada también se llama «Original»).
+  await openCardEditor(page, 1);
+  await page.getByLabel('Título de la tarjeta').fill('Para cortar');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  // Cortar: la original va a la Papelera de inmediato; si nunca se pega, no se pierde nada.
+  await enterMultiWithOne(page, 1, 'Para cortar');
+  await button(page, 'Cortar la seleccionada').click();
+  await expect(feedback(page)).toHaveText('Tarjeta cortada: queda en la Papelera hasta que la pegues. Guardado en memoria.');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /^Abrir la Papelera/ })).toBeVisible();
+
+  // Pegar trae una ficha nueva (ID nuevo), aunque la cortada siga en la Papelera.
+  await button(page, 'Pegar').click();
+  await expect(feedback(page)).toHaveText('Tarjeta pegada. Guardado en memoria.');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
+  await expect(page.getByTestId('card-tarjeta-1')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="card-tarjeta-"]').last()).toContainText('Para cortar');
+
+  // Sobrevive a reabrir el espacio (memoria, igual que el resto de UX7).
+  await button(page, 'Volver a mis espacios').click();
+  await button(page, 'Abrir Duplicar y cortar').click();
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
 });
 
 test('arrastrar con ratón: vista previa con imán, colisión y límites visibles, Escape cancela y soltar guarda', async ({ page }, testInfo) => {

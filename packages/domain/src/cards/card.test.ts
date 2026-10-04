@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ideaA, ideaB, noteType, problems, unsafe } from '../__fixtures__/workspace';
 import { validateCard } from './card';
-import type { Card } from './card';
+import type { Card, CardIconName } from './card';
 import { validateCardType } from './card-type';
 import type { CardTypeDefinition } from './card-type';
 import { isCalendarDate } from './field-values';
@@ -28,7 +28,7 @@ describe('tarjetas', () => {
 
   it('acepta el catálogo ampliado de iconos (UX7-D5); los glifos de acción pura del catálogo de interfaz siguen fuera', () => {
     for (const icon of ['text', 'board', 'diary', 'assets', 'present', 'print', 'settings']) {
-      expect(validateCard({ ...ideaA, icon: icon as Card['icon'] }, noteType).ok).toBe(true);
+      expect(validateCard({ ...ideaA, icon: icon as CardIconName }, noteType).ok).toBe(true);
     }
     for (const icon of ['trash', 'undo', 'close', 'search', 'edit', 'frame', 'archive']) {
       expect(problems(validateCard(unsafe({ ...ideaA, icon }), noteType))).toContain('invalid-value@card.icon');
@@ -47,6 +47,13 @@ describe('tarjetas', () => {
     expect(validateCard({ ...ideaA, titleSize: 'medium' }, noteType).ok).toBe(true);
     expect(problems(validateCard(unsafe({ ...ideaA, titleSize: 'enorme' }), noteType))).toContain('invalid-value@card.titleSize');
     expect(problems(validateCard(unsafe({ ...ideaA, bodySize: 'enorme' }), noteType))).toContain('invalid-value@card.bodySize');
+  });
+
+  it('acepta "bottom"/"top"/"left"/"right" como posición de leyenda, nada más (ADR 0051)', () => {
+    for (const captionPosition of ['bottom', 'top', 'left', 'right'] as const) {
+      expect(validateCard({ ...ideaA, captionPosition }, noteType).ok).toBe(true);
+    }
+    expect(problems(validateCard(unsafe({ ...ideaA, captionPosition: 'center' }), noteType))).toContain('invalid-value@card.captionPosition');
   });
 
   it.each([

@@ -337,7 +337,12 @@ export function Canvas(props: CanvasProps) {
       const ids = new Set(latest.current.props.layout?.placements.map((placement) => placement.cardId) ?? []);
       for (let element = target as HTMLElement | null; element && element !== node; element = element.parentElement) {
         const testId = element.getAttribute('data-testid') ?? '';
-        const cardId = testId.startsWith('card-') ? (testId.slice(5) as CardId) : null;
+        // El asa de redimensionado (`resize-${handle}-${cardId}`) es un overlay hermano, no un
+        // descendiente de la ficha: un clic que caiga en su zona de 44 px (frecuente en una ficha
+        // contraída a esta densidad, UX7-D1) nunca encontraría un ancestro `card-*`, así que se
+        // reconoce también su propio patrón para resolver el mismo cardId.
+        const resizeMatch = /^resize-(?:e|s|se)-(.+)$/.exec(testId);
+        const cardId = testId.startsWith('card-') ? (testId.slice(5) as CardId) : resizeMatch ? (resizeMatch[1] as CardId) : null;
         if (cardId && ids.has(cardId)) return cardId;
       }
       return null;

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '../__fixtures__/grid';
 import { id, ideaA, ideaB, problems, unsafe, validWorkspace } from '../__fixtures__/workspace';
 import { assertValid } from '../errors';
-import type { BoardId, CardId, CardTypeId } from '../ids';
+import type { BoardId, CardId, CardTypeId, RelationId, RelationTypeId } from '../ids';
 import { DESKTOP_GRID, validateGridLayout } from '../layouts/grid';
+import type { CardPlacement } from '../layouts/layout';
+import type { Relation } from '../relations/relation';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Card } from './card';
-import { addCard, updateCard } from './operations';
+import { addCard, pasteCardsOnBoard, updateCard } from './operations';
 
 const overview = id<BoardId>('overview');
 const research = id<BoardId>('research');
@@ -62,6 +64,59 @@ describe('añadir una tarjeta a un board (fase 7)', () => {
   it('rechaza opciones y workspaces inválidos antes de operar', () => {
     expect(problems(addCard(validWorkspace(), cardC, unsafe(null)))).toEqual(['invalid-value@options']);
     expect(addCard(unsafe(null), cardC, { boardId: overview, size, config: DESKTOP_GRID }).ok).toBe(false);
+  });
+});
+
+describe('pegar/duplicar una selección en un tablero (ADR 0052)', () => {
+  const cardD: Card = { id: id<CardId>('idea-d'), typeId: id<CardTypeId>('note'), title: 'Idea D', fields: { summary: 'D' } };
+  const placementC: CardPlacement = { cardId: cardC.id, rect: { x: 8, y: 0, w: 2, h: 1 }, display: 'expanded' };
+  const placementD: CardPlacement = { cardId: cardD.id, rect: { x: 10, y: 0, w: 2, h: 1 }, display: 'expanded' };
+  const relationCD: Relation = { id: id<RelationId>('c-references-d'), typeId: id<RelationTypeId>('references'), from: cardC.id, to: cardD.id };
+
+  it('añade las tarjetas, su relación interna y sus colocaciones en un solo paso', () => {
+    const base = deepFreeze(validWorkspace());
+    const result = assertValid(pasteCardsOnBoard(base, {
+      boardId: overview, cards: [cardC, cardD], relations: [relationCD], placements: [placementC, placementD], config: DESKTOP_GRID,
+    }));
+    expect(result.cards).toEqual([...validWorkspace().cards, cardC, cardD]);
+    expect(result.boards[0]?.cardIds).toEqual([ideaA.id, ideaB.id, cardC.id, cardD.id]);
+    expect(result.layouts[0]?.placements.slice(-2)).toEqual([placementC, placementD]);
+    expect(result.relations).toEqual([...validWorkspace().relations, relationCD]);
+    expect(validateWorkspace(result).ok).toBe(true);
+    expect(validateGridLayout(result.layouts[0]!, DESKTOP_GRID).ok).toBe(true);
+    expect(base).toEqual(validWorkspace());
+  });
+
+  it('todo o nada: una tarjeta inválida no deja a medias ni las demás ni sus colocaciones', () => {
+    const result = pasteCardsOnBoard(validWorkspace(), {
+      boardId: overview, cards: [cardC, { ...cardD, typeId: id<CardTypeId>('ghost') }], relations: [], placements: [placementC, placementD], config: DESKTOP_GRID,
+    });
+    expect(problems(result)).toEqual(['missing-reference@cards']);
+  });
+
+  it('todo o nada: una colocación que choca con el resto del tablero no añade ninguna', () => {
+    const colliding: CardPlacement = { ...placementC, rect: { ...placementC.rect, x: 0, y: 0 } }; // pisa a idea-a
+    const result = pasteCardsOnBoard(validWorkspace(), {
+      boardId: overview, cards: [cardC, cardD], relations: [], placements: [colliding, placementD], config: DESKTOP_GRID,
+    });
+    // Choca con idea-a, la primera colocación del layout de «overview».
+    expect(problems(result)).toContain('grid-collision@placements[0]');
+  });
+
+  it('rechaza falta de colocación por tarjeta, board inexistente, ID repetido y relación mal formada', () => {
+    // Misma cantidad de colocaciones que de tarjetas, pero las dos repiten el mismo cardId: falta la de idea-d.
+    expect(problems(pasteCardsOnBoard(validWorkspace(), {
+      boardId: overview, cards: [cardC, cardD], relations: [], placements: [placementC, placementC], config: DESKTOP_GRID,
+    }))).toEqual(['missing-reference@placements']);
+    expect(problems(pasteCardsOnBoard(validWorkspace(), {
+      boardId: unsafe('ghost'), cards: [cardC], relations: [], placements: [placementC], config: DESKTOP_GRID,
+    }))).toEqual(['missing-reference@boardId']);
+    expect(problems(pasteCardsOnBoard(validWorkspace(), {
+      boardId: overview, cards: [{ ...cardC, id: ideaA.id }], relations: [], placements: [{ ...placementC, cardId: ideaA.id }], config: DESKTOP_GRID,
+    }))).toEqual(['duplicate-id@cards']);
+    expect(problems(pasteCardsOnBoard(validWorkspace(), {
+      boardId: overview, cards: [cardC], relations: unsafe([{ ...relationCD, from: undefined }]), placements: [placementC], config: DESKTOP_GRID,
+    }))).toContain('invalid-id@relations[0].from');
   });
 });
 

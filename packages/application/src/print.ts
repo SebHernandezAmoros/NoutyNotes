@@ -4,7 +4,7 @@
  * en el lienzo). Sin reloj ni acceso a archivos: se arma a partir del workspace ya cargado.
  */
 import { footprint } from '@noutynotes/domain';
-import type { BoardId, Card, CardId, TextSize, Workspace } from '@noutynotes/domain';
+import type { BoardId, CaptionPosition, Card, CardId, TextSize, Workspace } from '@noutynotes/domain';
 
 import { noteImageRefs } from './note-blocks';
 
@@ -29,6 +29,8 @@ export interface PrintEntry {
   /** Tamaño semántico de título/cuerpo (ADR 0050); ausente = `'medium'`, el tamaño de hoy. */
   readonly titleSize?: TextSize;
   readonly bodySize?: TextSize;
+  /** Posición de la leyenda de imágenes intercaladas (ADR 0051); ausente = `'bottom'`. */
+  readonly captionPosition?: CaptionPosition;
 }
 
 const titleOf = (card: Card | undefined): string => card?.title ?? 'Sin título';
@@ -69,6 +71,7 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
       content: card.content ?? '', tags: card.tags ?? [], imageRefs, connections: connectionsOf(workspace, card.id, cards),
       ...(card.titleSize === undefined ? {} : { titleSize: card.titleSize }),
       ...(card.bodySize === undefined ? {} : { bodySize: card.bodySize }),
+      ...(card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition }),
     }];
   });
 }

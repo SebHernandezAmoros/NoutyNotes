@@ -6,7 +6,8 @@ export type AppIconName =
   | 'note' | 'text' | 'board' | 'link' | 'image' | 'upload'
   | 'trash' | 'undo' | 'redo' | 'minus' | 'plus'
   | 'diary' | 'archive' | 'assets' | 'present' | 'print' | 'settings'
-  | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star' | 'frame';
+  | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star' | 'frame'
+  | 'copy' | 'cut' | 'paste' | 'duplicate';
 
 /**
  * Catálogo de línea portable para la interfaz (ADR 0047). Usa primitivas de React Native y evita
@@ -115,6 +116,33 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
   if (name === 'expand' || name === 'collapse') return (
     <View accessibilityElementsHidden style={[styles.root, box, common]}>{name === 'collapse' ? <View style={[styles.centerLine, fill, { height: line }]} /> : <View style={[styles.innerSquare, common]} />}</View>
   );
+  if (name === 'copy' || name === 'duplicate') return (
+    <View accessibilityElementsHidden style={[styles.root, box]}>
+      <View style={[styles.copyBack, common]} />
+      <View style={[styles.copyFront, common]} />
+      {name === 'duplicate' ? (
+        <>
+          <View style={[styles.duplicateBadge, fill, { height: line }]} />
+          <View style={[styles.duplicateBadge, fill, { height: line, transform: [{ rotate: '90deg' }] }]} />
+        </>
+      ) : null}
+    </View>
+  );
+  if (name === 'cut') return (
+    <View accessibilityElementsHidden style={[styles.root, box]}>
+      <View style={[styles.scissorBlade, fill, { height: line, transform: [{ rotate: '40deg' }] }]} />
+      <View style={[styles.scissorBlade, fill, { height: line, transform: [{ rotate: '-40deg' }] }]} />
+      <View style={[styles.node, common, { left: '6%', top: '58%', width: size * 0.32, height: size * 0.32, borderRadius: size }]} />
+      <View style={[styles.node, common, { right: '6%', top: '58%', width: size * 0.32, height: size * 0.32, borderRadius: size }]} />
+    </View>
+  );
+  if (name === 'paste') return (
+    <View accessibilityElementsHidden style={[styles.root, box]}>
+      <View style={[styles.clipboardBody, common]} />
+      <View style={[styles.clipboardClip, common]} />
+      {[0.52, 0.68].map((top) => <View key={top} style={[styles.pageLine, fill, { top: size * top, left: '28%', right: '28%', height: line }]} />)}
+    </View>
+  );
   if (name === 'frame') {
     const bracket = size * 0.32;
     return (
@@ -159,4 +187,10 @@ const styles = StyleSheet.create({
   folderTab: { position: 'absolute', left: '4%', top: '12%', width: '44%', height: '22%', backgroundColor: 'transparent' },
   frameH: { position: 'absolute' },
   frameV: { position: 'absolute' },
+  copyBack: { position: 'absolute', right: '8%', top: '8%', width: '68%', height: '68%', borderRadius: 3, backgroundColor: 'transparent' },
+  copyFront: { position: 'absolute', left: '8%', bottom: '8%', width: '68%', height: '68%', borderRadius: 3, backgroundColor: 'transparent' },
+  duplicateBadge: { position: 'absolute', left: '36%', right: '36%', top: '42%' },
+  scissorBlade: { position: 'absolute', top: '8%', left: '50%', width: '42%' },
+  clipboardBody: { position: 'absolute', left: '18%', top: '18%', width: '64%', height: '74%', backgroundColor: 'transparent' },
+  clipboardClip: { position: 'absolute', left: '38%', top: '8%', width: '24%', height: '16%', backgroundColor: 'transparent' },
 });

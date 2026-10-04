@@ -43,6 +43,9 @@ interface ToolbarProps {
   readonly redoLabel: string | null;
   readonly onUndo: () => void;
   readonly onRedo: () => void;
+  /** Portapapeles (ADR 0052): solo habilitado con algo copiado o cortado. En móvil va en la línea de aviso. */
+  readonly canPaste: boolean;
+  readonly onPaste: () => void;
   /** Con barra lateral (≥ 1100 px), Papelera y Configuración están en ella y no se repiten aquí. */
   readonly navInSidebar: boolean;
   /** Contenido al final de la fila en escritorio (el aviso del workspace): ahorra una fila al lienzo. */
@@ -100,6 +103,8 @@ export function Toolbar(props: ToolbarProps) {
         accessibilityHint={t('undo.hint', locale)} disabled={props.undoLabel === null} onPress={props.onUndo} style={cell} />
       <ToolButton icon="redo" label={t('redo', locale)} accessibilityLabel={props.redoLabel ? `${t('redo', locale)}: ${props.redoLabel}` : t('redo', locale)}
         accessibilityHint={t('redo.hint', locale)} disabled={props.redoLabel === null} onPress={props.onRedo} style={cell} />
+      <ToolButton icon="paste" label={t('paste', locale)} accessibilityLabel={props.canPaste ? t('paste', locale) : t('paste.empty', locale)}
+        accessibilityHint={t('paste.hint', locale)} disabled={!props.canPaste} onPress={props.onPaste} style={cell} />
     </View>
   );
   const view = props.compact ? null : (

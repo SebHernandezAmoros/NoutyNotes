@@ -44,14 +44,17 @@ function markdownDocument(frontmatter: unknown, body: string): GeneratedDocument
 function cardDocument(card: Card): GeneratedDocument {
   const tags = card.tags !== undefined && card.tags.length > 0 ? card.tags : undefined;
   // Versión selectiva: v4 con icono/atajo (ADR 0046), v5 con excepción de marco (ADR 0049), v6 con
-  // tamaño de título/cuerpo (ADR 0050); las anteriores conservan sus bytes.
+  // tamaño de título/cuerpo (ADR 0050), v7 con posición de leyenda (ADR 0051); las anteriores
+  // conservan sus bytes.
   const hasSize = card.titleSize !== undefined || card.bodySize !== undefined;
+  const hasCaption = card.captionPosition !== undefined;
   return markdownDocument(compact({
-    schemaVersion: hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
+    schemaVersion: hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     id: card.id, typeId: card.typeId, title: card.title,
     fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
     boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
-    titleSize: card.titleSize, bodySize: card.bodySize, contentPresent: card.content !== undefined,
+    titleSize: card.titleSize, bodySize: card.bodySize, captionPosition: card.captionPosition,
+    contentPresent: card.content !== undefined,
   }), card.content ?? '');
 }
 
@@ -63,7 +66,7 @@ function trashData(entry: TrashedCard): unknown {
       id: card.id, typeId: card.typeId, title: card.title, fields: card.fields, assetRefs: card.assetRefs,
       tags: card.tags?.length ? card.tags : undefined, createdAt: card.createdAt, icon: card.icon,
       boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
-      titleSize: card.titleSize, bodySize: card.bodySize, content: card.content,
+      titleSize: card.titleSize, bodySize: card.bodySize, captionPosition: card.captionPosition, content: card.content,
     },
     boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
     placements: entry.placements.map(({ boardId, rect, display }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
@@ -235,7 +238,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -251,7 +254,8 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     const hasAppearance = front.icon !== undefined || front.boardTargetId !== undefined;
     const hasFrame = front.frameOverride !== undefined;
     const hasSize = front.titleSize !== undefined || front.bodySize !== undefined;
-    const expected = hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
+    const hasCaption = front.captionPosition !== undefined;
+    const expected = hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -260,7 +264,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     cards.push(compact({
       id, typeId: front.typeId, title: front.title, fields: front.fields, assetRefs: front.assetRefs, tags: front.tags, createdAt: front.createdAt,
       icon: front.icon, boardTargetId: front.boardTargetId, frameOverride: front.frameOverride,
-      titleSize: front.titleSize, bodySize: front.bodySize,
+      titleSize: front.titleSize, bodySize: front.bodySize, captionPosition: front.captionPosition,
       content: front.contentPresent ? body : undefined,
     }) as unknown as Card);
   }

@@ -146,6 +146,25 @@ export function moveCards(layout: BoardLayout, cardIds: readonly CardId[], delta
   return issues.length > 0 ? fail(layout, issues) : resultOf({ ...layout, placements: moved }, []);
 }
 
+/**
+ * Añade un grupo de colocaciones nuevas (pegar/duplicar, ADR 0052): todo o nada, ninguna puede
+ * solaparse con las que ya había ni entre sí. No busca hueco por sí sola — quien llama ya decidió
+ * el desplazamiento (p. ej. con `findFreeSpace` sobre el contorno del grupo); esta función solo
+ * valida la colocación final y la aplica.
+ */
+export function addGroup(layout: BoardLayout, additions: readonly CardPlacement[], config: GridConfig): ValidationResult<BoardLayout> {
+  const checked = validateGridLayout(layout, config);
+  if (!checked.ok) return fail(layout, [...checked.issues]);
+  if (!Array.isArray(additions) || additions.length === 0) return fail(layout, [issue('invalid-value', 'additions', 'Debe haber al menos una colocación.')]);
+  const already = additions.filter((placement) => layout.placements.some((existing) => existing.cardId === placement.cardId));
+  if (already.length > 0) {
+    return fail(layout, already.map((placement) => issue('duplicate-id', 'additions', `Ya hay una colocación para "${placement.cardId}".`)));
+  }
+  const combined: BoardLayout = { ...layout, placements: [...layout.placements, ...additions] };
+  const issues = additions.flatMap((candidate, offset) => fitIssues(combined, layout.placements.length + offset, candidate, config, 'additions'));
+  return issues.length > 0 ? fail(layout, issues) : resultOf(combined, []);
+}
+
 /** Cambia el tamaño expandido (`rect.w`, `rect.h`) y valida la huella resultante en cualquier modo. */
 export function resizeCard(layout: BoardLayout, cardId: CardId, size: GridSize, config: GridConfig): ValidationResult<BoardLayout> {
   const located = locate(layout, cardId, config);

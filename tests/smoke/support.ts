@@ -92,13 +92,14 @@ export async function openFullCardEditor(page: Page, card: Locator) {
 }
 
 /**
- * Escritorio abre acciones con clic derecho; móvil conserva el botón táctil visible. `position`
- * opcional: con la densidad de UX7-D1, una ficha contraída puede ser más baja que el asa de
- * redimensionado inferior, que entonces tapa el centro por defecto; se apunta a la cabecera en vez de
- * asumir el centro cuando haga falta esquivarla.
+ * Escritorio abre acciones con clic derecho; móvil conserva el botón táctil visible. `force`: un
+ * clic derecho real no pasa por las comprobaciones de accionabilidad de Playwright (el navegador lo
+ * dispara contra lo que haya encima, como haría una persona); sin esto, el asa de redimensionado de
+ * una ficha contraída y seleccionada (más baja que ella a esta densidad, UX7-D1) bloquearía el clic
+ * en vez de dejarlo llegar — `cardAt` (Canvas.tsx) ya resuelve la misma ficha desde el asa.
  */
-export async function openCardActions(page: Page, card: Locator, title: string, position?: { x: number; y: number }) {
+export async function openCardActions(page: Page, card: Locator, title: string) {
   if (isCompactWidth(page)) await page.getByRole('button', { name: `Acciones de ${title}`, exact: true }).click();
-  else await card.click({ button: 'right', ...(position ? { position } : {}) });
+  else await card.click({ button: 'right', force: true });
   await page.getByTestId('card-menu').waitFor({ state: 'visible' });
 }

@@ -25,7 +25,7 @@ const workspace: Workspace = {
   }],
   cards: [
     // assetRefs ya trae la misma imagen (así la mantiene sincronizada la edición, ADR 0021): no debe duplicarse.
-    card('a', { title: 'A', content: 'Texto de A.\n\n![foto](assets/images/x.png)\n\nMás texto.', tags: ['viaje'], assetRefs: ['assets/images/x.png'], titleSize: 'large', bodySize: 'small' }),
+    card('a', { title: 'A', content: 'Texto de A.\n\n![foto](assets/images/x.png)\n\nMás texto.', tags: ['viaje'], assetRefs: ['assets/images/x.png'], titleSize: 'large', bodySize: 'small', captionPosition: 'left' }),
     card('c', { title: 'C' }),
     card('b', { title: 'B' }),
     card('minimizada', { title: 'Minimizada' }),
@@ -56,6 +56,12 @@ describe('Imprimir y presentar (ADR 0031)', () => {
     expect(a).toMatchObject({ titleSize: 'large', bodySize: 'small' });
     expect(c && 'titleSize' in c).toBe(false);
     expect(c && 'bodySize' in c).toBe(false);
+  });
+
+  it('lleva la posición de leyenda de la tarjeta (ADR 0051); ausente cuando la tarjeta no la tiene', () => {
+    const [a, c] = printableDocument(workspace, board);
+    expect(a).toMatchObject({ captionPosition: 'left' });
+    expect(c && 'captionPosition' in c).toBe(false);
   });
 
   it('un tablero sin layout o sin tarjetas da una lista vacía, no un error', () => {

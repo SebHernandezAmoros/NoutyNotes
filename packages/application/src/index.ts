@@ -7,8 +7,10 @@ export type { CreateEmptyWorkspaceInput, CreateFromTemplateInput, WorkspaceTrans
 export { nextSequentialId, workspaceIdFromName } from './ids';
 export {
   CANONICAL_GRID, DEFAULT_CARD_SIZE, PROTOTYPE_BOARD, PROTOTYPE_CARD_PRESETS, RELATED_RELATION_TYPE,
-  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, restoreCardsFromArchive, sendArchivedCardsToTrash, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
+  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, restoreCardsFromArchive, sendArchivedCardsToTrash, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenCardIds, takenRelationIds, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, placeCardOnBoard, resizeCardOnBoard,
 } from './workspace-editing';
+export { duplicateSelection, pasteSnapshot, snapshotSelection } from './clipboard';
+export type { ClipboardSnapshot } from './clipboard';
 export { moveBoardToArchive, restoreBoardFromArchive } from './board-archive';
 export { archiveSelectionForExport } from './archive-export';
 export type { ArchiveSelectionExport, ArchiveSelectionExportResult } from './archive-export';

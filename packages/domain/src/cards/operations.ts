@@ -4,11 +4,16 @@ import { isValidId } from '../ids';
 import type { BoardId, CardId } from '../ids';
 import type { GridConfig, GridSize } from '../layouts/grid';
 import type { BoardLayout, CardPlacement } from '../layouts/layout';
-import { findFreeSpace } from '../layouts/operations';
+import { addGroup, findFreeSpace } from '../layouts/operations';
+import { collectRelationIssues } from '../relations/relation';
+import type { Relation } from '../relations/relation';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
-import { cardIconNames, frameOverrides, textSizes, type Card, type CardIconName, type FrameOverride, type TextSize } from './card';
+import {
+  captionPositions, cardIconNames, frameOverrides, textSizes,
+  type Card, type CaptionPosition, type CardIconName, type FrameOverride, type TextSize,
+} from './card';
 
 export interface DeleteCardOptions {
   /** Por defecto no permite borrar una tarjeta conectada; cascade elimina sus vínculos explícitamente. */
@@ -91,6 +96,68 @@ export function addCard(workspace: Workspace, card: Card, options: AddCardOption
   });
 }
 
+export interface PasteCardsInput {
+  readonly boardId: BoardId;
+  /** Tarjetas nuevas, con sus IDs ya asignados por quien llama: el dominio nunca los genera (ADR 0009). */
+  readonly cards: readonly Card[];
+  /** Relaciones nuevas entre esas tarjetas, con sus IDs ya asignados (ADR 0052: solo las internas al grupo). */
+  readonly relations: readonly Relation[];
+  /** Una colocación por cada tarjeta de `cards` (mismo `cardId`), con el desplazamiento ya decidido por quien llama. */
+  readonly placements: readonly CardPlacement[];
+  readonly config: GridConfig;
+}
+
+/**
+ * Pegar o duplicar una selección (ADR 0052): da de alta un grupo de tarjetas, sus relaciones internas
+ * y sus colocaciones en un solo tablero, todo o nada. No busca hueco ni genera IDs — quien llama ya
+ * decidió dónde va cada una (p. ej. con `findFreeSpace` sobre el contorno del grupo) y con qué
+ * identificador; esta función solo valida el conjunto y lo aplica.
+ */
+export function pasteCardsOnBoard(workspace: Workspace, input: PasteCardsInput): ValidationResult<Workspace> {
+  const source = validateWorkspace(workspace);
+  if (!source.ok) return source;
+  if (!isRecord(input)) return failure([issue('invalid-value', 'input', 'Debe ser un objeto.')]);
+  const { boardId, cards, relations, placements, config } = input;
+  if (!isValidId(boardId)) return failure([issue('invalid-id', 'boardId', 'Identificador de tablero inválido.')]);
+  if (!workspace.boards.some((board) => board.id === boardId)) {
+    return failure([issue('missing-reference', 'boardId', `No existe el tablero "${boardId}".`)]);
+  }
+  if (!Array.isArray(cards) || cards.length === 0) return failure([issue('invalid-value', 'cards', 'Debe haber al menos una tarjeta.')]);
+  const issues: DomainIssue[] = [];
+  for (const card of cards) {
+    const raw: unknown = card;
+    if (!isRecord(raw)) { issues.push(issue('invalid-value', 'cards', 'Cada tarjeta debe ser un objeto.')); continue; }
+    if (workspace.cards.some((existing) => existing.id === card.id)) {
+      issues.push(issue('duplicate-id', 'cards', `Ya existe una tarjeta "${card.id}".`));
+      continue;
+    }
+    const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
+    if (!type) { issues.push(issue('missing-reference', 'cards', `No existe el tipo de tarjeta "${card.typeId}".`)); continue; }
+    const checked = validateCard(card, type);
+    if (!checked.ok) issues.push(...checked.issues);
+  }
+  if (!Array.isArray(placements) || placements.length !== cards.length) {
+    issues.push(issue('invalid-value', 'placements', 'Debe haber una colocación por cada tarjeta.'));
+  } else {
+    const missing = cards.filter((card) => !placements.some((placement) => placement.cardId === card.id));
+    issues.push(...missing.map((card) => issue('missing-reference', 'placements', `Falta colocación para "${card.id}".`)));
+  }
+  if (!Array.isArray(relations)) issues.push(issue('invalid-value', 'relations', 'Debe ser una lista.'));
+  else relations.forEach((relation, index) => collectRelationIssues(relation, `relations[${index}]`, issues));
+  if (issues.length > 0) return failure(issues);
+  const current = workspace.layouts.find((layout) => layout.boardId === boardId);
+  const layout: BoardLayout = current ?? { boardId, placements: [] };
+  const placed = addGroup(layout, placements, config);
+  if (!placed.ok) return failure([...placed.issues]);
+  return validateWorkspace({
+    ...workspace,
+    cards: [...workspace.cards, ...cards],
+    relations: [...workspace.relations, ...relations],
+    boards: workspace.boards.map((board) => (board.id === boardId ? { ...board, cardIds: [...board.cardIds, ...cards.map((card) => card.id)] } : board)),
+    layouts: current ? workspace.layouts.map((existing) => (existing === current ? placed.value : existing)) : [...workspace.layouts, placed.value],
+  });
+}
+
 /** Cambios editables desde el prototipo: título y cuerpo Markdown. */
 export interface CardContentChanges {
   /** Un título en blanco elimina el título (es opcional); cualquier otro se guarda tal cual. */
@@ -136,11 +203,13 @@ export interface CardAppearanceChanges {
   /** Tamaño semántico del título/cuerpo (ADR 0050); `null` vuelve a `'medium'` (ausente). */
   readonly titleSize?: TextSize | null;
   readonly bodySize?: TextSize | null;
+  /** Posición de la leyenda de imágenes intercaladas (ADR 0051); `null` vuelve a `'bottom'` (ausente). */
+  readonly captionPosition?: CaptionPosition | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize'];
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition'];
 
-/** Cambia icono, destino de tablero, excepción de marco y tamaños de texto sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050). */
+/** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
   const source = validateWorkspace(workspace);
   if (!source.ok) return source;
@@ -155,6 +224,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const nextFrame = changes.frameOverride;
   const nextTitleSize = changes.titleSize;
   const nextBodySize = changes.bodySize;
+  const nextCaptionPosition = changes.captionPosition;
   if (nextIcon !== undefined && nextIcon !== null && !cardIconNames.includes(nextIcon as CardIconName)) {
     return failure([issue('invalid-value', 'changes.icon', 'Icono desconocido.')]);
   }
@@ -171,7 +241,13 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   if (nextBodySize !== undefined && nextBodySize !== null && !textSizes.includes(nextBodySize as TextSize)) {
     return failure([issue('invalid-value', 'changes.bodySize', 'Debe ser "small", "medium" o "large".')]);
   }
-  const { icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize, ...base } = card;
+  if (nextCaptionPosition !== undefined && nextCaptionPosition !== null && !captionPositions.includes(nextCaptionPosition as CaptionPosition)) {
+    return failure([issue('invalid-value', 'changes.captionPosition', 'Debe ser "bottom", "top", "left" o "right".')]);
+  }
+  const {
+    icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize,
+    captionPosition: _captionPosition, ...base
+  } = card;
   const edited: Card = {
     ...base,
     ...(nextIcon === undefined ? (card.icon === undefined ? {} : { icon: card.icon }) : nextIcon === null ? {} : { icon: nextIcon as CardIconName }),
@@ -183,6 +259,8 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
       : nextTitleSize === null ? {} : { titleSize: nextTitleSize as TextSize }),
     ...(nextBodySize === undefined ? (card.bodySize === undefined ? {} : { bodySize: card.bodySize })
       : nextBodySize === null ? {} : { bodySize: nextBodySize as TextSize }),
+    ...(nextCaptionPosition === undefined ? (card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition })
+      : nextCaptionPosition === null ? {} : { captionPosition: nextCaptionPosition as CaptionPosition }),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => candidate === card ? edited : candidate) });
 }

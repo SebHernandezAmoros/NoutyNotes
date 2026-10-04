@@ -5,6 +5,7 @@
  */
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { PrintEntry } from '@noutynotes/application';
+import type { CaptionPosition } from '@noutynotes/domain';
 
 import { markdownExcerpt } from './markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
@@ -16,11 +17,23 @@ export function escapeHtml(value: string): string {
 const connectionLine = (connection: PrintEntry['connections'][number]) =>
   `<li>${connection.direction === 'to' ? '→' : '←'} ${escapeHtml(connection.label)}: ${escapeHtml(connection.otherTitle)}</li>`;
 
-function imageHtml(ref: string, alt: string, images: ReadonlyMap<string, string>): string {
+/**
+ * Posición de la leyenda (ADR 0051), mismo criterio que `NotePreview`: «bottom» usa la regla global
+ * de `figcaption` (sin estilo en línea); las otras tres la sustituyen. «left»/«right» convierten la
+ * figura en una fila (imagen y leyenda reparten el ancho) en vez de apilar en el presupuesto vertical.
+ */
+function imageHtml(ref: string, alt: string, images: ReadonlyMap<string, string>, position: CaptionPosition): string {
   const uri = images.get(ref);
   if (!uri) return '';
-  const caption = alt !== '' ? `<figcaption>${escapeHtml(alt)}</figcaption>` : '';
-  return `<figure><img src="${escapeHtml(uri)}" alt="${escapeHtml(alt)}" />${caption}</figure>`;
+  const sideways = position === 'left' || position === 'right';
+  const img = `<img src="${escapeHtml(uri)}" alt="${escapeHtml(alt)}"${sideways ? ' style="flex:2;min-width:0;"' : ''} />`;
+  if (alt === '') return `<figure${sideways ? ' style="display:flex;gap:8px;align-items:flex-start;"' : ''}>${img}</figure>`;
+  const captionStyle = position === 'top' ? ' style="margin:0 0 4px;"' : sideways ? ' style="flex:1;margin:0;"' : '';
+  const caption = `<figcaption${captionStyle}>${escapeHtml(alt)}</figcaption>`;
+  if (position === 'top') return `<figure>${caption}${img}</figure>`;
+  if (position === 'left') return `<figure style="display:flex;gap:8px;align-items:flex-start;">${caption}${img}</figure>`;
+  if (position === 'right') return `<figure style="display:flex;gap:8px;align-items:flex-start;">${img}${caption}</figure>`;
+  return `<figure>${img}${caption}</figure>`;
 }
 
 function textHtml(text: string, bodyPx: number, bodyLine: number): string {
@@ -38,11 +51,13 @@ function textHtml(text: string, bodyPx: number, bodyLine: number): string {
 function bodyHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): string {
   const blocks = parseNoteBlocks(entry.content);
   const inline = new Set<string>(blocks.filter((block) => block.kind === 'image').map((block) => block.ref));
-  const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images));
+  // Posición de leyenda (ADR 0051): mismo mapa que el lienzo y Lista.
+  const position = entry.captionPosition ?? 'bottom';
+  const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images, position));
   // Tamaño semántico del cuerpo (ADR 0050): mismo mapa que el lienzo y Lista.
   const bodyPx = bodyFontSize(entry.bodySize);
   const bodyLine = bodyLineHeight(bodyPx);
-  const body = blocks.map((block) => (block.kind === 'image' ? imageHtml(block.ref, block.alt, images) : textHtml(block.text, bodyPx, bodyLine)));
+  const body = blocks.map((block) => (block.kind === 'image' ? imageHtml(block.ref, block.alt, images, position) : textHtml(block.text, bodyPx, bodyLine)));
   return [...standalone, ...body].join('');
 }
 

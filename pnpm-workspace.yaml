@@ -4,6 +4,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  react-native-enriched-markdown: true
   unrs-resolver: true
 
 overrides:

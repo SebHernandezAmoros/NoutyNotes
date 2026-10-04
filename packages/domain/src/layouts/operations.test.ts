@@ -6,7 +6,7 @@ import type { CardId } from '../ids';
 import { DESKTOP_GRID, cellsOverlap, footprint, validateGridLayout } from './grid';
 import type { GridConfig, GridPoint } from './grid';
 import type { BoardLayout, CardPlacement } from './layout';
-import { compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './operations';
+import { addGroup, compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './operations';
 
 const card = (value: string) => value as CardId;
 const at = (layout: BoardLayout, cardId: string): CardPlacement | undefined =>
@@ -381,5 +381,38 @@ describe('mover un conjunto (ADR 0025)', () => {
     expect(codes(moveCards(layout, [card('a'), card('zzz')], { x: 1, y: 0 }, DESKTOP_GRID))).toContain('missing-reference');
     expect(codes(moveCards(layout, [], { x: 1, y: 0 }, DESKTOP_GRID))).toContain('invalid-value');
     expect(codes(moveCards(layout, [card('a')], { x: 0.1, y: 0 }, DESKTOP_GRID))).toContain('invalid-layout');
+  });
+});
+
+describe('añadir un grupo nuevo (pegar/duplicar, ADR 0052)', () => {
+  // a ya existe; el grupo a añadir son b y c, que no se solapan entre sí ni con a.
+  const layout = deepFreeze(layoutOf(place('a', 0, 0, 2, 1)));
+  const codes = (result: ReturnType<typeof addGroup>) => (result.ok ? [] : result.issues.map((found) => found.code));
+
+  it('añade todas las del grupo si ninguna choca con las que ya había ni entre sí', () => {
+    const added = value(addGroup(layout, [place('b', 2, 0, 2, 1), place('c', 4, 0, 2, 1)], DESKTOP_GRID));
+    expect(added.placements.map((p) => p.cardId)).toEqual(['a', 'b', 'c']);
+    expect(at(added, 'b')?.rect).toEqual({ x: 2, y: 0, w: 2, h: 1 });
+    expect(at(added, 'c')?.rect).toEqual({ x: 4, y: 0, w: 2, h: 1 });
+    // No cambia nada del layout original.
+    expect(layout.placements).toHaveLength(1);
+  });
+
+  it('todo o nada: si una del grupo choca con una de fuera, ninguna se añade', () => {
+    const blocked = addGroup(layout, [place('b', 2, 0, 2, 1), place('c', 0, 0, 1, 1)], DESKTOP_GRID);
+    expect(blocked.ok).toBe(false);
+    expect(codes(blocked)).toContain('grid-collision');
+  });
+
+  it('todo o nada: si dos del propio grupo se solapan entre sí, ninguna se añade', () => {
+    const blocked = addGroup(layout, [place('b', 2, 0, 2, 1), place('c', 3, 0, 2, 1)], DESKTOP_GRID);
+    expect(blocked.ok).toBe(false);
+    expect(codes(blocked)).toContain('grid-collision');
+  });
+
+  it('rechaza un cardId que ya tiene colocación, una lista vacía y límites fuera de la grilla', () => {
+    expect(codes(addGroup(layout, [place('a', 4, 0, 1, 1)], DESKTOP_GRID))).toContain('duplicate-id');
+    expect(codes(addGroup(layout, [], DESKTOP_GRID))).toContain('invalid-value');
+    expect(codes(addGroup(layout, [place('b', 20, 0, 2, 1)], DESKTOP_GRID))).toContain('out-of-bounds');
   });
 });

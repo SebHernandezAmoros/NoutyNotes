@@ -123,3 +123,29 @@ describe('tamaños de título y cuerpo por ficha (ADR 0050)', () => {
     expect(card?.bodySize).toBe('large');
   });
 });
+
+describe('posición de leyenda por ficha (ADR 0051)', () => {
+  it('ausente por defecto; se puede fijar a cada posición y volver a ausente con null', () => {
+    const base = validWorkspace();
+    expect(ideaA.captionPosition).toBeUndefined();
+    for (const captionPosition of ['top', 'left', 'right', 'bottom'] as const) {
+      const moved = assertValid(updateCardAppearance(base, ideaA.id, { captionPosition }));
+      expect(moved.cards.find(c => c.id === ideaA.id)?.captionPosition).toBe(captionPosition);
+    }
+    const set = assertValid(updateCardAppearance(base, ideaA.id, { captionPosition: 'left' }));
+    const cleared = assertValid(updateCardAppearance(set, ideaA.id, { captionPosition: null }));
+    expect(cleared.cards.find(c => c.id === ideaA.id)?.captionPosition).toBeUndefined();
+    expect(base).toEqual(validWorkspace());
+  });
+  it('rechaza un valor que no sea "bottom", "top", "left" o "right"', () => {
+    expect(problems(updateCardAppearance(validWorkspace(), ideaA.id, unsafe({ captionPosition: 'center' })))).toEqual(['invalid-value@changes.captionPosition']);
+  });
+  it('no cambia los tamaños de texto ni el marco al tocar solo la posición de leyenda', () => {
+    const withSizes = assertValid(updateCardAppearance(validWorkspace(), ideaA.id, { titleSize: 'small', frameOverride: 'hidden' }));
+    const withCaption = assertValid(updateCardAppearance(withSizes, ideaA.id, { captionPosition: 'right' }));
+    const card = withCaption.cards.find(c => c.id === ideaA.id);
+    expect(card?.titleSize).toBe('small');
+    expect(card?.frameOverride).toBe('hidden');
+    expect(card?.captionPosition).toBe('right');
+  });
+});

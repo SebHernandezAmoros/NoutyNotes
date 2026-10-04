@@ -59,4 +59,20 @@ describe('documento de impresión (ADR 0031)', () => {
     expect(html).toMatch(/<h2 style="font-size:20px;line-height:25px;">A<\/h2>/);
     expect(html).toMatch(/<pre style="font-size:11px;line-height:15px;">Cuerpo<\/pre>/);
   });
+
+  it('la posición de la leyenda cambia el orden y, en «left»/«right», convierte la figura en fila (ADR 0051); «bottom» por defecto no necesita estilo en línea', () => {
+    const entry = (captionPosition: PrintEntry['captionPosition']): PrintEntry => ({
+      id: id('a'), number: 1, title: 'A', typeLabel: 'Nota', content: '![mapa](assets/images/x.png)', tags: [], imageRefs: ['assets/images/x.png'], connections: [],
+      ...(captionPosition === undefined ? {} : { captionPosition }),
+    });
+    const images = new Map([['assets/images/x.png', 'data:image/png;base64,AAA']]);
+    const bottom = buildPrintHtml('T', [entry(undefined)], images);
+    expect(bottom).toMatch(/<figure><img[^>]*\/><figcaption>mapa<\/figcaption><\/figure>/);
+    const top = buildPrintHtml('T', [entry('top')], images);
+    expect(top).toMatch(/<figure><figcaption[^>]*>mapa<\/figcaption><img[^>]*\/><\/figure>/);
+    const left = buildPrintHtml('T', [entry('left')], images);
+    expect(left).toMatch(/<figure style="display:flex;[^"]*"><figcaption[^>]*>mapa<\/figcaption><img[^>]*flex:2[^>]*\/><\/figure>/);
+    const right = buildPrintHtml('T', [entry('right')], images);
+    expect(right).toMatch(/<figure style="display:flex;[^"]*"><img[^>]*flex:2[^>]*\/><figcaption[^>]*>mapa<\/figcaption><\/figure>/);
+  });
 });

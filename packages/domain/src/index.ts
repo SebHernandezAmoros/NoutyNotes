@@ -10,12 +10,12 @@ export { ASSET_REF_MAX_LENGTH, isValidAssetRef, parseAssetRef } from './assets/a
 export type { AssetRef } from './assets/asset-ref';
 export { validateBoard } from './boards/board';
 export type { Board } from './boards/board';
-export { cardIconNames, frameOverrides, textSizes, validateCard } from './cards/card';
+export { captionPositions, cardIconNames, frameOverrides, textSizes, validateCard } from './cards/card';
 export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export { linkDisplay, linkUrlField, normalizeLinkUrl } from './cards/links';
-export type { Card, CardIconName, FrameOverride, TextSize } from './cards/card';
-export { addCard, deleteCard, updateCard, updateCardAppearance } from './cards/operations';
-export type { AddCardOptions, CardAppearanceChanges, CardContentChanges, DeleteCardOptions } from './cards/operations';
+export type { CaptionPosition, Card, CardIconName, FrameOverride, TextSize } from './cards/card';
+export { addCard, deleteCard, pasteCardsOnBoard, updateCard, updateCardAppearance } from './cards/operations';
+export type { AddCardOptions, CardAppearanceChanges, CardContentChanges, DeleteCardOptions, PasteCardsInput } from './cards/operations';
 export { purgeTrashedCard, restoreTrashedCard, trashCard } from './cards/trash';
 export { archiveCard, archivedToTrash, restoreArchivedCard } from './cards/archive';
 export { isArchiveInstant } from './cards/trashed-card';
@@ -36,7 +36,7 @@ export {
   cellsOverlap, compareReadingOrder, footprint, snapFineUnit, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,
 } from './layouts/grid';
 export type { GridCell, GridConfig, GridPoint, GridSize } from './layouts/grid';
-export { compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './layouts/operations';
+export { addGroup, compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './layouts/operations';
 export type { FindFreeSpaceOptions, SetDisplayOptions } from './layouts/operations';
 export { projectLayout } from './layouts/projection';
 export type { ProjectedItem, ProjectedLayout } from './layouts/projection';
