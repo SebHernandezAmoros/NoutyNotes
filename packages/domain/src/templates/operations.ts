@@ -3,9 +3,10 @@ import type { Id, WorkspaceId } from '../ids';
 import type { Workspace } from '../workspace/workspace';
 import type { AssetRef } from '../assets/asset-ref';
 import type { Template, TemplateManifest } from './template';
-import { collectExecutableContentIssues, templateWorkspace, validateTemplate } from './template';
+import { templateWorkspace, validateTemplate } from './template';
 import { checkRequiredText, failure, isRecord, issue, resultOf } from '../errors';
 import { checkId } from '../ids';
+import { collectPlainDataIssues } from '../shared/plain-data';
 import { validateWorkspace } from '../workspace/workspace';
 import { copyTemplateData } from './data';
 
@@ -15,7 +16,7 @@ export interface TemplateInstance { readonly workspace: Workspace; readonly asse
 
 function optionIssues(options: unknown, keys: readonly string[]): DomainIssue[] {
   const issues: DomainIssue[] = [];
-  collectExecutableContentIssues(options, 'options', issues);
+  collectPlainDataIssues(options, 'options', issues);
   if (issues.length > 0) return issues;
   if (!isRecord(options)) return [issue('invalid-value', 'options', 'Debe ser un objeto de opciones.')];
   for (const key of Object.keys(options)) if (!keys.includes(key)) issues.push(issue('unknown-property', `options.${key}`, 'Opción desconocida.'));

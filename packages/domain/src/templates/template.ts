@@ -14,6 +14,9 @@ import type { BoardId, CardId, TemplateId, WorkspaceId } from '../ids';
 import { collectRelationTypeIssues } from '../relations/relation';
 import type { Relation, RelationTypeDefinition } from '../relations/relation';
 import { checkSchemaVersion } from '../schema-version';
+import { collectPlainDataIssues } from '../shared/plain-data';
+
+export { collectPlainDataIssues as collectExecutableContentIssues } from '../shared/plain-data';
 
 export interface TemplateManifest {
   readonly id: TemplateId;
@@ -57,63 +60,6 @@ const fieldKeys = ['key', 'kind', 'label', 'required', 'options'];
 const relationTypeKeys = ['id', 'label'];
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-function isPlainObject(value: object): boolean {
-  const prototype: unknown = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-/**
- * Admite solo datos equivalentes a JSON/YAML: texto, números finitos, booleanos, null, listas y
- * objetos simples. Funciones, símbolos, clases, getters u objetos especiales se rechazan.
- */
-export function collectExecutableContentIssues(value: unknown, path: string, issues: DomainIssue[], seen = new Set<object>(), depth = 0): void {
-  if (depth > 64) {
-    issues.push(issue('invalid-value', path, 'La profundidad máxima de datos es 64.'));
-    return;
-  }
-  // `undefined` equivale a una clave ausente; su obligatoriedad se comprueba después.
-  if (value === undefined || value === null || typeof value === 'string' || typeof value === 'boolean') return;
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) issues.push(issue('invalid-value', path, 'Los números deben ser finitos.'));
-    return;
-  }
-  if (typeof value !== 'object') {
-    issues.push(issue('executable-content', path, `Solo se admiten datos; no se admite ${typeof value}.`));
-    return;
-  }
-  if (seen.has(value)) {
-    issues.push(issue('invalid-value', path, 'Referencia circular.'));
-    return;
-  }
-  seen.add(value);
-  if (Array.isArray(value) ? Object.getPrototypeOf(value) !== Array.prototype : !isPlainObject(value)) {
-    issues.push(issue('executable-content', path, 'Solo se admiten objetos y listas simples.'));
-    return;
-  }
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  if (Array.isArray(value) && Object.keys(descriptors).filter(key => key !== 'length').length !== value.length) {
-    issues.push(issue('invalid-value', path, 'No se admiten listas dispersas ni propiedades extra.'));
-  }
-  for (const [key, descriptor] of Object.entries(descriptors)) {
-    if (Array.isArray(value) && key === 'length') continue;
-    const childPath = Array.isArray(value) ? `${path}[${key}]` : path ? `${path}.${key}` : key;
-    if (descriptor.get || descriptor.set) {
-      issues.push(issue('executable-content', childPath, 'No se admiten propiedades calculadas.'));
-      continue;
-    }
-    if (!descriptor.enumerable || (Array.isArray(value) && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length || descriptor.value === undefined))) {
-      issues.push(issue('invalid-value', childPath, 'La propiedad no se puede representar sin pérdida en JSON.'));
-      continue;
-    }
-    collectExecutableContentIssues(descriptor.value, childPath, issues, seen, depth + 1);
-  }
-  if (Object.getOwnPropertySymbols(value).length > 0) {
-    issues.push(issue('executable-content', path, 'No se admiten claves de símbolo.'));
-  }
-  // Solo los antepasados cuentan como ciclo; un mismo objeto compartido (alias YAML) es válido.
-  seen.delete(value);
-}
-
 function checkKnownKeys(value: Readonly<Record<string, unknown>>, allowed: readonly string[], path: string, issues: DomainIssue[]): void {
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) {
@@ -129,7 +75,7 @@ function checkKnownKeys(value: Readonly<Record<string, unknown>>, allowed: reado
 export function validateTemplate(input: unknown): ValidationResult<Template> {
   const issues: DomainIssue[] = [];
   const template = input as Template;
-  collectExecutableContentIssues(input, '', issues);
+  collectPlainDataIssues(input, '', issues);
   if (issues.length > 0) return resultOf(template, issues);
   if (!isRecord(input)) return resultOf(template, [issue('invalid-value', 'template', 'Debe ser un objeto.')]);
   if (!checkSchemaVersion(input.schemaVersion, 'schemaVersion', issues)) return resultOf(template, issues);

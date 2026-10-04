@@ -16,6 +16,8 @@ Paquete `@noutynotes/domain`: modelo y reglas puras de NoutyNotes. No tiene depe
 | `src/layouts/` | Layout por board, colocaciones en unidades de grilla y modo de visualización; motor de grilla (`grid.ts`, `operations.ts`, `projection.ts`) |
 | `src/templates/` | Plantillas completas, validación, remapeo, instanciación y JSON en memoria |
 | `src/assets/` | Referencias a assets relativas a la raíz del workspace |
+| `src/rich-text/` | Documento enriquecido puro, invariantes, límites, validación y normalización canónica |
+| `src/shared/` | Guardas puras compartidas, incluida la validación de datos inertes |
 
 Las pruebas `*.test.ts` están junto a cada módulo. `src/__fixtures__/` contiene datos de prueba que el paquete no exporta.
 
@@ -28,6 +30,7 @@ Las pruebas `*.test.ts` están junto a cada módulo. `src/__fixtures__/` contien
 - **Campos.** Cada tarjeta usa un tipo declarado. Solo admite los campos que ese tipo define, con valores del tipo correcto, y exige los obligatorios.
 - **Identificadores.** Minúsculas, dígitos, `-` y `_`; como máximo 64 caracteres. Son únicos dentro de su colección y se validan sin transformarlos.
 - **Plantillas.** Solo contienen datos compatibles con JSON/YAML. Se rechazan las claves no declaradas en la raíz, el manifiesto, los boards, los tipos de tarjeta, los campos y los tipos de relación. Nada se evalúa.
+- **Documento enriquecido.** `RichTextDocument` modela párrafos, encabezados, marcas, saltos, enlaces, listas, imágenes, tablas y Markdown opaco. Rechaza propiedades privadas, enlaces activos y estructuras sin límites; no interpreta Markdown ni ejecuta el texto.
 - **Datos mal formados.** Las funciones de validación devuelven incidencias y no lanzan excepciones ante estructuras inesperadas. Las comprobaciones cruzadas solo profundizan en entidades sin incidencias propias.
 - **Versión.** `schemaVersion` versiona el workspace completo y, por separado, el manifiesto de plantilla. Una versión no admitida detiene la validación.
 
@@ -66,7 +69,7 @@ El formato es declarativo, con claves cerradas y protección contra contenido ej
 pnpm exec vitest run packages/domain/src/templates tests/integration/templates-workspace.test.ts
 ```
 
-`collectPlainDataIssues` es la guarda de datos inertes (sin getters, funciones, ciclos ni arrays dispersos; profundidad 64). La usan las plantillas y la frontera de archivos de `@noutynotes/storage`. El dominio no depende de YAML, Zod ni storage.
+`collectPlainDataIssues` es la guarda de datos inertes (sin getters, funciones, ciclos ni arrays dispersos; profundidad 64). La usan las plantillas, `RichTextDocument` y la frontera de archivos de `@noutynotes/storage`. El dominio no depende de YAML, Zod ni storage.
 
 ## Fuera de alcance
 

@@ -28,6 +28,18 @@ export { baseCardKinds, fieldKinds, validateCardType } from './cards/card-type';
 export type { BaseCardKind, CardTypeDefinition, FieldDefinition, FieldKind } from './cards/card-type';
 export { isCalendarDate } from './cards/field-values';
 export type { FieldValue } from './cards/field-values';
+export {
+  MAX_RICH_TEXT_BLOCKS, MAX_RICH_TEXT_INLINES, MAX_RICH_TEXT_LIST_DEPTH,
+  MAX_RICH_TEXT_LIST_ITEMS, MAX_RICH_TEXT_TABLE_COLUMNS, MAX_RICH_TEXT_TABLE_ROWS,
+  MAX_RICH_TEXT_TEXT_LENGTH, RICH_TEXT_SCHEMA_VERSION, createEmptyRichTextDocument,
+  normalizeRichTextDocument, richTextMarks, validateRichTextDocument,
+} from './rich-text/rich-text';
+export type {
+  RichTextBlock, RichTextDocument, RichTextHardBreak, RichTextHeading, RichTextHeadingLevel,
+  RichTextImage, RichTextInline, RichTextLeaf, RichTextLink, RichTextList, RichTextListItem,
+  RichTextListStyle, RichTextMark, RichTextOpaqueMarkdown, RichTextParagraph, RichTextTable,
+  RichTextTableCell, RichTextTableRow, RichTextTextRun,
+} from './rich-text/rich-text';
 export { GRID_SUBDIVISIONS, MAX_FRAME_TITLE, cardDisplayModes, isFrameTitle, validateLayout } from './layouts/layout';
 export { frameAround, frameMembers, moveFrame, removeFrame, renameFrame, resizeFrame } from './layouts/frames';
 export type { BoardLayout, CardDisplayMode, CardPlacement, Frame, GridRect } from './layouts/layout';
@@ -47,7 +59,7 @@ export { createRelation, deleteRelation, getIncomingRelations, getOutgoingRelati
 export type { RelationChanges } from './relations/operations';
 export { validateTemplate } from './templates/template';
 // Guarda de datos inertes (JSON/YAML): sin getters, funciones, ciclos ni arrays dispersos; profundidad 64.
-export { collectExecutableContentIssues as collectPlainDataIssues } from './templates/template';
+export { collectPlainDataIssues } from './shared/plain-data';
 export type { Template, TemplateBoard, TemplateManifest } from './templates/template';
 export { instantiateTemplate, duplicateTemplate } from './templates/operations';
 export type { InstantiateTemplateOptions, DuplicateTemplateOptions, TemplateInstance } from './templates/operations';
