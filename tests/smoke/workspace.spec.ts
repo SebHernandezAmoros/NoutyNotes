@@ -382,6 +382,7 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await page.getByTestId('inline-card-title').fill('Idea editada aquí');
   const visual = page.getByLabel('Contenido visual');
   await expect(visual).toBeVisible();
+  await expect(button(page, 'Editar como Markdown')).toHaveCount(0);
   await expect(page.getByTestId('inline-card-content')).toHaveCount(0);
   await visual.fill('');
   await button(page, 'Negrita').click();
@@ -540,7 +541,7 @@ test('P07: convertir una checklist en encabezado se guarda y no reaparece como c
   await expect(page.getByLabel('Contenido visual').locator('h1')).toContainText('*KNKNLK');
 });
 
-test('edición rápida: Enter continúa una lista con guiones y termina en un elemento vacío (UX7-B1, misma regla que el editor completo)', async ({ page }) => {
+test('edición rápida visual: crea y continúa una lista sin exponer Markdown', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');
   await createWorkspace(page, 'Listas en ficha');
@@ -548,19 +549,20 @@ test('edición rápida: Enter continúa una lista con guiones y termina en un el
   await selectCard(page, 1);
   await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
-  await button(page, 'Editar como Markdown').click();
-  const content = page.getByTestId('inline-card-content');
-  await content.fill('- Harina');
+  const content = page.getByLabel('Contenido visual');
+  await expect(button(page, 'Editar como Markdown')).toHaveCount(0);
+  await content.fill('Harina');
   await content.focus();
+  await button(page, 'Lista con viñetas').click();
+  await expect(content.locator('ul li')).toHaveText(['Harina']);
   await content.press('End');
   await content.press('Enter');
-  await expect(content).toHaveValue('- Harina\n- ');
-  // Un elemento vacío termina la lista: la segunda línea queda vacía, sin un tercer guion.
-  await content.press('Enter');
-  await expect(content).toHaveValue('- Harina\n\n');
+  await page.keyboard.type('Agua');
+  await expect(content.locator('ul li')).toHaveText(['Harina', 'Agua']);
+  await expect(page.getByText('Este contenido se edita desde Más opciones.')).toHaveCount(0);
 });
 
-test('edición rápida: negrita y cursiva envuelven la selección con el botón o Ctrl/⌘+B/I (UX7-B3, misma regla que el editor completo)', async ({ page }) => {
+test('edición rápida visual: negrita y cursiva funcionan sin exponer Markdown', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');
   await createWorkspace(page, 'Formato en ficha');
@@ -568,21 +570,16 @@ test('edición rápida: negrita y cursiva envuelven la selección con el botón 
   await selectCard(page, 1);
   await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
-  await button(page, 'Editar como Markdown').click();
-  const content = page.getByTestId('inline-card-content');
-  await content.fill('hola mundo');
-  await content.focus();
-  await content.press('Control+End');
-  for (let i = 0; i < 5; i += 1) await content.press('Shift+ArrowLeft');
-  await page.getByTestId('inline-format-bold').click();
-  await expect(content).toHaveValue('hola **mundo**');
-
-  await content.fill('hola mundo');
-  await content.focus();
-  await content.press('Control+End');
-  for (let i = 0; i < 5; i += 1) await content.press('Shift+ArrowLeft');
-  await content.press(process.platform === 'darwin' ? 'Meta+i' : 'Control+i');
-  await expect(content).toHaveValue('hola *mundo*');
+  const content = page.getByLabel('Contenido visual');
+  await content.fill('');
+  await button(page, 'Negrita').click();
+  await page.keyboard.type('fuerte ');
+  await button(page, 'Negrita').click();
+  await button(page, 'Cursiva').click();
+  await page.keyboard.type('cursiva');
+  await button(page, 'Cursiva').click();
+  await expect(content.locator('strong')).toHaveText('fuerte ');
+  await expect(content.locator('em')).toHaveText('cursiva');
 });
 
 test('checklist en el lienzo: un toque marca la línea sin abrir el editor ni arrastrar la ficha, y persiste al reabrir el espacio (UX7-B2)', async ({ page }, testInfo) => {

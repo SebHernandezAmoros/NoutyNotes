@@ -3,13 +3,10 @@ import type { Card, CardId } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { NativeSyntheticEvent, TextInputKeyPressEventData } from 'react-native';
 
 import { AppIcon } from '../../components/AppIcon';
-import { applyInlineMark, normalizeListChange } from '../markdownLists';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import { RichTextEditor } from '../RichTextEditor';
-import type { InlineMarkKind, TextSelection } from '../markdownLists';
 import type { ScreenBox } from './cardChrome';
 
 interface InlineCardEditorProps {
@@ -27,44 +24,22 @@ export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced,
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
-  const initialParsed = richTextCodec.parse(card.content ?? '');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
     : isBasicRichTextDocument(document);
-  const initialVisualAvailable = initialParsed.ok && supportsVisualDocument(initialParsed.value);
-  const [editorMode, setEditorMode] = useState<'visual' | 'markdown'>(initialVisualAvailable ? 'visual' : 'markdown');
+  const [visualDocument, setVisualDocument] = useState<Parameters<RichTextCodec['serialize']>[0] | null>(() => {
+    const parsed = richTextCodec.parse(card.content ?? '');
+    return parsed.ok && supportsVisualDocument(parsed.value) ? parsed.value : null;
+  });
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  // UX7-B1: misma regla de continuidad de listas que el editor completo (markdownLists.ts), sin un
-  // segundo algoritmo: Enter continúa marcador/sangría, un elemento vacío termina la lista.
-  const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
-  const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
-  const changeContent = (value: string) => {
-    const edit = normalizeListChange(content, value, selectionRef.current);
-    setContent(edit?.text ?? value);
-    if (edit) setForcedSelection({ start: edit.caret, end: edit.caret });
-  };
-  const parsedRichText = richTextCodec.parse(content);
-  const visualDocument = parsedRichText.ok && supportsVisualDocument(parsedRichText.value) ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
-  const visualEditing = editorMode === 'visual' && visualAvailable;
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
     const encoded = richTextCodec.serialize(document);
-    if (encoded.ok) setContent(encoded.value);
-  };
-  // UX7-B3: misma función que el editor completo (markdownLists.ts), sin un segundo algoritmo.
-  const applyFormat = (kind: InlineMarkKind) => {
-    const edit = applyInlineMark(content, selectionRef.current, kind);
-    setContent(edit.text);
-    selectionRef.current = edit.selection;
-    setForcedSelection(edit.selection);
-  };
-  const onContentKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }>) => {
-    const { ctrlKey, metaKey, key } = event.nativeEvent;
-    if (!(ctrlKey || metaKey)) return;
-    const lower = key.toLowerCase();
-    if (lower === 'b') { event.preventDefault(); applyFormat('bold'); }
-    else if (lower === 'i') { event.preventDefault(); applyFormat('italic'); }
+    if (encoded.ok) {
+      setVisualDocument(document);
+      setContent(encoded.value);
+    }
   };
   const current = useRef({ title, content });
   const saved = useRef({ title: card.title ?? '', content: card.content ?? '' });
@@ -117,8 +92,8 @@ export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced,
       accessibilityViewIsModal
       style={[styles.editor, {
         left: box.left, top: box.top,
-        width: visualEditing ? Math.max(box.width, 320) : box.width,
-        height: visualEditing ? Math.max(box.height, 300) : box.height,
+        width: visualAvailable ? Math.max(box.width, 320) : box.width,
+        height: visualAvailable ? Math.max(box.height, 300) : box.height,
         backgroundColor: colors.cardSurface, borderColor: colors.selection,
       }]}
     >
@@ -141,48 +116,13 @@ export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced,
         placeholderTextColor={colors.textSecondary}
         style={[styles.title, { color: colors.cardText, borderColor: colors.gridLine }]}
       />
-      <View style={styles.modeRow} accessibilityRole="toolbar" accessibilityLabel="Modo de edición">
-        {visualEditing ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Editar como Markdown" onPress={() => setEditorMode('markdown')} style={[styles.modeButton, { borderColor: colors.border }]}>
-            <Text style={[styles.modeText, { color: colors.cardText }]}>Markdown</Text>
-          </Pressable>
-        ) : visualAvailable ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Editar visualmente" onPress={() => setEditorMode('visual')} style={[styles.modeButton, { borderColor: colors.border }]}>
-            <Text style={[styles.modeText, { color: colors.cardText }]}>Visual</Text>
-          </Pressable>
-        ) : (
-          <Text style={[styles.modeHint, { color: colors.textSecondary }]}>Esta nota usa Markdown avanzado.</Text>
-        )}
-      </View>
-      {!visualEditing ? <View style={styles.formatRow} accessibilityRole="toolbar" accessibilityLabel="Formato Markdown">
-        <Pressable testID="inline-format-bold" accessibilityRole="button" accessibilityLabel="Negrita Markdown" onPress={() => applyFormat('bold')} style={[styles.formatButton, { borderColor: colors.border }]}>
-          <Text style={[styles.formatButtonText, { color: colors.cardText, fontWeight: '900' }]}>B</Text>
-        </Pressable>
-        <Pressable testID="inline-format-italic" accessibilityRole="button" accessibilityLabel="Cursiva Markdown" onPress={() => applyFormat('italic')} style={[styles.formatButton, { borderColor: colors.border }]}>
-          <Text style={[styles.formatButtonText, { color: colors.cardText, fontStyle: 'italic' }]}>I</Text>
-        </Pressable>
-      </View> : null}
-      {visualEditing && visualDocument ? (
+      {visualDocument ? (
         <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} compact />
-      ) : <TextInput
-        testID="inline-card-content"
-        accessibilityLabel="Contenido Markdown"
-        value={content}
-        onChangeText={changeContent}
-        {...(forcedSelection === undefined ? {} : { selection: forcedSelection })}
-        onSelectionChange={(event) => {
-          const next = event.nativeEvent.selection;
-          selectionRef.current = next;
-          if (forcedSelection && next.start === forcedSelection.start && next.end === forcedSelection.end) setForcedSelection(undefined);
-        }}
-        onKeyPress={onContentKeyPress}
-        onBlur={() => { void persist(); }}
-        placeholder="Escribe una idea…"
-        placeholderTextColor={colors.textSecondary}
-        multiline
-        textAlignVertical="top"
-        style={[styles.content, { color: colors.cardText }]}
-      />}
+      ) : (
+        <View style={styles.unsupportedContent}>
+          <Text style={[styles.modeHint, { color: colors.textSecondary }]}>Este contenido se edita desde Más opciones.</Text>
+        </View>
+      )}
       <View style={styles.footer}>
         <Text accessibilityLiveRegion="polite" style={[styles.status, { color: problem ? colors.danger : colors.textSecondary }]}>{problem ?? (saving ? 'Guardando…' : 'Los cambios se guardan automáticamente')}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="Abrir el editor completo" onPress={advanced} style={[styles.more, { borderColor: colors.border }]}>
@@ -197,16 +137,10 @@ const styles = StyleSheet.create({
   editor: { position: 'absolute', zIndex: 45, borderWidth: 3, minWidth: 240, minHeight: 180, overflow: 'hidden' },
   bar: { height: 44, borderBottomWidth: 2, paddingLeft: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
   eyebrow: { flex: 1, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
-  formatRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingTop: 6 },
-  modeRow: { minHeight: 34, paddingHorizontal: 10, paddingTop: 5, flexDirection: 'row', alignItems: 'center' },
-  modeButton: { minHeight: 30, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  modeText: { fontSize: 11, fontWeight: '800' },
   modeHint: { fontSize: 11, lineHeight: 16 },
-  formatButton: { width: 32, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  formatButtonText: { fontSize: 14 },
   iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
   title: { height: 42, paddingHorizontal: 10, borderBottomWidth: 1, fontSize: 17, lineHeight: 22, fontWeight: '900' },
-  content: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, lineHeight: 20 },
+  unsupportedContent: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8 },
   footer: { minHeight: 38, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 8 },
   status: { flex: 1, fontSize: 10, lineHeight: 14 },
   more: { minHeight: 30, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
