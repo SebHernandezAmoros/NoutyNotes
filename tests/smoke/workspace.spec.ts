@@ -518,7 +518,7 @@ test('P07: convertir una checklist en encabezado se guarda y no reaparece como c
   if (await expandEditor.count() > 0) await expandEditor.click();
 
   await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('- [ ] \\*KNKNLK');
+  await page.getByLabel('Contenido Markdown').fill('- [ ] \\*KNKNLK\n\nTexto normal');
   await button(page, 'Abrir editor visual').click();
   const visual = page.getByLabel('Contenido visual');
   await visual.locator('li').selectText();
@@ -531,6 +531,9 @@ test('P07: convertir una checklist en encabezado se guarda y no reaparece como c
   await expect(cardPreview).toContainText('*KNKNLK');
   await expect(cardPreview).not.toContainText('☐');
   await expect(cardPreview).not.toContainText('\\*');
+  const headingSize = Number.parseFloat(await page.getByTestId('card-rich-text-tarjeta-1-run-0-0').evaluate((node) => getComputedStyle(node).fontSize));
+  const paragraphSize = Number.parseFloat(await page.getByTestId('card-rich-text-tarjeta-1-run-1-0').evaluate((node) => getComputedStyle(node).fontSize));
+  expect(headingSize).toBeGreaterThan(paragraphSize);
   await page.screenshot({ path: testInfo.outputPath('p07-heading-preview.png') });
   await tapCard(page, 1);
   if (await expandEditor.count() > 0) await expandEditor.click();

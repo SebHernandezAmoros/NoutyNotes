@@ -40,7 +40,7 @@ interface PreviewLine {
   readonly key: string;
   readonly prefix: string;
   readonly content: readonly RichTextInline[];
-  readonly heading: boolean;
+  readonly headingLevel: 1 | 2 | 3 | 4 | 5 | 6 | null;
 }
 
 function listLines(list: RichTextList, blockIndex: number, depth = 0, path = ''): readonly PreviewLine[] {
@@ -48,7 +48,7 @@ function listLines(list: RichTextList, blockIndex: number, depth = 0, path = '')
   list.items.forEach((item, itemIndex) => {
     const ordinal = (list.start ?? 1) + itemIndex;
     const marker = list.style === 'ordered' ? `${ordinal}. ` : list.style === 'checklist' ? `${item.checked ? '☑' : '☐'} ` : '• ';
-    lines.push({ key: `${blockIndex}-list-${path}${itemIndex}`, prefix: `${'  '.repeat(depth)}${marker}`, content: item.content, heading: false });
+    lines.push({ key: `${blockIndex}-list-${path}${itemIndex}`, prefix: `${'  '.repeat(depth)}${marker}`, content: item.content, headingLevel: null });
     item.children?.forEach((child, childIndex) => lines.push(...listLines(child, blockIndex, depth + 1, `${path}${itemIndex}-${childIndex}-`)));
   });
   return lines;
@@ -56,8 +56,8 @@ function listLines(list: RichTextList, blockIndex: number, depth = 0, path = '')
 
 function previewLines(document: RichTextDocument): readonly PreviewLine[] {
   return document.blocks.flatMap((block, blockIndex): readonly PreviewLine[] => {
-    if (block.type === 'paragraph') return [{ key: `${blockIndex}`, prefix: '', content: block.content, heading: false }];
-    if (block.type === 'heading') return [{ key: `${blockIndex}`, prefix: '', content: block.content, heading: true }];
+    if (block.type === 'paragraph') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: null }];
+    if (block.type === 'heading') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: block.level }];
     if (block.type === 'list') return listLines(block, blockIndex);
     return [];
   });
@@ -76,7 +76,10 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
         <Fragment key={line.key}>
           {lineIndex > 0 ? '\n' : null}
           {line.prefix}
-          <Text style={line.heading ? styles.heading : null}>
+          <Text style={line.headingLevel === null ? null : [styles.heading, {
+            fontSize: fontSize * headingScale[line.headingLevel],
+            lineHeight: Math.round(fontSize * headingScale[line.headingLevel] * 1.15),
+          }]}>
             {line.content.map((inline, inlineIndex) => inlineView(inline, lineIndex, inlineIndex, testID))}
           </Text>
         </Fragment>
@@ -84,6 +87,15 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
     </Text>
   );
 }
+
+const headingScale: Readonly<Record<1 | 2 | 3 | 4 | 5 | 6, number>> = {
+  1: 2,
+  2: 1.65,
+  3: 1.4,
+  4: 1.2,
+  5: 1.05,
+  6: 1,
+};
 
 const styles = StyleSheet.create({
   content: { flexShrink: 1, overflow: 'hidden' },
