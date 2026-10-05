@@ -1,0 +1,24 @@
+diff --git a/android/src/main/java/com/swmansion/enriched/markdown/input/EnrichedMarkdownTextInputView.kt b/android/src/main/java/com/swmansion/enriched/markdown/input/EnrichedMarkdownTextInputView.kt
+index b7c58497313ac6858e247fe6ef01db3d0b7dd96d..798f6beb560a38c4b7f998c2b5800eba3225ca42 100644
+--- a/android/src/main/java/com/swmansion/enriched/markdown/input/EnrichedMarkdownTextInputView.kt
++++ b/android/src/main/java/com/swmansion/enriched/markdown/input/EnrichedMarkdownTextInputView.kt
+@@ -220,6 +220,19 @@ class EnrichedMarkdownTextInputView(
+     keyCode: Int,
+     event: KeyEvent?,
+   ): Boolean {
++    val usesFormattingModifier = event?.let { it.isCtrlPressed || it.isMetaPressed } == true
++    if (usesFormattingModifier && event?.isAltPressed != true) {
++      val style =
++        when (keyCode) {
++          KeyEvent.KEYCODE_B -> StyleType.BOLD
++          KeyEvent.KEYCODE_I -> StyleType.ITALIC
++          else -> null
++        }
++      if (style != null) {
++        if (event?.repeatCount == 0) toggleInlineStyle(style)
++        return true
++      }
++    }
+     if (keyCode == KeyEvent.KEYCODE_TAB && event?.hasNoModifiers() != false) {
+       eventEmitter.emitKeyPress("Tab")
+       val start = minOf(selectionStart, selectionEnd).coerceAtLeast(0)

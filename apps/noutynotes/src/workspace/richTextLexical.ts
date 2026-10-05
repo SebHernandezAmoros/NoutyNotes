@@ -11,15 +11,11 @@ import {
 import { RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
 import type { RichTextDocument, RichTextInline, RichTextMark } from '@noutynotes/domain';
 
-/** Alcance editable de P04. Los demás nodos vuelven al editor Markdown sin transformarse. */
-export function isBasicWebDocument(document: RichTextDocument): boolean {
-  return document.blocks.every((block) => block.type === 'paragraph'
-    && block.content.every((inline) => inline.type === 'text' || inline.type === 'hard-break'));
-}
+import { isBasicRichTextDocument } from './basicRichText';
 
 /** Debe ejecutarse dentro de `editor.update`. */
 export function $loadBasicRichTextDocument(document: RichTextDocument): void {
-  if (!isBasicWebDocument(document)) throw new Error('El documento contiene bloques fuera del alcance de UX7 P04.');
+  if (!isBasicRichTextDocument(document)) throw new Error('El documento contiene bloques fuera del alcance del editor visual básico.');
   const root = $getRoot();
   root.clear();
   for (const block of document.blocks) {

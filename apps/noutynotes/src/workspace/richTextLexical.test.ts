@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { RichTextDocument } from '@noutynotes/domain';
 
-import { $loadBasicRichTextDocument, $readBasicRichTextDocument, isBasicWebDocument } from './richTextLexical';
+import { isBasicRichTextDocument } from './basicRichText';
+import { $loadBasicRichTextDocument, $readBasicRichTextDocument } from './richTextLexical';
 
 const basicDocument: RichTextDocument = {
   schemaVersion: 1,
@@ -32,12 +33,12 @@ describe('adaptador Lexical de UX7 P04', () => {
   });
 
   it('solo habilita P04 para párrafos básicos y preserva para fases posteriores lo demás', () => {
-    expect(isBasicWebDocument(basicDocument)).toBe(true);
-    expect(isBasicWebDocument({ schemaVersion: 1, blocks: [{ type: 'heading', level: 1, content: [] }] })).toBe(false);
-    expect(isBasicWebDocument({
+    expect(isBasicRichTextDocument(basicDocument)).toBe(true);
+    expect(isBasicRichTextDocument({ schemaVersion: 1, blocks: [{ type: 'heading', level: 1, content: [] }] })).toBe(false);
+    expect(isBasicRichTextDocument({
       schemaVersion: 1,
       blocks: [{ type: 'paragraph', content: [{ type: 'link', href: 'https://example.com', content: [{ type: 'text', text: 'sitio' }] }] }],
     })).toBe(false);
-    expect(isBasicWebDocument({ schemaVersion: 1, blocks: [{ type: 'opaque-markdown', source: '<aside>literal</aside>' }] })).toBe(false);
+    expect(isBasicRichTextDocument({ schemaVersion: 1, blocks: [{ type: 'opaque-markdown', source: '<aside>literal</aside>' }] })).toBe(false);
   });
 });

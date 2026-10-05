@@ -18,8 +18,8 @@ import { cardTitle } from './Board';
 import { applyInlineMark, applyListCommand, normalizeListChange, parseChecklistLine, toggleChecklistLine } from './markdownLists';
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
-import { isBasicWebDocument } from './richTextLexical';
-import { WebRichTextEditor } from './WebRichTextEditor';
+import { isBasicRichTextDocument } from './basicRichText';
+import { RichTextEditor } from './RichTextEditor';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
@@ -96,8 +96,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
   const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
   const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
-  const parsedRichText = focused && Platform.OS === 'web' ? richTextCodec.parse(content) : null;
-  const visualDocument = parsedRichText?.ok && isBasicWebDocument(parsedRichText.value) ? parsedRichText.value : null;
+  const supportsVisualEditor = Platform.OS === 'web' || Platform.OS === 'android';
+  const parsedRichText = focused && supportsVisualEditor ? richTextCodec.parse(content) : null;
+  const visualDocument = parsedRichText?.ok && isBasicRichTextDocument(parsedRichText.value) ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
   const visualEditing = visualRequested && visualAvailable;
   const changeTitle = (value: string) => {
@@ -373,7 +374,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             </View>
           ) : null}
         </View>
-        {focused && Platform.OS === 'web' && visualAvailable && !visualEditing ? (
+        {focused && supportsVisualEditor && visualAvailable && !visualEditing ? (
           <ActionButton label={t('inspector.visual.open', locale)} accessibilityLabel={t('inspector.visual.open.accessibilityLabel', locale)} onPress={() => setVisualRequested(true)} />
         ) : null}
         {visualEditing ? (
@@ -382,9 +383,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           }} />
         ) : null}
         {visualEditing && visualDocument ? (
-          <WebRichTextEditor cardId={card.id} document={visualDocument} onChange={changeVisualDocument} />
+          <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} />
         ) : null}
-        {focused && Platform.OS === 'web' && !visualAvailable ? (
+        {focused && supportsVisualEditor && !visualAvailable ? (
           <Text testID="visual-editor-fallback" style={[styles.hint, { color: colors.textSecondary }]}>
             {t('inspector.visual.fallback', locale)}
           </Text>

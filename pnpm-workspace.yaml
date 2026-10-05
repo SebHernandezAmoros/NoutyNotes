@@ -9,3 +9,6 @@ allowBuilds:
 
 overrides:
   react-native-worklets: 0.10.1
+
+patchedDependencies:
+  react-native-enriched-markdown@1.1.0: patches/react-native-enriched-markdown@1.1.0.patch

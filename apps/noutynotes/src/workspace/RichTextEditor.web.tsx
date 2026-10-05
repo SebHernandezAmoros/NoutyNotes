@@ -25,7 +25,7 @@ import { useLocale, useTheme } from '@noutynotes/ui';
 
 import { t } from '../i18n';
 import { $loadBasicRichTextDocument, $readBasicRichTextDocument } from './richTextLexical';
-import type { WebRichTextEditorProps } from './WebRichTextEditor.types';
+import type { RichTextEditorProps } from './RichTextEditor.types';
 
 function EditorToolbar() {
   const [editor] = useLexicalComposerContext();
@@ -77,7 +77,7 @@ function EditorToolbar() {
   );
 }
 
-function DocumentChanges({ initialDocument, onChange }: Pick<WebRichTextEditorProps, 'document' | 'onChange'> & { readonly initialDocument: WebRichTextEditorProps['document'] }) {
+function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps, 'document' | 'onChange'> & { readonly initialDocument: RichTextEditorProps['document'] }) {
   const [initialSignature] = useState(() => JSON.stringify(initialDocument));
   const lastSignature = useRef(initialSignature);
   const changed = useRef(false);
@@ -99,7 +99,7 @@ function DocumentChanges({ initialDocument, onChange }: Pick<WebRichTextEditorPr
   );
 }
 
-export function WebRichTextEditor({ cardId, document, onChange }: WebRichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
