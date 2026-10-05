@@ -14,7 +14,7 @@ import { markdownExcerpt } from './markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
 import { NotePreview } from './canvas/NotePreview';
 import { BasicRichTextPreview } from './BasicRichTextPreview';
-import { parseBasicRichText } from './basicRichText';
+import { parseWebRichText } from './basicRichText';
 
 const BOARD_BORDER = 2;
 const emptyNoteImages: ReadonlyMap<string, string> = new Map();
@@ -137,7 +137,7 @@ function CardView({ box, card, image, imageUri, noteImages, connections, selecte
   const bodyHeight = Math.max(0, box.height - 56);
   const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
-  const basicDocument = image || mixed ? null : parseBasicRichText(richTextCodec, card.content ?? '');
+  const richDocument = image || mixed ? null : parseWebRichText(richTextCodec, card.content ?? '');
   // Tamaño semántico por ficha (ADR 0050): mismo mapa que el lienzo y la impresión.
   const titleSize = titleFontSize(card.titleSize);
   const bodySize = bodyFontSize(card.bodySize);
@@ -167,9 +167,9 @@ function CardView({ box, card, image, imageUri, noteImages, connections, selecte
         ) : <ImagePlaceholder />
       ) : mixed ? (
         <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
-      ) : basicDocument ? (
+      ) : richDocument ? (
         <BasicRichTextPreview
-          document={basicDocument}
+          document={richDocument}
           numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))}
           color={textColor}
           fontSize={bodySize}

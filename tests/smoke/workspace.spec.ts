@@ -509,6 +509,34 @@ test('P07: formato avanzado visual web conserva encabezados, listas, checklist, 
   expect(failedResources).toEqual([]);
 });
 
+test('P07: convertir una checklist en encabezado se guarda y no reaparece como casilla con escapes', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Lista a encabezado');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+
+  await button(page, 'Volver al editor Markdown').click();
+  await page.getByLabel('Contenido Markdown').fill('- [ ] \\*KNKNLK');
+  await button(page, 'Abrir editor visual').click();
+  const visual = page.getByLabel('Contenido visual');
+  await visual.locator('li').selectText();
+  await page.getByLabel('Tipo de bloque').selectOption('heading-1');
+  await expect(visual.locator('h1')).toContainText('*KNKNLK');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  const cardPreview = card(page, 1);
+  await expect(cardPreview).toContainText('*KNKNLK');
+  await expect(cardPreview).not.toContainText('☐');
+  await expect(cardPreview).not.toContainText('\\*');
+  await page.screenshot({ path: testInfo.outputPath('p07-heading-preview.png') });
+  await tapCard(page, 1);
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  await expect(page.getByLabel('Contenido visual').locator('h1')).toContainText('*KNKNLK');
+});
+
 test('edición rápida: Enter continúa una lista con guiones y termina en un elemento vacío (UX7-B1, misma regla que el editor completo)', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');

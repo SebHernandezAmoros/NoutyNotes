@@ -34,3 +34,9 @@ export function parseBasicRichText(codec: RichTextCodec, markdown: string): Rich
   const parsed = codec.parse(markdown);
   return parsed.ok && isBasicRichTextDocument(parsed.value) ? parsed.value : null;
 }
+
+/** Convierte el Markdown al alcance de lectura/edición web P07 sin aceptar imágenes, tablas u opacos. */
+export function parseWebRichText(codec: RichTextCodec, markdown: string): RichTextDocument | null {
+  const parsed = codec.parse(markdown);
+  return parsed.ok && isWebRichTextDocument(parsed.value) ? parsed.value : null;
+}
