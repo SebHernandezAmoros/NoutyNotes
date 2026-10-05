@@ -13,7 +13,11 @@
     "build:android:bundle": "expo export --platform android --output-dir dist/android"
   },
   "dependencies": {
+    "@lexical/link": "0.52.0",
+    "@lexical/list": "0.52.0",
     "@lexical/react": "^0.52.0",
+    "@lexical/rich-text": "0.52.0",
+    "@lexical/selection": "0.52.0",
     "@noutynotes/application": "workspace:*",
     "@noutynotes/domain": "workspace:*",
     "@noutynotes/storage": "workspace:*",

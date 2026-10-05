@@ -1,10 +1,29 @@
 import type { RichTextCodec } from '@noutynotes/application';
-import type { RichTextDocument } from '@noutynotes/domain';
+import type { RichTextDocument, RichTextInline } from '@noutynotes/domain';
 
 /** Alcance visual compartido por los editores básicos de P04/P05. */
 export function isBasicRichTextDocument(document: RichTextDocument): boolean {
   return document.blocks.every((block) => block.type === 'paragraph'
     && block.content.every((inline) => inline.type === 'text' || inline.type === 'hard-break'));
+}
+
+function supportsWebInline(inline: RichTextInline): boolean {
+  if (inline.type === 'text' || inline.type === 'hard-break') return true;
+  return inline.type === 'link' && 'content' in inline && Array.isArray(inline.content)
+    && inline.content.every((leaf) => leaf.type === 'text' || leaf.type === 'hard-break');
+}
+
+function supportsWebList(list: Extract<RichTextDocument['blocks'][number], { readonly type: 'list' }>): boolean {
+  return list.items.every((item) => item.content.every(supportsWebInline)
+    && (item.children ?? []).every(supportsWebList));
+}
+
+/** Alcance visual web de P07. Android conserva el subconjunto básico de P05. */
+export function isWebRichTextDocument(document: RichTextDocument): boolean {
+  return document.blocks.every((block) => {
+    if (block.type === 'paragraph' || block.type === 'heading') return block.content.every(supportsWebInline);
+    return block.type === 'list' && supportsWebList(block);
+  });
 }
 
 /**

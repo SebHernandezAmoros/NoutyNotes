@@ -120,6 +120,27 @@ describe('codec Markdown ↔ RichTextDocument (UX7 P03)', () => {
     expect(valueOf(parseRichTextMarkdown(encoded))).toEqual(document);
   });
 
+  it('separa viñetas y checklist contiguas en bloques editables sin degradarlas a Markdown opaco', () => {
+    const document = valueOf(parseRichTextMarkdown('- Uno\n- Dos\n\n- [ ] Pendiente\n- [x] Lista'));
+
+    expect(document.blocks).toEqual([
+      {
+        type: 'list', style: 'bullet',
+        items: [
+          { content: [{ type: 'text', text: 'Uno' }] },
+          { content: [{ type: 'text', text: 'Dos' }] },
+        ],
+      },
+      {
+        type: 'list', style: 'checklist',
+        items: [
+          { checked: false, content: [{ type: 'text', text: 'Pendiente' }] },
+          { checked: true, content: [{ type: 'text', text: 'Lista' }] },
+        ],
+      },
+    ]);
+  });
+
   it('conserva una tabla sin encabezado mediante una extensión versionada', () => {
     const document: RichTextDocument = {
       schemaVersion: 1,

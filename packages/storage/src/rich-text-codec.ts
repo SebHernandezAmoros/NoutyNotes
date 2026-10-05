@@ -115,13 +115,29 @@ function mapInlineNodes(nodes: readonly PhrasingContent[], marks = new Set<RichT
   return result;
 }
 
-function mapList(node: MdList): RichTextList | null {
-  const checks = node.children.map((item) => item.checked);
-  const hasChecks = checks.some((checked) => typeof checked === 'boolean');
-  if (hasChecks && checks.some((checked) => typeof checked !== 'boolean')) return null;
-  const style: RichTextList['style'] = node.ordered ? 'ordered' : hasChecks ? 'checklist' : 'bullet';
-  const items: RichTextListItem[] = [];
-  for (const item of node.children) {
+function listStyle(node: MdList, item: MdListItem): RichTextList['style'] {
+  if (node.ordered) return 'ordered';
+  return typeof item.checked === 'boolean' ? 'checklist' : 'bullet';
+}
+
+/**
+ * GFM reúne viñetas y tareas contiguas en un solo nodo `list`, aunque el dominio conserva un estilo
+ * por bloque. Separamos únicamente cada tramo consecutivo; así siguen siendo editables y el orden
+ * escrito no cambia. Una lista anidada puede producir más de un bloque hijo por la misma razón.
+ */
+function mapLists(node: MdList): RichTextList[] | null {
+  const groups: { readonly style: RichTextList['style']; readonly offset: number; readonly items: MdListItem[] }[] = [];
+  for (const [offset, item] of node.children.entries()) {
+    const style = listStyle(node, item);
+    const current = groups.at(-1);
+    if (current?.style === style) current.items.push(item);
+    else groups.push({ style, offset, items: [item] });
+  }
+
+  const lists: RichTextList[] = [];
+  for (const group of groups) {
+    const items: RichTextListItem[] = [];
+    for (const item of group.items) {
     const paragraph = item.children[0];
     if (paragraph?.type !== 'paragraph') return null;
     const content = mapInlineNodes(paragraph.children);
@@ -129,22 +145,26 @@ function mapList(node: MdList): RichTextList | null {
     const children: RichTextList[] = [];
     for (const child of item.children.slice(1)) {
       if (child.type !== 'list') return null;
-      const nested = mapList(child);
+      const nested = mapLists(child);
       if (!nested) return null;
-      children.push(nested);
+      children.push(...nested);
     }
     items.push({
       content,
-      ...(style === 'checklist' ? { checked: item.checked as boolean } : {}),
+      ...(group.style === 'checklist' ? { checked: item.checked as boolean } : {}),
       ...(children.length === 0 ? {} : { children }),
     });
+    }
+    lists.push({
+      type: 'list',
+      style: group.style,
+      ...(group.style === 'ordered' && node.start !== null && node.start !== undefined
+        ? { start: node.start + group.offset }
+        : {}),
+      items,
+    });
   }
-  return {
-    type: 'list',
-    style,
-    ...(style === 'ordered' && node.start !== null && node.start !== undefined ? { start: node.start } : {}),
-    items,
-  };
+  return lists;
 }
 
 function mapTableCell(cell: MdTableCell): RichTextTableCell | null {
@@ -196,7 +216,6 @@ function mapBlock(node: RootContent): RichTextBlock | null {
       const content = mapInlineNodes(node.children);
       return content ? { type: 'heading', level: node.depth, content } : null;
     }
-    case 'list': return mapList(node);
     case 'table': return mapTable(node);
     default: return null;
   }
@@ -223,6 +242,12 @@ export function parseRichTextMarkdown(markdown: string): RichTextCodecResult<Ric
   const blocks: RichTextBlock[] = [];
   for (let index = 0; index < root.children.length; index += 1) {
     const node = root.children[index] as RootContent;
+    if (node.type === 'list') {
+      const lists = mapLists(node);
+      if (lists) blocks.push(...lists);
+      else blocks.push({ type: 'opaque-markdown', source: sourceOf(node, markdown) });
+      continue;
+    }
     if (node.type === 'html' && node.value === TABLE_WITHOUT_HEADER) {
       const next = root.children[index + 1] as RootContent | undefined;
       const table = next?.type === 'table' ? mapTable(next, false) : null;

@@ -453,6 +453,62 @@ test('P06: Visual es predeterminado y alterna con Markdown sobre un solo borrado
   expect(failedResources).toEqual([]);
 });
 
+test('P07: formato avanzado visual web conserva encabezados, listas, checklist, enlaces e historial', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Formato avanzado');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+
+  await button(page, 'Volver al editor Markdown').click();
+  await page.getByLabel('Contenido Markdown').fill('## Plan [sitio](https://example.com)\n\n- Uno\n- Dos\n\n- [ ] Pendiente\n- [x] Lista');
+  await button(page, 'Abrir editor visual').click();
+  const visual = page.getByLabel('Contenido visual');
+  await expect(visual.locator('h2')).toContainText('Plan sitio');
+  await expect(visual.locator('a')).toHaveAttribute('href', 'https://example.com');
+  await expect(visual.locator('li')).toContainText(['Uno', 'Dos', 'Pendiente', 'Lista']);
+  await expect(visual.locator('li[role="checkbox"]')).toHaveCount(2);
+
+  await visual.locator('h2').selectText();
+  await page.keyboard.press('Control+Alt+3');
+  await expect(visual.locator('h3')).toContainText('Plan sitio');
+  await button(page, 'Deshacer en el editor').click();
+  await expect(visual.locator('h2')).toContainText('Plan sitio');
+  await button(page, 'Rehacer en el editor').click();
+  await expect(visual.locator('h3')).toContainText('Plan sitio');
+
+  await visual.locator('a').selectText();
+  await page.keyboard.press('Control+k');
+  await page.getByLabel('Dirección del enlace').fill('https://example.org/nuevo');
+  await button(page, 'Aplicar').click();
+  await expect(visual.locator('a')).toHaveAttribute('href', 'https://example.org/nuevo');
+
+  await visual.locator('li').filter({ hasText: 'Uno' }).selectText();
+  await page.keyboard.press('Control+Shift+7');
+  await expect(visual.locator('ol li').first()).toContainText('Uno');
+  const pending = visual.locator('li[role="checkbox"]').first();
+  await expect(pending).toHaveAttribute('aria-checked', 'false');
+  await pending.click({ position: { x: 4, y: 10 } });
+  await expect(pending).toHaveAttribute('aria-checked', 'true');
+
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await closeEditor(page);
+  await tapCard(page, 1);
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  await button(page, 'Volver al editor Markdown').click();
+  const markdown = page.getByLabel('Contenido Markdown');
+  await expect(markdown).toHaveValue(/### Plan \[sitio\]\(https:\/\/example\.org\/nuevo\)/);
+  await expect(markdown).toHaveValue(/1\. Uno\n2\. Dos/);
+  await expect(markdown).toHaveValue(/[*-] \[x\] Pendiente/);
+  await button(page, 'Abrir editor visual').click();
+  await expect(page.getByLabel('Contenido visual').locator('h3')).toContainText('Plan sitio');
+  await page.screenshot({ path: testInfo.outputPath('p07-advanced-rich-text.png'), fullPage: true });
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
 test('edición rápida: Enter continúa una lista con guiones y termina en un elemento vacío (UX7-B1, misma regla que el editor completo)', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');

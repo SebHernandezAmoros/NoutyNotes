@@ -7,7 +7,7 @@ import type { NativeSyntheticEvent, TextInputKeyPressEventData } from 'react-nat
 
 import { AppIcon } from '../../components/AppIcon';
 import { applyInlineMark, normalizeListChange } from '../markdownLists';
-import { isBasicRichTextDocument } from '../basicRichText';
+import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import { RichTextEditor } from '../RichTextEditor';
 import type { InlineMarkKind, TextSelection } from '../markdownLists';
 import type { ScreenBox } from './cardChrome';
@@ -28,7 +28,10 @@ export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced,
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
   const initialParsed = richTextCodec.parse(card.content ?? '');
-  const initialVisualAvailable = initialParsed.ok && isBasicRichTextDocument(initialParsed.value);
+  const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
+    ? isWebRichTextDocument(document)
+    : isBasicRichTextDocument(document);
+  const initialVisualAvailable = initialParsed.ok && supportsVisualDocument(initialParsed.value);
   const [editorMode, setEditorMode] = useState<'visual' | 'markdown'>(initialVisualAvailable ? 'visual' : 'markdown');
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -42,7 +45,7 @@ export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced,
     if (edit) setForcedSelection({ start: edit.caret, end: edit.caret });
   };
   const parsedRichText = richTextCodec.parse(content);
-  const visualDocument = parsedRichText.ok && isBasicRichTextDocument(parsedRichText.value) ? parsedRichText.value : null;
+  const visualDocument = parsedRichText.ok && supportsVisualDocument(parsedRichText.value) ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
   const visualEditing = editorMode === 'visual' && visualAvailable;
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {

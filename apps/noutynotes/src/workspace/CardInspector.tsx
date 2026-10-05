@@ -18,7 +18,7 @@ import { cardTitle } from './Board';
 import { applyInlineMark, applyListCommand, normalizeListChange, parseChecklistLine, toggleChecklistLine } from './markdownLists';
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
-import { isBasicRichTextDocument } from './basicRichText';
+import { isBasicRichTextDocument, isWebRichTextDocument } from './basicRichText';
 import { RichTextEditor } from './RichTextEditor';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
@@ -93,16 +93,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
   const supportsVisualEditor = Platform.OS === 'web' || Platform.OS === 'android';
+  const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
+    ? isWebRichTextDocument(document)
+    : isBasicRichTextDocument(document);
   const [visualRequested, setVisualRequested] = useState(() => {
     if (!supportsVisualEditor) return false;
     const parsed = richTextCodec.parse(card.content ?? '');
-    return parsed.ok && isBasicRichTextDocument(parsed.value);
+    return parsed.ok && supportsVisualDocument(parsed.value);
   });
   const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
   const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
   const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
   const parsedRichText = supportsVisualEditor ? richTextCodec.parse(content) : null;
-  const visualDocument = parsedRichText?.ok && isBasicRichTextDocument(parsedRichText.value) ? parsedRichText.value : null;
+  const visualDocument = parsedRichText?.ok && supportsVisualDocument(parsedRichText.value) ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
   const visualEditing = visualRequested && visualAvailable;
   const changeTitle = (value: string) => {

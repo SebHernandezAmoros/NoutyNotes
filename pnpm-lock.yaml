@@ -38,9 +38,21 @@ importers:
 
   apps/noutynotes:
     dependencies:
+      '@lexical/link':
+        specifier: 0.52.0
+        version: 0.52.0(typescript@6.0.3)
+      '@lexical/list':
+        specifier: 0.52.0
+        version: 0.52.0(typescript@6.0.3)
       '@lexical/react':
         specifier: ^0.52.0
         version: 0.52.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@6.0.3)(yjs@13.6.33)
+      '@lexical/rich-text':
+        specifier: 0.52.0
+        version: 0.52.0(typescript@6.0.3)
+      '@lexical/selection':
+        specifier: 0.52.0
+        version: 0.52.0(typescript@6.0.3)
       '@noutynotes/application':
         specifier: workspace:*
         version: link:../../packages/application

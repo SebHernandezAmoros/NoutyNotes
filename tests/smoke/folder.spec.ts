@@ -87,6 +87,41 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.screenshot({ path: testInfo.outputPath('folder-reconnected.png'), fullPage: true });
 });
 
+test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga y la reconexión', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Documento avanzado');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Añadir nota' }).click();
+  await openCardEditor(page, 1);
+  const expand = page.getByRole('button', { name: 'Ampliar el editor' });
+  if (await expand.count() > 0) await expand.click();
+
+  await page.getByRole('button', { name: 'Volver al editor Markdown' }).click();
+  await page.getByLabel('Contenido Markdown').fill('## Plan [sitio](https://example.com)\n\n- Uno\n\n- [ ] Pendiente');
+  await page.getByRole('button', { name: 'Abrir editor visual' }).click();
+  const visual = page.getByLabel('Contenido visual');
+  await visual.locator('h2').selectText();
+  await page.keyboard.press('Control+Alt+3');
+  await expect(visual.locator('h3')).toContainText('Plan sitio');
+  await page.getByRole('button', { name: 'Guardar texto' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado en la carpeta');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Documento avanzado' }).click();
+  await openCardEditor(page, 1);
+  const expandReopened = page.getByRole('button', { name: 'Ampliar el editor' });
+  if (await expandReopened.count() > 0) await expandReopened.click();
+  const reopened = page.getByLabel('Contenido visual');
+  await expect(reopened.locator('h3')).toContainText('Plan sitio');
+  await expect(reopened.locator('a')).toHaveAttribute('href', 'https://example.com');
+  await expect(reopened.locator('li')).toContainText(['Uno', 'Pendiente']);
+  await expect(reopened.locator('li[role="checkbox"]')).toHaveAttribute('aria-checked', 'false');
+});
+
 test('arrastre con escritura retenida: la tarjeta permanece en destino hasta confirmar el guardado', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
