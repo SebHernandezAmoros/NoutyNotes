@@ -1,4 +1,5 @@
 import { parseNoteBlocks } from '@noutynotes/application';
+import type { RichTextCodec } from '@noutynotes/application';
 import type { BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
@@ -12,6 +13,8 @@ import { t } from '../i18n';
 import { markdownExcerpt } from './markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
 import { NotePreview } from './canvas/NotePreview';
+import { BasicRichTextPreview } from './BasicRichTextPreview';
+import { parseBasicRichText } from './basicRichText';
 
 const BOARD_BORDER = 2;
 const emptyNoteImages: ReadonlyMap<string, string> = new Map();
@@ -31,6 +34,7 @@ export function isImageCard(workspace: Workspace, card: Card): boolean {
 }
 
 interface BoardProps {
+  readonly richTextCodec: RichTextCodec;
   readonly workspace: Workspace;
   readonly layout: BoardLayout | undefined;
   readonly mode: LayoutMode;
@@ -46,7 +50,7 @@ interface BoardProps {
  * Vista de lista (ADR 0013): la proyección de una columna del layout canónico, en orden de lectura.
  * Solo representa y selecciona; mover y redimensionar se hacen en el lienzo o con el inspector.
  */
-export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris, noteImages }: BoardProps) {
+export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris, noteImages, richTextCodec }: BoardProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [width, setWidth] = useState(0);
@@ -84,6 +88,7 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris
             image={isImageCard(workspace, card)}
             imageUri={imageUris?.get(card.id)}
             noteImages={noteImages ?? emptyNoteImages}
+            richTextCodec={richTextCodec}
             connections={workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length}
             selected={selectedId === card.id}
             onPress={() => onSelect(card.id)}
@@ -108,6 +113,7 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris
 }
 
 interface CardViewProps {
+  readonly richTextCodec: RichTextCodec;
   readonly box: CardBox;
   readonly card: Card;
   readonly image: boolean;
@@ -120,7 +126,7 @@ interface CardViewProps {
   readonly onPress: () => void;
 }
 
-function CardView({ box, card, image, imageUri, noteImages, connections, selected, onPress }: CardViewProps) {
+function CardView({ box, card, image, imageUri, noteImages, connections, selected, onPress, richTextCodec }: CardViewProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -131,6 +137,7 @@ function CardView({ box, card, image, imageUri, noteImages, connections, selecte
   const bodyHeight = Math.max(0, box.height - 56);
   const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
+  const basicDocument = image || mixed ? null : parseBasicRichText(richTextCodec, card.content ?? '');
   // Tamaño semántico por ficha (ADR 0050): mismo mapa que el lienzo y la impresión.
   const titleSize = titleFontSize(card.titleSize);
   const bodySize = bodyFontSize(card.bodySize);
@@ -160,6 +167,15 @@ function CardView({ box, card, image, imageUri, noteImages, connections, selecte
         ) : <ImagePlaceholder />
       ) : mixed ? (
         <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
+      ) : basicDocument ? (
+        <BasicRichTextPreview
+          document={basicDocument}
+          numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))}
+          color={textColor}
+          fontSize={bodySize}
+          lineHeight={bodyLine}
+          testID={`list-rich-text-${card.id}`}
+        />
       ) : (
         <Text numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))} style={[styles.cardContent, { color: textColor, fontSize: bodySize, lineHeight: bodyLine }]}>
           {markdownExcerpt(card.content ?? '')}

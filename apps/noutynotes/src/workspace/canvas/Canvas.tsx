@@ -1,3 +1,4 @@
+import type { RichTextCodec } from '@noutynotes/application';
 import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { footprint, frameMembers } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
@@ -116,6 +117,7 @@ interface CanvasProps {
   readonly onCardOpen: (cardId: CardId) => void;
   /** Tarjeta cuya edición rápida está superpuesta sobre la propia ficha (ADR 0047). */
   readonly inlineEditingId: CardId | null;
+  readonly richTextCodec: RichTextCodec;
   readonly onInlineSave: (cardId: CardId, title: string, content: string) => Promise<boolean>;
   readonly onInlineClose: () => void;
   readonly onInlineAdvanced: (cardId: CardId) => void;
@@ -767,6 +769,7 @@ export function Canvas(props: CanvasProps) {
           return (
             <CanvasCard
               key={card.id}
+              richTextCodec={props.richTextCodec}
               workspace={workspace}
               card={card}
               number={index + 1}
@@ -867,6 +870,7 @@ export function Canvas(props: CanvasProps) {
           key={inlineCard.id}
           card={inlineCard}
           box={inlineBox}
+          richTextCodec={props.richTextCodec}
           onSave={props.onInlineSave}
           onAdvanced={() => props.onInlineAdvanced(inlineCard.id)}
           onClose={props.onInlineClose}

@@ -6,4 +6,6 @@ export interface RichTextEditorProps {
   readonly document: RichTextDocument;
   readonly codec: RichTextCodec;
   readonly onChange: (document: RichTextDocument) => void;
+  /** Reduce la altura del editor cuando se monta directamente sobre una ficha del lienzo. */
+  readonly compact?: boolean;
 }

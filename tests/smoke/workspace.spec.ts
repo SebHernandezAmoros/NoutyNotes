@@ -287,6 +287,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await tapCard(page, 1);
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('Título de la tarjeta').fill('Escena inicial');
+  await button(page, 'Volver al editor Markdown').click();
   await page.getByLabel('Contenido Markdown').fill('# Plano\n\n- abierto');
   await expect(page.getByText('Cambios sin guardar')).toBeVisible();
   await button(page, 'Guardar texto').click();
@@ -360,7 +361,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   expect(failedResources).toEqual([]);
 });
 
-test('edición rápida: título y Markdown se editan sobre la ficha y el editor completo sigue disponible (ADR 0047)', async ({ page }, testInfo) => {
+test('P06: la edición rápida abre texto enriquecido visual por defecto y conserva el editor completo (ADR 0047)', async ({ page }, testInfo) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   const { runtimeErrors } = trackProblems(page);
   await page.goto('./');
@@ -379,20 +380,45 @@ test('edición rápida: título y Markdown se editan sobre la ficha y el editor 
   expect(Math.abs(editorBox.y - cardBox.y)).toBeLessThanOrEqual(2);
   await page.screenshot({ path: testInfo.outputPath('inline-card-editor.png') });
   await page.getByTestId('inline-card-title').fill('Idea editada aquí');
-  await page.getByTestId('inline-card-content').fill('- una línea\n- otra línea');
+  const visual = page.getByLabel('Contenido visual');
+  await expect(visual).toBeVisible();
+  await expect(page.getByTestId('inline-card-content')).toHaveCount(0);
+  await visual.fill('');
+  await button(page, 'Negrita').click();
+  await page.keyboard.type('Texto visible ');
+  await button(page, 'Negrita').click();
+  await page.keyboard.type('normal');
+  await expect(visual.locator('strong')).toHaveText('Texto visible ');
   await button(page, 'Guardar y cerrar la edición rápida').click();
   await expect(inline).toHaveCount(0);
   await expect(card(page, 1)).toContainText('Idea editada aquí');
-  await expect(card(page, 1)).toContainText('una línea');
+  await expect(card(page, 1)).toContainText('Texto visible normal');
+
+  // Regresión P06 (2026-10-05): el editor guarda Markdown canónico, pero la ficha debe
+  // representar sus marcas; nunca debe enseñar `**` ni entidades generadas por el serializer.
+  await expect(card(page, 1)).not.toContainText('**');
+  await expect(card(page, 1)).not.toContainText('&#x');
+  await expect(page.getByTestId('card-rich-text-tarjeta-1-run-0-0')).toHaveCSS('font-weight', /^(700|bold)$/);
+  await page.screenshot({ path: testInfo.outputPath('rich-text-card-rendered.png') });
+
+  await button(page, 'Vista de lista').click();
+  await expect(page.getByTestId('list-rich-text-tarjeta-1')).toContainText('Texto visible normal');
+  await expect(page.getByTestId('list-rich-text-tarjeta-1')).not.toContainText('**');
+  await expect(page.getByTestId('list-rich-text-tarjeta-1')).not.toContainText('&#x');
+  await expect(page.getByTestId('list-rich-text-tarjeta-1-run-0-0')).toHaveCSS('font-weight', /^(700|bold)$/);
+  await page.screenshot({ path: testInfo.outputPath('rich-text-list-rendered.png') });
+  await button(page, 'Vista de lista').click();
 
   await selectCard(page, 1);
   await openCardActions(page, card(page, 1), 'Idea editada aquí');
   await button(page, 'Abrir el editor completo de Idea editada aquí').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await button(page, 'Volver al editor Markdown').click();
+  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('**Texto visible&#x20;**&#x6E;ormal');
   expect(runtimeErrors).toEqual([]);
 });
 
-test('P04: el editor web visual guarda y reabre párrafos con formato, autosave e historial local', async ({ page }) => {
+test('P06: Visual es predeterminado y alterna con Markdown sobre un solo borrador', async ({ page }) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');
   await createWorkspace(page, 'Editor visual');
@@ -400,7 +426,6 @@ test('P04: el editor web visual guarda y reabre párrafos con formato, autosave 
   await tapCard(page, 1);
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
-  await button(page, 'Abrir editor visual').click();
 
   const visual = page.getByLabel('Contenido visual');
   await expect(page.getByTestId('web-rich-text-editor')).toBeVisible();
@@ -414,12 +439,15 @@ test('P04: el editor web visual guarda y reabre párrafos con formato, autosave 
   await expect(visual.locator('strong')).toHaveCount(0);
   await button(page, 'Rehacer en el editor').click();
   await expect(visual.locator('strong')).toHaveText('Texto fuerte');
+  await button(page, 'Volver al editor Markdown').click();
+  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('**Texto fuerte**');
+  await button(page, 'Abrir editor visual').click();
+  await expect(page.getByLabel('Contenido visual').locator('strong')).toHaveText('Texto fuerte');
 
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.', { timeout: 3_000 });
   await closeEditor(page);
   await tapCard(page, 1);
   if (await expandEditor.count() > 0) await expandEditor.click();
-  await button(page, 'Abrir editor visual').click();
   await expect(page.getByLabel('Contenido visual').locator('strong')).toHaveText('Texto fuerte');
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
@@ -433,6 +461,7 @@ test('edición rápida: Enter continúa una lista con guiones y termina en un el
   await selectCard(page, 1);
   await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  await button(page, 'Editar como Markdown').click();
   const content = page.getByTestId('inline-card-content');
   await content.fill('- Harina');
   await content.focus();
@@ -452,6 +481,7 @@ test('edición rápida: negrita y cursiva envuelven la selección con el botón 
   await selectCard(page, 1);
   await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  await button(page, 'Editar como Markdown').click();
   const content = page.getByTestId('inline-card-content');
   await content.fill('hola mundo');
   await content.focus();
@@ -478,6 +508,7 @@ test('checklist en el lienzo: un toque marca la línea sin abrir el editor ni ar
   // cambia).
   await button(page, 'Más alta').click();
   await button(page, 'Más alta').click();
+  await button(page, 'Volver al editor Markdown').click();
   await page.getByLabel('Contenido Markdown').fill('- [ ] Harina\n- [ ] Agua');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
@@ -522,6 +553,7 @@ test('checklist en el lienzo sobrevive a exportar ZIP, recargar y reimportar (ci
   // líneas de checklist a la vez, y esta prueba necesita las dos (misma razón que la de UX7-B2).
   await button(page, 'Más alta').click();
   await button(page, 'Más alta').click();
+  await button(page, 'Volver al editor Markdown').click();
   await page.getByLabel('Contenido Markdown').fill('- [ ] Harina\n- [ ] Agua');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
@@ -565,6 +597,7 @@ test('posición de la leyenda de imagen: debajo, arriba, izquierda y derecha, ig
   await button(page, 'Más alta').click();
   // Sin asset real: la imagen cae al marcador «no disponible», pero la leyenda se dibuja igual (no
   // depende de que la imagen se resuelva, UX7-C4).
+  await button(page, 'Volver al editor Markdown').click();
   await page.getByLabel('Contenido Markdown').fill('![Vista del lago](assets/images/x.png)');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
@@ -1014,6 +1047,7 @@ test('tamaño semántico de título y cuerpo por ficha, igual en el lienzo y en 
   await addCards(page, ['nota']);
   await openFullCardEditor(page, card(page, 1));
   await page.getByLabel('Título de la tarjeta').fill('Medidas');
+  await button(page, 'Volver al editor Markdown').click();
   await page.getByLabel('Contenido Markdown').fill('Cuerpo de prueba.');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText(/Guardado/);
@@ -1345,7 +1379,7 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
     expect(hundredths(found.height), `alto de «${name}»`).toBeGreaterThanOrEqual(44);
   }
   await openCardEditor(page, 1);
-  for (const label of ['Título de la tarjeta', 'Contenido Markdown']) expect((await box(page.getByLabel(label))).height).toBeGreaterThanOrEqual(44);
+  for (const label of ['Título de la tarjeta', 'Contenido visual']) expect((await box(page.getByLabel(label))).height).toBeGreaterThanOrEqual(44);
   await revealCanvas(page);
   // Las asas tienen un área táctil de 44 px: garantía de densidad a 100 %, no del zoom (100 % por
   // defecto y configurable, UX7-D1); se acerca un paso más para medirla de forma determinista.
@@ -1450,8 +1484,8 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
   const { runtimeErrors } = trackProblems(page);
   await page.goto('./');
   await createWorkspace(page, 'Historial');
-  const undoButton = page.getByRole('button', { name: /^Deshacer/ });
-  const redoButton = page.getByRole('button', { name: /^Rehacer/ });
+  const undoButton = page.getByRole('button', { name: /^Deshacer(?::|$)/ });
+  const redoButton = page.getByRole('button', { name: /^Rehacer(?::|$)/ });
   await expect(undoButton).toHaveAttribute('aria-disabled', 'true');
   await addCards(page, ['nota']);
   await expect(undoButton).toHaveAccessibleName('Deshacer: Nota añadida');

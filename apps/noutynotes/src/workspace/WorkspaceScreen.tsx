@@ -1164,6 +1164,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         noteImages={previews.refs}
         onCardOpen={(cardId) => void openCard(cardId)}
         inlineEditingId={inlineEditing ? editingId : null}
+        richTextCodec={markdownRichTextCodec}
         onInlineSave={saveInlineCard}
         onInlineClose={() => { setEditingId(null); setInlineEditing(false); setFocus(false); }}
         onInlineAdvanced={(cardId) => { setSelectedId(cardId); setEditingId(cardId); setInlineEditing(false); setFocus(true); }}
@@ -1181,7 +1182,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       <ScrollView testID="board-list-scroll" contentContainerStyle={styles.listPage}>
         {/* La vista de lista no tiene un botón «Editar» propio (a diferencia del lienzo): seleccionar
             sigue abriendo el editor directamente aquí, fuera del alcance de esta corrección. */}
-        <Board workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)}
+        <Board workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)} richTextCodec={markdownRichTextCodec}
           imageUris={previews.cards} noteImages={previews.refs} />
       </ScrollView>
     )

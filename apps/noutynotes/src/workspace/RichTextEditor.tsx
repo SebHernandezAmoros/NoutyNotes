@@ -37,7 +37,7 @@ function EditorToolButton({ label, accessibilityLabel, selected = false, disable
   );
 }
 
-export function RichTextEditor({ document, codec, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ document, codec, onChange, compact = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -113,7 +113,7 @@ export function RichTextEditor({ document, codec, onChange }: RichTextEditorProp
           strong: { color: colors.cardText },
           em: { color: colors.cardText },
         }}
-        style={StyleSheet.flatten([styles.input, { color: colors.cardText, backgroundColor: colors.cardSurface }])}
+        style={StyleSheet.flatten([styles.input, compact ? styles.inputCompact : null, { color: colors.cardText, backgroundColor: colors.cardSurface }])}
         selectionMenuConfig={{
           format: { enabled: true, label: t('editor.visual.format', locale) },
           copyAsMarkdown: { enabled: false },
@@ -145,5 +145,6 @@ const styles = StyleSheet.create({
   italic: { fontStyle: 'italic' },
   separator: { width: 1, height: 30, marginHorizontal: 2 },
   input: { minHeight: 220, maxHeight: 360, padding: 14, fontSize: 16, lineHeight: 24 },
+  inputCompact: { minHeight: 96, maxHeight: 180 },
   status: { minHeight: 30, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12 },
 });

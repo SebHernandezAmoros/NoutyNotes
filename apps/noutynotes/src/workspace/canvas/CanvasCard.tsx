@@ -1,4 +1,5 @@
 import { linkDisplay, linkUrlField } from '@noutynotes/domain';
+import type { RichTextCodec } from '@noutynotes/application';
 import type { Card, CardDisplayMode, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
 import { useLocale, useTheme } from '@noutynotes/ui';
@@ -7,6 +8,8 @@ import { Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from
 import type { View as RNView } from 'react-native';
 
 import { cardDisplayTitle, cardTitle, isImageCard } from '../Board';
+import { BasicRichTextPreview } from '../BasicRichTextPreview';
+import { parseBasicRichText } from '../basicRichText';
 import { ImagePlaceholder } from '../ImagePlaceholder';
 import { markdownExcerpt, parseChecklistLine } from '../markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from '../textSizes';
@@ -25,6 +28,7 @@ const HANDLE_HIT = 44;
 const HANDLE_MARK = 14;
 
 interface CanvasCardProps {
+  readonly richTextCodec: RichTextCodec;
   readonly workspace: Workspace;
   readonly card: Card;
   readonly number: number;
@@ -164,6 +168,7 @@ export function CanvasCard(props: CanvasCardProps) {
   // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden.
   const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
+  const basicDocument = image || mixed ? null : parseBasicRichText(props.richTextCodec, card.content ?? '');
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const floatingTitle = card.typeId === 'titulo-flotante';
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
@@ -188,7 +193,7 @@ export function CanvasCard(props: CanvasCardProps) {
   type BodyBlock = { readonly kind: 'text'; readonly text: string }
     | { readonly kind: 'check'; readonly lineIndex: number; readonly checked: boolean; readonly indent: string; readonly text: string };
   const bodyBlocks: BodyBlock[] = [];
-  if (!image && !mixed) {
+  if (!image && !mixed && basicDocument === null) {
     const shown = (card.content ?? '').split('\n').slice(0, bodyLines);
     for (const [lineIndex, line] of shown.entries()) {
       const check = parseChecklistLine(line);
@@ -315,6 +320,17 @@ export function CanvasCard(props: CanvasCardProps) {
               {mixed ? (
                 <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
+              ) : null}
+              {!image && !mixed && basicDocument && bodyLines > 0 ? (
+                <BasicRichTextPreview
+                  document={basicDocument}
+                  numberOfLines={bodyLines}
+                  color={colors.cardText}
+                  fontSize={contentSize}
+                  lineHeight={contentLine}
+                  fontFamily={props.noteFontFamily}
+                  testID={`card-rich-text-${card.id}`}
+                />
               ) : null}
               {!image && !mixed && bodyBlocks.length > 0 ? (
                 <View style={styles.bodyBlocks}>

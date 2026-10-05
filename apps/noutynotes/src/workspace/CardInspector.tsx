@@ -92,12 +92,16 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
-  const [visualRequested, setVisualRequested] = useState(false);
+  const supportsVisualEditor = Platform.OS === 'web' || Platform.OS === 'android';
+  const [visualRequested, setVisualRequested] = useState(() => {
+    if (!supportsVisualEditor) return false;
+    const parsed = richTextCodec.parse(card.content ?? '');
+    return parsed.ok && isBasicRichTextDocument(parsed.value);
+  });
   const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
   const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
   const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
-  const supportsVisualEditor = Platform.OS === 'web' || Platform.OS === 'android';
-  const parsedRichText = focused && supportsVisualEditor ? richTextCodec.parse(content) : null;
+  const parsedRichText = supportsVisualEditor ? richTextCodec.parse(content) : null;
   const visualDocument = parsedRichText?.ok && isBasicRichTextDocument(parsedRichText.value) ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
   const visualEditing = visualRequested && visualAvailable;

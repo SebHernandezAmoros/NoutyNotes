@@ -99,7 +99,7 @@ function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps
   );
 }
 
-export function RichTextEditor({ cardId, document, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, compact = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -115,7 +115,7 @@ export function RichTextEditor({ cardId, document, onChange }: RichTextEditorPro
     <View testID="web-rich-text-editor" style={[styles.shell, { borderColor: colors.border, backgroundColor: colors.cardSurface }]}>
       <LexicalComposer initialConfig={initialConfig}>
         <EditorToolbar />
-        <View style={styles.editArea}>
+        <View style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
             contentEditable={(
               <ContentEditable
@@ -123,7 +123,7 @@ export function RichTextEditor({ cardId, document, onChange }: RichTextEditorPro
                 data-testid="web-rich-text-content"
                 spellCheck
                 style={{
-                  boxSizing: 'border-box', minHeight: 220, outline: 'none', padding: 14,
+                  boxSizing: 'border-box', minHeight: compact ? 96 : 220, outline: 'none', padding: 14,
                   color: colors.cardText, fontSize: 16, lineHeight: 1.55, whiteSpace: 'pre-wrap',
                 }}
               />
@@ -152,5 +152,6 @@ const styles = StyleSheet.create({
   italic: { fontStyle: 'italic' },
   separator: { width: 1, height: 30, marginHorizontal: 2 },
   editArea: { position: 'relative', minHeight: 220 },
+  editAreaCompact: { minHeight: 96 },
   status: { minHeight: 30, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12 },
 });
