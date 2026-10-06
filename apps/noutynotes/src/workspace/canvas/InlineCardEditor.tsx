@@ -25,7 +25,7 @@ export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced,
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
-    ? isWebRichTextDocument(document)
+    ? isWebRichTextDocument(document) && !document.blocks.some((block) => block.type === 'image')
     : isBasicRichTextDocument(document);
   const [visualDocument, setVisualDocument] = useState<Parameters<RichTextCodec['serialize']>[0] | null>(() => {
     const parsed = richTextCodec.parse(card.content ?? '');

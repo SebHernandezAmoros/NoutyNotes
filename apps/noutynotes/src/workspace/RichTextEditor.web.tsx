@@ -23,6 +23,7 @@ import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-t
 import { $setBlocksType } from '@lexical/selection';
 import {
   $createParagraphNode,
+  $getRoot,
   $getSelection,
   $isRangeSelection,
   CAN_REDO_COMMAND,
@@ -36,6 +37,7 @@ import {
   mergeRegister,
 } from 'lexical';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { isLinkUrl } from '@noutynotes/domain';
@@ -43,12 +45,13 @@ import { useLocale, useTheme } from '@noutynotes/ui';
 
 import { t } from '../i18n';
 import { $loadWebRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
+import { $createRichTextImageNode, $isRichTextImageNode, RichTextImageNode, RichTextImageProvider } from './RichTextImageNode.web';
 import type { RichTextEditorProps } from './RichTextEditor.types';
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type BlockKind = 'paragraph' | `heading-${HeadingLevel}` | 'bullet' | 'ordered' | 'checklist';
 
-function EditorToolbar() {
+function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertImage'>) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -68,7 +71,9 @@ function EditorToolbar() {
     setBold($isRangeSelection(selection) && selection.hasFormat('bold'));
     setItalic($isRangeSelection(selection) && selection.hasFormat('italic'));
     if (!$isRangeSelection(selection)) return false;
-    const top = selection.anchor.getNode().getTopLevelElementOrThrow();
+    const top = selection.anchor.getNode().getTopLevelElement();
+    // Los controles de una imagen decorada pueden dejar el ancla temporalmente en la raíz.
+    if (!top) return false;
     if ($isHeadingNode(top)) setBlock(`heading-${Number(top.getTag().slice(1)) as HeadingLevel}`);
     else if ($isListNode(top)) setBlock(top.getListType() === 'number' ? 'ordered' : top.getListType() === 'check' ? 'checklist' : 'bullet');
     else setBlock('paragraph');
@@ -140,6 +145,33 @@ function EditorToolbar() {
     setLinkProblem(false);
     setLinkOpen(false);
   };
+  const insertImage = async () => {
+    if (!onInsertImage) return;
+    const snapshot = editor.getEditorState().read(() => {
+      const selection = $getSelection();
+      const document = $readWebRichTextDocument();
+      if (!document) return null;
+      if (!$isRangeSelection(selection)) return { document, afterBlock: $getRoot().getChildrenSize() - 1 };
+      const top = selection.anchor.getNode().getTopLevelElement();
+      const children = $getRoot().getChildren();
+      let afterBlock = top ? children.indexOf(top) : children.length - 1;
+      // Repetir «Insertar imagen» desde el mismo párrafo construye una galería en el orden elegido,
+      // en vez de anteponer cada archivo nuevo al anterior.
+      while ($isRichTextImageNode(children[afterBlock + 1])) afterBlock += 1;
+      return { document, afterBlock };
+    });
+    if (!snapshot) return;
+    const { document, afterBlock } = snapshot;
+    const image = await onInsertImage(document, afterBlock);
+    if (!image) return;
+    editor.update(() => {
+      const root = $getRoot();
+      const node = $createRichTextImageNode(image);
+      const target = root.getChildren()[afterBlock];
+      if (target) target.insertAfter(node);
+      else root.append(node);
+    });
+  };
 
   const button = (label: string, accessibilityLabel: string, selected: boolean, disabled: boolean, action: () => void) => (
     <Pressable
@@ -177,6 +209,7 @@ function EditorToolbar() {
         {button('1.', t('editor.visual.ordered', locale), block === 'ordered', false, () => chooseBlock('ordered'))}
         {button('☐', t('editor.visual.checklist', locale), block === 'checklist', false, () => chooseBlock('checklist'))}
         {button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink)}
+        {onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }) : null}
         <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
         {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
         {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
@@ -204,6 +237,19 @@ function EditorToolbar() {
         </View>
       ) : null}
     </View>
+  );
+}
+
+function ImageEditorBridge({ images, captionPosition, onReplaceImage, children }: Pick<RichTextEditorProps, 'images' | 'captionPosition' | 'onReplaceImage'> & { readonly children: ReactNode }) {
+  const [editor] = useLexicalComposerContext();
+  const replace = onReplaceImage ? async (blockIndex: number) => {
+    const document = editor.getEditorState().read(() => $readWebRichTextDocument());
+    return document ? onReplaceImage(document, blockIndex) : null;
+  } : undefined;
+  return (
+    <RichTextImageProvider value={{ images: images ?? new Map(), captionPosition: captionPosition ?? 'bottom', onReplace: replace }}>
+      {children}
+    </RichTextImageProvider>
   );
 }
 
@@ -238,7 +284,7 @@ const editorTheme = {
   },
 };
 
-export function RichTextEditor({ cardId, document, onChange, compact = false }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', onInsertImage, onReplaceImage, compact = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -246,7 +292,7 @@ export function RichTextEditor({ cardId, document, onChange, compact = false }: 
   const [initialDocument] = useState(document);
   const [initialConfig] = useState(() => ({
     namespace: `noutynotes-card-${cardId}`,
-    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode],
+    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode],
     theme: editorTheme,
     editorState: () => $loadWebRichTextDocument(initialDocument),
     onError: (error: Error) => setProblem(error.message),
@@ -263,7 +309,8 @@ export function RichTextEditor({ cardId, document, onChange, compact = false }: 
         .nouty-unchecked:before{content:'☐'}.nouty-checked:before{content:'☑'}
       `}</style>
       <LexicalComposer initialConfig={initialConfig}>
-        <EditorToolbar />
+        <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage}>
+        <EditorToolbar onInsertImage={onInsertImage} />
         <View style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
             contentEditable={(
@@ -287,6 +334,7 @@ export function RichTextEditor({ cardId, document, onChange, compact = false }: 
         <LinkPlugin validateUrl={isLinkUrl} attributes={{ rel: 'noreferrer' }} />
         <AutoFocusPlugin />
         <DocumentChanges document={document} initialDocument={initialDocument} onChange={onChange} />
+        </ImageEditorBridge>
       </LexicalComposer>
       <Text accessibilityLiveRegion="polite" style={[styles.status, { color: problem ? colors.danger : colors.textSecondary }]}>
         {problem ?? t('editor.visual.status', locale)}

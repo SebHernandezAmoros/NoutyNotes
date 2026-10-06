@@ -541,6 +541,66 @@ test('P07: convertir una checklist en encabezado se guarda y no reaparece como c
   await expect(page.getByLabel('Contenido visual').locator('h1')).toContainText('*KNKNLK');
 });
 
+test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer Markdown', async ({ page }, testInfo) => {
+  const png = (name: string) => ({
+    name, mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  });
+  await page.goto('./');
+  await createWorkspace(page, 'Imágenes visuales');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  const visual = page.getByLabel('Contenido visual');
+  await visual.fill('Texto antes de la imagen.');
+
+  const insert = async (name: string) => {
+    const chooser = page.waitForEvent('filechooser');
+    await button(page, 'Insertar una imagen').click();
+    await (await chooser).setFiles(png(name));
+  };
+  await insert('plano.png');
+  const images = page.locator('[data-testid^="rich-image-"]');
+  await expect(images).toHaveCount(1);
+  await expect(images.first().locator('img')).toBeVisible();
+  await images.first().getByLabel(/^Texto alternativo/).fill('Plano general');
+  await images.first().getByLabel(/^Leyenda/).fill('Leyenda visible');
+
+  await insert('mapa.png');
+  await expect(images).toHaveCount(2);
+  await images.last().getByLabel(/^Texto alternativo/).fill('Mapa inicial');
+  await images.last().getByRole('button', { name: /Subir la imagen/ }).click();
+  await expect.poll(() => images.evaluateAll((nodes) => nodes.map((node) => ({ id: node.getAttribute('data-testid'), alt: (node.querySelector('[aria-label^="Texto alternativo"]') as HTMLInputElement).value })))).toEqual([
+    { id: 'rich-image-assets/images/tarjeta-1-2.png', alt: 'Mapa inicial' },
+    { id: 'rich-image-assets/images/tarjeta-1-1.png', alt: 'Plano general' },
+  ]);
+  await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Mapa inicial');
+
+  const replace = page.waitForEvent('filechooser');
+  await images.first().getByRole('button', { name: /Reemplazar la imagen/ }).click();
+  await (await replace).setFiles(png('mapa-final.png'));
+  await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Mapa inicial');
+  await expect(images.last().getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
+  await images.first().getByRole('button', { name: /Quitar la imagen/ }).click();
+  await expect(images).toHaveCount(1);
+  await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
+  await expect(images.first().getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await page.screenshot({ path: testInfo.outputPath('p08-rich-images.png'), fullPage: true });
+
+  await closeEditor(page);
+  await tapCard(page, 1);
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  const reopenedImage = page.locator('[data-testid^="rich-image-"]');
+  await expect(reopenedImage).toHaveCount(1);
+  await expect(reopenedImage.getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
+  await expect(reopenedImage.getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
+  await button(page, 'Volver al editor Markdown').click();
+  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/!\[Plano general\]\(assets\/images\/tarjeta-1-1\.png\)/);
+  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/nouty-caption:v1/);
+});
+
 test('edición rápida visual: crea y continúa una lista sin exponer Markdown', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');

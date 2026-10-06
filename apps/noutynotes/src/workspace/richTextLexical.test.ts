@@ -4,10 +4,11 @@ import { HeadingNode } from '@lexical/rich-text';
 import { createEditor } from 'lexical';
 import { describe, expect, it } from 'vitest';
 
-import type { RichTextDocument } from '@noutynotes/domain';
+import type { AssetRef, RichTextDocument } from '@noutynotes/domain';
 import { parseRichTextMarkdown } from '@noutynotes/storage';
 
-import { isBasicRichTextDocument, isWebRichTextDocument } from './basicRichText';
+import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
+import { RichTextImageNode } from './RichTextImageNode.web';
 import { $loadBasicRichTextDocument, $loadWebRichTextDocument, $readBasicRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
 
 const basicDocument: RichTextDocument = {
@@ -91,5 +92,29 @@ describe('adaptador Lexical de UX7 P04/P07', () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(isWebRichTextDocument(parsed.value)).toBe(true);
+  });
+
+  it('P08 admite varias imágenes intercaladas con texto y conserva alt y leyenda', () => {
+    const mixed: RichTextDocument = {
+      schemaVersion: 1,
+      blocks: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'Antes' }] },
+        { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Plano', caption: [{ type: 'text', text: 'Primera leyenda', marks: ['italic'] }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'Entre imágenes' }] },
+        { type: 'image', assetRef: 'assets/images/dos.png' as AssetRef, alt: 'Mapa' },
+      ],
+    };
+
+    expect(isWebRichTextDocument(mixed)).toBe(true);
+    expect(isNativeRichTextDocument(mixed)).toBe(true);
+    const editor = createEditor({
+      namespace: 'rich-text-image-test',
+      nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode],
+      onError: (error) => { throw error; },
+    });
+    editor.update(() => $loadWebRichTextDocument(mixed), { discrete: true });
+    let read: RichTextDocument | null = null;
+    editor.getEditorState().read(() => { read = $readWebRichTextDocument(); });
+    expect(read).toEqual(mixed);
   });
 });

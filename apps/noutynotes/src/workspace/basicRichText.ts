@@ -22,8 +22,14 @@ function supportsWebList(list: Extract<RichTextDocument['blocks'][number], { rea
 export function isWebRichTextDocument(document: RichTextDocument): boolean {
   return document.blocks.every((block) => {
     if (block.type === 'paragraph' || block.type === 'heading') return block.content.every(supportsWebInline);
-    return block.type === 'list' && supportsWebList(block);
+    if (block.type === 'list') return supportsWebList(block);
+    return block.type === 'image' && (block.caption ?? []).every(supportsWebInline);
   });
+}
+
+/** Android edita el subconjunto básico y muestra sin transformar el alcance web con imágenes. */
+export function isNativeRichTextDocument(document: RichTextDocument): boolean {
+  return isBasicRichTextDocument(document) || isWebRichTextDocument(document);
 }
 
 /**

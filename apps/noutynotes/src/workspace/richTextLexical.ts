@@ -17,6 +17,7 @@ import { RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
 import type { RichTextDocument, RichTextInline, RichTextLeaf, RichTextList, RichTextListItem, RichTextMark } from '@noutynotes/domain';
 
 import { isBasicRichTextDocument } from './basicRichText';
+import { $createRichTextImageNode, $isRichTextImageNode } from './RichTextImageNode.web';
 
 function lexicalLeaf(leaf: RichTextLeaf): LexicalNode {
   if (leaf.type === 'hard-break') return $createLineBreakNode();
@@ -64,6 +65,7 @@ export function $loadWebRichTextDocument(document: RichTextDocument): void {
       appendInlines(heading, block.content);
       root.append(heading);
     } else if (block.type === 'list') root.append(createList(block));
+    else if (block.type === 'image') root.append($createRichTextImageNode(block));
     else throw new Error('El documento contiene bloques fuera del alcance del editor visual web.');
   }
   if (root.getChildrenSize() === 0) root.append($createParagraphNode());
@@ -148,6 +150,10 @@ export function $readWebRichTextDocument(): RichTextDocument | null {
       const list = readList(node);
       if (!list) return null;
       blocks.push(list);
+      continue;
+    }
+    if ($isRichTextImageNode(node)) {
+      blocks.push(node.image());
       continue;
     }
     return null;
