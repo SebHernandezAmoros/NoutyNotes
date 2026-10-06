@@ -18,6 +18,7 @@ interface OpenTabsProps {
   readonly onCreate: () => void;
   /** UX7-A3: «Tablero» salió de la barra principal; el acceso rápido se ofrece aquí donde no hay franja derecha. */
   readonly onInsertShortcut: () => void;
+  readonly onActions: (boardId: BoardId) => void;
   readonly compact: boolean;
   /** Móvil: una sola fila desplazable en horizontal, para no robar alto al lienzo. */
   readonly scroll?: boolean;
@@ -27,7 +28,7 @@ interface OpenTabsProps {
  * Pestañas de tableros abiertos en la sesión (ADR 0035), distintas de la lista completa de
  * `BoardTabs`: un subconjunto que se puede cerrar sin borrar nada y reabrir desde el selector `+`.
  */
-export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, onCreate, onInsertShortcut, compact, scroll = false }: OpenTabsProps) {
+export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, onCreate, onInsertShortcut, onActions, compact, scroll = false }: OpenTabsProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const canClose = boards.length > 1;
   const tabs = (
@@ -40,6 +41,7 @@ export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, o
           closable={canClose}
           onSelect={() => onSelect(board.id)}
           onClose={() => onClose(board.id)}
+          onActions={() => onActions(board.id)}
         />
       ))}
       <ActionButton label="+" accessibilityLabel="Abrir un tablero" testID="open-tabs-add" onPress={() => setPickerOpen(true)} />
@@ -74,16 +76,24 @@ export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, o
   );
 }
 
-function Tab({ board, active, closable, onSelect, onClose }: {
+function Tab({ board, active, closable, onSelect, onClose, onActions }: {
   readonly board: Board;
   readonly active: boolean;
   readonly closable: boolean;
   readonly onSelect: () => void;
   readonly onClose: () => void;
+  readonly onActions: () => void;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
+  const webMenu = Platform.OS === 'web' ? {
+    onContextMenu: (event: { preventDefault: () => void; stopPropagation: () => void }) => { event.preventDefault(); event.stopPropagation(); onActions(); },
+    onKeyDown: (event: { key: string; shiftKey?: boolean; preventDefault: () => void; stopPropagation: () => void }) => {
+      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+      event.preventDefault(); event.stopPropagation(); onActions();
+    },
+  } : {};
   return (
     // Sin borde propio: el borde va en el botón (abajo), no aquí, para que este envoltorio no le
     // sume alto a los 44 px del botón y desplace la geometría exacta del lienzo debajo.
@@ -93,7 +103,9 @@ function Tab({ board, active, closable, onSelect, onClose }: {
         accessibilityLabel={`Tablero ${board.title}`}
         accessibilityState={{ selected: active }}
         {...(Platform.OS === 'web' ? { 'aria-pressed': active } : {})}
+        {...webMenu}
         onPress={onSelect}
+        onLongPress={onActions}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         style={[styles.tabPress, {
@@ -103,6 +115,10 @@ function Tab({ board, active, closable, onSelect, onClose }: {
       >
         <Text numberOfLines={1} style={[styles.label, { color: active ? colors.brandText : colors.textPrimary }]}>{board.title}</Text>
         <Text style={[styles.count, { color: active ? colors.brandText : colors.textSecondary }]}>{board.cardIds.length}</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Opciones del tablero ${board.title}`} onPress={onActions}
+        style={[styles.closeButton, { borderColor: colors.border }]}>
+        <Text style={[styles.moreGlyph, { color: colors.textSecondary }]}>⋯</Text>
       </Pressable>
       {closable ? (
         <Pressable
@@ -130,5 +146,6 @@ const styles = StyleSheet.create({
   count: { fontSize: 12, fontWeight: '700' },
   closeButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   closeGlyph: { fontSize: 18, fontWeight: '900' },
+  moreGlyph: { fontSize: 22, lineHeight: 24, fontWeight: '900' },
   picker: { gap: 8 },
 });

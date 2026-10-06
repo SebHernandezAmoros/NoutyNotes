@@ -1308,6 +1308,29 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
   await expect(page.getByTestId('workspace-sidebar')).toHaveCount((page.viewportSize()?.width ?? 0) >= 1100 ? 1 : 0);
 });
 
+test('las pestañas permiten renombrar y archivar un tablero con botón o menú contextual', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Guion');
+  if (isCompact(page)) await button(page, 'Abrir un tablero').click();
+  await button(page, 'Crear un tablero').click();
+  await addCards(page, ['nota']);
+
+  const tab = button(page, 'Tablero Tablero 1');
+  if ((page.viewportSize()?.width ?? 0) >= 1100) await tab.click({ button: 'right' });
+  else await button(page, 'Opciones del tablero Tablero 1').click();
+  await expect(page.getByTestId('board-actions-dialog')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('board-actions.png') });
+  await page.getByLabel('Nombre del tablero').fill('Escenas');
+  await button(page, 'Guardar nombre').click();
+  await expect(feedback(page)).toContainText('Tablero renombrado a «Escenas»');
+  await expect(button(page, 'Tablero Escenas')).toBeVisible();
+
+  await button(page, 'Opciones del tablero Escenas').click();
+  await button(page, 'Archivar tablero').click();
+  await expect(feedback(page)).toContainText('Tablero «Escenas» archivado con sus tarjetas');
+  await expect(button(page, 'Tablero Escenas')).toHaveCount(0);
+});
+
 test('recargar pierde los datos en memoria y la interfaz lo indica', async ({ page }, testInfo) => {
   const { runtimeErrors } = trackProblems(page);
   await page.emulateMedia({ colorScheme: 'light' });

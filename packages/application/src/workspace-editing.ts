@@ -273,6 +273,25 @@ export async function addBoardToWorkspace(storage: WorkspaceStorage, workspaceId
 }
 
 /** Edita título y Markdown de una tarjeta. */
+/** Cambia solo el título visible de un tablero; identidad, tarjetas y layout se conservan. */
+export function renameBoardInWorkspace(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, boardId: BoardId, title: string,
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  if (typeof title !== 'string' || title.trim() === '') {
+    return Promise.resolve(storageFailure('invalid-workspace', 'title', 'El nombre del tablero no puede estar vacío.'));
+  }
+  return modifyWorkspace(storage, workspaceId, (workspace) => {
+    if (!workspace.boards.some((board) => board.id === boardId)) {
+      return { ok: false, issues: [{ code: 'missing-reference', path: 'boardId', message: 'El tablero no existe en el workspace.' }] };
+    }
+    const trimmed = title.trim();
+    return validateWorkspace({
+      ...workspace,
+      boards: workspace.boards.map((board) => (board.id === boardId ? { ...board, title: trimmed } : board)),
+    });
+  });
+}
+
 export function editCardContent(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId, changes: CardContentChanges,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {

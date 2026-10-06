@@ -1,6 +1,6 @@
 import {
   PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, duplicateSelection, editCardContent, importImageCard,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, WorkspaceId } from '@noutynotes/domain';
@@ -32,6 +32,7 @@ import { loadViewPreferences, saveViewPreferences } from '../session/viewPrefere
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { Board } from './Board';
 import { BoardRail } from './BoardTabs';
+import { BoardActionsDialog } from './BoardActionsDialog';
 import { OpenTabs } from './OpenTabs';
 import { Canvas } from './canvas/Canvas';
 import type { CanvasTool } from './canvas/Canvas';
@@ -135,6 +136,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [searchOpen, setSearchOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [boardActionsId, setBoardActionsId] = useState<BoardId | null>(null);
   // Tarjeta del tablero sin posición a la que se llegó desde la búsqueda: se ofrece colocarla (ADR 0020).
   const [placeOffer, setPlaceOffer] = useState<{ readonly cardId: CardId; readonly boardId: BoardId; readonly title: string } | null>(null);
   const [projectsOpen, setProjectsOpen] = useState(false);
@@ -175,6 +177,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Editor enfocado (ADR 0021): el mismo editor ocupa el sitio del lienzo; el borrador no se pierde.
   const [focus, setFocus] = useState(false);
   const workspace = view.kind === 'ready' ? view.workspace : null;
+  const boardActions = workspace?.boards.find((candidate) => candidate.id === boardActionsId) ?? null;
   const archiveCount = workspace?.archive?.length ?? 0;
   const summaries = useSessionSummaries(workspace);
   const previews = useImagePreviews(session.storage, workspace);
@@ -210,7 +213,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const select = async (cardId: CardId | null) => {
-    if (!await flushPendingText()) return;
+    if (!await flushPendingText()) return false;
     setSelectedId(cardId);
     setEditingId(null);
     setInlineEditing(false);
@@ -677,17 +680,31 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   // Tablero completo como unidad (ADR 0039): mismo «sin reloj» que el resto del archivo.
-  const archiveCurrentBoard = async () => {
-    if (!board) return;
-    if (!await flushPendingText()) return;
-    const result = await run((storage, workspaceId) => moveBoardToArchive(storage, workspaceId, board.id, new Date().toISOString()),
-      { key: 'action.boardArchived', params: { title: board.title } });
+  const archiveBoardById = async (targetBoardId: BoardId): Promise<boolean> => {
+    const target = workspace?.boards.find((candidate) => candidate.id === targetBoardId);
+    if (!target) return false;
+    if (!await flushPendingText()) return false;
+    const result = await run((storage, workspaceId) => moveBoardToArchive(storage, workspaceId, target.id, new Date().toISOString()),
+      { key: 'action.boardArchived', params: { title: target.title } });
     if (result.ok) {
+      setBoardActionsId(null);
+      setOpenBoardIds((current) => current.filter((id) => id !== target.id));
+      if (board?.id === target.id) setBoardId(workspace?.boards.find((candidate) => candidate.id !== target.id)?.id ?? null);
       setEditingId(null);
       setSelectedId(null);
       setMulti(null);
       setConnectSource(null);
     }
+    return result.ok;
+  };
+  const archiveCurrentBoard = async () => (board ? archiveBoardById(board.id) : false);
+  const renameBoardById = async (targetBoardId: BoardId, title: string): Promise<boolean> => {
+    const result = await run(
+      (storage, workspaceId) => renameBoardInWorkspace(storage, workspaceId, targetBoardId, title),
+      { key: 'action.boardRenamed', params: { title: title.trim() } },
+    );
+    if (result.ok) setBoardActionsId(null);
+    return result.ok;
   };
   const restoreArchivedBoardById = async (boardId: BoardId, title: string) => {
     const result = await run((storage, workspaceId) => restoreBoardFromArchive(storage, workspaceId, boardId), { key: 'action.boardRestored', params: { title } });
@@ -1201,6 +1218,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onOpen={(next) => void chooseBoard(next)}
       onCreate={createBoard}
       onInsertShortcut={() => setShortcutOpen(true)}
+      onActions={setBoardActionsId}
       compact={compact}
       scroll={compact}
     />
@@ -1345,11 +1363,22 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         </View>
         {/* Una sola franja vertical (ADR 0048): tableros a la derecha; proyectos usan el selector
             compacto de cabecera («Proyectos» arriba) en vez de una segunda franja permanente. */}
-        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onInsertShortcut={() => setShortcutOpen(true)} /> : null}
+        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onInsertShortcut={() => setShortcutOpen(true)} onActions={setBoardActionsId} /> : null}
       </View>
       {workspace ? (
         <>
           <ProjectSheet projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} visible={projectsOpen} onClose={() => setProjectsOpen(false)} />
+          {boardActions ? (
+            <BoardActionsDialog
+              key={`${boardActions.id}:${boardActions.title}`}
+              board={boardActions}
+              compact={compact}
+              busy={saving}
+              onClose={() => setBoardActionsId(null)}
+              onRename={(title) => renameBoardById(boardActions.id, title)}
+              onArchive={() => archiveBoardById(boardActions.id)}
+            />
+          ) : null}
           <SettingsPanel
             visible={settingsOpen}
             compact={compact}

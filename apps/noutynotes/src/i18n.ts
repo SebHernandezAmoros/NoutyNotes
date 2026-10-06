@@ -832,6 +832,7 @@ export const TRANSLATIONS = {
   'action.tagRenamed': { es: 'Etiqueta renombrada', en: 'Tag renamed' },
   'action.tagRemovedEverywhere': { es: 'Etiqueta quitada de todas las tarjetas', en: 'Tag removed from all cards' },
   'action.boardCreated': { es: 'Tablero creado', en: 'Board created' },
+  'action.boardRenamed': { es: 'Tablero renombrado a «{title}»', en: 'Board renamed to “{title}”' },
   'action.cardArchived': { es: 'Tarjeta archivada', en: 'Card archived' },
   'action.cardTrashed': { es: 'Tarjeta enviada a la Papelera', en: 'Card sent to the Trash' },
   'action.cardRestoredFromArchive': { es: 'Tarjeta restaurada del Archivo', en: 'Card restored from the Archive' },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addBoardToWorkspace, addCardToBoard, createEmptyWorkspaceNamed } from '../../packages/application/src/index';
+import { addBoardToWorkspace, addCardToBoard, createEmptyWorkspaceNamed, renameBoardInWorkspace } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId } from '../../packages/domain/src/index';
 import { MemoryStorage } from '../../packages/storage/src/index';
@@ -53,6 +53,31 @@ describe('tableros del workspace (experiencia del workspace, ADR 0013)', () => {
     expect(missing.ok ? [] : missing.issues[0]?.details?.map(({ code }) => code)).toEqual(['missing-reference']);
     const badTitle = await addBoardToWorkspace(storage, workspaceId, { title: 42 as unknown as string });
     expect(badTitle.ok).toBe(false);
+    expect(ok(await storage.open(workspaceId))).toEqual(before);
+  });
+  it('renombra un tablero, recorta el nombre y conserva sus tarjetas y layout al reabrir', async () => {
+    const { storage, workspaceId } = await session();
+    const boardId = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Borrador' }));
+    ok(await addCardToBoard(storage, workspaceId, { kind: 'note', boardId }));
+
+    ok(await renameBoardInWorkspace(storage, workspaceId, boardId, '  Escenas finales  '));
+
+    const reopened = ok(await storage.open(workspaceId));
+    expect(reopened.boards.find((board) => board.id === boardId)).toEqual({
+      id: boardId,
+      title: 'Escenas finales',
+      cardIds: ['tarjeta-1'],
+    });
+    expect(reopened.layouts.find((layout) => layout.boardId === boardId)?.placements).toHaveLength(1);
+  });
+
+  it('no guarda al renombrar un tablero inexistente o con un nombre vacío', async () => {
+    const { storage, workspaceId } = await session();
+    const boardId = ok(await addBoardToWorkspace(storage, workspaceId, {}));
+    const before = ok(await storage.open(workspaceId));
+
+    expect((await renameBoardInWorkspace(storage, workspaceId, boardId, '   ')).ok).toBe(false);
+    expect((await renameBoardInWorkspace(storage, workspaceId, 'no-existe' as BoardId, 'Ideas')).ok).toBe(false);
     expect(ok(await storage.open(workspaceId))).toEqual(before);
   });
 });

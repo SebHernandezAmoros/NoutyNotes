@@ -44,9 +44,10 @@ export function BoardTabs({ boards, current, onSelect, onCreate, vertical, scrol
 }
 
 /** Escritorio: los tableros viven como pestañas verticales en el borde derecho del lienzo. */
-export function BoardRail({ boards, current, onSelect, onCreate, onInsertShortcut }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
+export function BoardRail({ boards, current, onSelect, onCreate, onInsertShortcut, onActions }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
   /** UX7-A3: «Tablero» salió de la barra principal; el acceso rápido se crea desde aquí. */
   readonly onInsertShortcut: () => void;
+  readonly onActions: (boardId: BoardId) => void;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -55,7 +56,7 @@ export function BoardRail({ boards, current, onSelect, onCreate, onInsertShortcu
       contentContainerStyle={styles.railContent}>
       {boards.map((board, index) => (
         <RailTab key={board.id} number={String(index + 1).padStart(2, '0')} label={board.title} count={board.cardIds.length}
-          active={board.id === current} onPress={() => onSelect(board.id)} />
+          active={board.id === current} onPress={() => onSelect(board.id)} onActions={() => onActions(board.id)} />
       ))}
       <Pressable accessibilityRole="button" accessibilityLabel="Crear un tablero" onPress={onCreate}
         style={[styles.railAdd, { borderColor: colors.border, backgroundColor: colors.surface }]}>
@@ -69,13 +70,21 @@ export function BoardRail({ boards, current, onSelect, onCreate, onInsertShortcu
   );
 }
 
-function RailTab({ number, label, count, active, onPress }: { readonly number: string; readonly label: string; readonly count: number; readonly active: boolean; readonly onPress: () => void }) {
+function RailTab({ number, label, count, active, onPress, onActions }: { readonly number: string; readonly label: string; readonly count: number; readonly active: boolean; readonly onPress: () => void; readonly onActions: () => void }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
+  const webMenu = Platform.OS === 'web' ? {
+    onContextMenu: (event: { preventDefault: () => void; stopPropagation: () => void }) => { event.preventDefault(); event.stopPropagation(); onActions(); },
+    onKeyDown: (event: { key: string; shiftKey?: boolean; preventDefault: () => void; stopPropagation: () => void }) => {
+      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+      event.preventDefault(); event.stopPropagation(); onActions();
+    },
+  } : {};
   return (
+    <View style={styles.railTabWrap}>
     <Pressable accessibilityRole="button" accessibilityLabel={`Tablero ${label}`} accessibilityState={{ selected: active }}
-      {...(Platform.OS === 'web' ? { 'aria-pressed': active } : {})} onPress={onPress}
+      {...(Platform.OS === 'web' ? { 'aria-pressed': active } : {})} {...webMenu} onPress={onPress} onLongPress={onActions}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
       style={[styles.railTab, { backgroundColor: active ? colors.brand : colors.surface, borderColor: focused ? colors.selection : colors.border }]}>
       <View style={styles.railTurned}>
@@ -84,6 +93,11 @@ function RailTab({ number, label, count, active, onPress }: { readonly number: s
         <Text style={[styles.count, { color: active ? colors.brandText : colors.textSecondary }]}>{count}</Text>
       </View>
     </Pressable>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Opciones del tablero ${label}`} onPress={onActions}
+      style={[styles.railMore, { backgroundColor: active ? colors.brand : colors.surface, borderColor: colors.border }]}>
+      <Text style={[styles.moreGlyph, { color: active ? colors.brandText : colors.textPrimary }]}>⋯</Text>
+    </Pressable>
+    </View>
   );
 }
 
@@ -135,15 +149,18 @@ const styles = StyleSheet.create({
   count: { fontSize: 12, fontWeight: '700' },
   rail: { width: RAIL_WIDTH + 8, flexGrow: 0, borderLeftWidth: 2 },
   railContent: { paddingVertical: 8, paddingLeft: 8, gap: 6 },
+  railTabWrap: { width: RAIL_WIDTH, height: RAIL_LENGTH, position: 'relative' },
   railTab: { width: RAIL_WIDTH, height: RAIL_LENGTH, borderWidth: 2, overflow: 'hidden' },
   railTurned: {
     position: 'absolute', width: RAIL_LENGTH - 4, height: RAIL_WIDTH - 4,
     left: (RAIL_WIDTH - RAIL_LENGTH) / 2, top: (RAIL_LENGTH - RAIL_WIDTH) / 2,
-    flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingRight: 52,
     transform: [{ rotate: '90deg' }],
   },
   railNumber: { fontSize: 11, fontWeight: '900' },
   railLabel: { flex: 1, fontSize: 12, fontWeight: '900', letterSpacing: 0.5 },
+  railMore: { position: 'absolute', right: 2, bottom: 2, width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  moreGlyph: { fontSize: 22, lineHeight: 24, fontWeight: '900' },
   railAdd: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   railAddText: { fontSize: 24, lineHeight: 28, fontWeight: '900' },
 });
