@@ -7,7 +7,7 @@ import type { Page } from '@playwright/test';
 
 import { buildZip, text } from '../../packages/storage/src/__fixtures__/zip';
 import { readWorkspaceArchive } from '../../packages/storage/src/workspace-archive';
-import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, trackProblems } from './support';
+import { hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, trackProblems } from './support';
 
 /** Navegador sin File System Access: `showDirectoryPicker` no existe. */
 const withoutFolderAccess = `Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true });`;
@@ -60,7 +60,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await expect(page.getByTestId('card-idea-b')).toBeVisible();
 
   // Editar: nota nueva con título y Markdown, movida en la grilla y conectada.
-  await button(page, 'Añadir nota').click();
+  await insertFromMenu(page, 'Insertar nota');
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   await expect(page.getByTestId('export-status')).toHaveText('CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
@@ -277,7 +277,7 @@ test('exportar no da por conservado nada si la descarga falla, se cancela o hubo
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await importZip(page, 'demo.zip', fixtureZip());
-  await button(page, 'Añadir nota').click();
+  await insertFromMenu(page, 'Insertar nota');
   await expect(page.getByTestId('export-status')).toHaveText('CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.');
 
   // 1. Iniciar la descarga falla: error visible, sigue pendiente y no se ofrece confirmar.
@@ -290,7 +290,7 @@ test('exportar no da por conservado nada si la descarga falla, se cancela o hubo
   await expect(page.getByTestId('unexported-demo')).toBeVisible();
   await page.reload();
   await importZip(page, 'demo.zip', fixtureZip());
-  await button(page, 'Añadir nota').click();
+  await insertFromMenu(page, 'Insertar nota');
 
   // 2. El usuario indica que no se guardó: sigue pendiente.
   let download = page.waitForEvent('download');
@@ -306,7 +306,7 @@ test('exportar no da por conservado nada si la descarga falla, se cancela o hubo
   await download;
   // «Imagen de ejemplo» ya no está en la barra de escritorio (ADR 0048): otra nota basta para el
   // cambio posterior a la exportación que prueba este paso.
-  await button(page, 'Añadir nota').click();
+  await insertFromMenu(page, 'Insertar nota');
   await expect(page.getByTestId('card-tarjeta-2')).toBeVisible();
   await button(page, 'Confirmar que guardé demo.zip').click();
   await expect(page.getByTestId('archive-message')).toHaveText('Hubo cambios después de exportar ese ZIP: sigue sin exportar. Vuelve a exportar.');
@@ -364,10 +364,10 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   await page.getByLabel('Nombre del nuevo espacio').fill('Viaje');
   await button(page, 'Crear un espacio').click();
   const chooser = page.waitForEvent('filechooser');
-  await button(page, 'Importar una imagen').click();
+  await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).setFiles(icon);
   await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
-  await button(page, 'Añadir nota').click();
+  await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await page.getByLabel('Título de la tarjeta').fill('Descartada');

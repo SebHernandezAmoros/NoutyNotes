@@ -99,6 +99,15 @@ describe('añadir tarjetas (fase 7)', () => {
     expect(ok(await storage.open(workspaceId)).cards[1]?.title).toBe('Guion');
   });
 
+  it('crea una nota con contenido inicial sin permitir contenido en otros tipos', async () => {
+    const { storage, workspaceId } = await session();
+    const table = '| A | B | C |\n| --- | --- | --- |\n|   |   |   |\n|   |   |   |';
+    const note = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', content: table }));
+    expect(ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id === note)?.content).toBe(table);
+    expect(failureOf(await addCardToBoard(storage, workspaceId, { kind: 'title', content: table })))
+      .toEqual(['invalid-workspace@input']);
+  });
+
   it('un workspace inexistente devuelve workspace-not-found', async () => {
     const { storage } = await session();
     expect(failureOf(await addCardToBoard(storage, id('ghost'), { kind: 'note' }))).toEqual(['workspace-not-found@id']);

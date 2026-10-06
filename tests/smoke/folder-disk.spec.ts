@@ -4,7 +4,7 @@ import { isAbsolute, join, relative as relativePath, resolve, sep } from 'node:p
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-import { openFullCardEditor } from './support';
+import { insertFromMenu, openFullCardEditor } from './support';
 
 /**
  * Bytes reales en disco, sin handles de Chrome. Esta prueba sustituye `showDirectoryPicker` y crea
@@ -125,7 +125,7 @@ test('carpeta física en disco: nota, edición rápida, cierre inmediato, recarg
   expect(filesUnder(notes)).toEqual(['prueba/.nouty/layout.yaml', 'prueba/.nouty/relations.yaml', 'prueba/.nouty/workspace.yaml']);
 
   // Añadir una nota, editar su título y cerrar el editor sin esperar al autoguardado.
-  await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
+  await insertFromMenu(page, 'Insertar nota');
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));

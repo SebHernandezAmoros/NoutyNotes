@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
+import { hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -66,7 +66,7 @@ async function addNote(page: Page, title: string) {
   // En escritorio mantiene el mismo recorrido explícito y evita operar a través del panel superpuesto.
   if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
   const before = await page.locator('[data-testid^="card-tarjeta-"]').count();
-  await button(page, 'Añadir nota').click();
+  await insertFromMenu(page, 'Insertar nota');
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(before + 1);
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): la tarjeta nueva
   // queda seleccionada y «Editar» es el paso explícito para escribir su contenido.
@@ -526,21 +526,21 @@ test('imagen real: vista previa, formato inválido, cancelación y ejemplo separ
 
   // Cancelar el selector no cambia nada.
   let chooser = page.waitForEvent('filechooser');
-  await button(page, 'Importar una imagen').click();
+  await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).element().evaluate((element) => element.dispatchEvent(new Event('cancel')));
   await expect(feedback(page)).toHaveText('No se eligió ninguna imagen. No cambió nada.');
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(0);
 
   // Un archivo que no es imagen se rechaza por su contenido, aunque se llame .png.
   chooser = page.waitForEvent('filechooser');
-  await button(page, 'Importar una imagen').click();
+  await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).setFiles({ name: 'foto.png', mimeType: 'image/png', buffer: Buffer.from('no soy una imagen') });
   await expect(feedback(page)).toHaveText('Formato no admitido. Usa una imagen PNG, JPEG, GIF o WebP.');
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(0);
 
   // Una imagen real se copia al espacio y se ve sin red.
   chooser = page.waitForEvent('filechooser');
-  await button(page, 'Importar una imagen').click();
+  await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).setFiles(image);
   await expect(feedback(page)).toHaveText('Imagen «app-icon.png» importada. Guardado en memoria.');
   await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
@@ -555,7 +555,7 @@ test('imagen real: vista previa, formato inválido, cancelación y ejemplo separ
   // El ejemplo sigue disponible y claramente separado: sin archivo. En escritorio esa muestra ya no
   // está en la barra (ADR 0048): solo queda la importación real, ya cubierta arriba.
   if (isCompactWidth(page)) {
-    await button(page, 'Añadir imagen de ejemplo').click();
+    await insertFromMenu(page, 'Añadir imagen de ejemplo');
     await expect(card(page, 2)).toContainText('IMAGEN DE EJEMPLO');
     await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeVisible();
   }
@@ -570,7 +570,7 @@ test('vista Lista muestra las imágenes reales, no el Markdown crudo ni siempre 
 
   // Ficha de imagen única: importada de verdad.
   const chooser = page.waitForEvent('filechooser');
-  await button(page, 'Importar una imagen').click();
+  await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).setFiles(image);
   await expect(feedback(page)).toHaveText('Imagen «app-icon.png» importada. Guardado en memoria.');
 
@@ -872,7 +872,7 @@ test('negrita y cursiva envuelven la selección y mantienen el foco; repetir el 
 test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Papelera en su sitio', async ({ page }) => {
   await page.goto('./');
   await createWorkspace(page, 'Rótulo');
-  await button(page, 'Añadir título flotante').click();
+  await insertFromMenu(page, 'Insertar título flotante');
   await expect(page.getByTestId('floating-title-tarjeta-1')).toBeVisible();
   await openFullCardEditor(page, card(page, 1));
   await page.getByLabel('Título de la tarjeta').fill('Proyecto Solace');
@@ -1043,7 +1043,7 @@ test('enlaces: crear con validación, abrir en pestaña nueva con noopener, edit
     (window as unknown as { opened: unknown[] }).opened = [];
     window.open = ((...args: unknown[]) => { (window as unknown as { opened: unknown[] }).opened.push(args); return null; }) as typeof window.open;
   });
-  await button(page, 'Añadir enlace').click();
+  await insertFromMenu(page, 'Insertar enlace');
   const dialog = page.getByTestId('link-dialog');
   await expect(dialog).toBeVisible();
   await page.getByTestId('link-url-input').fill('javascript:alert(1)');
@@ -1549,7 +1549,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
   // Con varios tableros, el ID global de una tarjeta nueva no coincide con lo que ya se ve en el
   // tablero activo: se crea sin la aserción estricta de `addNote` y se elige por su título.
   const addNoteAnywhere = async (title: string) => {
-    await button(page, 'Añadir nota').click();
+    await insertFromMenu(page, 'Insertar nota');
     // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): solo hay un botón
     // «Editar» visible a la vez, el de la tarjeta recién creada y seleccionada.
     await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
@@ -1975,7 +1975,7 @@ test('Configuración: idioma de la interfaz (ES/EN) traduce la barra, la navegac
 
   // La barra de herramientas y la navegación cambian con ella.
   await expect(page.getByRole('button', { name: 'Select tool' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add note' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Insert menu' })).toBeVisible();
   if (isCompactWidth(page)) {
     await button(page, 'More sections').click();
     await expect(page.getByRole('button', { name: 'Open Trash (0)' })).toBeVisible();
@@ -2002,7 +2002,7 @@ test('Configuración: idioma de la interfaz (ES/EN) traduce la barra, la navegac
   await button(page, 'Use Spanish').click();
   await expect(page.getByRole('heading', { name: 'Configuración' })).toBeVisible();
   await button(page, 'Cerrar configuración').click();
-  await expect(page.getByRole('button', { name: 'Añadir nota' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Abrir menú Insertar' })).toBeVisible();
   expect(runtimeErrors).toEqual([]);
 });
 

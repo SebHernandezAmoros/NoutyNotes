@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, borderWidth, expandPosition, fontSize, hasHorizontalOverflow, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
+import { activeLabel, borderColor, borderWidth, expandPosition, fontSize, hasHorizontalOverflow, insertFromMenu, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
 // 56 × 56 px; desde 800 px: barra sobre el lienzo, editor contextual y celdas cuadradas de 64 × 64 px;
@@ -63,7 +63,7 @@ async function createWorkspace(page: Page, name: string) {
 async function addCards(page: Page, kinds: readonly ('nota' | 'imagen')[]) {
   const start = await page.locator('[data-testid^="card-tarjeta-"]').count();
   for (const [index, kind] of kinds.entries()) {
-    await button(page, kind === 'nota' ? 'Añadir nota' : 'Añadir imagen de ejemplo').click();
+    await insertFromMenu(page, kind === 'nota' ? 'Insertar nota' : 'Añadir imagen de ejemplo');
     await expect(card(page, start + index + 1)).toBeVisible();
   }
 }
@@ -653,6 +653,38 @@ test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista',
   await expect(listTable).toContainText('Nombre');
   await expect(listTable).toContainText('Activa');
   await expect(listTable).not.toContainText('| Nombre |');
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
+test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Insertar coherente');
+
+  const toolbar = page.getByTestId('workspace-toolbar');
+  await expect(toolbar.getByRole('button', { name: 'Añadir nota', exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Añadir título flotante', exact: true })).toHaveCount(0);
+  await button(page, 'Abrir menú Insertar').click();
+
+  const menu = page.getByTestId('insert-dialog');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'Insertar nota', exact: true })).toBeEnabled();
+  await expect(menu.getByRole('button', { name: 'Insertar título flotante', exact: true })).toBeEnabled();
+  await expect(menu.getByRole('button', { name: 'Importar una imagen', exact: true })).toBeEnabled();
+  await expect(menu.getByRole('button', { name: 'Insertar enlace', exact: true })).toBeEnabled();
+  await expect(menu.getByRole('button', { name: 'Insertar texto', exact: true })).toBeDisabled();
+  await expect(menu.getByRole('button', { name: 'Insertar forma', exact: true })).toBeDisabled();
+  await expect(menu.getByRole('button', { name: 'Insertar conector', exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('p10-insert-menu.png'), fullPage: true });
+  await menu.getByRole('button', { name: 'Insertar tabla 3 por 3', exact: true }).click();
+
+  await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
+  const visual = page.getByLabel('Contenido visual');
+  await expect(visual.locator('th, td')).toHaveCount(9);
+  await expect(page.getByRole('dialog', { name: 'Insertar' })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('p10-table-from-insert.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
 });
@@ -1536,16 +1568,19 @@ test('accesibilidad del workspace: teclado, foco visible, estados y controles t�
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await createWorkspace(page, 'Teclado');
-  const addNote = button(page, 'Añadir nota');
-  // «Imagen de ejemplo» ya no está en la barra de escritorio (ADR 0048): «Título flotante» también
-  // crea una ficha sin diálogo nativo y sigue cubriendo la activación por Espacio.
-  const addTitle = button(page, 'Añadir título flotante');
+  const insert = button(page, 'Abrir menú Insertar');
 
-  // Activación con Enter y Espacio y foco visible en la barra de herramientas.
+  // Activación con Enter y Espacio, foco visible en la barra y navegación del menú unificado P10.
+  await insert.focus();
+  await expect.poll(() => borderColor(insert)).toBe(rgb(themeColors.light.selection));
+  await page.keyboard.press('Enter');
+  const addNote = page.getByTestId('insert-dialog').getByRole('button', { name: 'Insertar nota', exact: true });
   await addNote.focus();
-  await expect.poll(() => borderColor(addNote)).toBe(rgb(themeColors.light.selection));
   await page.keyboard.press('Enter');
   await expect(card(page, 1)).toBeVisible();
+  await insert.focus();
+  await page.keyboard.press('Space');
+  const addTitle = page.getByTestId('insert-dialog').getByRole('button', { name: 'Insertar título flotante', exact: true });
   await addTitle.focus();
   await page.keyboard.press('Space');
   await expect(card(page, 2)).toBeVisible();

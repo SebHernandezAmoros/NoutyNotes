@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { buildZip, text } from '../../packages/storage/src/__fixtures__/zip';
+import { insertFromMenu } from './support';
 
 /**
  * Contrato de arranque sin conexión (ADR 0011): tras una primera visita CON red al export, una
@@ -44,7 +45,7 @@ test('arranque sin conexión tras una primera visita con red, con importación y
   const entries = Object.entries(minimalWorkspace).map(([name, content]) => ({ name, data: text(content) }));
   await (await chooser).setFiles({ name: 'sin-red.zip', mimeType: 'application/zip', buffer: Buffer.from(buildZip(entries)) });
   await expect(offline.getByRole('heading', { name: 'Sin red', exact: true })).toBeVisible();
-  await offline.getByRole('button', { name: 'Añadir nota', exact: true }).click();
+  await insertFromMenu(offline, 'Insertar nota');
   await expect(offline.getByTestId('card-tarjeta-1')).toBeVisible();
   const download = offline.waitForEvent('download');
   await offline.getByRole('button', { name: 'Exportar este espacio como ZIP', exact: true }).click();

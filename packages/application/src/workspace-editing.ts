@@ -53,6 +53,8 @@ export interface AddCardInput {
   readonly kind: PrototypeCardKind;
   /** Título inicial; por defecto, el del preset (en un enlace, su dominio). */
   readonly title?: string;
+  /** Contenido inicial de una nota; permite crear inserciones compuestas sin un segundo guardado. */
+  readonly content?: string;
   /** Solo para `link`: la dirección tal como la escribe la persona; se normaliza (ADR 0020). */
   readonly url?: string;
   /** Solo para `image`: un asset que ya existe (biblioteca, ADR 0022); sin él, es la imagen de ejemplo. */
@@ -144,6 +146,7 @@ function withBoard(workspace: Workspace): { readonly workspace: Workspace; reado
 export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: WorkspaceId, input: AddCardInput): Promise<WorkspaceStorageResult<CardId>> {
   const kind = isObject(input) ? ownValue(input, 'kind') : undefined;
   const title = isObject(input) ? ownValue(input, 'title') : undefined;
+  const content = isObject(input) ? ownValue(input, 'content') : undefined;
   const requestedBoard = isObject(input) ? ownValue(input, 'boardId') : undefined;
   const near = isObject(input) ? ownValue(input, 'near') : undefined;
   const rawUrl = isObject(input) ? ownValue(input, 'url') : undefined;
@@ -159,6 +162,7 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const validNear = near === undefined || (isObject(near) && Number.isSafeInteger(ownValue(near, 'x')) && Number.isSafeInteger(ownValue(near, 'y'))
     && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
   if ((kind !== 'note' && kind !== 'image' && kind !== 'title' && kind !== 'link') || (title !== undefined && typeof title !== 'string')
+    || (content !== undefined && (kind !== 'note' || typeof content !== 'string'))
     || (requestedBoard !== undefined && typeof requestedBoard !== 'string') || !validNear) {
     return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen, título o enlace) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
   }
@@ -189,7 +193,7 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       ...(typeof createdAt === 'string' ? { createdAt } : {}),
       ...(typeof icon === 'string' ? { icon: icon as NonNullable<Card['icon']> } : {}),
       ...(typeof boardTargetId === 'string' ? { boardTargetId: boardTargetId as BoardId } : {}),
-      ...(preset.content === undefined ? {} : { content: preset.content }),
+      ...(preset.content === undefined ? {} : { content: typeof content === 'string' ? content : preset.content }),
     };
     const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID });
     if (result.ok) created = cardId;

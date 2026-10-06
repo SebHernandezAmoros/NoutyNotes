@@ -29,7 +29,7 @@ Todas devuelven `Promise<WorkspaceStorageResult<T>>` y nunca rechazan por datos 
 ### Prototipo de interfaz (fase 7)
 
 - `createEmptyWorkspaceNamed(storage, name)`: deriva un ID legible y libre del nombre.
-- `addCardToBoard(storage, id, { kind: 'note' | 'image', title? })`: añade la tarjeta al primer board (lo crea si falta) en el primer hueco libre y devuelve su ID. Crea bajo demanda los tipos `nota` o `imagen`.
+- `addCardToBoard(storage, id, { kind, title?, content? })`: añade la tarjeta al primer board (lo crea si falta) en el primer hueco libre y devuelve su ID. `content` solo se admite para crear una nota con contenido inicial en el mismo guardado.
 - `editCardContent`, `editCardAppearance`, `moveCardOnBoard`, `resizeCardOnBoard` (grilla canónica `CANONICAL_GRID`), `connectCards` (tipo `relacionada`, que se crea si falta) y `disconnectCards`.
 - `addBoardShortcut`: crea en un tablero una tarjeta normal y navegable cuyo `boardTargetId` apunta a otro tablero activo del mismo workspace.
 - `ids.ts`: `nextSequentialId` y `workspaceIdFromName`, deterministas y sin reloj ni aleatoriedad. El dominio nunca genera IDs.

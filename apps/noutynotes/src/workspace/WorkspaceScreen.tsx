@@ -3,7 +3,7 @@ import {
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
-import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, WorkspaceId } from '@noutynotes/domain';
+import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, WorkspaceId } from '@noutynotes/domain';
 import { frameMembers } from '@noutynotes/domain';
 import { markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
@@ -51,6 +51,7 @@ import { ArchiveView } from './ArchiveView';
 import { DiaryView } from './DiaryView';
 import { AssetsView } from './AssetsView';
 import { LinkDialog } from './LinkDialog';
+import { InsertMenu } from './InsertMenu';
 import { SearchPanel } from './SearchPanel';
 import { TrashPanel } from './TrashPanel';
 import { useImagePreviews } from './useImagePreviews';
@@ -67,6 +68,14 @@ const START_PAN: Point = { x: 16, y: 16 };
 // UX7-D1: el 100 % es ahora el tamaño normal de trabajo (antes 75 %, ADR 0048); la densidad visual
 // equivalente la da el nuevo `rowHeight` por defecto (48 px, en `preferences.ts`), no el zoom.
 const DEFAULT_ZOOM = 1;
+const DEFAULT_TABLE_DOCUMENT: RichTextDocument = {
+  schemaVersion: 1,
+  blocks: [{
+    type: 'table',
+    header: { cells: Array.from({ length: 3 }, () => ({ content: [] })) },
+    rows: Array.from({ length: 2 }, () => ({ cells: Array.from({ length: 3 }, () => ({ content: [] })) })),
+  }],
+};
 
 const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
   expanded: 'action.cardExpanded',
@@ -134,6 +143,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [presentOpen, setPresentOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [insertOpen, setInsertOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [boardActionsId, setBoardActionsId] = useState<BoardId | null>(null);
@@ -492,7 +502,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
-  const add = (kind: PrototypeCardKind, extra: { readonly url?: string; readonly title?: string } = {}) => {
+  const add = (kind: PrototypeCardKind, extra: { readonly url?: string; readonly title?: string; readonly content?: string } = {}) => {
     const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
     // La fecha de creación la pone la interfaz (ADR 0024): application no usa el reloj.
     return run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...extra, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
@@ -505,6 +515,19 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const addLink = async (url: string, title: string) => {
     const result = await add('link', { url, ...(title.trim() === '' ? {} : { title: title.trim() }) });
     return result.ok ? null : describeFailure(result.issues, storageMode);
+  };
+
+  const addTable = async () => {
+    const encoded = markdownRichTextCodec.serialize(DEFAULT_TABLE_DOCUMENT);
+    if (!encoded.ok) {
+      setFeedback({ tone: 'error', text: 'No se pudo preparar la tabla.' });
+      return;
+    }
+    const result = await add('note', { content: encoded.value });
+    if (!result.ok) return;
+    setEditingId(result.value);
+    setInlineEditing(false);
+    setSheetHidden(false);
   };
 
   const createBoard = () => {
@@ -1056,11 +1079,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       compact={compact}
       tool={tool}
       onTool={changeTool}
-      onAddNote={() => void add('note')}
-      onAddTitle={() => void add('title')}
-      onAddLink={() => setLinkOpen(true)}
-      onImportImage={() => void importImage()}
-      onAddExample={() => void add('image')}
+      onOpenInsert={() => setInsertOpen(true)}
       zoom={zoom}
       onZoomIn={() => setZoom(zoomIn)}
       onZoomOut={() => setZoom(zoomOut)}
@@ -1422,6 +1441,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onClose={() => setTrashOpen(false)}
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
+          <InsertMenu
+            visible={insertOpen}
+            compact={compact}
+            onClose={() => setInsertOpen(false)}
+            onNote={() => { setInsertOpen(false); void add('note'); }}
+            onTitle={() => { setInsertOpen(false); void add('title'); }}
+            onImage={() => { setInsertOpen(false); void importImage(); }}
+            onExampleImage={() => { setInsertOpen(false); void add('image'); }}
+            onLink={() => { setInsertOpen(false); setLinkOpen(true); }}
+            onTable={() => { setInsertOpen(false); void addTable(); }}
+          />
           <Dialog visible={shortcutOpen} title="Acceso a tablero" compact={compact} onClose={() => setShortcutOpen(false)} testID="board-shortcut-dialog">
             <Text style={[styles.body, { color: colors.textSecondary }]}>Elige el tablero que abrirá esta ficha.</Text>
             <View style={styles.multiRow}>
