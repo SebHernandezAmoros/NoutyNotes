@@ -284,7 +284,7 @@ const editorTheme = {
   },
 };
 
-export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', onInsertImage, onReplaceImage, compact = false }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, compact = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -320,7 +320,9 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
                 spellCheck
                 style={{
                   boxSizing: 'border-box', minHeight: compact ? 96 : 220, outline: 'none', padding: 14,
-                  color: colors.cardText, fontSize: 16, lineHeight: 1.55, whiteSpace: 'pre-wrap',
+                  color: colors.cardText,
+                  fontFamily: fontFamily ?? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+                  fontSize: 16, lineHeight: 1.55, whiteSpace: 'pre-wrap',
                 }}
               />
             )}

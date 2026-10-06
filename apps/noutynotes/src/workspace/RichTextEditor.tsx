@@ -44,7 +44,7 @@ function inlineText(content: Extract<RichTextEditorProps['document']['blocks'][n
     ? inline.content.map((leaf) => leaf.type === 'hard-break' ? '\n' : leaf.text).join('') : inline.text).join('');
 }
 
-export function RichTextEditor({ document, codec, onChange, images = new Map(), captionPosition = 'bottom', compact = false }: RichTextEditorProps) {
+export function RichTextEditor({ document, codec, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, compact = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -146,7 +146,7 @@ export function RichTextEditor({ document, codec, onChange, images = new Map(), 
           strong: { color: colors.cardText },
           em: { color: colors.cardText },
         }}
-        style={StyleSheet.flatten([styles.input, compact ? styles.inputCompact : null, { color: colors.cardText, backgroundColor: colors.cardSurface }])}
+        style={StyleSheet.flatten([styles.input, compact ? styles.inputCompact : null, { color: colors.cardText, backgroundColor: colors.cardSurface, fontFamily }])}
         selectionMenuConfig={{
           format: { enabled: true, label: t('editor.visual.format', locale) },
           copyAsMarkdown: { enabled: false },

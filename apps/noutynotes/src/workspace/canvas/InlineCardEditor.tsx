@@ -13,13 +13,14 @@ interface InlineCardEditorProps {
   readonly card: Card;
   readonly box: ScreenBox;
   readonly richTextCodec: RichTextCodec;
+  readonly noteFontFamily?: string | undefined;
   readonly onSave: (cardId: CardId, title: string, content: string) => Promise<boolean>;
   readonly onAdvanced: () => void;
   readonly onClose: () => void;
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
@@ -117,7 +118,7 @@ export function InlineCardEditor({ card, box, richTextCodec, onSave, onAdvanced,
         style={[styles.title, { color: colors.cardText, borderColor: colors.gridLine }]}
       />
       {visualDocument ? (
-        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} compact />
+        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily} compact />
       ) : (
         <View style={styles.unsupportedContent}>
           <Text style={[styles.modeHint, { color: colors.textSecondary }]}>Este contenido se edita desde Más opciones.</Text>

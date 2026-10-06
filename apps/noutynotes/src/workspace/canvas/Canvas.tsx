@@ -871,6 +871,7 @@ export function Canvas(props: CanvasProps) {
           card={inlineCard}
           box={inlineBox}
           richTextCodec={props.richTextCodec}
+          noteFontFamily={props.noteFontFamily}
           onSave={props.onInlineSave}
           onAdvanced={() => props.onInlineAdvanced(inlineCard.id)}
           onClose={props.onInlineClose}

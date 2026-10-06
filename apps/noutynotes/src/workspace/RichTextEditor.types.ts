@@ -8,6 +8,7 @@ export interface RichTextEditorProps {
   readonly onChange: (document: RichTextDocument) => void;
   readonly images?: ReadonlyMap<string, string>;
   readonly captionPosition?: 'bottom' | 'top' | 'left' | 'right';
+  readonly fontFamily?: string | undefined;
   readonly onInsertImage?: ((document: RichTextDocument, afterBlock: number) => Promise<RichTextImage | null>) | undefined;
   readonly onReplaceImage?: ((document: RichTextDocument, blockIndex: number) => Promise<RichTextImage | null>) | undefined;
   /** Reduce la altura del editor cuando se monta directamente sobre una ficha del lienzo. */

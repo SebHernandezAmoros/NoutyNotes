@@ -45,6 +45,19 @@ export async function openSettings(page: Page) {
 }
 
 /**
+ * Obtiene el editor Markdown durable desde el inspector completo. Las notas compatibles se abren en
+ * el editor visual desde UX7-P05; las pruebas que preparan sintaxis Markdown o comprueban sus bytes
+ * deben cambiar de modo de forma explícita, igual que una persona usuaria.
+ */
+export async function openMarkdownEditor(page: Page): Promise<Locator> {
+  const editor = page.getByLabel('Contenido Markdown');
+  if (await editor.isVisible().catch(() => false)) return editor;
+  await page.getByRole('button', { name: 'Volver al editor Markdown', exact: true }).click();
+  await editor.waitFor({ state: 'visible' });
+  return editor;
+}
+
+/**
  * Abre el editor completo de una tarjeta (ADR 0047/0048): en escritorio no hay ya ningún botón
  * permanente sobre la ficha, así que `card` es la propia ficha (`card-tarjeta-N`), siempre presente.
  * Clic derecho (o el botón táctil `⋯` en móvil) abre su menú y «Completo» el editor. El nombre

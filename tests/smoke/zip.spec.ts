@@ -6,8 +6,8 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 import { buildZip, text } from '../../packages/storage/src/__fixtures__/zip';
-import { readWorkspaceArchive } from '../../packages/storage/src/index';
-import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, trackProblems } from './support';
+import { readWorkspaceArchive } from '../../packages/storage/src/workspace-archive';
+import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, trackProblems } from './support';
 
 /** Navegador sin File System Access: `showDirectoryPicker` no existe. */
 const withoutFolderAccess = `Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true });`;
@@ -66,7 +66,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Título de la tarjeta').fill('Nota del ZIP');
-  await page.getByLabel('Contenido Markdown').fill('## Desde el navegador\n\n- conservar **todo**');
+  await (await openMarkdownEditor(page)).fill('## Desde el navegador\n\n- conservar **todo**');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota del ZIP');
   // Etiqueta (ADR 0019): la tarjeta viaja como v2; las demás, byte a byte.
@@ -139,7 +139,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await page.getByTestId('card-tarjeta-1').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('## Desde el navegador\n\n- conservar **todo**');
+  await expect(await openMarkdownEditor(page)).toHaveValue('## Desde el navegador\n\n- conservar **todo**');
   // La lista de conexiones ya no vive en el editor de escritorio (ADR 0048): sus líneas en el lienzo
   // bastan para confirmar que sobrevivieron a reimportar el ZIP (la del fixture más la nueva).
   await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(2);

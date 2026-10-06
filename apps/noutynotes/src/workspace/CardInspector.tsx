@@ -427,7 +427,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           }} />
         ) : null}
         {visualEditing && visualDocument ? (
-          <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument}
+          <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily}
             images={noteImages} captionPosition={card.captionPosition ?? 'bottom'}
             onInsertImage={(document, afterBlock) => placeVisualImage(document, { kind: 'insert', afterBlock })}
             onReplaceImage={(document, blockIndex) => placeVisualImage(document, { kind: 'replace', blockIndex })} />

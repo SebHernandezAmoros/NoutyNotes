@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, borderWidth, expandPosition, fontSize, hasHorizontalOverflow, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
+import { activeLabel, borderColor, borderWidth, expandPosition, fontSize, hasHorizontalOverflow, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
 // 56 × 56 px; desde 800 px: barra sobre el lienzo, editor contextual y celdas cuadradas de 64 × 64 px;
@@ -354,7 +354,7 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   // La lista de conexiones ya no vive en el editor de escritorio (ADR 0048): su línea en el lienzo
   // basta para confirmar que la conexión sobrevivió a reabrir con el tema cambiado.
   await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(1);
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('# Plano\n\n- abierto');
+  await expect(await openMarkdownEditor(page)).toHaveValue('# Plano\n\n- abierto');
   await page.screenshot({ path: testInfo.outputPath('workspace-reopened-dark.png') });
 
   expect(runtimeErrors).toEqual([]);

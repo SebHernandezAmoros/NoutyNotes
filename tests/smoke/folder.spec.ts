@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-import { borderWidth, expandPosition, fontSize, openCardActions, openFullCardEditor, openMore, openSettings } from './support';
+import { borderWidth, expandPosition, fontSize, openCardActions, openFullCardEditor, openMarkdownEditor, openMore, openSettings } from './support';
 
 const fakeFolder = `
 (() => {
@@ -290,7 +290,7 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
   await page.getByRole('button', { name: 'Añadir nota' }).click();
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
-  const editor = page.getByLabel('Contenido Markdown');
+  const editor = await openMarkdownEditor(page);
   await page.getByRole('button', { name: 'Insertar lista de tareas' }).click();
   await expect(editor).toHaveValue('- [ ] ');
   await editor.focus();
@@ -316,7 +316,7 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   // caería sobre una fila y la marcaría/desmarcaría en vez de solo seleccionar la tarjeta.
   await page.getByTestId('card-tarjeta-2').click({ position: { x: 10, y: 10 } });
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('- [x] Primera\n- [ ] ');
+  await expect(await openMarkdownEditor(page)).toHaveValue('- [x] Primera\n- [ ] ');
 });
 
 test('cancelar el selector conserva el modo de memoria y muestra un aviso', async ({ page }) => {
@@ -720,7 +720,7 @@ test('carpeta: la posición de la leyenda por ficha se guarda en la tarjeta como
   // imagen — hace falta más alto para que esta prueba vea la leyenda en vez de omitirla.
   await page.getByRole('button', { name: 'Más alta' }).click();
   await page.getByRole('button', { name: 'Más alta' }).click();
-  await page.getByLabel('Contenido Markdown').fill('![Vista del lago](assets/images/x.png)');
+  await (await openMarkdownEditor(page)).fill('![Vista del lago](assets/images/x.png)');
   await page.getByRole('button', { name: 'Guardar texto' }).click();
   await page.getByRole('button', { name: 'Leyenda a la izquierda de la imagen' }).click();
   await expect(page.getByRole('button', { name: 'Leyenda a la izquierda de la imagen' })).toHaveAttribute('aria-pressed', 'true');
@@ -801,7 +801,7 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   await page.getByRole('button', { name: 'Añadir nota', exact: true }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
-  const editor = page.getByLabel('Contenido Markdown');
+  const editor = await openMarkdownEditor(page);
   await editor.fill('Primera parte.');
   await editor.press('End');
   const chooser = page.waitForEvent('filechooser');
@@ -840,6 +840,7 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   await page.keyboard.press('Space');
   // Seleccionar ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  await openMarkdownEditor(page);
   await page.getByRole('button', { name: 'Quitar la imagen plano de la nota' }).click();
   await expect.poll(() => text('diario/cards/tarjeta-1.md')).not.toContain('assets/images/tarjeta-1-1.png');
   expect((await files())['diario/assets/images/tarjeta-1-1.png']).toBeDefined();
@@ -1028,7 +1029,7 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   await page.keyboard.press('Enter');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await expect(geometry).toHaveText(start);
-  await expect(page.getByRole('button', { name: /^Deshacer/ })).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('button', { name: 'Deshacer', exact: true })).toHaveAttribute('aria-disabled', 'true');
 });
 
 test('carpeta: el marco se guarda en layout.yaml (v3) y reaparece al recargar; quitarlo vuelve a la versión anterior (ADR 0027)', async ({ page }) => {

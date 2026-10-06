@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
+import { hasHorizontalOverflow, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -577,6 +577,7 @@ test('vista Lista muestra las imágenes reales, no el Markdown crudo ni siempre 
   // Nota con una imagen y su leyenda (texto alternativo); sin más texto, para que la fila de la lista
   // tenga sitio de sobra y la leyenda no compita por espacio con un párrafo.
   await addNote(page, 'Con foto');
+  await openMarkdownEditor(page);
   const chooser2 = page.waitForEvent('filechooser');
   await button(page, 'Insertar una imagen en la nota').click();
   await (await chooser2).setFiles(image);
@@ -778,7 +779,7 @@ test('P3: listas con teclado (continuar, terminar, renumerar sin perder el curso
   await page.goto('./');
   await createWorkspace(page, 'Listas');
   await addNote(page, 'Receta');
-  const editor = page.getByLabel('Contenido Markdown');
+  const editor = await openMarkdownEditor(page);
 
   // Numerada con Enter: continúa, y Enter en un elemento vacío termina la lista.
   await button(page, 'Insertar lista numerada').click();
@@ -840,7 +841,7 @@ test('negrita y cursiva envuelven la selección y mantienen el foco; repetir el 
   await page.goto('./');
   await createWorkspace(page, 'Formato');
   await addNote(page, 'Nota');
-  const editor = page.getByLabel('Contenido Markdown');
+  const editor = await openMarkdownEditor(page);
   await editor.fill('hola mundo');
 
   // Selecciona «mundo» (las últimas 5 letras) y pulsa el botón «Negrita».
@@ -929,7 +930,7 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
 
   // El «#» escrito en el texto no es una etiqueta.
   await addNote(page, 'Lisboa');
-  await page.getByLabel('Contenido Markdown').fill('Tranvía 28 #hola');
+  await (await openMarkdownEditor(page)).fill('Tranvía 28 #hola');
   await button(page, 'Guardar texto').click();
   await tagInput.fill('portugal');
   await button(page, 'Añadir la etiqueta').click();
@@ -1127,7 +1128,7 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
   await page.goto('./');
   await createWorkspace(page, 'Cuaderno');
   await addNote(page, 'Viaje');
-  const editor = page.getByLabel('Contenido Markdown');
+  const editor = await openMarkdownEditor(page);
   await editor.fill('Llegada.\n\nTemplos y <b>jardines</b>.');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
@@ -1222,7 +1223,7 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   };
   // Una nota con una imagen intercalada: el archivo está en uso.
   await addNote(page, 'Ruta');
-  await page.getByLabel('Contenido Markdown').press('Control+End');
+  await (await openMarkdownEditor(page)).press('Control+End');
   const inNote = pick('mapa.png');
   await button(page, 'Insertar una imagen en la nota').click();
   await inNote;
@@ -1557,6 +1558,19 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
     await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   };
   const selectCardByTitle = (title: string) => page.locator('[data-testid^="card-tarjeta-"]').filter({ hasText: title });
+  const openBoard = async (title: string) => {
+    const openTab = button(page, `Tablero ${title}`);
+    if (await openTab.isVisible().catch(() => false)) {
+      await openTab.click();
+      return;
+    }
+    if (isCompactWidth(page)) {
+      await button(page, 'Abrir un tablero').click();
+      await button(page, `Abrir el tablero ${title}`).click();
+      return;
+    }
+    await openTab.click();
+  };
 
   await page.goto('./');
   await createWorkspace(page, 'Estudio3');
@@ -1594,7 +1608,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
   await expect(feedback(page)).toHaveText('Tablero «Tablero 2» restaurado. Guardado en memoria.');
   await expect(page.getByTestId(/^archive-board-/)).toHaveCount(0);
   await page.keyboard.press('Escape');
-  await expect(button(page, 'Tablero Tablero 2')).toBeVisible();
+  await openBoard('Tablero 2');
 
   // Selección múltiple: archivar dos tarjetas del tablero principal y restaurarlas juntas.
   // En móvil, «Archivar la tarjeta X» es del editor (distinto del de cabecera): hace falta «Editar».
@@ -1609,7 +1623,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
       await button(page, `Archivar ${title}`).click();
     }
   };
-  await button(page, 'Tablero Tablero principal').click();
+  await openBoard('Tablero principal');
   await archiveByTitle('Idea original');
   await addNoteAnywhere('Otra idea');
   await closeEditor(page);
@@ -1809,10 +1823,11 @@ test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la fich
   await page.goto('./');
   await createWorkspace(page, 'Tipos');
   await addNote(page, 'Con texto');
-  await page.getByLabel('Contenido Markdown').fill('Cuerpo de la nota.');
+  await (await openMarkdownEditor(page)).fill('Cuerpo de la nota.');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
-  const bodyInEditor = () => page.getByLabel('Contenido Markdown').evaluate((node) => getComputedStyle(node).fontFamily);
+  const bodyInEditor = () => page.locator('[aria-label="Contenido Markdown"]:visible, [aria-label="Contenido visual"]:visible')
+    .evaluate((node) => getComputedStyle(node).fontFamily);
   const titleInEditor = () => page.getByLabel('Título de la tarjeta').evaluate((node) => getComputedStyle(node).fontFamily);
   const systemBody = await bodyInEditor();
   const systemTitle = await titleInEditor();
@@ -1839,7 +1854,7 @@ test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la fich
   await button(page, 'Volver a mis espacios').click();
   await createWorkspace(page, 'Otro tipo');
   await addNote(page, 'Nueva');
-  await page.getByLabel('Contenido Markdown').fill('Otro cuerpo.');
+  await (await openMarkdownEditor(page)).fill('Otro cuerpo.');
   await expect.poll(bodyInEditor).toMatch(/monospace|Menlo|Consolas/);
 
   await closeEditor(page);
@@ -1854,7 +1869,7 @@ test('Imprimir: una imagen intercalada aparece una sola vez, en su sitio y con s
   await page.goto('./');
   await createWorkspace(page, 'Lectura con imagen');
   await addNote(page, 'Con foto');
-  const editor = page.getByLabel('Contenido Markdown');
+  const editor = await openMarkdownEditor(page);
   await editor.fill('# Encabezado\n\n- uno\n- dos');
   await editor.press('End');
   const chooser = page.waitForEvent('filechooser');
@@ -1888,7 +1903,7 @@ test('Presentar: pantalla completa en cualquier plataforma, cuenta y navegación
   await page.goto('./');
   await createWorkspace(page, 'Lectura');
   await addNote(page, 'Primera');
-  await page.getByLabel('Contenido Markdown').fill('Cuerpo de la primera.');
+  await (await openMarkdownEditor(page)).fill('Cuerpo de la primera.');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
   await addNote(page, 'Segunda');
