@@ -1,4 +1,4 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { cardIconNames, linkUrlField } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
@@ -330,8 +330,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                 key={move.nameKey}
                 label={move.label}
                 accessibilityLabel={t(move.nameKey, locale)}
-                onPress={() => void run((storage, id) => moveCardOnBoard(storage, id, {
-                  boardId, cardId: card.id, to: { x: rect.x + move.dx, y: rect.y + move.dy },
+                onPress={() => void run((storage, id) => nudgeCardOnBoard(storage, id, {
+                  boardId, cardId: card.id, delta: { x: move.dx, y: move.dy },
                 }), 'action.cardMoved')}
               />
             ))}

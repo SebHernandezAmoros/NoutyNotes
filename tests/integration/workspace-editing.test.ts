@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, resizeCardOnBoard,
+  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, nudgeCardOnBoard, resizeCardOnBoard,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId, CardId, RelationId, WorkspaceId } from '../../packages/domain/src/index';
@@ -166,6 +166,19 @@ describe('editar, mover, redimensionar y relacionar a través del puerto (fase 7
     expect(failureOf(await moveCardOnBoard(storage, workspaceId, { boardId: 'otro' as BoardId, cardId: first, to: { x: 0, y: 0 } })))
       .toEqual(['invalid-workspace@transform', 'missing-reference@boardId']);
     expect(ok(storage.exportPackage(workspaceId))).toEqual(before);
+  });
+
+  it('acumula movimientos relativos aunque las acciones se hayan creado desde la misma vista', async () => {
+    const { storage, workspaceId } = await session();
+    const first = ok(await addCardToBoard(storage, workspaceId, { kind: 'note' }));
+
+    // La interfaz encola estas acciones antes de recibir el workspace actualizado. Cada una debe
+    // partir de lo que quedó guardado por la anterior, no de la geometría capturada al renderizar.
+    ok(await nudgeCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, delta: { x: 0, y: -1 } }));
+    ok(await nudgeCardOnBoard(storage, workspaceId, { boardId: board, cardId: first, delta: { x: 0, y: -1 } }));
+
+    expect(ok(await storage.open(workspaceId)).layouts[0]?.placements[0]?.rect)
+      .toEqual({ x: 0, y: -2, w: 4, h: 3 });
   });
 
   it('conecta y desconecta tarjetas con un tipo de relación creado a demanda', async () => {

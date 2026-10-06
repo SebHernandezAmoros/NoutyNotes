@@ -353,6 +353,25 @@ export function moveCardOnBoard(
     changeBoardLayout(workspace, boardId, (layout) => moveCard(layout, cardId, to, CANONICAL_GRID)));
 }
 
+/**
+ * Desplaza una tarjeta desde la posición guardada más reciente. Sirve para acciones discretas
+ * encoladas por la interfaz: dos pulsaciones rápidas acumulan ambos pasos aunque el componente
+ * todavía conserve la geometría del render anterior.
+ */
+export function nudgeCardOnBoard(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, { boardId, cardId, delta }: BoardCardTarget & { readonly delta: GridPoint },
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) =>
+    changeBoardLayout(workspace, boardId, (layout) => {
+      const placement = layout.placements.find((candidate) => candidate.cardId === cardId);
+      if (!placement) return moveCard(layout, cardId, delta, CANONICAL_GRID);
+      return moveCard(layout, cardId, {
+        x: placement.rect.x + delta.x,
+        y: placement.rect.y + delta.y,
+      }, CANONICAL_GRID);
+    }));
+}
+
 /** Mueve un conjunto de tarjetas con el mismo desplazamiento (ADR 0025): o todas o ninguna, un guardado. */
 export function moveCardsOnBoard(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, { boardId, cardIds, delta }: { readonly boardId: BoardId; readonly cardIds: readonly CardId[]; readonly delta: GridPoint },
