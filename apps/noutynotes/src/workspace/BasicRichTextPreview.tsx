@@ -1,7 +1,7 @@
-import type { RichTextDocument, RichTextInline, RichTextList } from '@noutynotes/domain';
+import type { RichTextDocument, RichTextInline, RichTextList, RichTextTableRow } from '@noutynotes/domain';
 import { Fragment } from 'react';
 import type { ReactNode } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 interface BasicRichTextPreviewProps {
   readonly document: RichTextDocument;
@@ -65,6 +65,38 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
 
 /** Vista semántica P07; Markdown sigue siendo únicamente la persistencia durable. */
 export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID }: BasicRichTextPreviewProps) {
+  if (document.blocks.some((block) => block.type === 'table')) {
+    return (
+      <View testID={testID} style={styles.tableDocument}>
+        {document.blocks.map((block, blockIndex) => {
+          if (block.type !== 'table') {
+            return <BasicRichTextPreview key={blockIndex} document={{ schemaVersion: document.schemaVersion, blocks: [block] }} numberOfLines={numberOfLines}
+              color={color} fontSize={fontSize} lineHeight={lineHeight} fontFamily={fontFamily} testID={`${testID}-block-${blockIndex}`} />;
+          }
+          const rows: readonly { readonly row: RichTextTableRow; readonly header: boolean }[] = [
+            ...(block.header ? [{ row: block.header, header: true }] : []),
+            ...block.rows.map((row) => ({ row, header: false })),
+          ];
+          return (
+            <View key={blockIndex} testID={`${testID}-table-${blockIndex}`} style={[styles.table, { borderColor: color }]}>
+              {rows.map(({ row, header }, rowIndex) => (
+                <View key={rowIndex} style={styles.tableRow}>
+                  {row.cells.map((cell, cellIndex) => (
+                    <Text key={cellIndex} numberOfLines={2} style={[
+                      styles.tableCell, header ? styles.tableHeader : null,
+                      { color, borderColor: color, fontSize, lineHeight }, fontFamily === undefined ? null : { fontFamily },
+                    ]}>
+                      {cell.content.map((inline, inlineIndex) => inlineView(inline, rowIndex, inlineIndex, testID))}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
   const lines = previewLines(document);
   return (
     <Text
@@ -99,6 +131,11 @@ const headingScale: Readonly<Record<1 | 2 | 3 | 4 | 5 | 6, number>> = {
 
 const styles = StyleSheet.create({
   content: { flexShrink: 1, overflow: 'hidden' },
+  tableDocument: { width: '100%', flexShrink: 1, gap: 6, overflow: 'hidden' },
+  table: { width: '100%', borderTopWidth: 1, borderLeftWidth: 1 },
+  tableRow: { width: '100%', flexDirection: 'row' },
+  tableCell: { flex: 1, minWidth: 0, minHeight: 30, borderRightWidth: 1, borderBottomWidth: 1, padding: 4 },
+  tableHeader: { fontWeight: '800' },
   bold: { fontWeight: '700' },
   italic: { fontStyle: 'italic' },
   heading: { fontWeight: '800' },

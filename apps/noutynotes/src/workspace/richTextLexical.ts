@@ -3,6 +3,15 @@ import { $createListItemNode, $createListNode, $isListItemNode, $isListNode } fr
 import type { ListNode, ListType } from '@lexical/list';
 import { $createHeadingNode, $isHeadingNode } from '@lexical/rich-text';
 import {
+  $createTableCellNode,
+  $createTableNode,
+  $createTableRowNode,
+  $isTableCellNode,
+  $isTableNode,
+  $isTableRowNode,
+  TableCellHeaderStates,
+} from '@lexical/table';
+import {
   $createLineBreakNode,
   $createParagraphNode,
   $createTextNode,
@@ -14,7 +23,10 @@ import {
 import type { ElementNode, LexicalNode } from 'lexical';
 
 import { RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
-import type { RichTextDocument, RichTextInline, RichTextLeaf, RichTextList, RichTextListItem, RichTextMark } from '@noutynotes/domain';
+import type {
+  RichTextDocument, RichTextInline, RichTextLeaf, RichTextList, RichTextListItem, RichTextMark,
+  RichTextTable, RichTextTableCell, RichTextTableRow,
+} from '@noutynotes/domain';
 
 import { isBasicRichTextDocument } from './basicRichText';
 import { $createRichTextImageNode, $isRichTextImageNode } from './RichTextImageNode.web';
@@ -51,6 +63,25 @@ function createList(list: RichTextList): ListNode {
   return node;
 }
 
+function createTableRow(row: RichTextTableRow, header: boolean) {
+  const rowNode = $createTableRowNode();
+  for (const cell of row.cells) {
+    const cellNode = $createTableCellNode(header ? TableCellHeaderStates.ROW : TableCellHeaderStates.NO_STATUS);
+    const paragraph = $createParagraphNode();
+    appendInlines(paragraph, cell.content);
+    cellNode.append(paragraph);
+    rowNode.append(cellNode);
+  }
+  return rowNode;
+}
+
+function createTable(table: RichTextTable) {
+  const node = $createTableNode();
+  if (table.header) node.append(createTableRow(table.header, true));
+  for (const row of table.rows) node.append(createTableRow(row, false));
+  return node;
+}
+
 /** Carga el alcance visual web P07 dentro de `editor.update`. */
 export function $loadWebRichTextDocument(document: RichTextDocument): void {
   const root = $getRoot();
@@ -66,6 +97,7 @@ export function $loadWebRichTextDocument(document: RichTextDocument): void {
       root.append(heading);
     } else if (block.type === 'list') root.append(createList(block));
     else if (block.type === 'image') root.append($createRichTextImageNode(block));
+    else if (block.type === 'table') root.append(createTable(block));
     else throw new Error('El documento contiene bloques fuera del alcance del editor visual web.');
   }
   if (root.getChildrenSize() === 0) root.append($createParagraphNode());
@@ -134,6 +166,45 @@ function readList(node: ListNode): RichTextList | null {
   };
 }
 
+function readTableCell(node: ElementNode): RichTextTableCell | null {
+  const content: RichTextInline[] = [];
+  for (const child of node.getChildren()) {
+    if (!$isParagraphNode(child)) return null;
+    const paragraph = readInlines(child);
+    if (!paragraph) return null;
+    if (content.length > 0) content.push({ type: 'hard-break' });
+    content.push(...paragraph);
+  }
+  return { content };
+}
+
+function readTableRow(node: ElementNode): RichTextTableRow | null {
+  const cells: RichTextTableCell[] = [];
+  for (const child of node.getChildren()) {
+    if (!$isTableCellNode(child) || child.getColSpan() !== 1 || child.getRowSpan() !== 1) return null;
+    const cell = readTableCell(child);
+    if (!cell) return null;
+    cells.push(cell);
+  }
+  return cells.length > 0 ? { cells } : null;
+}
+
+function readTable(node: ElementNode): RichTextTable | null {
+  const rows: RichTextTableRow[] = [];
+  let header: RichTextTableRow | undefined;
+  for (const [index, child] of node.getChildren().entries()) {
+    if (!$isTableRowNode(child)) return null;
+    const row = readTableRow(child);
+    if (!row) return null;
+    const isHeader = index === 0 && child.getChildren().every((cell) =>
+      $isTableCellNode(cell) && cell.hasHeaderState(TableCellHeaderStates.ROW));
+    if (isHeader) header = row;
+    else rows.push(row);
+  }
+  if (rows.length === 0) return null;
+  return { type: 'table', ...(header ? { header } : {}), rows };
+}
+
 /** Lee el alcance visual web P07 dentro de `EditorState.read` o `editor.update`. */
 export function $readWebRichTextDocument(): RichTextDocument | null {
   const blocks: RichTextDocument['blocks'][number][] = [];
@@ -154,6 +225,12 @@ export function $readWebRichTextDocument(): RichTextDocument | null {
     }
     if ($isRichTextImageNode(node)) {
       blocks.push(node.image());
+      continue;
+    }
+    if ($isTableNode(node)) {
+      const table = readTable(node);
+      if (!table) return null;
+      blocks.push(table);
       continue;
     }
     return null;

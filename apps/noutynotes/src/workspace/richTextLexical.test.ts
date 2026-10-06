@@ -1,6 +1,7 @@
 import { LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { HeadingNode } from '@lexical/rich-text';
+import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import { createEditor } from 'lexical';
 import { describe, expect, it } from 'vitest';
 
@@ -116,5 +117,34 @@ describe('adaptador Lexical de UX7 P04/P07', () => {
     let read: RichTextDocument | null = null;
     editor.getEditorState().read(() => { read = $readWebRichTextDocument(); });
     expect(read).toEqual(mixed);
+  });
+
+  it('P09 carga y vuelve a leer una tabla con encabezado sin convertirla en texto plano', () => {
+    const tableDocument: RichTextDocument = {
+      schemaVersion: 1,
+      blocks: [{
+        type: 'table',
+        header: { cells: [
+          { content: [{ type: 'text', text: 'Nombre', marks: ['bold'] }] },
+          { content: [{ type: 'text', text: 'Estado' }] },
+          { content: [{ type: 'text', text: 'Fecha' }] },
+        ] },
+        rows: [
+          { cells: [{ content: [{ type: 'text', text: 'Idea' }] }, { content: [{ type: 'text', text: 'Activa' }] }, { content: [] }] },
+          { cells: [{ content: [] }, { content: [] }, { content: [] }] },
+        ],
+      }],
+    };
+    const editor = createEditor({
+      namespace: 'rich-text-table-test',
+      nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, TableNode, TableRowNode, TableCellNode],
+      onError: (error) => { throw error; },
+    });
+
+    editor.update(() => $loadWebRichTextDocument(tableDocument), { discrete: true });
+    let read: RichTextDocument | null = null;
+    editor.getEditorState().read(() => { read = $readWebRichTextDocument(); });
+
+    expect(read).toEqual(tableDocument);
   });
 });

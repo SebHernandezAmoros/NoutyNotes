@@ -601,6 +601,62 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/nouty-caption:v1/);
 });
 
+test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Tablas visuales');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+
+  await button(page, 'Insertar una tabla').click();
+  await expect(page.getByLabel('Filas')).toHaveValue('3');
+  await expect(page.getByLabel('Columnas')).toHaveValue('3');
+  await page.getByLabel('Filas').fill('1');
+  await expect(button(page, 'Insertar tabla')).toBeDisabled();
+  await page.getByLabel('Filas').fill('4');
+  await page.getByLabel('Columnas').fill('2');
+  await button(page, 'Insertar tabla').click();
+
+  const visual = page.getByLabel('Contenido visual');
+  const cells = visual.locator('th, td');
+  await expect(cells).toHaveCount(8);
+  await button(page, 'Deshacer en el editor').click();
+  await expect(cells).toHaveCount(0);
+  await button(page, 'Rehacer en el editor').click();
+  await expect(cells).toHaveCount(8);
+
+  await cells.first().click();
+  await page.keyboard.type('Nombre');
+  await page.keyboard.press('Tab');
+  await expect.poll(() => page.evaluate(() => {
+    const cell = window.getSelection()?.anchorNode?.parentElement?.closest('th,td') as HTMLTableCellElement | null;
+    return cell?.cellIndex ?? -1;
+  })).toBe(1);
+  await page.keyboard.type('Estado');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('Idea');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('Activa');
+
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await page.screenshot({ path: testInfo.outputPath('p09-rich-table.png'), fullPage: true });
+  await button(page, 'Volver al editor Markdown').click();
+  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/\| Nombre \| Estado \|/);
+  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/\|\s*Idea\s*\|\s*Activa\s*\|/);
+  await button(page, 'Abrir editor visual').click();
+  await closeEditor(page);
+
+  await button(page, 'Vista de lista').click();
+  const listTable = page.getByTestId('list-rich-text-tarjeta-1-table-0');
+  await expect(listTable).toContainText('Nombre');
+  await expect(listTable).toContainText('Activa');
+  await expect(listTable).not.toContainText('| Nombre |');
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
 test('edición rápida visual: crea y continúa una lista sin exponer Markdown', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');

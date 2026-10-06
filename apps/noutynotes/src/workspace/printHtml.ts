@@ -5,7 +5,8 @@
  */
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { PrintEntry } from '@noutynotes/application';
-import type { CaptionPosition } from '@noutynotes/domain';
+import type { CaptionPosition, RichTextInline, RichTextTable } from '@noutynotes/domain';
+import { parseRichTextMarkdown, serializeRichTextMarkdown } from '@noutynotes/storage';
 
 import { markdownExcerpt } from './markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
@@ -41,6 +42,22 @@ function textHtml(text: string, bodyPx: number, bodyLine: number): string {
   return excerpt.trim() === '' ? '' : `<pre style="font-size:${bodyPx}px;line-height:${bodyLine}px;">${escapeHtml(excerpt)}</pre>`;
 }
 
+function inlineText(content: readonly RichTextInline[]): string {
+  return content.map((inline) => {
+    if (inline.type === 'hard-break') return '\n';
+    if (inline.type === 'link') return inlineText(inline.content);
+    return inline.text;
+  }).join('');
+}
+
+function tableHtml(table: RichTextTable): string {
+  const header = table.header
+    ? `<thead><tr>${table.header.cells.map((cell) => `<th>${escapeHtml(inlineText(cell.content))}</th>`).join('')}</tr></thead>`
+    : '';
+  const rows = table.rows.map((row) => `<tr>${row.cells.map((cell) => `<td>${escapeHtml(inlineText(cell.content))}</td>`).join('')}</tr>`).join('');
+  return `<table>${header}<tbody>${rows}</tbody></table>`;
+}
+
 /**
  * Cuerpo en el mismo orden que la ficha (UX7-C5): una imagen intercalada en una nota se dibuja una sola
  * vez, en su sitio, con su leyenda (como `NotePreview`, UX7-C4) — antes se repetía como `<img>` suelto
@@ -49,14 +66,24 @@ function textHtml(text: string, bodyPx: number, bodyLine: number): string {
  * como imágenes sueltas antes del texto, igual que antes.
  */
 function bodyHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): string {
-  const blocks = parseNoteBlocks(entry.content);
-  const inline = new Set<string>(blocks.filter((block) => block.kind === 'image').map((block) => block.ref));
-  // Posición de leyenda (ADR 0051): mismo mapa que el lienzo y Lista.
   const position = entry.captionPosition ?? 'bottom';
-  const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images, position));
-  // Tamaño semántico del cuerpo (ADR 0050): mismo mapa que el lienzo y Lista.
   const bodyPx = bodyFontSize(entry.bodySize);
   const bodyLine = bodyLineHeight(bodyPx);
+  const parsed = parseRichTextMarkdown(entry.content);
+  if (parsed.ok) {
+    const inline = new Set<string>(parsed.value.blocks.filter((block) => block.type === 'image').map((block) => block.assetRef));
+    const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images, position));
+    const body = parsed.value.blocks.map((block) => {
+      if (block.type === 'image') return imageHtml(block.assetRef, block.alt, images, position);
+      if (block.type === 'table') return tableHtml(block);
+      const encoded = serializeRichTextMarkdown({ schemaVersion: parsed.value.schemaVersion, blocks: [block] });
+      return encoded.ok ? textHtml(encoded.value, bodyPx, bodyLine) : '';
+    });
+    return [...standalone, ...body].join('');
+  }
+  const blocks = parseNoteBlocks(entry.content);
+  const inline = new Set<string>(blocks.filter((block) => block.kind === 'image').map((block) => block.ref));
+  const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images, position));
   const body = blocks.map((block) => (block.kind === 'image' ? imageHtml(block.ref, block.alt, images, position) : textHtml(block.text, bodyPx, bodyLine)));
   return [...standalone, ...body].join('');
 }
@@ -99,6 +126,9 @@ export function buildPrintHtml(boardTitle: string, entries: readonly PrintEntry[
   img { max-width: 100%; display: block; }
   figcaption { font-size: 12px; font-style: italic; color: #555; margin-top: 4px; }
   pre { white-space: pre-wrap; font-family: inherit; font-size: 14px; line-height: 1.5; margin: 0 0 8px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; table-layout: fixed; }
+  th, td { border: 1px solid #777; padding: 6px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  th { background: #eee; font-weight: 700; }
   .tags, .connections { font-size: 13px; color: #555; }
   .connections { list-style: none; padding: 0; }
   .empty { font-style: italic; color: #555; }

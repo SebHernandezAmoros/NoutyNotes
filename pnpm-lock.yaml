@@ -53,6 +53,9 @@ importers:
       '@lexical/selection':
         specifier: 0.52.0
         version: 0.52.0(typescript@6.0.3)
+      '@lexical/table':
+        specifier: 0.52.0
+        version: 0.52.0(typescript@6.0.3)
       '@noutynotes/application':
         specifier: workspace:*
         version: link:../../packages/application

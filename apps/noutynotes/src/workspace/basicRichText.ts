@@ -18,16 +18,24 @@ function supportsWebList(list: Extract<RichTextDocument['blocks'][number], { rea
     && (item.children ?? []).every(supportsWebList));
 }
 
+function supportsWebTable(table: Extract<RichTextDocument['blocks'][number], { readonly type: 'table' }>): boolean {
+  const rows = [...(table.header ? [table.header] : []), ...table.rows];
+  const width = rows[0]?.cells.length ?? 0;
+  return table.rows.length > 0 && width > 0
+    && rows.every((row) => row.cells.length === width && row.cells.every((cell) => cell.content.every(supportsWebInline)));
+}
+
 /** Alcance visual web de P07. Android conserva el subconjunto básico de P05. */
 export function isWebRichTextDocument(document: RichTextDocument): boolean {
   return document.blocks.every((block) => {
     if (block.type === 'paragraph' || block.type === 'heading') return block.content.every(supportsWebInline);
     if (block.type === 'list') return supportsWebList(block);
+    if (block.type === 'table') return supportsWebTable(block);
     return block.type === 'image' && (block.caption ?? []).every(supportsWebInline);
   });
 }
 
-/** Android edita el subconjunto básico y muestra sin transformar el alcance web con imágenes. */
+/** Android edita el subconjunto básico y muestra sin transformar el alcance web avanzado. */
 export function isNativeRichTextDocument(document: RichTextDocument): boolean {
   return isBasicRichTextDocument(document) || isWebRichTextDocument(document);
 }

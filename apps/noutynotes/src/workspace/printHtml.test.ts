@@ -75,4 +75,17 @@ describe('documento de impresión (ADR 0031)', () => {
     const right = buildPrintHtml('T', [entry('right')], images);
     expect(right).toMatch(/<figure style="display:flex;[^"]*"><img[^>]*flex:2[^>]*\/><figcaption[^>]*>mapa<\/figcaption><\/figure>/);
   });
+
+  it('P09 imprime tablas como celdas legibles y no como tuberías Markdown', () => {
+    const html = buildPrintHtml('T', [{
+      id: id('a'), number: 1, title: 'A', typeLabel: 'Nota',
+      content: '| Nombre | Estado | Fecha |\n| --- | --- | --- |\n| Idea | Activa | Hoy |\n| Otra | Pausa | Mañana |',
+      tags: [], imageRefs: [], connections: [],
+    }], new Map());
+
+    expect(html).toContain('<table>');
+    expect(html).toContain('<th>Nombre</th>');
+    expect(html).toContain('<td>Activa</td>');
+    expect(html).not.toContain('| Nombre |');
+  });
 });

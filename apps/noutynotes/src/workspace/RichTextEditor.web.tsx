@@ -19,8 +19,10 @@ import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin';
 import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text';
 import { $setBlocksType } from '@lexical/selection';
+import { $isTableCellNode, INSERT_TABLE_COMMAND, TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import {
   $createParagraphNode,
   $getRoot,
@@ -50,6 +52,8 @@ import type { RichTextEditorProps } from './RichTextEditor.types';
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type BlockKind = 'paragraph' | `heading-${HeadingLevel}` | 'bullet' | 'ordered' | 'checklist';
+const MAX_TABLE_ROWS = 20;
+const MAX_TABLE_COLUMNS = 12;
 
 function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertImage'>) {
   const [editor] = useLexicalComposerContext();
@@ -59,10 +63,14 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
   const [bold, setBold] = useState(false);
   const [italic, setItalic] = useState(false);
   const [block, setBlock] = useState<BlockKind>('paragraph');
+  const [inTable, setInTable] = useState(false);
   const [selectionLink, setSelectionLink] = useState('');
   const [linkHref, setLinkHref] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkProblem, setLinkProblem] = useState(false);
+  const [tableOpen, setTableOpen] = useState(false);
+  const [tableRows, setTableRows] = useState('3');
+  const [tableColumns, setTableColumns] = useState('3');
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
@@ -70,7 +78,14 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
     const selection = $getSelection();
     setBold($isRangeSelection(selection) && selection.hasFormat('bold'));
     setItalic($isRangeSelection(selection) && selection.hasFormat('italic'));
-    if (!$isRangeSelection(selection)) return false;
+    if (!$isRangeSelection(selection)) { setInTable(false); return false; }
+    let selectionNode = selection.anchor.getNode();
+    let insideTable = false;
+    while (selectionNode.getParent() !== null) {
+      if ($isTableCellNode(selectionNode)) insideTable = true;
+      selectionNode = selectionNode.getParent() ?? selectionNode;
+    }
+    setInTable(insideTable);
     const top = selection.anchor.getNode().getTopLevelElement();
     // Los controles de una imagen decorada pueden dejar el ancla temporalmente en la raíz.
     if (!top) return false;
@@ -94,6 +109,7 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
   ), [editor, readSelection]);
 
   const chooseBlock = useCallback((next: BlockKind) => {
+    if (inTable) return;
     if (next === 'bullet' || next === 'ordered' || next === 'checklist') {
       const command = next === 'bullet' ? INSERT_UNORDERED_LIST_COMMAND : next === 'ordered' ? INSERT_ORDERED_LIST_COMMAND : INSERT_CHECK_LIST_COMMAND;
       editor.dispatchCommand(block === next ? REMOVE_LIST_COMMAND : command, undefined);
@@ -106,7 +122,7 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
         ? $createParagraphNode()
         : $createHeadingNode(`h${next.slice(-1)}` as `h${HeadingLevel}`));
     });
-  }, [block, editor]);
+  }, [block, editor, inTable]);
 
   const openLink = useCallback(() => {
     setLinkHref(selectionLink);
@@ -144,6 +160,17 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
     setLinkHref('');
     setLinkProblem(false);
     setLinkOpen(false);
+  };
+  const rows = Number(tableRows);
+  const columns = Number(tableColumns);
+  const validTableSize = Number.isInteger(rows) && rows >= 2 && rows <= MAX_TABLE_ROWS
+    && Number.isInteger(columns) && columns >= 1 && columns <= MAX_TABLE_COLUMNS;
+  const insertTable = () => {
+    if (!validTableSize) return;
+    editor.dispatchCommand(INSERT_TABLE_COMMAND, {
+      rows: String(rows), columns: String(columns), includeHeaders: { rows: true, columns: false },
+    });
+    setTableOpen(false);
   };
   const insertImage = async () => {
     if (!onInsertImage) return;
@@ -195,9 +222,10 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
       <View accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)} style={styles.toolbar}>
         <select
           aria-label={t('editor.visual.block', locale)}
+          disabled={inTable}
           value={block.startsWith('heading-') || block === 'paragraph' ? block : 'paragraph'}
           onChange={(event) => chooseBlock(event.currentTarget.value as BlockKind)}
-          style={{ height: 44, minWidth: 116, border: `2px solid ${colors.border}`, background: colors.surface, color: colors.textPrimary, fontWeight: 700, padding: '0 8px' }}
+          style={{ height: 44, minWidth: 116, border: `2px solid ${colors.border}`, background: colors.surface, color: colors.textPrimary, fontWeight: 700, padding: '0 8px', opacity: inTable ? 0.45 : 1 }}
         >
           <option value="paragraph">{t('editor.visual.paragraph', locale)}</option>
           {([1, 2, 3, 4, 5, 6] as const).map((level) => <option key={level} value={`heading-${level}`}>{`${t('editor.visual.heading', locale)} ${level}`}</option>)}
@@ -205,11 +233,12 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
         {button('B', t('editor.visual.bold', locale), bold, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold'); })}
         {button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
         <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
-        {button('•', t('editor.visual.bullet', locale), block === 'bullet', false, () => chooseBlock('bullet'))}
-        {button('1.', t('editor.visual.ordered', locale), block === 'ordered', false, () => chooseBlock('ordered'))}
-        {button('☐', t('editor.visual.checklist', locale), block === 'checklist', false, () => chooseBlock('checklist'))}
+        {button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
+        {button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
+        {button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
         {button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink)}
         {onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }) : null}
+        {button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open))}
         <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
         {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
         {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
@@ -234,6 +263,39 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
           </Pressable>
           {button('×', t('editor.visual.link.close', locale), false, false, () => setLinkOpen(false))}
           {linkProblem ? <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>{t('editor.visual.link.invalid', locale)}</Text> : null}
+        </View>
+      ) : null}
+      {tableOpen ? (
+        <View style={[styles.tableEditor, { borderColor: colors.gridLine, backgroundColor: colors.surface }]}>
+          <Text style={[styles.tableLabel, { color: colors.textPrimary }]}>{t('editor.visual.table.rows', locale)}</Text>
+          <TextInput
+            accessibilityLabel={t('editor.visual.table.rows', locale)}
+            keyboardType="number-pad"
+            value={tableRows}
+            onChangeText={setTableRows}
+            style={[styles.tableInput, { color: colors.textPrimary, borderColor: colors.border }]}
+          />
+          <Text style={[styles.tableLabel, { color: colors.textPrimary }]}>{t('editor.visual.table.columns', locale)}</Text>
+          <TextInput
+            accessibilityLabel={t('editor.visual.table.columns', locale)}
+            keyboardType="number-pad"
+            value={tableColumns}
+            onChangeText={setTableColumns}
+            onSubmitEditing={insertTable}
+            style={[styles.tableInput, { color: colors.textPrimary, borderColor: colors.border }]}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('editor.visual.table.insert', locale)}
+            accessibilityState={{ disabled: !validTableSize }}
+            disabled={!validTableSize}
+            onPress={insertTable}
+            style={[styles.linkAction, { borderColor: colors.border, opacity: validTableSize ? 1 : 0.45 }]}
+          >
+            <Text style={[styles.linkActionText, { color: colors.textPrimary }]}>{t('editor.visual.table.insert', locale)}</Text>
+          </Pressable>
+          {button('×', t('editor.visual.table.close', locale), false, false, () => setTableOpen(false))}
+          <Text style={[styles.tableHint, { color: colors.textSecondary }]}>{t('editor.visual.table.hint', locale)}</Text>
         </View>
       ) : null}
     </View>
@@ -282,6 +344,10 @@ const editorTheme = {
     checklist: 'nouty-checklist', listitem: 'nouty-listitem', listitemChecked: 'nouty-checked', listitemUnchecked: 'nouty-unchecked',
     nested: { listitem: 'nouty-nested-listitem' }, ol: 'nouty-ol', ul: 'nouty-ul',
   },
+  table: 'nouty-table',
+  tableScrollableWrapper: 'nouty-table-scroll',
+  tableCell: 'nouty-table-cell',
+  tableCellHeader: 'nouty-table-cell-header',
 };
 
 export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, compact = false }: RichTextEditorProps) {
@@ -292,7 +358,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
   const [initialDocument] = useState(document);
   const [initialConfig] = useState(() => ({
     namespace: `noutynotes-card-${cardId}`,
-    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode],
+    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode, TableNode, TableRowNode, TableCellNode],
     theme: editorTheme,
     editorState: () => $loadWebRichTextDocument(initialDocument),
     onError: (error: Error) => setProblem(error.message),
@@ -307,6 +373,12 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         .nouty-listitem{margin:.2em 0}.nouty-checklist{list-style:none;padding-left:.3em}
         .nouty-unchecked,.nouty-checked{position:relative;list-style:none;padding-left:1.7em}.nouty-unchecked:before,.nouty-checked:before{position:absolute;box-sizing:border-box;left:0;top:.08em;width:1.25em;height:1.25em;cursor:pointer}
         .nouty-unchecked:before{content:'☐'}.nouty-checked:before{content:'☑'}
+        .nouty-table{border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;margin:.5em 0}
+        .nouty-table-scroll{overflow-x:auto;max-width:100%}
+        .nouty-table-cell{border:1px solid ${colors.border};min-width:96px;padding:7px;vertical-align:top}
+        .nouty-table-cell-header{background:${colors.surface};font-weight:800}
+        .nouty-table-cell p{margin:0;min-height:1.5em}
+        [data-testid="web-rich-text-content"]{overflow-x:auto}
       `}</style>
       <LexicalComposer initialConfig={initialConfig}>
         <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage}>
@@ -334,6 +406,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         <ListPlugin shouldPreserveNumbering />
         <CheckListPlugin />
         <LinkPlugin validateUrl={isLinkUrl} attributes={{ rel: 'noreferrer' }} />
+        <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} hasTabHandler hasHorizontalScroll />
         <AutoFocusPlugin />
         <DocumentChanges document={document} initialDocument={initialDocument} onChange={onChange} />
         </ImageEditorBridge>
@@ -357,6 +430,10 @@ const styles = StyleSheet.create({
   linkInput: { minWidth: 220, flexGrow: 1, height: 44, borderWidth: 2, paddingHorizontal: 10 },
   linkAction: { minHeight: 44, borderWidth: 2, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
   linkActionText: { fontSize: 13, fontWeight: '800' },
+  tableEditor: { minHeight: 54, borderTopWidth: 1, borderBottomWidth: 1, padding: 6, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  tableLabel: { fontSize: 13, fontWeight: '700' },
+  tableInput: { width: 64, height: 44, borderWidth: 2, paddingHorizontal: 10 },
+  tableHint: { flexBasis: '100%', fontSize: 12 },
   editArea: { position: 'relative', minHeight: 220 },
   editAreaCompact: { minHeight: 96 },
   status: { minHeight: 30, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12 },

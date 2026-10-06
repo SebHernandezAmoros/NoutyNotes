@@ -74,7 +74,7 @@ export function RichTextEditor({ document, codec, onChange, images = new Map(), 
                 {caption !== '' ? <Text style={[styles.caption, { color: colors.cardText }]}>{caption}</Text> : null}
               </View>;
             }
-            if (block.type === 'table' || block.type === 'opaque-markdown') return null;
+            if (block.type === 'opaque-markdown') return null;
             return <BasicRichTextPreview key={index} document={{ schemaVersion: 1, blocks: [block] }} numberOfLines={40}
               color={colors.cardText} fontSize={16} lineHeight={24} testID={`native-rich-block-${index}`} />;
           })}
