@@ -82,24 +82,31 @@ function createTable(table: RichTextTable) {
   return node;
 }
 
+/** Crea nodos Lexical portables sin tocar la raíz ni depender de React. */
+export function $createWebRichTextNodes(document: RichTextDocument): LexicalNode[] {
+  return document.blocks.map((block) => {
+    if (block.type === 'paragraph') {
+      const paragraph = $createParagraphNode();
+      appendInlines(paragraph, block.content);
+      return paragraph;
+    }
+    if (block.type === 'heading') {
+      const heading = $createHeadingNode(`h${block.level}`);
+      appendInlines(heading, block.content);
+      return heading;
+    }
+    if (block.type === 'list') return createList(block);
+    if (block.type === 'image') return $createRichTextImageNode(block);
+    if (block.type === 'table') return createTable(block);
+    throw new Error('El documento contiene bloques fuera del alcance del editor visual web.');
+  });
+}
+
 /** Carga el alcance visual web P07 dentro de `editor.update`. */
 export function $loadWebRichTextDocument(document: RichTextDocument): void {
   const root = $getRoot();
   root.clear();
-  for (const block of document.blocks) {
-    if (block.type === 'paragraph') {
-      const paragraph = $createParagraphNode();
-      appendInlines(paragraph, block.content);
-      root.append(paragraph);
-    } else if (block.type === 'heading') {
-      const heading = $createHeadingNode(`h${block.level}`);
-      appendInlines(heading, block.content);
-      root.append(heading);
-    } else if (block.type === 'list') root.append(createList(block));
-    else if (block.type === 'image') root.append($createRichTextImageNode(block));
-    else if (block.type === 'table') root.append(createTable(block));
-    else throw new Error('El documento contiene bloques fuera del alcance del editor visual web.');
-  }
+  root.append(...$createWebRichTextNodes(document));
   if (root.getChildrenSize() === 0) root.append($createParagraphNode());
 }
 

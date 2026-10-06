@@ -27,12 +27,15 @@ import {
   $createParagraphNode,
   $getRoot,
   $getSelection,
+  $insertNodes,
   $isRangeSelection,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
   COMMAND_PRIORITY_LOW,
+  COMMAND_PRIORITY_HIGH,
   FORMAT_TEXT_COMMAND,
   KEY_DOWN_COMMAND,
+  PASTE_COMMAND,
   REDO_COMMAND,
   SELECTION_CHANGE_COMMAND,
   UNDO_COMMAND,
@@ -46,7 +49,8 @@ import { isLinkUrl } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 
 import { t } from '../i18n';
-import { $loadWebRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
+import { $createWebRichTextNodes, $loadWebRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
+import { parsePastedRichText } from './richTextPaste.web';
 import { $createRichTextImageNode, $isRichTextImageNode, RichTextImageNode, RichTextImageProvider } from './RichTextImageNode.web';
 import type { RichTextEditorProps } from './RichTextEditor.types';
 
@@ -315,6 +319,21 @@ function ImageEditorBridge({ images, captionPosition, onReplaceImage, children }
   );
 }
 
+function SafePastePlugin() {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => editor.registerCommand(PASTE_COMMAND, (event) => {
+    const clipboard = event instanceof ClipboardEvent ? event.clipboardData : event instanceof InputEvent ? event.dataTransfer : null;
+    if (!clipboard) return false;
+    const html = clipboard.getData('text/html');
+    const text = clipboard.getData('text/plain');
+    if (html === '' && text === '') return false;
+    event.preventDefault();
+    $insertNodes($createWebRichTextNodes(parsePastedRichText(html, text)));
+    return true;
+  }, COMMAND_PRIORITY_HIGH), [editor]);
+  return null;
+}
+
 function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps, 'document' | 'onChange'> & { readonly initialDocument: RichTextEditorProps['document'] }) {
   const [initialSignature] = useState(() => JSON.stringify(initialDocument));
   const lastSignature = useRef(initialSignature);
@@ -407,6 +426,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         <CheckListPlugin />
         <LinkPlugin validateUrl={isLinkUrl} attributes={{ rel: 'noreferrer' }} />
         <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} hasTabHandler hasHorizontalScroll />
+        <SafePastePlugin />
         <AutoFocusPlugin />
         <DocumentChanges document={document} initialDocument={initialDocument} onChange={onChange} />
         </ImageEditorBridge>

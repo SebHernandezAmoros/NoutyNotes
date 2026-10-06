@@ -689,6 +689,56 @@ test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ p
   expect(failedResources).toEqual([]);
 });
 
+test('P11: pega contenido enriquecido compatible y descarta contenido activo', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Pegado seguro');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+
+  const visual = page.getByLabel('Contenido visual');
+  await visual.fill('');
+  await visual.evaluate((element) => {
+    const clipboard = new DataTransfer();
+    clipboard.setData('text/plain', 'Plan seguro Uno Dos Sitio JavaScript visible Nombre Estado Idea Activa');
+    clipboard.setData('text/html', [
+      '<h2 onclick="alert(1)" style="background:url(https://tracker.invalid/a)">Plan <strong>seguro</strong><script>window.__pwned=true</script></h2>',
+      '<ul><li>Uno</li><li><em>Dos</em></li></ul>',
+      '<p><a href="https://example.com">Sitio</a> <a href="javascript:alert(2)">JavaScript visible</a></p>',
+      '<section><mark>Contenido desconocido visible</mark><iframe src="https://tracker.invalid/frame">oculto</iframe></section>',
+      '<table><thead><tr><th>Nombre</th><th>Estado</th></tr></thead><tbody><tr><td>Idea</td><td>Activa</td></tr></tbody></table>',
+    ].join(''));
+    element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+  });
+
+  await expect(visual.locator('h2 strong')).toHaveText('seguro');
+  await expect(visual.locator('ul li')).toHaveText(['Uno', 'Dos']);
+  await expect(visual.locator('a[href="https://example.com"]')).toHaveText('Sitio');
+  await expect(visual.getByText('JavaScript visible')).toBeVisible();
+  await expect(visual.getByText('Contenido desconocido visible')).toBeVisible();
+  await expect(visual.locator('table th, table td')).toHaveText(['Nombre', 'Estado', 'Idea', 'Activa']);
+  await expect(visual.locator('script,style,iframe,object,embed')).toHaveCount(0);
+  await expect(visual.locator('[onclick],[style],a[href^="javascript:"]')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as typeof window & { __pwned?: boolean }).__pwned)).toBeUndefined();
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('p11-safe-paste.png'), fullPage: true });
+
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await button(page, 'Volver al editor Markdown').click();
+  const markdown = page.getByLabel('Contenido Markdown');
+  await expect(markdown).toHaveValue(/## Plan \*\*seguro\*\*/);
+  await expect(markdown).toHaveValue(/\* Uno[\s\S]*\* \*Dos\*/);
+  await expect(markdown).toHaveValue(/\[Sitio\]\(https:\/\/example\.com\)/);
+  await expect(markdown).toHaveValue(/JavaScript visible/);
+  await expect(markdown).toHaveValue(/Contenido desconocido visible/);
+  await expect(markdown).toHaveValue(/\| Nombre \| Estado \|/);
+  await expect(markdown).not.toHaveValue(/<script|onclick|javascript:|tracker\.invalid|iframe|window\.__pwned/i);
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
 test('edición rápida visual: crea y continúa una lista sin exponer Markdown', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');
