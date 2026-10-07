@@ -891,6 +891,132 @@ test('P16: Presentación representa texto flotante, forma, conector y una nota c
   expect(failedResources).toEqual([]);
 });
 
+test('P17: recorrido de integración — nota con marcas/lista/tabla, texto flotante, forma y conector coherentes en lienzo, Lista, Presentación, impresión, Visual/Markdown, tema oscuro, tablet y ciclo ZIP', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.startsWith('firefox'), 'window.open tras un clic simulado no se abre en Firefox (activación de usuario); ver testing.md.');
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await button(page, 'Tema oscuro').click();
+  await createWorkspace(page, 'Integración P17');
+
+  // Nota con encabezado, negrita, lista y tabla (sin imagen: la combinación imagen+tabla en la misma
+  // nota es un hallazgo real registrado aparte en progress.md, no bloqueante — ver P17).
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  await (await openMarkdownEditor(page)).fill('## Plan\n\nTexto con **negrita** y lista:\n\n- Uno\n- Dos\n\n| Nombre | Estado |\n| --- | --- |\n| Idea | Activa |\n');
+  await button(page, 'Abrir editor visual').click();
+  const visual = page.getByLabel('Contenido visual');
+  await expect(visual.locator('h2')).toHaveText('Plan');
+  await expect(visual.locator('strong')).toHaveText('negrita');
+  await expect(visual.locator('li')).toHaveText(['Uno', 'Dos']);
+  await expect(visual.locator('th, td')).toHaveText(['Nombre', 'Estado', 'Idea', 'Activa']);
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  // Encabezado + lista + tabla no caben en el tamaño inicial: se agranda solo en alto (ensanchar la
+  // acerca al umbral que cambia la cabecera de «⋯» a botones individuales, ADR 0016) para que el
+  // lienzo y Lista tengan presupuesto suficiente y no corten con «+n bloques más» antes de la tabla.
+  for (let i = 0; i < 12; i += 1) await button(page, 'Más alta').click();
+  await closeEditor(page);
+
+  await insertFromMenu(page, 'Insertar texto');
+  await openFullCardEditor(page, card(page, 2));
+  await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('*no es viñeta* literal');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  await insertFromMenu(page, 'Insertar forma');
+  await insertFromMenu(page, 'Insertar conector');
+
+  // Lienzo: sin sintaxis cruda, las cuatro primitivas visibles.
+  await expect(card(page, 1)).not.toContainText('##');
+  await expect(card(page, 1)).not.toContainText('**');
+  await expect(page.getByTestId('floating-text-tarjeta-2')).toContainText('*no es viñeta* literal');
+  await expect(page.getByTestId('shape-tarjeta-3')).toBeVisible();
+  await expect(card(page, 4)).toHaveAttribute('aria-label', 'Tarjeta Conector');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+
+  // Lista: misma equivalencia (UX7 P16).
+  await button(page, 'Vista de lista').click();
+  const listRich = page.getByTestId('list-rich-text-tarjeta-1');
+  await expect(listRich).not.toContainText('##');
+  await expect(listRich).not.toContainText('| Nombre |');
+  await expect(listRich).toContainText('Nombre');
+  await expect(listRich).toContainText('Estado');
+  await expect(listRich).toContainText('Idea');
+  await expect(listRich).toContainText('Activa');
+  await expect(page.getByTestId('list-floating-text-tarjeta-2')).toContainText('*no es viñeta* literal');
+  await expect(page.getByTestId('list-shape-tarjeta-3')).toBeVisible();
+  await expect(card(page, 4)).toHaveAttribute('aria-label', 'Tarjeta Conector');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await button(page, 'Vista de lista').click();
+
+  // Tablet: ambas orientaciones, sin desbordamiento (móvil y escritorio ya cubiertos por los proyectos).
+  await page.setViewportSize(tabletLandscape);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.setViewportSize(tabletPortrait);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.setViewportSize(testInfo.project.name === 'mobile' ? phone : desktop);
+
+  // Presentación: una diapositiva propia por primitiva, sin «Sin título» ni Markdown crudo.
+  await openPresent(page);
+  await expect(page.getByTestId('present-count')).toHaveText('1 / 4');
+  const presentBody = page.getByTestId('present-body');
+  await expect(presentBody).not.toContainText('##');
+  await expect(presentBody).not.toContainText('| Nombre |');
+  await expect(presentBody).toContainText('Plan');
+  await expect(page.getByTestId('present-body').getByText('negrita', { exact: true })).toHaveCSS('font-weight', '700');
+  await button(page, 'Diapositiva siguiente').click();
+  await expect(page.getByTestId('present-floating-text')).toContainText('*no es viñeta* literal');
+  await button(page, 'Diapositiva siguiente').click();
+  await expect(page.getByTestId('present-shape')).toBeVisible();
+  await button(page, 'Diapositiva siguiente').click();
+  await expect(page.getByTestId('present-connector')).toBeVisible();
+  await expect(page.getByTestId('present-view')).not.toContainText('Sin título');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await button(page, 'Cerrar la presentación').click();
+
+  // Impresión: HTML real, tabla de verdad, sin sintaxis cruda ni duplicados.
+  if (isCompact(page)) {
+    await button(page, 'Más secciones').click();
+    await expect(page.getByTestId('more-sheet')).toBeVisible();
+  }
+  const [tab] = await Promise.all([page.waitForEvent('popup'), button(page, 'Imprimir este tablero').click()]);
+  await tab.waitForLoadState();
+  await expect(tab.getByText('Plan')).toBeVisible();
+  await expect(tab.locator('table td')).toHaveText(['Idea', 'Activa']);
+  await expect(tab.locator('body')).not.toContainText('## Plan');
+  await expect(tab.locator('body')).not.toContainText('| Nombre |');
+  await tab.close();
+
+  // Ciclo ZIP (web → … → web): exportar, perder la memoria al recargar y reimportar sin pérdidas.
+  const download = page.waitForEvent('download');
+  await button(page, 'Exportar este espacio como ZIP').click();
+  const saved = await download;
+  const exportedPath = testInfo.outputPath('integracion-p17.zip');
+  await saved.saveAs(exportedPath);
+  await button(page, `Confirmar que guardé ${saved.suggestedFilename()}`).click();
+
+  await page.reload();
+  await button(page, 'Volver a mis espacios').click();
+  const chooser = page.waitForEvent('filechooser');
+  await button(page, 'Importar un ZIP').click();
+  await (await chooser).setFiles({ name: 'integracion-p17.zip', mimeType: 'application/zip', buffer: readFileSync(exportedPath) });
+  await expect(page.getByRole('heading', { name: 'Integración P17', exact: true })).toBeVisible();
+  await expect(card(page, 1)).not.toContainText('##');
+  await expect(card(page, 1)).not.toContainText('**');
+  await expect(page.getByTestId('floating-text-tarjeta-2')).toContainText('*no es viñeta* literal');
+  await expect(page.getByTestId('shape-tarjeta-3')).toBeVisible();
+  await expect(card(page, 4)).toHaveAttribute('aria-label', 'Tarjeta Conector');
+  await openFullCardEditor(page, card(page, 1));
+  await expect(page.getByLabel('Contenido visual').locator('th, td')).toHaveText(['Nombre', 'Estado', 'Idea', 'Activa']);
+  await closeEditor(page);
+  await page.screenshot({ path: testInfo.outputPath('p17-integration-reopened.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
 test('P11: pega contenido enriquecido compatible y descarta contenido activo', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');
