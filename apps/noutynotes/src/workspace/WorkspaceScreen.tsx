@@ -83,12 +83,13 @@ const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
   minimized: 'action.cardMinimized',
 };
 
-const additions: Readonly<Record<PrototypeCardKind, ActionSuccess>> = {
+type InsertablePrototypeKind = Exclude<PrototypeCardKind, 'image'>;
+
+const additions: Readonly<Record<InsertablePrototypeKind, ActionSuccess>> = {
   note: 'action.noteAdded',
   text: { label: 'Texto flotante añadido' },
   shape: { label: 'Forma añadida' },
   connector: { label: 'Conector añadido' },
-  image: 'action.exampleImageAdded',
   title: 'action.floatingTitleAdded',
   link: 'action.linkAdded',
 };
@@ -508,7 +509,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
-  const add = (kind: PrototypeCardKind, extra: { readonly url?: string; readonly title?: string; readonly content?: string } = {}) => {
+  const add = (kind: InsertablePrototypeKind, extra: { readonly url?: string; readonly title?: string; readonly content?: string } = {}) => {
     const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
     // La fecha de creación la pone la interfaz (ADR 0024): application no usa el reloj.
     return run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...extra, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
@@ -679,6 +680,29 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       setConnectSource(null);
     }
   };
+
+  const deleteSelection = async () => {
+    const overlayOpen = editingId !== null || insertOpen || searchOpen || settingsOpen || trashOpen || moreOpen
+      || projectsOpen || linkOpen || shortcutOpen || boardActionsId !== null || presentOpen || frameId !== null;
+    if (mainView !== 'board' || overlayOpen) return;
+    if (multiIds.length > 0) await trashMany();
+    else if (selectedId !== null) await sendToTrash(selectedId);
+  };
+  const deleteSelectionRef = useRef(deleteSelection);
+  useLayoutEffect(() => { deleteSelectionRef.current = deleteSelection; });
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const editingText = target !== null && (target.isContentEditable
+        || target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]') !== null);
+      if (editingText || event.key !== 'Delete' || event.ctrlKey || event.metaKey || event.altKey) return;
+      event.preventDefault();
+      void deleteSelectionRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Archivo (ADR 0023). La hora la pone la interfaz: application no usa el reloj.
   const archiveSelected = async (cardId: CardId) => {
@@ -1455,7 +1479,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onText={() => { setInsertOpen(false); void add('text'); }}
             onTitle={() => { setInsertOpen(false); void add('title'); }}
             onImage={() => { setInsertOpen(false); void importImage(); }}
-            onExampleImage={() => { setInsertOpen(false); void add('image'); }}
             onLink={() => { setInsertOpen(false); setLinkOpen(true); }}
             onTable={() => { setInsertOpen(false); void addTable(); }}
             onShape={() => { setInsertOpen(false); void add('shape'); }}

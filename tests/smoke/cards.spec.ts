@@ -518,7 +518,7 @@ test('menú de ficha minimizada: editar y empezar una conexión sin abrir el ins
   await expect(feedback(page)).toContainText('conectadas');
 });
 
-test('imagen real: vista previa, formato inválido, cancelación y ejemplo separado', async ({ page }, testInfo) => {
+test('imagen real: vista previa, formato inválido y cancelación', async ({ page }, testInfo) => {
   const { runtimeErrors } = trackProblems(page);
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
@@ -552,13 +552,6 @@ test('imagen real: vista previa, formato inválido, cancelación y ejemplo separ
   await expect(page.getByTestId('card-asset')).toHaveText('assets/images/tarjeta-1.png');
   await closeEditor(page);
 
-  // El ejemplo sigue disponible y claramente separado: sin archivo. En escritorio esa muestra ya no
-  // está en la barra (ADR 0048): solo queda la importación real, ya cubierta arriba.
-  if (isCompactWidth(page)) {
-    await insertFromMenu(page, 'Añadir imagen de ejemplo');
-    await expect(card(page, 2)).toContainText('IMAGEN DE EJEMPLO');
-    await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeVisible();
-  }
   await page.screenshot({ path: testInfo.outputPath('image-imported.png') });
   expect(runtimeErrors).toEqual([]);
 });

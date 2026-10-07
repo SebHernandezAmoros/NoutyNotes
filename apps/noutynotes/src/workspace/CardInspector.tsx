@@ -4,7 +4,7 @@ import { cardIconNames, connectorArrows, connectorDashes, connectorDirections, f
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeSyntheticEvent, TextInputKeyPressEventData } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
@@ -80,6 +80,30 @@ const iconLabels: Record<CardIconName, string> = {
   note: 'Nota', image: 'Imagen', folder: 'Carpeta', link: 'Enlace', check: 'Tarea', star: 'Estrella',
   text: 'Texto', board: 'Tablero', diary: 'Diario', assets: 'Archivos', present: 'Presentar', print: 'Imprimir', settings: 'Ajustes',
 };
+
+function CardIconChoice({ icon, selected, onPress }: { readonly icon: CardIconName; readonly selected: boolean; readonly onPress: () => void }) {
+  const { theme } = useTheme();
+  const [focused, setFocused] = useState(false);
+  const colors = theme.colors;
+  return (
+    <Pressable
+      testID={`card-icon-option-${icon}`}
+      accessibilityRole="button"
+      accessibilityLabel={`Usar icono ${iconLabels[icon]}`}
+      accessibilityState={{ selected }}
+      {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={({ pressed }) => [styles.iconChoice, {
+        backgroundColor: selected ? colors.accent : pressed ? colors.surfaceRaised : colors.surface,
+        borderColor: focused ? colors.selection : colors.border,
+      }]}
+    >
+      <AppIcon name={icon} size={24} color={selected ? colors.accentText : colors.textPrimary} />
+    </Pressable>
+  );
+}
 
 /**
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
@@ -540,11 +564,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {`Seleccionado: ${iconLabels[card.icon ?? 'note']}`}
           </Text>
         </View>
-        <View style={styles.row}>
+        <View style={styles.iconGrid}>
           {cardIconNames.map((icon) => (
-            <ActionButton key={icon} label={iconLabels[icon]}
-              accessibilityLabel={`Usar icono ${iconLabels[icon]}`}
-              pressed={card.icon === icon}
+            <CardIconChoice key={icon} icon={icon} selected={(card.icon ?? 'note') === icon}
               onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { icon }), { label: 'Apariencia actualizada' })} />
           ))}
         </View>
@@ -821,6 +843,8 @@ const styles = StyleSheet.create({
   heading: { fontSize: 20, lineHeight: 25, fontWeight: '800' },
   section: { gap: 10 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  iconChoice: { width: 48, height: 48, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   body: { fontSize: 15, lineHeight: 21 },
   hint: { fontSize: 13, lineHeight: 18 },
   connectionBlock: { gap: 6 },

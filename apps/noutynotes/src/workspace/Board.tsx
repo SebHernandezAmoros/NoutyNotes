@@ -96,7 +96,7 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris
       {empty ? (
         <View testID="board-empty" style={styles.emptyState}>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Este tablero está vacío. Añade una nota o una imagen de ejemplo para empezar.
+            Este tablero está vacío. Añade una nota o importa una imagen para empezar.
           </Text>
         </View>
       ) : null}

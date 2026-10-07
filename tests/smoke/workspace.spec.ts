@@ -60,10 +60,10 @@ async function createWorkspace(page: Page, name: string) {
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
 }
 
-async function addCards(page: Page, kinds: readonly ('nota' | 'imagen')[]) {
+async function addCards(page: Page, kinds: readonly 'nota'[]) {
   const start = await page.locator('[data-testid^="card-tarjeta-"]').count();
-  for (const [index, kind] of kinds.entries()) {
-    await insertFromMenu(page, kind === 'nota' ? 'Insertar nota' : 'Añadir imagen de ejemplo');
+  for (const [index] of kinds.entries()) {
+    await insertFromMenu(page, 'Insertar nota');
     await expect(card(page, start + index + 1)).toBeVisible();
   }
 }
@@ -274,16 +274,9 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await expect(page.getByTestId('board-empty')).toHaveCount(0);
   await expect(feedback(page)).toHaveText('Nota añadida. Guardado en memoria.');
 
-  // 2. Más tarjetas, con cabecera numerada por tipo. En móvil incluye la imagen de ejemplo sin archivo;
-  // en escritorio esa muestra ya no está en la barra (ADR 0048) y la importación real de imagen tiene
-  // su propia prueba dedicada («imagen real…», cards.spec.ts), así que aquí se usa otra nota.
-  if (isCompact(page)) {
-    await addCards(page, ['nota', 'imagen']);
-    await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toBeAttached();
-    await expect(feedback(page)).toHaveText('Imagen de ejemplo añadida. Guardado en memoria.');
-  } else {
-    await addCards(page, ['nota', 'nota']);
-  }
+  // 2. Más tarjetas, con cabecera numerada por tipo. La muestra de imagen sin archivo se retiró en
+  // P18-B; la importación real tiene su prueba dedicada («imagen real…», cards.spec.ts).
+  await addCards(page, ['nota', 'nota']);
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
   // La grilla cuadrada y los controles reservan la cabecera: el número siempre permanece legible;
   // el tipo completo solo aparece cuando el ancho real de la ficha deja espacio suficiente.
@@ -1085,6 +1078,75 @@ test('P18-A: una nota con texto oculto lo anuncia en la ficha', async ({ page })
   await button(page, 'Abrir editor visual').click();
   await closeEditor(page);
   await expect(page.getByTestId('card-overflow-tarjeta-1')).toContainText(/líneas más/);
+});
+
+test('P18-B: Insertar y la barra agrupan las herramientas sin ofrecer una imagen de ejemplo', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Herramientas ordenadas');
+
+  await expect(page.getByTestId('toolbar-group-work')).toHaveAttribute('aria-label', 'Trabajar');
+  await expect(page.getByTestId('toolbar-group-create')).toHaveAttribute('aria-label', 'Crear');
+  if (isCompact(page)) {
+    await expect(page.getByTestId('toolbar-group-history')).toHaveCount(0);
+    await expect(page.getByTestId('toolbar-group-view')).toHaveCount(0);
+  } else {
+    await expect(page.getByTestId('toolbar-group-history')).toHaveAttribute('aria-label', 'Historial');
+    await expect(page.getByTestId('toolbar-group-view')).toHaveAttribute('aria-label', 'Vista y salida');
+  }
+
+  await button(page, 'Abrir menú Insertar').click();
+  const insert = page.getByTestId('insert-dialog');
+  await expect(insert.getByTestId('insert-group-content')).toContainText('CONTENIDO');
+  await expect(insert.getByTestId('insert-group-diagram')).toContainText('DIAGRAMA');
+  await expect(insert.getByRole('button', { name: 'Importar una imagen', exact: true })).toBeVisible();
+  await expect(insert.getByRole('button', { name: 'Añadir imagen de ejemplo', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('p18-b-tools.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
+test('P18-B: el selector de iconos muestra glifos con nombre accesible y selección', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Iconos visuales');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+
+  const picker = page.getByTestId('card-icon-picker');
+  const star = page.getByTestId('card-icon-option-star');
+  await expect(star).toHaveAttribute('aria-label', 'Usar icono Estrella');
+  await expect(star).toHaveAttribute('aria-pressed', 'false');
+  await expect(picker.getByText('Estrella', { exact: true })).toHaveCount(0);
+  await star.focus();
+  await page.keyboard.press('Enter');
+  await expect(star).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('selected-card-icon')).toHaveText('Seleccionado: Estrella');
+  await page.screenshot({ path: testInfo.outputPath('p18-b-icons.png'), fullPage: true });
+});
+
+test('P18-B: Supr envía una selección simple o múltiple a la Papelera y respeta los campos de texto', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Atajo Supr');
+  await addCards(page, ['nota', 'nota', 'nota']);
+
+  await selectCard(page, 1);
+  await card(page, 1).focus();
+  await page.keyboard.press('Delete');
+  await expect(card(page, 1)).toHaveCount(0);
+  await expect(feedback(page)).toContainText('Tarjeta enviada a la Papelera');
+
+  await openFullCardEditor(page, card(page, 2));
+  await page.getByLabel('Título de la tarjeta').focus();
+  await page.keyboard.press('Delete');
+  await expect(card(page, 2)).toBeAttached();
+  await closeEditor(page);
+
+  await enterMultiWithOne(page, 2, 'Nueva nota');
+  await card(page, 3).focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByTestId('multi-count')).toHaveText('2 SELECCIONADAS');
+  await page.keyboard.press('Delete');
+  await expect(card(page, 2)).toHaveCount(0);
+  await expect(card(page, 3)).toHaveCount(0);
+  await expect(feedback(page)).toContainText('2 tarjetas enviadas a la Papelera');
 });
 
 test('P11: pega contenido enriquecido compatible y descarta contenido activo', async ({ page }, testInfo) => {
@@ -1995,9 +2057,8 @@ test('distribución responsive: carga inicial, tablet, 799/800 y redimensionado 
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
   await createWorkspace(page, 'Responsive');
-  // «Imagen de ejemplo» ya no está en la barra de escritorio (ADR 0048, cubierta aparte); aquí solo
-  // hacen falta tres fichas genéricas para medir la distribución.
-  await addCards(page, isCompact(page) ? ['nota', 'nota', 'imagen'] : ['nota', 'nota', 'nota']);
+  // Solo hacen falta tres fichas genéricas para medir la distribución.
+  await addCards(page, ['nota', 'nota', 'nota']);
   // La última tarjeta creada se reveló; la primera puede quedar fuera de la vista: se activa con el teclado.
   await tapCard(page, 1);
   await closeEditor(page);

@@ -1,6 +1,6 @@
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { ToolButton } from '../components/controls';
 import { t } from '../i18n';
@@ -63,8 +63,14 @@ export function Toolbar(props: ToolbarProps) {
   const trashOpenLabel = `${t('nav.trash.open', locale)} (${props.trashCount})`;
   const archiveLabel = props.archiveCount > 0 ? `${t('nav.archive', locale)} ${props.archiveCount}` : t('nav.archive', locale);
   const archiveOpenLabel = `${t('nav.archive.open', locale)} (${props.archiveCount})`;
+  const group = (testID: string, label: string, children: ReactNode) => (
+    <View testID={testID} accessibilityRole="toolbar" accessibilityLabel={label} style={styles.group}>
+      <Text style={[styles.groupLabel, { color: colors.textSecondary }]}>{label.toUpperCase()}</Text>
+      <View style={styles.groupActions}>{children}</View>
+    </View>
+  );
   const tools = (
-    <View style={styles.group}>
+    group('toolbar-group-work', t('toolbar.group.work', locale), <>
       <ToolButton icon="select" label={t('tool.select', locale)} accessibilityLabel={t('tool.select.label', locale)} accessibilityHint={t('tool.select.hint', locale)}
         active={props.tool === 'select'} disabled={!onCanvas} onPress={() => props.onTool('select')} style={cell} />
       {props.compact ? <ToolButton icon="pan" label={t('tool.pan', locale)} accessibilityLabel={t('tool.pan.label', locale)} accessibilityHint={t('tool.pan.hint', locale)}
@@ -77,28 +83,28 @@ export function Toolbar(props: ToolbarProps) {
           <ToolButton icon="menu" label={t('more', locale)} accessibilityLabel={t('more.label', locale)} accessibilityHint={t('more.hint', locale)} onPress={props.onOpenMore} style={cell} />
         </>
       ) : null}
-    </View>
+    </>)
   );
   const create = (
-    <View style={styles.group}>
+    group('toolbar-group-create', t('toolbar.group.create', locale), <>
       <ToolButton testID="open-insert" icon="plus" label={t('insert.title', locale)} accessibilityLabel={t('insert.open', locale)} accessibilityHint={t('insert.open.hint', locale)} onPress={props.onOpenInsert} style={cell} />
       {props.compact ? (
         <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
       ) : null}
-    </View>
+    </>)
   );
   const history = props.compact ? null : (
-    <View style={styles.group}>
+    group('toolbar-group-history', t('toolbar.group.history', locale), <>
       <ToolButton icon="undo" label={t('undo', locale)} accessibilityLabel={props.undoLabel ? `${t('undo', locale)}: ${props.undoLabel}` : t('undo', locale)}
         accessibilityHint={t('undo.hint', locale)} disabled={props.undoLabel === null} onPress={props.onUndo} style={cell} />
       <ToolButton icon="redo" label={t('redo', locale)} accessibilityLabel={props.redoLabel ? `${t('redo', locale)}: ${props.redoLabel}` : t('redo', locale)}
         accessibilityHint={t('redo.hint', locale)} disabled={props.redoLabel === null} onPress={props.onRedo} style={cell} />
       <ToolButton icon="paste" label={t('paste', locale)} accessibilityLabel={props.canPaste ? t('paste', locale) : t('paste.empty', locale)}
         accessibilityHint={t('paste.hint', locale)} disabled={!props.canPaste} onPress={props.onPaste} style={cell} />
-    </View>
+    </>)
   );
   const view = props.compact ? null : (
-    <View style={styles.group}>
+    group('toolbar-group-view', t('toolbar.group.view', locale), <>
       <ToolButton icon="minus" label={t('zoom.out', locale)} accessibilityLabel={t('zoom.out', locale)} disabled={!onCanvas || props.zoom <= MIN_ZOOM} onPress={props.onZoomOut} style={cell} />
       <ToolButton testID="zoom-level" glyph={formatZoom(props.zoom)} label={t('zoom', locale)} accessibilityLabel={`${t('zoom', locale)} ${formatZoom(props.zoom)}${t('zoom.reset.suffix', locale)}`}
         disabled={!onCanvas} onPress={props.onZoomReset} style={[cell, styles.zoomCell]} />
@@ -115,7 +121,7 @@ export function Toolbar(props: ToolbarProps) {
           <ToolButton icon="settings" label={t('nav.settings', locale)} accessibilityLabel={t('nav.settings.open', locale)} onPress={props.onOpenSettings} style={cell} />
         </>
       )}
-    </View>
+    </>)
   );
   return (
     <View
@@ -149,7 +155,9 @@ const styles = StyleSheet.create({
   bar: { borderWidth: 1, padding: 4, gap: 4 },
   compact: { flexDirection: 'column' },
   wide: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
-  group: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
+  group: { gap: 2 },
+  groupLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800', letterSpacing: 0.4, paddingHorizontal: 4 },
+  groupActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   // Seis por fila y ancho según el texto (el sobrante se reparte): ninguna palabra se parte a 360-390 px.
   compactCell: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', paddingHorizontal: 2 },
   wideCell: { paddingHorizontal: 5 },
