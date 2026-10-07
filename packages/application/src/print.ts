@@ -4,7 +4,7 @@
  * en el lienzo). Sin reloj ni acceso a archivos: se arma a partir del workspace ya cargado.
  */
 import { footprint } from '@noutynotes/domain';
-import type { BoardId, CaptionPosition, Card, CardId, TextSize, Workspace } from '@noutynotes/domain';
+import type { BoardId, CaptionPosition, Card, CardId, FloatingTextAlign, FloatingTextColor, TextSize, Workspace } from '@noutynotes/domain';
 
 import { noteImageRefs } from './note-blocks';
 
@@ -31,6 +31,9 @@ export interface PrintEntry {
   readonly bodySize?: TextSize;
   /** Posición de la leyenda de imágenes intercaladas (ADR 0051); ausente = `'bottom'`. */
   readonly captionPosition?: CaptionPosition;
+  readonly floatingText?: boolean;
+  readonly textAlign?: FloatingTextAlign;
+  readonly textColor?: FloatingTextColor;
 }
 
 const titleOf = (card: Card | undefined): string => card?.title ?? 'Sin título';
@@ -72,6 +75,9 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
       ...(card.titleSize === undefined ? {} : { titleSize: card.titleSize }),
       ...(card.bodySize === undefined ? {} : { bodySize: card.bodySize }),
       ...(card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition }),
+      ...(typeBase.get(card.typeId) === 'text' ? { floatingText: true as const } : {}),
+      ...(card.textAlign === undefined ? {} : { textAlign: card.textAlign }),
+      ...(card.textColor === undefined ? {} : { textColor: card.textColor }),
     }];
   });
 }

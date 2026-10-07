@@ -85,6 +85,7 @@ const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
 
 const additions: Readonly<Record<PrototypeCardKind, ActionSuccess>> = {
   note: 'action.noteAdded',
+  text: { label: 'Texto flotante añadido' },
   image: 'action.exampleImageAdded',
   title: 'action.floatingTitleAdded',
   link: 'action.linkAdded',
@@ -1446,6 +1447,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             compact={compact}
             onClose={() => setInsertOpen(false)}
             onNote={() => { setInsertOpen(false); void add('note'); }}
+            onText={() => { setInsertOpen(false); void add('text'); }}
             onTitle={() => { setInsertOpen(false); void add('title'); }}
             onImage={() => { setInsertOpen(false); void importImage(); }}
             onExampleImage={() => { setInsertOpen(false); void add('image'); }}

@@ -145,6 +145,11 @@ interface CanvasProps {
 
 /** Tipo del título flotante (ADR 0018): rótulo sin marco, sin número y con controles solo seleccionado. */
 const FLOATING_TITLE = 'titulo-flotante';
+const isFloating = (workspace: Workspace, cardId: CardId): boolean => {
+  const card = workspace.cards.find((candidate) => candidate.id === cardId);
+  const type = workspace.cardTypes.find((candidate) => candidate.id === card?.typeId);
+  return card?.typeId === FLOATING_TITLE || type?.base === 'text';
+};
 
 /** Destino de un gesto en curso y su validez según el motor de grilla, antes de guardar nada. */
 function evaluate(layout: BoardLayout, placement: CardPlacement, gesture: Gesture, zoom: number, metrics: CanvasMetrics, snap: boolean) {
@@ -606,7 +611,7 @@ export function Canvas(props: CanvasProps) {
   // Numeración de las fichas (001, 002…) en orden del layout, sin contar los títulos flotantes.
   const numbers = new Map<CardId, number>();
   for (const placement of placements) {
-    if (cards.get(placement.cardId)?.typeId !== FLOATING_TITLE) numbers.set(placement.cardId, numbers.size);
+    if (!isFloating(workspace, placement.cardId)) numbers.set(placement.cardId, numbers.size);
   }
   const unplacedText = props.unplaced.length === 0 ? null
     : `${props.unplaced.length === 1 ? '1 tarjeta de este tablero no tiene' : `${props.unplaced.length} tarjetas de este tablero no tienen`} posición en la grilla: ${props.unplaced.map((title) => `«${title}»`).join(', ')}. Para colocar una, búscala con «Buscar» y pulsa «Ir»; sus datos no cambian.`;
@@ -647,7 +652,7 @@ export function Canvas(props: CanvasProps) {
     for (const rawPlacement of placements) {
       if (gesture?.cardId === rawPlacement.cardId || gesture?.group?.includes(rawPlacement.cardId) || (framePreview && groupMoving.has(rawPlacement.cardId))) continue;
       // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
-      if (cards.get(rawPlacement.cardId)?.typeId === FLOATING_TITLE && rawPlacement.cardId !== selectedId) continue;
+      if (isFloating(workspace, rawPlacement.cardId) && rawPlacement.cardId !== selectedId) continue;
       // Mismo sitio optimista que el cuerpo de la tarjeta mientras se guarda (ver `pendingRects` arriba).
       const pendingRect = props.pendingRects.get(rawPlacement.cardId) ?? justFinished.get(rawPlacement.cardId);
       const placement = pendingRect ? { ...rawPlacement, rect: pendingRect } : rawPlacement;
@@ -902,7 +907,7 @@ export function Canvas(props: CanvasProps) {
             cardId={placement.cardId}
             title={names.get(placement.cardId) ?? t('card.untitled', locale)}
             display={placement.display}
-            floating={cards.get(placement.cardId)?.typeId === FLOATING_TITLE}
+            floating={isFloating(workspace, placement.cardId)}
             chrome={found}
             onAction={(action) => runAction(placement.cardId, action)}
             onMenu={() => {

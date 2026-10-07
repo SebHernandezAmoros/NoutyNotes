@@ -28,11 +28,11 @@ export const DEFAULT_CARD_SIZE: GridSize = { w: 4, h: 3 };
 export const PROTOTYPE_BOARD = { id: 'principal' as BoardId, title: 'Tablero principal' } as const;
 export const RELATED_RELATION_TYPE: RelationTypeDefinition = { id: 'relacionada' as RelationTypeId, label: 'Relacionada con' };
 
-export type PrototypeCardKind = 'note' | 'image' | 'title' | 'link';
+export type PrototypeCardKind = 'note' | 'text' | 'image' | 'title' | 'link';
 
 interface CardPreset {
   readonly type: CardTypeDefinition;
-  readonly title: string;
+  readonly title?: string;
   readonly content?: string;
   readonly size?: GridSize;
   /** Apariencia y navegación portable (ADR 0046). */
@@ -43,6 +43,7 @@ interface CardPreset {
 /** Tipos mínimos que el prototipo añade a demanda. La imagen es un marcador de posición sin asset. */
 export const PROTOTYPE_CARD_PRESETS: Readonly<Record<PrototypeCardKind, CardPreset>> = {
   note: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nueva nota', content: '' },
+  text: { type: { id: 'texto-flotante' as CardTypeId, label: 'Texto', base: 'text', fields: [] }, content: 'Nuevo texto', size: { w: 4, h: 3 } },
   image: { type: { id: 'imagen' as CardTypeId, label: 'Imagen', base: 'image', fields: [] }, title: 'Imagen de ejemplo' },
   title: { type: { id: 'titulo-flotante' as CardTypeId, label: 'Título', base: 'section', fields: [] }, title: 'Nuevo título', size: { w: 6, h: 2 } },
   // El tipo real se elige por proyecto (`linkCardTypeFor`, ADR 0020); este es el que se añade si no hay ninguno.
@@ -161,8 +162,8 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   if (createdAt !== undefined && !isArchiveInstant(createdAt)) return storageFailure('invalid-workspace', 'createdAt', 'La fecha de creación debe ser ISO 8601 en UTC.');
   const validNear = near === undefined || (isObject(near) && Number.isSafeInteger(ownValue(near, 'x')) && Number.isSafeInteger(ownValue(near, 'y'))
     && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
-  if ((kind !== 'note' && kind !== 'image' && kind !== 'title' && kind !== 'link') || (title !== undefined && typeof title !== 'string')
-    || (content !== undefined && (kind !== 'note' || typeof content !== 'string'))
+  if ((kind !== 'note' && kind !== 'text' && kind !== 'image' && kind !== 'title' && kind !== 'link') || (title !== undefined && typeof title !== 'string')
+    || (content !== undefined && ((kind !== 'note' && kind !== 'text') || typeof content !== 'string'))
     || (requestedBoard !== undefined && typeof requestedBoard !== 'string') || !validNear) {
     return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen, título o enlace) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
   }
@@ -186,13 +187,14 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
     const cardId = nextSequentialId('tarjeta', takenCardIds(workspace)) as CardId;
     const card: Card = {
       id: cardId, typeId: type.id,
-      title: title ?? (url?.ok ? linkDisplay(url.value).host : preset.title),
+      ...((title ?? (url?.ok ? linkDisplay(url.value).host : preset.title)) === undefined ? {} : { title: title ?? (url?.ok ? linkDisplay(url.value).host : preset.title) }),
       fields: url?.ok ? { [linkUrlField(type) ?? 'url']: url.value } : {},
       // Imagen de la biblioteca: la tarjeta referencia el mismo archivo, sin copiarlo (ADR 0022).
       ...(typeof assetRef === 'string' ? { assetRefs: [assetRef as AssetRef] } : {}),
       ...(typeof createdAt === 'string' ? { createdAt } : {}),
       ...(typeof icon === 'string' ? { icon: icon as NonNullable<Card['icon']> } : {}),
       ...(typeof boardTargetId === 'string' ? { boardTargetId: boardTargetId as BoardId } : {}),
+      ...(kind === 'text' ? { frameOverride: 'hidden' as const } : {}),
       ...(preset.content === undefined ? {} : { content: typeof content === 'string' ? content : preset.content }),
     };
     const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID });

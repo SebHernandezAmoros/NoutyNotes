@@ -88,4 +88,17 @@ describe('documento de impresión (ADR 0031)', () => {
     expect(html).toContain('<td>Activa</td>');
     expect(html).not.toContain('| Nombre |');
   });
+
+  it('P13 imprime texto flotante sin título inventado y conserva alineación, tamaño y color', () => {
+    const html = buildPrintHtml('T', [{
+      id: id('texto'), number: 1, title: 'Sin título', typeLabel: 'Texto', content: 'Una línea\nOtra',
+      tags: [], imageRefs: [], connections: [], floatingText: true, bodySize: 'large', textAlign: 'right', textColor: 'blue',
+    }], new Map());
+    expect(html).toContain('class="entry floating-text"');
+    expect(html).toContain('font-size:16px');
+    expect(html).toContain('text-align:right');
+    expect(html).toContain('color:#2457a6');
+    expect(html).not.toContain('<h2');
+    expect(html).not.toContain('Sin título');
+  });
 });

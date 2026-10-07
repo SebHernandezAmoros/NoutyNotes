@@ -673,7 +673,7 @@ test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ p
   await expect(menu.getByRole('button', { name: 'Insertar título flotante', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Importar una imagen', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar enlace', exact: true })).toBeEnabled();
-  await expect(menu.getByRole('button', { name: 'Insertar texto', exact: true })).toBeDisabled();
+  await expect(menu.getByRole('button', { name: 'Insertar texto', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar forma', exact: true })).toBeDisabled();
   await expect(menu.getByRole('button', { name: 'Insertar conector', exact: true })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('p10-insert-menu.png'), fullPage: true });
@@ -684,6 +684,42 @@ test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ p
   await expect(visual.locator('th, td')).toHaveCount(9);
   await expect(page.getByRole('dialog', { name: 'Insertar' })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('p10-table-from-insert.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
+test('P13: crea y edita texto flotante multilínea con apariencia portable', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Texto flotante');
+  await insertFromMenu(page, 'Insertar texto');
+  const floating = page.getByTestId('floating-text-tarjeta-1');
+  await expect(floating).toContainText('Nuevo texto');
+
+  if ((page.viewportSize()?.width ?? 0) >= 800) {
+    await card(page, 1).dblclick();
+    await expect(page.getByTestId('inline-card-title')).toHaveCount(0);
+    await page.getByTestId('inline-floating-text').fill('Primera línea\nSegunda línea');
+    await button(page, 'Guardar y cerrar la edición rápida').click();
+  }
+  await openFullCardEditor(page, card(page, 1));
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveCount(0);
+  if ((page.viewportSize()?.width ?? 0) < 800) {
+    await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('Primera línea\nSegunda línea');
+  } else {
+    await expect(page.getByRole('textbox', { name: 'Texto flotante', exact: true })).toHaveValue('Primera línea\nSegunda línea');
+  }
+  await button(page, 'Guardar texto').click();
+  await page.getByTestId('floating-text-style-picker').getByRole('button', { name: 'Centro', exact: true }).click();
+  await page.getByTestId('floating-text-style-picker').getByRole('button', { name: 'Azul', exact: true }).click();
+  await page.getByTestId('card-text-size-picker').getByRole('button', { name: 'Cuerpo grande', exact: true }).click();
+  await closeEditor(page);
+
+  await expect(floating).toContainText('Primera línea');
+  await expect(floating).toContainText('Segunda línea');
+  await expect(floating.locator('div').last()).toHaveCSS('text-align', 'center');
+  await page.screenshot({ path: testInfo.outputPath('p13-floating-text.png'), fullPage: true });
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);

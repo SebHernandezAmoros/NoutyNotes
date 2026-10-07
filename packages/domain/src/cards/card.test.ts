@@ -56,6 +56,12 @@ describe('tarjetas', () => {
     expect(problems(validateCard(unsafe({ ...ideaA, captionPosition: 'center' }), noteType))).toContain('invalid-value@card.captionPosition');
   });
 
+  it('acepta alineación y color cerrados para texto flotante (ADR 0057)', () => {
+    expect(validateCard({ ...ideaA, textAlign: 'center', textColor: 'blue' }, noteType).ok).toBe(true);
+    expect(problems(validateCard(unsafe({ ...ideaA, textAlign: 'justify' }), noteType))).toContain('invalid-value@card.textAlign');
+    expect(problems(validateCard(unsafe({ ...ideaA, textColor: '#123456' }), noteType))).toContain('invalid-value@card.textColor');
+  });
+
   it.each([
     ['id inválido', { id: 'Idea A' }, 'invalid-id@card.id'],
     ['id de tipo inválido', { typeId: '' }, 'invalid-id@card.typeId'],

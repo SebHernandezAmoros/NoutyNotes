@@ -12,6 +12,7 @@ interface InsertMenuProps {
   readonly compact: boolean;
   readonly onClose: () => void;
   readonly onNote: () => void;
+  readonly onText: () => void;
   readonly onTitle: () => void;
   readonly onImage: () => void;
   readonly onExampleImage: () => void;
@@ -26,7 +27,7 @@ export function InsertMenu(props: InsertMenuProps) {
     <Dialog visible={props.visible} title={t('insert.title', locale)} compact={props.compact} onClose={props.onClose} testID="insert-dialog">
       <View style={styles.list}>
         <InsertOption icon="note" label={t('insert.note', locale)} hint={t('insert.note.hint', locale)} onPress={props.onNote} />
-        <InsertOption icon="text" label={t('insert.text', locale)} hint={t('insert.future.p13', locale)} disabled onPress={() => {}} />
+        <InsertOption icon="text" label={t('insert.text', locale)} hint={t('insert.text.hint', locale)} onPress={props.onText} />
         <InsertOption icon="text" label={t('insert.heading', locale)} hint={t('insert.heading.hint', locale)} onPress={props.onTitle} />
         <InsertOption icon="upload" label={t('insert.image', locale)} hint={t('insert.image.hint', locale)} onPress={props.onImage} />
         <InsertOption icon="image" label={t('insert.exampleImage', locale)} hint={t('insert.exampleImage.hint', locale)} onPress={props.onExampleImage} />

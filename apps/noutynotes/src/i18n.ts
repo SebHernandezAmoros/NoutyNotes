@@ -45,6 +45,8 @@ export const TRANSLATIONS = {
   'insert.note': { es: 'Insertar nota', en: 'Insert note' },
   'insert.note.hint': { es: 'Crea una nota vacía', en: 'Create an empty note' },
   'insert.text': { es: 'Insertar texto', en: 'Insert text' },
+  'insert.text.hint': { es: 'Texto libre y multilínea en el lienzo', en: 'Free multiline text on the canvas' },
+  'inspector.floatingText.label': { es: 'Texto flotante', en: 'Floating text' },
   'insert.heading': { es: 'Insertar título flotante', en: 'Insert floating title' },
   'insert.heading.hint': { es: 'Crea un título independiente en el lienzo', en: 'Create an independent heading on the canvas' },
   'insert.image': { es: 'Importar una imagen', en: 'Import an image' },

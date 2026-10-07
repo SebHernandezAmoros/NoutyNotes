@@ -10,6 +10,7 @@ import { parseRichTextMarkdown, serializeRichTextMarkdown } from '@noutynotes/st
 
 import { markdownExcerpt } from './markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
+import { floatingTextColor } from './floatingText';
 
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -96,6 +97,11 @@ function entryHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): stri
   // Tamaño semántico del título (ADR 0050): mismo mapa que el lienzo y Lista.
   const titlePx = titleFontSize(entry.titleSize);
   const titleLine = titleLineHeight(titlePx);
+  if (entry.floatingText) {
+    const bodyPx = bodyFontSize(entry.bodySize);
+    const bodyLine = bodyLineHeight(bodyPx);
+    return `<article class="entry floating-text"><pre style="font-size:${bodyPx}px;line-height:${bodyLine}px;text-align:${entry.textAlign ?? 'left'};color:${floatingTextColor(entry.textColor, '#1e1f1a')};">${escapeHtml(entry.content)}</pre></article>`;
+  }
   return `
     <article class="entry">
       <p class="meta">${entry.number}. ${escapeHtml(entry.typeLabel)}</p>

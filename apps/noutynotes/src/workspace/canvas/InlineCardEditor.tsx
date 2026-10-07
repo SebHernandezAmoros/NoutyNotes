@@ -25,6 +25,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
   const colors = theme.colors;
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
+  const floatingText = card.typeId === 'texto-flotante';
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document) && !document.blocks.some((block) => block.type === 'image')
     : isBasicRichTextDocument(document);
@@ -107,7 +108,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
           <AppIcon name="close" size={18} color={colors.headerText} />
         </Pressable>
       </View>
-      <TextInput
+      {!floatingText ? <TextInput
         testID="inline-card-title"
         accessibilityLabel="Título de la tarjeta"
         value={title}
@@ -116,8 +117,21 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
         placeholder="Título"
         placeholderTextColor={colors.textSecondary}
         style={[styles.title, { color: colors.cardText, borderColor: colors.gridLine }]}
-      />
-      {visualDocument ? (
+      /> : null}
+      {floatingText ? (
+        <TextInput
+          testID="inline-floating-text"
+          accessibilityLabel="Texto flotante"
+          value={content}
+          onChangeText={setContent}
+          onBlur={() => { void persist(); }}
+          multiline
+          autoFocus
+          placeholder="Escribe texto"
+          placeholderTextColor={colors.textSecondary}
+          style={[styles.plainText, { color: colors.cardText }, noteFontFamily === undefined ? null : { fontFamily: noteFontFamily }]}
+        />
+      ) : visualDocument ? (
         <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily} compact />
       ) : (
         <View style={styles.unsupportedContent}>
@@ -141,6 +155,7 @@ const styles = StyleSheet.create({
   modeHint: { fontSize: 11, lineHeight: 16 },
   iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
   title: { height: 42, paddingHorizontal: 10, borderBottomWidth: 1, fontSize: 17, lineHeight: 22, fontWeight: '900' },
+  plainText: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 10, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
   unsupportedContent: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8 },
   footer: { minHeight: 38, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 8 },
   status: { flex: 1, fontSize: 10, lineHeight: 14 },

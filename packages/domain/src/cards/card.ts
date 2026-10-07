@@ -40,6 +40,10 @@ export interface Card {
   readonly bodySize?: TextSize;
   /** Posición de la leyenda de las imágenes intercaladas (ADR 0051). Ausente: `'bottom'`. */
   readonly captionPosition?: CaptionPosition;
+  /** Alineación horizontal del texto flotante (ADR 0057). Ausente: izquierda. */
+  readonly textAlign?: FloatingTextAlign;
+  /** Color semántico portable del texto flotante (ADR 0057). Ausente: color del tema. */
+  readonly textColor?: FloatingTextColor;
 }
 
 /**
@@ -63,6 +67,12 @@ export type TextSize = (typeof textSizes)[number];
 
 export const captionPositions = ['bottom', 'top', 'left', 'right'] as const;
 export type CaptionPosition = (typeof captionPositions)[number];
+
+export const floatingTextAlignments = ['left', 'center', 'right'] as const;
+export type FloatingTextAlign = (typeof floatingTextAlignments)[number];
+
+export const floatingTextColors = ['default', 'red', 'orange', 'green', 'blue', 'purple'] as const;
+export type FloatingTextColor = (typeof floatingTextColors)[number];
 
 /**
  * Invariantes propias de la tarjeta. Si se conoce su tipo, también la compatibilidad de campos;
@@ -103,6 +113,12 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   }
   if (card.captionPosition !== undefined && !captionPositions.includes(card.captionPosition as CaptionPosition)) {
     issues.push(issue('invalid-value', `${path}.captionPosition`, 'Debe ser "bottom", "top", "left" o "right".'));
+  }
+  if (card.textAlign !== undefined && !floatingTextAlignments.includes(card.textAlign as FloatingTextAlign)) {
+    issues.push(issue('invalid-value', `${path}.textAlign`, 'Debe ser "left", "center" o "right".'));
+  }
+  if (card.textColor !== undefined && !floatingTextColors.includes(card.textColor as FloatingTextColor)) {
+    issues.push(issue('invalid-value', `${path}.textColor`, 'Debe ser un color semántico admitido.'));
   }
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);

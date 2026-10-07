@@ -12,7 +12,7 @@ import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
 import {
   captionPositions, cardIconNames, frameOverrides, textSizes,
-  type Card, type CaptionPosition, type CardIconName, type FrameOverride, type TextSize,
+  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type TextSize,
 } from './card';
 
 export interface DeleteCardOptions {
@@ -205,9 +205,11 @@ export interface CardAppearanceChanges {
   readonly bodySize?: TextSize | null;
   /** Posición de la leyenda de imágenes intercaladas (ADR 0051); `null` vuelve a `'bottom'` (ausente). */
   readonly captionPosition?: CaptionPosition | null;
+  readonly textAlign?: FloatingTextAlign | null;
+  readonly textColor?: FloatingTextColor | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition'];
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'textAlign', 'textColor'];
 
 /** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
@@ -225,6 +227,8 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const nextTitleSize = changes.titleSize;
   const nextBodySize = changes.bodySize;
   const nextCaptionPosition = changes.captionPosition;
+  const nextTextAlign = changes.textAlign;
+  const nextTextColor = changes.textColor;
   if (nextIcon !== undefined && nextIcon !== null && !cardIconNames.includes(nextIcon as CardIconName)) {
     return failure([issue('invalid-value', 'changes.icon', 'Icono desconocido.')]);
   }
@@ -244,9 +248,15 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   if (nextCaptionPosition !== undefined && nextCaptionPosition !== null && !captionPositions.includes(nextCaptionPosition as CaptionPosition)) {
     return failure([issue('invalid-value', 'changes.captionPosition', 'Debe ser "bottom", "top", "left" o "right".')]);
   }
+  if (nextTextAlign !== undefined && nextTextAlign !== null && !floatingTextAlignments.includes(nextTextAlign as FloatingTextAlign)) {
+    return failure([issue('invalid-value', 'changes.textAlign', 'Alineación desconocida.')]);
+  }
+  if (nextTextColor !== undefined && nextTextColor !== null && !floatingTextColors.includes(nextTextColor as FloatingTextColor)) {
+    return failure([issue('invalid-value', 'changes.textColor', 'Color desconocido.')]);
+  }
   const {
     icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize,
-    captionPosition: _captionPosition, ...base
+    captionPosition: _captionPosition, textAlign: _textAlign, textColor: _textColor, ...base
   } = card;
   const edited: Card = {
     ...base,
@@ -261,6 +271,10 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
       : nextBodySize === null ? {} : { bodySize: nextBodySize as TextSize }),
     ...(nextCaptionPosition === undefined ? (card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition })
       : nextCaptionPosition === null ? {} : { captionPosition: nextCaptionPosition as CaptionPosition }),
+    ...(nextTextAlign === undefined ? (card.textAlign === undefined ? {} : { textAlign: card.textAlign })
+      : nextTextAlign === null ? {} : { textAlign: nextTextAlign as FloatingTextAlign }),
+    ...(nextTextColor === undefined ? (card.textColor === undefined ? {} : { textColor: card.textColor })
+      : nextTextColor === null ? {} : { textColor: nextTextColor as FloatingTextColor }),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => candidate === card ? edited : candidate) });
 }

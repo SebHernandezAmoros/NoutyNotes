@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, nudgeCardOnBoard, resizeCardOnBoard,
+  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, nudgeCardOnBoard, pasteSnapshot, resizeCardOnBoard, snapshotSelection,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId, CardId, RelationId, WorkspaceId } from '../../packages/domain/src/index';
@@ -46,6 +46,19 @@ describe('crear espacios desde un nombre (fase 7)', () => {
 });
 
 describe('añadir tarjetas (fase 7)', () => {
+  it('crea texto flotante multilínea sin título ni marco, con estilo portable', async () => {
+    const { storage, workspaceId } = await session();
+    const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'text', content: 'Primera\nSegunda' }));
+    const created = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id === cardId);
+    expect(created).toMatchObject({ typeId: 'texto-flotante', content: 'Primera\nSegunda', fields: {}, frameOverride: 'hidden' });
+    expect(created && 'title' in created).toBe(false);
+    ok(await editCardAppearance(storage, workspaceId, cardId, { bodySize: 'large', textAlign: 'center', textColor: 'blue' }));
+    const snapshot = snapshotSelection(ok(await storage.open(workspaceId)), board, [cardId], 'copy');
+    if (!snapshot) throw new Error('sin instantánea');
+    ok(await pasteSnapshot(storage, workspaceId, board, snapshot));
+    const copied = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id !== cardId);
+    expect(copied).toMatchObject({ content: 'Primera\nSegunda', frameOverride: 'hidden', bodySize: 'large', textAlign: 'center', textColor: 'blue' });
+  });
   it('P3: crea un título flotante como sección portable, editable y con layout propio', async () => {
     const { storage, workspaceId } = await session();
     const titleId = ok(await addCardToBoard(storage, workspaceId, { kind: 'title', title: 'Proyecto Solace' }));
