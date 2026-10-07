@@ -10,7 +10,8 @@ import { ActionButton } from '../../components/controls';
 import { t } from '../../i18n';
 import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
-import { relationSegments } from '../board-geometry';
+import { connectorSegments, relationSegments } from '../board-geometry';
+import { ConnectorLine } from './ConnectorLine';
 import { RelationLine } from './RelationLine';
 import { RelationMenu } from './RelationMenu';
 import { CanvasCard, ResizeHandles } from './CanvasCard';
@@ -607,6 +608,8 @@ export function Canvas(props: CanvasProps) {
   const local = <T extends { readonly left: number; readonly top: number }>(box: T): T => ({ ...box, left: box.left - base.x, top: box.top - base.y });
   const boxes = placements.map((placement) => ({ cardId: placement.cardId, ...local(cardBox(footprint(placement), metrics)) }));
   const segments = relationSegments(workspace.relations, boxes);
+  const connectorCards = workspace.cards.filter((card) => workspace.cardTypes.find((type) => type.id === card.typeId)?.base === 'connector');
+  const decorativeSegments = connectorSegments(connectorCards, boxes);
   const empty = placements.length === 0 && props.unplaced.length === 0;
   // Numeración de las fichas (001, 002…) en orden del layout, sin contar los títulos flotantes.
   const numbers = new Map<CardId, number>();
@@ -802,6 +805,10 @@ export function Canvas(props: CanvasProps) {
               controller={controller}
             />
           );
+        })}
+        {decorativeSegments.flatMap((segment) => {
+          const card = cards.get(segment.cardId);
+          return card ? [<ConnectorLine key={card.id} segment={segment} card={card} />] : [];
         })}
         {/* Encima de las tarjetas: si dos fichas conectadas quedan pegadas, la línea y el rótulo
             igual se ven, en vez de quedar tapados por el fondo opaco de la tarjeta (ADR 0034). */}

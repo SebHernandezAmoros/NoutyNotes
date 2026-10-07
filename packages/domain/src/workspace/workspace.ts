@@ -138,6 +138,14 @@ export function validateWorkspace(workspace: Workspace): ValidationResult<Worksp
     if (isRecord(card) && card.boardTargetId !== undefined) {
       checkReference(card.boardTargetId, boardIndex, `cards[${i}].boardTargetId`, 'el board', issues);
     }
+    if (isRecord(card)) {
+      for (const key of ['connectorStartCardId', 'connectorEndCardId'] as const) {
+        const anchor = card[key];
+        if (anchor === undefined) continue;
+        checkReference(anchor, cardIndex, `cards[${i}].${key}`, 'la tarjeta', issues);
+        if (anchor === card.id) issues.push(issue('invalid-value', `cards[${i}].${key}`, 'Un conector no puede anclarse a sí mismo.'));
+      }
+    }
   });
 
   boards.forEach((board, i) => {

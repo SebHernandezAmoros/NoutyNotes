@@ -11,8 +11,8 @@ import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
 import {
-  captionPositions, cardIconNames, frameOverrides, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
-  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
+  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, frameOverrides, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
+  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
 } from './card';
 
 export interface DeleteCardOptions {
@@ -39,7 +39,15 @@ export function deleteCard(workspace: Workspace, cardId: CardId, options: Delete
   }
   return resultOf({
     ...workspace,
-    cards: workspace.cards.filter(card => card.id !== cardId),
+    cards: workspace.cards.filter(card => card.id !== cardId).map((card) => {
+      if (card.connectorStartCardId !== cardId && card.connectorEndCardId !== cardId) return card;
+      const { connectorStartCardId, connectorEndCardId, ...rest } = card;
+      return {
+        ...rest,
+        ...(connectorStartCardId === cardId ? {} : { connectorStartCardId }),
+        ...(connectorEndCardId === cardId ? {} : { connectorEndCardId }),
+      } as Card;
+    }),
     relations: workspace.relations.filter(relation => relation.from !== cardId && relation.to !== cardId),
     boards: workspace.boards.map(board => board.cardIds.includes(cardId)
       ? { ...board, cardIds: board.cardIds.filter(member => member !== cardId) } : board),
@@ -211,9 +219,16 @@ export interface CardAppearanceChanges {
   readonly shapeFill?: ShapeFill | null;
   readonly shapeStroke?: ShapeStroke | null;
   readonly shapeStrokeWidth?: ShapeStrokeWidth | null;
+  readonly connectorColor?: ShapeStroke | null;
+  readonly connectorWidth?: ShapeStrokeWidth | null;
+  readonly connectorDash?: ConnectorDash | null;
+  readonly connectorArrows?: ConnectorArrows | null;
+  readonly connectorDirection?: ConnectorDirection | null;
+  readonly connectorStartCardId?: CardId | null;
+  readonly connectorEndCardId?: CardId | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth'];
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId'];
 
 /** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
@@ -237,6 +252,13 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const nextShapeFill = changes.shapeFill;
   const nextShapeStroke = changes.shapeStroke;
   const nextShapeStrokeWidth = changes.shapeStrokeWidth;
+  const nextConnectorColor = changes.connectorColor;
+  const nextConnectorWidth = changes.connectorWidth;
+  const nextConnectorDash = changes.connectorDash;
+  const nextConnectorArrows = changes.connectorArrows;
+  const nextConnectorDirection = changes.connectorDirection;
+  const nextConnectorStart = changes.connectorStartCardId;
+  const nextConnectorEnd = changes.connectorEndCardId;
   if (nextIcon !== undefined && nextIcon !== null && !cardIconNames.includes(nextIcon as CardIconName)) {
     return failure([issue('invalid-value', 'changes.icon', 'Icono desconocido.')]);
   }
@@ -266,10 +288,22 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   if (nextShapeFill !== undefined && nextShapeFill !== null && !shapeFills.includes(nextShapeFill as ShapeFill)) return failure([issue('invalid-value', 'changes.shapeFill', 'Relleno desconocido.')]);
   if (nextShapeStroke !== undefined && nextShapeStroke !== null && !shapeStrokes.includes(nextShapeStroke as ShapeStroke)) return failure([issue('invalid-value', 'changes.shapeStroke', 'Borde desconocido.')]);
   if (nextShapeStrokeWidth !== undefined && nextShapeStrokeWidth !== null && !shapeStrokeWidths.includes(nextShapeStrokeWidth as ShapeStrokeWidth)) return failure([issue('invalid-value', 'changes.shapeStrokeWidth', 'Grosor desconocido.')]);
+  if (nextConnectorColor !== undefined && nextConnectorColor !== null && !shapeStrokes.includes(nextConnectorColor as ShapeStroke)) return failure([issue('invalid-value', 'changes.connectorColor', 'Color desconocido.')]);
+  if (nextConnectorWidth !== undefined && nextConnectorWidth !== null && !shapeStrokeWidths.includes(nextConnectorWidth as ShapeStrokeWidth)) return failure([issue('invalid-value', 'changes.connectorWidth', 'Grosor desconocido.')]);
+  if (nextConnectorDash !== undefined && nextConnectorDash !== null && !connectorDashes.includes(nextConnectorDash as ConnectorDash)) return failure([issue('invalid-value', 'changes.connectorDash', 'Trazo desconocido.')]);
+  if (nextConnectorArrows !== undefined && nextConnectorArrows !== null && !connectorArrows.includes(nextConnectorArrows as ConnectorArrows)) return failure([issue('invalid-value', 'changes.connectorArrows', 'Puntas desconocidas.')]);
+  if (nextConnectorDirection !== undefined && nextConnectorDirection !== null && !connectorDirections.includes(nextConnectorDirection as ConnectorDirection)) return failure([issue('invalid-value', 'changes.connectorDirection', 'Dirección desconocida.')]);
+  for (const [key, value] of [['connectorStartCardId', nextConnectorStart], ['connectorEndCardId', nextConnectorEnd]] as const) {
+    if (value !== undefined && value !== null && (!isValidId(value) || value === cardId || !workspace.cards.some((candidate) => candidate.id === value))) {
+      return failure([issue(value === cardId ? 'invalid-value' : 'missing-reference', `changes.${key}`, 'El anclaje debe ser otra tarjeta existente.')]);
+    }
+  }
   const {
     icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize,
     captionPosition: _captionPosition, textAlign: _textAlign, textColor: _textColor,
-    shapeKind: _shapeKind, shapeFill: _shapeFill, shapeStroke: _shapeStroke, shapeStrokeWidth: _shapeStrokeWidth, ...base
+    shapeKind: _shapeKind, shapeFill: _shapeFill, shapeStroke: _shapeStroke, shapeStrokeWidth: _shapeStrokeWidth,
+    connectorColor: _connectorColor, connectorWidth: _connectorWidth, connectorDash: _connectorDash, connectorArrows: _connectorArrows, connectorDirection: _connectorDirection,
+    connectorStartCardId: _connectorStartCardId, connectorEndCardId: _connectorEndCardId, ...base
   } = card;
   const edited: Card = {
     ...base,
@@ -292,6 +326,13 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
     ...(nextShapeFill === undefined ? (card.shapeFill === undefined ? {} : { shapeFill: card.shapeFill }) : nextShapeFill === null ? {} : { shapeFill: nextShapeFill as ShapeFill }),
     ...(nextShapeStroke === undefined ? (card.shapeStroke === undefined ? {} : { shapeStroke: card.shapeStroke }) : nextShapeStroke === null ? {} : { shapeStroke: nextShapeStroke as ShapeStroke }),
     ...(nextShapeStrokeWidth === undefined ? (card.shapeStrokeWidth === undefined ? {} : { shapeStrokeWidth: card.shapeStrokeWidth }) : nextShapeStrokeWidth === null ? {} : { shapeStrokeWidth: nextShapeStrokeWidth as ShapeStrokeWidth }),
+    ...(nextConnectorColor === undefined ? (card.connectorColor === undefined ? {} : { connectorColor: card.connectorColor }) : nextConnectorColor === null ? {} : { connectorColor: nextConnectorColor as ShapeStroke }),
+    ...(nextConnectorWidth === undefined ? (card.connectorWidth === undefined ? {} : { connectorWidth: card.connectorWidth }) : nextConnectorWidth === null ? {} : { connectorWidth: nextConnectorWidth as ShapeStrokeWidth }),
+    ...(nextConnectorDash === undefined ? (card.connectorDash === undefined ? {} : { connectorDash: card.connectorDash }) : nextConnectorDash === null ? {} : { connectorDash: nextConnectorDash as ConnectorDash }),
+    ...(nextConnectorArrows === undefined ? (card.connectorArrows === undefined ? {} : { connectorArrows: card.connectorArrows }) : nextConnectorArrows === null ? {} : { connectorArrows: nextConnectorArrows as ConnectorArrows }),
+    ...(nextConnectorDirection === undefined ? (card.connectorDirection === undefined ? {} : { connectorDirection: card.connectorDirection }) : nextConnectorDirection === null ? {} : { connectorDirection: nextConnectorDirection as ConnectorDirection }),
+    ...(nextConnectorStart === undefined ? (card.connectorStartCardId === undefined ? {} : { connectorStartCardId: card.connectorStartCardId }) : nextConnectorStart === null ? {} : { connectorStartCardId: nextConnectorStart as CardId }),
+    ...(nextConnectorEnd === undefined ? (card.connectorEndCardId === undefined ? {} : { connectorEndCardId: card.connectorEndCardId }) : nextConnectorEnd === null ? {} : { connectorEndCardId: nextConnectorEnd as CardId }),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => candidate === card ? edited : candidate) });
 }

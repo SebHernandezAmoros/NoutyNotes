@@ -19,6 +19,7 @@ interface InsertMenuProps {
   readonly onLink: () => void;
   readonly onTable: () => void;
   readonly onShape: () => void;
+  readonly onConnector: () => void;
 }
 
 /** Entrada única de creación (UX7 P10); Conector permanece reservado para P15. */
@@ -35,7 +36,7 @@ export function InsertMenu(props: InsertMenuProps) {
         <InsertOption icon="link" label={t('insert.link', locale)} hint={t('insert.link.hint', locale)} onPress={props.onLink} />
         <InsertOption icon="board" label={t('insert.table', locale)} hint={t('insert.table.hint', locale)} onPress={props.onTable} />
         <InsertOption icon="frame" label={t('insert.shape', locale)} hint={t('insert.shape.hint', locale)} onPress={props.onShape} />
-        <InsertOption icon="connect" label={t('insert.connector', locale)} hint={t('insert.future.p15', locale)} disabled onPress={() => {}} />
+        <InsertOption icon="connect" label={t('insert.connector', locale)} hint={t('insert.connector.hint', locale)} onPress={props.onConnector} />
       </View>
     </Dialog>
   );

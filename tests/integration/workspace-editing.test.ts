@@ -46,6 +46,28 @@ describe('crear espacios desde un nombre (fase 7)', () => {
 });
 
 describe('añadir tarjetas (fase 7)', () => {
+  it('P15 crea un conector decorativo y el portapapeles remapea solo anclajes internos', async () => {
+    const { storage, workspaceId } = await session();
+    const start = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', title: 'Inicio' }));
+    const end = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', title: 'Fin' }));
+    const connector = ok(await addCardToBoard(storage, workspaceId, { kind: 'connector' }));
+    ok(await editCardAppearance(storage, workspaceId, connector, {
+      connectorStartCardId: start, connectorEndCardId: end, connectorColor: 'purple', connectorWidth: 'thick', connectorDash: 'dashed', connectorArrows: 'both', connectorDirection: 'up',
+    }));
+    const created = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id === connector);
+    expect(created).toMatchObject({ typeId: 'conector', frameOverride: 'hidden', connectorColor: 'purple', connectorWidth: 'thick', connectorDash: 'dashed', connectorArrows: 'both', connectorDirection: 'up', connectorStartCardId: start, connectorEndCardId: end });
+    expect(ok(await storage.open(workspaceId)).relations).toEqual([]);
+
+    const snapshot = snapshotSelection(ok(await storage.open(workspaceId)), board, [start, connector], 'copy');
+    if (!snapshot) throw new Error('sin instantánea');
+    ok(await pasteSnapshot(storage, workspaceId, board, snapshot));
+    const pasted = ok(await storage.open(workspaceId)).cards.slice(-2);
+    const pastedStart = pasted.find((candidate) => candidate.typeId === 'nota');
+    const pastedConnector = pasted.find((candidate) => candidate.typeId === 'conector');
+    expect(pastedConnector?.connectorStartCardId).toBe(pastedStart?.id);
+    expect(pastedConnector && 'connectorEndCardId' in pastedConnector).toBe(false);
+  });
+
   it('P14 crea una forma portable, permite cambiar tipo y estilo y el portapapeles los conserva', async () => {
     const { storage, workspaceId } = await session();
     const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'shape' }));

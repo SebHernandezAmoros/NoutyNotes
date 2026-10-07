@@ -195,6 +195,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const floatingTitle = card.typeId === 'titulo-flotante';
   const floatingText = type?.base === 'text';
   const shape = type?.base === 'shape';
+  const connector = type?.base === 'connector';
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
   const hint = connectHints[connectRole];
   const borderColor = colliding ? colors.danger : selected || focused || connectRole === 'source' ? colors.selection : colors.border;
@@ -278,9 +279,9 @@ export function CanvasCard(props: CanvasCardProps) {
         onFocus={() => { setFocused(true); props.onFocus(); }}
         onBlur={() => setFocused(false)}
         style={[styles.card, {
-          backgroundColor: (floatingTitle || floatingText || shape) && display === 'expanded' ? 'transparent' : colors.cardSurface,
-          borderColor: (floatingTitle || floatingText || shape || hideFrame) && !activeBorder ? 'transparent' : borderColor,
-          borderWidth: activeBorder ? 3 : hideFrame || ((floatingTitle || floatingText || shape) && display === 'expanded') ? 0 : 2,
+          backgroundColor: (floatingTitle || floatingText || shape || connector) && display === 'expanded' ? 'transparent' : colors.cardSurface,
+          borderColor: (floatingTitle || floatingText || shape || connector || hideFrame) && !activeBorder ? 'transparent' : borderColor,
+          borderWidth: activeBorder ? 3 : hideFrame || ((floatingTitle || floatingText || shape || connector) && display === 'expanded') ? 0 : 2,
           opacity: dragging ? 0.85 : 1,
         }]}
       >
@@ -314,6 +315,8 @@ export function CanvasCard(props: CanvasCardProps) {
           <View style={[styles.shapeWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             <ShapePreview card={card} surface={colors.canvas} strokeFallback={colors.border} testID={`shape-${card.id}`} />
           </View>
+        ) : connector && display === 'expanded' ? (
+          <View testID={`connector-hit-${card.id}`} style={styles.shapeWrap} />
         ) : display === 'collapsed' ? (
           // Contraída: una barra de título con los controles a la derecha.
           <View style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>

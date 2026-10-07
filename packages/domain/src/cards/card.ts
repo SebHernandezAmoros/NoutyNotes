@@ -49,6 +49,14 @@ export interface Card {
   readonly shapeFill?: ShapeFill;
   readonly shapeStroke?: ShapeStroke;
   readonly shapeStrokeWidth?: ShapeStrokeWidth;
+  /** Apariencia y anclajes visuales de un conector decorativo (UX7 P15); no crean una Relation. */
+  readonly connectorColor?: ShapeStroke;
+  readonly connectorWidth?: ShapeStrokeWidth;
+  readonly connectorDash?: ConnectorDash;
+  readonly connectorArrows?: ConnectorArrows;
+  readonly connectorDirection?: ConnectorDirection;
+  readonly connectorStartCardId?: CardId;
+  readonly connectorEndCardId?: CardId;
 }
 
 /**
@@ -90,6 +98,15 @@ export type ShapeStroke = (typeof shapeStrokes)[number];
 
 export const shapeStrokeWidths = ['thin', 'medium', 'thick'] as const;
 export type ShapeStrokeWidth = (typeof shapeStrokeWidths)[number];
+
+export const connectorDashes = ['solid', 'dashed', 'dotted'] as const;
+export type ConnectorDash = (typeof connectorDashes)[number];
+
+export const connectorArrows = ['none', 'start', 'end', 'both'] as const;
+export type ConnectorArrows = (typeof connectorArrows)[number];
+
+export const connectorDirections = ['down', 'up'] as const;
+export type ConnectorDirection = (typeof connectorDirections)[number];
 
 /**
  * Invariantes propias de la tarjeta. Si se conoce su tipo, también la compatibilidad de campos;
@@ -149,6 +166,23 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   if (card.shapeStrokeWidth !== undefined && !shapeStrokeWidths.includes(card.shapeStrokeWidth as ShapeStrokeWidth)) {
     issues.push(issue('invalid-value', `${path}.shapeStrokeWidth`, 'Debe ser thin, medium o thick.'));
   }
+  if (card.connectorColor !== undefined && !shapeStrokes.includes(card.connectorColor as ShapeStroke)) {
+    issues.push(issue('invalid-value', `${path}.connectorColor`, 'Debe ser un color semántico admitido.'));
+  }
+  if (card.connectorWidth !== undefined && !shapeStrokeWidths.includes(card.connectorWidth as ShapeStrokeWidth)) {
+    issues.push(issue('invalid-value', `${path}.connectorWidth`, 'Debe ser thin, medium o thick.'));
+  }
+  if (card.connectorDash !== undefined && !connectorDashes.includes(card.connectorDash as ConnectorDash)) {
+    issues.push(issue('invalid-value', `${path}.connectorDash`, 'Debe ser solid, dashed o dotted.'));
+  }
+  if (card.connectorArrows !== undefined && !connectorArrows.includes(card.connectorArrows as ConnectorArrows)) {
+    issues.push(issue('invalid-value', `${path}.connectorArrows`, 'Debe ser none, start, end o both.'));
+  }
+  if (card.connectorDirection !== undefined && !connectorDirections.includes(card.connectorDirection as ConnectorDirection)) {
+    issues.push(issue('invalid-value', `${path}.connectorDirection`, 'Debe ser down o up.'));
+  }
+  if (card.connectorStartCardId !== undefined) checkId(card.connectorStartCardId, `${path}.connectorStartCardId`, issues);
+  if (card.connectorEndCardId !== undefined) checkId(card.connectorEndCardId, `${path}.connectorEndCardId`, issues);
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);
     refs.forEach((ref, index) => checkAssetRef(ref, `${path}.assetRefs[${index}]`, issues));

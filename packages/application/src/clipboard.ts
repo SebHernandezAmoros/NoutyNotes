@@ -29,7 +29,14 @@ export interface ClipboardSnapshot {
 export function snapshotSelection(workspace: Workspace, boardId: BoardId, cardIds: readonly CardId[], mode: 'copy' | 'cut'): ClipboardSnapshot | null {
   const idSet = new Set(cardIds);
   if (idSet.size === 0) return null;
-  const cards = workspace.cards.filter((card) => idSet.has(card.id));
+  const cards = workspace.cards.filter((card) => idSet.has(card.id)).map((card) => {
+    const { connectorStartCardId, connectorEndCardId, ...rest } = card;
+    return {
+      ...rest,
+      ...(connectorStartCardId && idSet.has(connectorStartCardId) ? { connectorStartCardId } : {}),
+      ...(connectorEndCardId && idSet.has(connectorEndCardId) ? { connectorEndCardId } : {}),
+    } as Card;
+  });
   if (cards.length !== idSet.size) return null;
   const layout = workspace.layouts.find((candidate) => candidate.boardId === boardId);
   const placements = (layout?.placements ?? []).filter((placement) => idSet.has(placement.cardId));
@@ -50,11 +57,19 @@ function pasteOnto(workspace: Workspace, boardId: BoardId, snapshot: ClipboardSn
   }
   const takenCards = [...takenCardIds(workspace)];
   const cardIdMap = new Map<CardId, CardId>();
-  const cards: Card[] = snapshot.cards.map((card) => {
+  snapshot.cards.forEach((card) => {
     const newId = nextSequentialId('tarjeta', takenCards) as CardId;
     takenCards.push(newId);
     cardIdMap.set(card.id, newId);
-    return { ...card, id: newId };
+  });
+  const cards: Card[] = snapshot.cards.map((card) => {
+    const { connectorStartCardId, connectorEndCardId, ...rest } = card;
+    return {
+      ...rest,
+      id: cardIdMap.get(card.id) as CardId,
+      ...(connectorStartCardId && cardIdMap.has(connectorStartCardId) ? { connectorStartCardId: cardIdMap.get(connectorStartCardId) } : {}),
+      ...(connectorEndCardId && cardIdMap.has(connectorEndCardId) ? { connectorEndCardId: cardIdMap.get(connectorEndCardId) } : {}),
+    } as Card;
   });
   const takenRelations = [...takenRelationIds(workspace)];
   const relations: Relation[] = snapshot.relations.map((relation) => {

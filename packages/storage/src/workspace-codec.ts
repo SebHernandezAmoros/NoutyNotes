@@ -50,13 +50,16 @@ function cardDocument(card: Card): GeneratedDocument {
   const hasCaption = card.captionPosition !== undefined;
   const hasFloatingTextStyle = card.textAlign !== undefined || card.textColor !== undefined;
   const hasShapeStyle = card.shapeKind !== undefined || card.shapeFill !== undefined || card.shapeStroke !== undefined || card.shapeStrokeWidth !== undefined;
+  const hasConnectorStyle = card.connectorColor !== undefined || card.connectorWidth !== undefined || card.connectorDash !== undefined || card.connectorArrows !== undefined || card.connectorDirection !== undefined || card.connectorStartCardId !== undefined || card.connectorEndCardId !== undefined;
   return markdownDocument(compact({
-    schemaVersion: hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
+    schemaVersion: hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     id: card.id, typeId: card.typeId, title: card.title,
     fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
     boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
     titleSize: card.titleSize, bodySize: card.bodySize, captionPosition: card.captionPosition, textAlign: card.textAlign, textColor: card.textColor,
     shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth,
+    connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
+    connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
     contentPresent: card.content !== undefined,
   }), card.content ?? '');
 }
@@ -71,6 +74,8 @@ function trashData(entry: TrashedCard): unknown {
       boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
       titleSize: card.titleSize, bodySize: card.bodySize, captionPosition: card.captionPosition, textAlign: card.textAlign, textColor: card.textColor,
       shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth, content: card.content,
+      connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
+      connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
     },
     boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
     placements: entry.placements.map(({ boardId, rect, display }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
@@ -242,7 +247,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -261,7 +266,8 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     const hasCaption = front.captionPosition !== undefined;
     const hasFloatingTextStyle = front.textAlign !== undefined || front.textColor !== undefined;
     const hasShapeStyle = front.shapeKind !== undefined || front.shapeFill !== undefined || front.shapeStroke !== undefined || front.shapeStrokeWidth !== undefined;
-    const expected = hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
+    const hasConnectorStyle = front.connectorColor !== undefined || front.connectorWidth !== undefined || front.connectorDash !== undefined || front.connectorArrows !== undefined || front.connectorDirection !== undefined || front.connectorStartCardId !== undefined || front.connectorEndCardId !== undefined;
+    const expected = hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -272,6 +278,8 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       icon: front.icon, boardTargetId: front.boardTargetId, frameOverride: front.frameOverride,
       titleSize: front.titleSize, bodySize: front.bodySize, captionPosition: front.captionPosition, textAlign: front.textAlign, textColor: front.textColor,
       shapeKind: front.shapeKind, shapeFill: front.shapeFill, shapeStroke: front.shapeStroke, shapeStrokeWidth: front.shapeStrokeWidth,
+      connectorColor: front.connectorColor, connectorWidth: front.connectorWidth, connectorDash: front.connectorDash, connectorArrows: front.connectorArrows,
+      connectorDirection: front.connectorDirection, connectorStartCardId: front.connectorStartCardId, connectorEndCardId: front.connectorEndCardId,
       content: front.contentPresent ? body : undefined,
     }) as unknown as Card);
   }

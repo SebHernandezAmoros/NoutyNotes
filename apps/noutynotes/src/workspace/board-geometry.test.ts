@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { BoardId, BoardLayout, CardId, RelationId, RelationTypeId } from '@noutynotes/domain';
+import type { BoardId, BoardLayout, Card, CardId, RelationId, RelationTypeId } from '@noutynotes/domain';
 
-import { BOARD_GAP, BOARD_ROW_HEIGHT, boardBoxes, relationSegments } from './board-geometry';
+import { BOARD_GAP, BOARD_ROW_HEIGHT, boardBoxes, connectorSegments, relationSegments } from './board-geometry';
 
 const place = (cardId: string, x: number, y: number, w: number, h: number) =>
   ({ cardId: cardId as CardId, rect: { x, y, w, h }, display: 'expanded' as const });
@@ -64,5 +64,20 @@ describe('geometría del tablero (fase 7)', () => {
       { cardId: 'b' as CardId, left: 50, top: 0, width: 100, height: 100 },
     ];
     expect(relationSegments([{ id: 'r' as RelationId, typeId: 't' as RelationTypeId, from: 'a' as CardId, to: 'b' as CardId }], boxes)).toEqual([]);
+  });
+
+  it('proyecta extremos libres o anclados sin crear una relación semántica (P15)', () => {
+    const boxes = [
+      { cardId: 'connector' as CardId, left: 100, top: 100, width: 200, height: 100 },
+      { cardId: 'a' as CardId, left: 0, top: 100, width: 80, height: 80 },
+      { cardId: 'b' as CardId, left: 340, top: 40, width: 100, height: 100 },
+    ];
+    const connector = { id: 'connector', typeId: 'conector', fields: {}, connectorDirection: 'down', connectorStartCardId: 'a', connectorEndCardId: 'b' } as Card;
+    const [anchored] = connectorSegments([connector], boxes);
+    expect(anchored).toMatchObject({ cardId: 'connector' });
+    expect(anchored?.startX).toBeGreaterThanOrEqual(76);
+    expect(anchored?.endX).toBeGreaterThanOrEqual(340);
+    const [free] = connectorSegments([{ ...connector, connectorStartCardId: undefined, connectorEndCardId: undefined }], boxes);
+    expect(free).toMatchObject({ startX: 100, startY: 100, endX: 300, endY: 200 });
   });
 });

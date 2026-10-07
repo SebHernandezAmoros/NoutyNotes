@@ -675,7 +675,7 @@ test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ p
   await expect(menu.getByRole('button', { name: 'Insertar enlace', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar texto', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar forma', exact: true })).toBeEnabled();
-  await expect(menu.getByRole('button', { name: 'Insertar conector', exact: true })).toBeDisabled();
+  await expect(menu.getByRole('button', { name: 'Insertar conector', exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('p10-insert-menu.png'), fullPage: true });
   await menu.getByRole('button', { name: 'Insertar tabla 3 por 3', exact: true }).click();
 
@@ -754,6 +754,34 @@ test('P14: crea una forma, cambia su geometría y estilo portable', async ({ pag
   await expect(preview).toHaveCSS('border-width', '6px');
   await expect(preview).toHaveCSS('border-radius', '18px');
   await page.screenshot({ path: testInfo.outputPath('p14-rounded-shape.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
+test('P15: crea y configura un conector decorativo sin convertirlo en relación', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Conectores decorativos');
+  await addCards(page, ['nota']);
+  await insertFromMenu(page, 'Insertar conector');
+
+  await expect(page.getByTestId('connector-tarjeta-2')).toBeVisible();
+  await openFullCardEditor(page, card(page, 2));
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveCount(0);
+  await expect(page.getByLabel('Contenido')).toHaveCount(0);
+  const styles = page.getByTestId('connector-style-picker');
+  await styles.getByRole('toolbar', { name: 'Dirección del conector' }).getByRole('button', { name: 'Ascendente' }).click();
+  await styles.getByRole('toolbar', { name: 'Color del conector' }).getByRole('button', { name: 'Morado' }).click();
+  await styles.getByRole('toolbar', { name: 'Grosor del conector' }).getByRole('button', { name: 'Grueso' }).click();
+  await styles.getByRole('toolbar', { name: 'Trazo del conector' }).getByRole('button', { name: 'Discontinuo' }).click();
+  await styles.getByRole('toolbar', { name: 'Puntas del conector' }).getByRole('button', { name: 'Doble' }).click();
+  await styles.getByRole('button', { name: 'Anclar extremo inicial a Nueva nota' }).click();
+  await closeEditor(page);
+
+  await expect(page.getByTestId('connector-tarjeta-2')).toBeVisible();
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('p15-decorative-connector.png'), fullPage: true });
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);

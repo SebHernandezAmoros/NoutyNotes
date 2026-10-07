@@ -45,6 +45,19 @@ describe('borrado de tarjeta con relaciones', () => {
     const result = assertValid(deleteCard(base, cardC.id));
     expect(result).toEqual(validWorkspace());
   });
+  it('P15 libera solo el extremo anclado a una tarjeta borrada', () => {
+    const base = validWorkspace();
+    const connectorId = id<CardId>('connector');
+    const workspace = {
+      ...base,
+      cardTypes: [...base.cardTypes, { id: 'conector', label: 'Conector', base: 'connector', fields: [] }],
+      cards: [...base.cards, { id: connectorId, typeId: 'conector', fields: {}, connectorStartCardId: ideaA.id, connectorEndCardId: ideaB.id }],
+    } as unknown as ReturnType<typeof validWorkspace>;
+    const result = assertValid(deleteCard(workspace, ideaA.id, { relations: 'cascade' }));
+    const connector = result.cards.find((card) => card.id === connectorId);
+    expect(connector && 'connectorStartCardId' in connector).toBe(false);
+    expect(connector?.connectorEndCardId).toBe(ideaB.id);
+  });
   it('puede borrar la última tarjeta sin eliminar boards ni layouts', () => {
     const first = assertValid(deleteCard(validWorkspace(), ideaA.id, { relations: 'cascade' }));
     const last = assertValid(deleteCard(first, ideaB.id));

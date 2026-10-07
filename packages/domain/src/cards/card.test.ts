@@ -70,6 +70,15 @@ describe('tarjetas', () => {
     expect(problems(validateCard(unsafe({ ...ideaA, shapeStrokeWidth: 7 }), noteType))).toContain('invalid-value@card.shapeStrokeWidth');
   });
 
+  it('acepta únicamente estilos y extremos portables de conector (UX7 P15)', () => {
+    expect(validateCard({ ...ideaA, connectorColor: 'blue', connectorWidth: 'thick', connectorDash: 'dashed', connectorArrows: 'both', connectorDirection: 'up', connectorStartCardId: ideaB.id }, noteType).ok).toBe(true);
+    expect(problems(validateCard(unsafe({ ...ideaA, connectorColor: '#123456' }), noteType))).toContain('invalid-value@card.connectorColor');
+    expect(problems(validateCard(unsafe({ ...ideaA, connectorWidth: 9 }), noteType))).toContain('invalid-value@card.connectorWidth');
+    expect(problems(validateCard(unsafe({ ...ideaA, connectorDash: 'wave' }), noteType))).toContain('invalid-value@card.connectorDash');
+    expect(problems(validateCard(unsafe({ ...ideaA, connectorArrows: 'middle' }), noteType))).toContain('invalid-value@card.connectorArrows');
+    expect(problems(validateCard(unsafe({ ...ideaA, connectorDirection: 'sideways' }), noteType))).toContain('invalid-value@card.connectorDirection');
+  });
+
   it.each([
     ['id inválido', { id: 'Idea A' }, 'invalid-id@card.id'],
     ['id de tipo inválido', { typeId: '' }, 'invalid-id@card.typeId'],

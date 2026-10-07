@@ -1,6 +1,6 @@
 import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
-import { cardIconNames, floatingTextAlignments, floatingTextColors, linkUrlField, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
+import { cardIconNames, connectorArrows, connectorDashes, connectorDirections, floatingTextAlignments, floatingTextColors, linkUrlField, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -93,9 +93,10 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const cardBase = workspace.cardTypes.find((type) => type.id === card.typeId)?.base;
   const floatingText = cardBase === 'text';
   const shape = cardBase === 'shape';
+  const connector = cardBase === 'connector';
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
-  const supportsVisualEditor = !floatingText && !shape && (Platform.OS === 'web' || Platform.OS === 'android');
+  const supportsVisualEditor = !floatingText && !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
     : isNativeRichTextDocument(document);
@@ -202,7 +203,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
   };
   const blocksType = cardBase;
-  const withBlocks = blocksType !== 'image' && blocksType !== 'section' && blocksType !== 'text' && blocksType !== 'shape';
+  const withBlocks = blocksType !== 'image' && blocksType !== 'section' && blocksType !== 'text' && blocksType !== 'shape' && blocksType !== 'connector';
   const [imageProblem, setImageProblem] = useState<string | null>(null);
   // Insertar o reemplazar guarda enseguida el contenido del editor con la imagen (y el asset nuevo).
   const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }, draft = content): Promise<RichTextImage | null> => {
@@ -390,7 +391,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       ) : null}
       <View style={styles.section}>
-        {!floatingText && !shape ? <TextField label={t('inspector.title.label', locale)} value={title} onChangeText={changeTitle} placeholder={t('trash.item.untitled', locale)} /> : null}
+        {!floatingText && !shape && !connector ? <TextField label={t('inspector.title.label', locale)} value={title} onChangeText={changeTitle} placeholder={t('trash.item.untitled', locale)} /> : null}
         {linkKey ? (
           <View testID="card-link" style={styles.tagSection}>
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.section', locale)}</Text>
@@ -445,19 +446,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {t('inspector.visual.fallback', locale)}
           </Text>
         ) : null}
-        {visualEditing || floatingText || shape ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
+        {visualEditing || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.format.section', locale)}</Text>
           <ActionButton label="B" accessibilityLabel={t('inspector.format.bold.accessibilityLabel', locale)} onPress={() => applyFormat('bold')} style={styles.listButton} />
           <ActionButton label="I" accessibilityLabel={t('inspector.format.italic.accessibilityLabel', locale)} onPress={() => applyFormat('italic')} style={styles.listButton} />
         </View>}
-        {visualEditing || floatingText || shape ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
+        {visualEditing || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.lists.section', locale)}</Text>
           <ActionButton label="−" accessibilityLabel={t('inspector.list.dash.accessibilityLabel', locale)} onPress={() => insertList('dash')} style={styles.listButton} />
           <ActionButton label="•" accessibilityLabel={t('inspector.list.bullet.accessibilityLabel', locale)} onPress={() => insertList('bullet')} style={styles.listButton} />
           <ActionButton label="1." accessibilityLabel={t('inspector.list.number.accessibilityLabel', locale)} onPress={() => insertList('number')} style={styles.listButton} />
           <ActionButton label="☐" accessibilityLabel={t('inspector.list.check.accessibilityLabel', locale)} onPress={() => insertList('check')} style={styles.listButton} />
         </View>}
-        {visualEditing || shape ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
+        {visualEditing || shape || connector ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
           onKeyPress={onContentKeyPress}
@@ -485,7 +486,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             })}
           </View>
         ) : null}
-        {!shape ? <View style={styles.row}>
+        {!shape && !connector ? <View style={styles.row}>
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
@@ -623,6 +624,50 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                 onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStrokeWidth: width }), { label: 'Apariencia actualizada' })} />
             ))}
           </View>
+        </View>
+      ) : null}
+
+      {connector ? (
+        <View testID="connector-style-picker" style={styles.section}>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>CONECTOR DECORATIVO</Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Dirección libre</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Dirección del conector">
+            {connectorDirections.map((direction) => <ActionButton key={direction} label={direction === 'down' ? 'Descendente' : 'Ascendente'} pressed={(card.connectorDirection ?? 'down') === direction}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDirection: direction }), { label: 'Conector actualizado' })} />)}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Color</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color del conector">
+            {shapeStrokes.map((color) => <ActionButton key={color} label={color === 'default' ? 'Tema' : color === 'red' ? 'Rojo' : color === 'orange' ? 'Naranja' : color === 'yellow' ? 'Amarillo' : color === 'green' ? 'Verde' : color === 'blue' ? 'Azul' : 'Morado'} pressed={(card.connectorColor ?? 'default') === color}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorColor: color }), { label: 'Conector actualizado' })} />)}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Grosor</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Grosor del conector">
+            {shapeStrokeWidths.map((width) => <ActionButton key={width} label={width === 'thin' ? 'Fino' : width === 'medium' ? 'Medio' : 'Grueso'} pressed={(card.connectorWidth ?? 'medium') === width}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorWidth: width }), { label: 'Conector actualizado' })} />)}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Trazo</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Trazo del conector">
+            {connectorDashes.map((dash) => <ActionButton key={dash} label={dash === 'solid' ? 'Continuo' : dash === 'dashed' ? 'Discontinuo' : 'Punteado'} pressed={(card.connectorDash ?? 'solid') === dash}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDash: dash }), { label: 'Conector actualizado' })} />)}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Puntas</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Puntas del conector">
+            {connectorArrows.map((arrows) => <ActionButton key={arrows} label={arrows === 'none' ? 'Ninguna' : arrows === 'start' ? 'Inicial' : arrows === 'end' ? 'Final' : 'Doble'} pressed={(card.connectorArrows ?? 'end') === arrows}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorArrows: arrows }), { label: 'Conector actualizado' })} />)}
+          </View>
+          {(['connectorStartCardId', 'connectorEndCardId'] as const).map((field, endpoint) => <View key={field}>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{endpoint === 0 ? 'Extremo inicial' : 'Extremo final'}</Text>
+            <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={`Anclaje del extremo ${endpoint === 0 ? 'inicial' : 'final'}`}>
+              <ActionButton label="Libre" pressed={card[field] === undefined}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { [field]: null }), { label: 'Anclaje actualizado' })} />
+              {(workspace.boards.find((candidate) => candidate.id === boardId)?.cardIds ?? []).filter((candidate) => candidate !== card.id).map((candidate) => {
+                const target = workspace.cards.find((item) => item.id === candidate);
+                const label = target ? cardTitle(target, locale) : candidate;
+                return <ActionButton key={candidate} label={label} accessibilityLabel={`Anclar extremo ${endpoint === 0 ? 'inicial' : 'final'} a ${label}`} pressed={card[field] === candidate}
+                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { [field]: candidate }), { label: 'Anclaje actualizado' })} />;
+              })}
+            </View>
+          </View>)}
         </View>
       ) : null}
 

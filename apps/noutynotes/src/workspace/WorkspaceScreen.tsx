@@ -87,6 +87,7 @@ const additions: Readonly<Record<PrototypeCardKind, ActionSuccess>> = {
   note: 'action.noteAdded',
   text: { label: 'Texto flotante añadido' },
   shape: { label: 'Forma añadida' },
+  connector: { label: 'Conector añadido' },
   image: 'action.exampleImageAdded',
   title: 'action.floatingTitleAdded',
   link: 'action.linkAdded',
@@ -1455,6 +1456,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onLink={() => { setInsertOpen(false); setLinkOpen(true); }}
             onTable={() => { setInsertOpen(false); void addTable(); }}
             onShape={() => { setInsertOpen(false); void add('shape'); }}
+            onConnector={() => { setInsertOpen(false); void add('connector'); }}
           />
           <Dialog visible={shortcutOpen} title="Acceso a tablero" compact={compact} onClose={() => setShortcutOpen(false)} testID="board-shortcut-dialog">
             <Text style={[styles.body, { color: colors.textSecondary }]}>Elige el tablero que abrirá esta ficha.</Text>

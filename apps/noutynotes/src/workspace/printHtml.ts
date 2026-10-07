@@ -113,6 +113,16 @@ function entryHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): stri
       : `<div style="width:240px;height:140px;max-width:100%;box-sizing:border-box;background:${fill};border:${width}px solid ${stroke};border-radius:${radius};"></div>`;
     return `<article class="entry shape-entry">${shape}</article>`;
   }
+  if (entry.connectorColor !== undefined || entry.connectorWidth !== undefined || entry.connectorDash !== undefined || entry.connectorArrows !== undefined) {
+    const stroke = shapeStrokeColor(entry.connectorColor, '#34362f', '#ffffff');
+    const width = shapeStrokePixels(entry.connectorWidth);
+    const style = entry.connectorDash === 'dotted' ? 'dotted' : entry.connectorDash === 'dashed' ? 'dashed' : 'solid';
+    const arrows = entry.connectorArrows ?? 'end';
+    const start = arrows === 'start' || arrows === 'both' ? '◀' : '';
+    const end = arrows === 'end' || arrows === 'both' ? '▶' : '';
+    const rotate = entry.connectorDirection === 'up' ? '-18deg' : '18deg';
+    return `<article class="entry connector-entry"><div style="display:flex;align-items:center;gap:4px;width:240px;max-width:100%;transform:rotate(${rotate});color:${stroke};"><span>${start}</span><div style="flex:1;border-top:${width}px ${style} ${stroke};"></div><span>${end}</span></div></article>`;
+  }
   return `
     <article class="entry">
       <p class="meta">${entry.number}. ${escapeHtml(entry.typeLabel)}</p>

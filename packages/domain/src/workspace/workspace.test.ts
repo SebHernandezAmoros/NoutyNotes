@@ -135,8 +135,14 @@ describe('referencias inexistentes', () => {
     ['origen de una relación', { relations: [{ id: 'r', typeId: 'references', from: 'ghost', to: 'idea-b' }] }, 'missing-reference@relations[0].from'],
     ['destino de una relación', { relations: [{ id: 'r', typeId: 'references', from: 'idea-a', to: 'ghost' }] }, 'missing-reference@relations[0].to'],
     ['tipo de relación', { relations: [{ id: 'r', typeId: 'depends-on', from: 'idea-a', to: 'idea-b' }] }, 'missing-reference@relations[0].typeId'],
+    ['anclaje inicial de conector', { cards: [{ ...ideaA, connectorStartCardId: 'ghost' }, ideaB] }, 'missing-reference@cards[0].connectorStartCardId'],
   ])('rechaza %s inexistente', (_case, patch, expected) => {
     expect(problems(validateWorkspace(change(patch)))).toEqual([expected]);
+  });
+
+  it('rechaza que un conector se ancle a sí mismo', () => {
+    const cards = [{ ...ideaA, connectorEndCardId: ideaA.id }, ideaB];
+    expect(problems(validateWorkspace(change({ cards })))).toContain('invalid-value@cards[0].connectorEndCardId');
   });
 
   it('valida los campos de una tarjeta contra el tipo que referencia', () => {

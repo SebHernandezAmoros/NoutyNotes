@@ -1,6 +1,6 @@
 import { CANONICAL_GRID } from '@noutynotes/application';
 import { MOBILE_GRID, compareReadingOrder, footprint, projectLayout } from '@noutynotes/domain';
-import type { BoardLayout, CardId, GridCell, Relation, RelationId } from '@noutynotes/domain';
+import type { BoardLayout, Card, CardId, GridCell, Relation, RelationId } from '@noutynotes/domain';
 import type { LayoutMode } from '@noutynotes/ui';
 
 /** Alto de una fila de la grilla en píxeles y separación visual entre tarjetas. */
@@ -66,6 +66,10 @@ export interface RelationSegment {
   readonly angle: number;
 }
 
+export interface ConnectorSegment extends Omit<RelationSegment, 'relationId'> {
+  readonly cardId: CardId;
+}
+
 /** Fracción del vector centro→centro que queda dentro de una caja de semiejes (hw, hh). */
 function exitFraction(dx: number, dy: number, hw: number, hh: number): number {
   const horizontal = dx === 0 ? Infinity : hw / Math.abs(dx);
@@ -102,5 +106,36 @@ export function relationSegments(relations: readonly Relation[], boxes: readonly
       length,
       angle: (Math.atan2(dy, dx) * 180) / Math.PI,
     }];
+  });
+}
+
+function pointOnBorder(box: CardBox, targetX: number, targetY: number): { x: number; y: number } {
+  const x = box.left + box.width / 2;
+  const y = box.top + box.height / 2;
+  const dx = targetX - x;
+  const dy = targetY - y;
+  if (dx === 0 && dy === 0) return { x, y };
+  const fraction = exitFraction(dx, dy, box.width / 2, box.height / 2);
+  return { x: x + dx * fraction, y: y + dy * fraction };
+}
+
+/** Geometría puramente visual de P15: los anclajes son CardId y nunca crean una Relation. */
+export function connectorSegments(connectors: readonly Card[], boxes: readonly CardBox[]): ConnectorSegment[] {
+  const byId = new Map(boxes.map((box) => [box.cardId, box]));
+  return connectors.flatMap((card) => {
+    const own = byId.get(card.id);
+    if (!own) return [];
+    const down = (card.connectorDirection ?? 'down') === 'down';
+    let start = { x: own.left, y: down ? own.top : own.top + own.height };
+    let end = { x: own.left + own.width, y: down ? own.top + own.height : own.top };
+    const startBox = card.connectorStartCardId ? byId.get(card.connectorStartCardId) : undefined;
+    const endBox = card.connectorEndCardId ? byId.get(card.connectorEndCardId) : undefined;
+    if (startBox) start = pointOnBorder(startBox, endBox ? endBox.left + endBox.width / 2 : end.x, endBox ? endBox.top + endBox.height / 2 : end.y);
+    if (endBox) end = pointOnBorder(endBox, startBox ? startBox.left + startBox.width / 2 : start.x, startBox ? startBox.top + startBox.height / 2 : start.y);
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (!(length > 0)) return [];
+    return [{ cardId: card.id, startX: start.x, startY: start.y, endX: end.x, endY: end.y,
+      left: (start.x + end.x) / 2 - length / 2, top: (start.y + end.y) / 2,
+      length, angle: (Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI }];
   });
 }

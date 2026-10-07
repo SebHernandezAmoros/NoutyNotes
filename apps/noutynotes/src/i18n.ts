@@ -60,6 +60,7 @@ export const TRANSLATIONS = {
   'insert.shape': { es: 'Insertar forma', en: 'Insert shape' },
   'insert.shape.hint': { es: 'Crea una forma portable y editable', en: 'Create a portable editable shape' },
   'insert.connector': { es: 'Insertar conector', en: 'Insert connector' },
+  'insert.connector.hint': { es: 'Crea un conector decorativo con extremos libres o anclados', en: 'Create a decorative connector with free or anchored endpoints' },
   'insert.future.p13': { es: 'Disponible en P13: texto flotante', en: 'Available in P13: floating text' },
   'insert.future.p14': { es: 'Disponible en P14: formas básicas', en: 'Available in P14: basic shapes' },
   'insert.future.p15': { es: 'Disponible en P15: conectores decorativos', en: 'Available in P15: decorative connectors' },

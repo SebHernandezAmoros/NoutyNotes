@@ -28,6 +28,8 @@ export const cardSchema = z.strictObject({
   icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
   titleSize: text.optional(), bodySize: text.optional(), captionPosition: text.optional(), textAlign: text.optional(), textColor: text.optional(),
   shapeKind: text.optional(), shapeFill: text.optional(), shapeStroke: text.optional(), shapeStrokeWidth: text.optional(),
+  connectorColor: text.optional(), connectorWidth: text.optional(), connectorDash: text.optional(), connectorArrows: text.optional(),
+  connectorDirection: text.optional(), connectorStartCardId: text.optional(), connectorEndCardId: text.optional(),
 });
 export const boardSchema = z.strictObject({ id: text, title: text, description: text.optional(), cardIds: z.array(text) });
 
@@ -73,14 +75,16 @@ export const workspaceManifestSchema = z.strictObject({
  * v1: sin etiquetas ni fecha. v2: con `tags` (ADR 0019). v3: con `createdAt`, con o sin `tags` (ADR 0024).
  * v4: con `icon`/`boardTargetId` (ADR 0046). v5: con `frameOverride` (ADR 0049). v6: con `titleSize`/`bodySize`
  * (ADR 0050). v7: con `captionPosition` (ADR 0051). v8: estilo de texto flotante (ADR 0057).
- * v9: geometría y estilo de formas (UX7 P14).
+ * v9: geometría y estilo de formas (UX7 P14). v10: conectores decorativos (UX7 P15).
  */
 export const cardFrontmatterSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9)]), id: text, typeId: text, title: text.optional(),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10)]), id: text, typeId: text, title: text.optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
   icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
   titleSize: text.optional(), bodySize: text.optional(), captionPosition: text.optional(), textAlign: text.optional(), textColor: text.optional(),
   shapeKind: text.optional(), shapeFill: text.optional(), shapeStroke: text.optional(), shapeStrokeWidth: text.optional(), contentPresent: z.boolean(),
+  connectorColor: text.optional(), connectorWidth: text.optional(), connectorDash: text.optional(), connectorArrows: text.optional(),
+  connectorDirection: text.optional(), connectorStartCardId: text.optional(), connectorEndCardId: text.optional(),
 });
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),
