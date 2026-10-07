@@ -296,7 +296,9 @@ function inlineToMdast(inline: RichTextInline): PhrasingContent {
 function listToMdast(list: RichTextList): MdList {
   const children: MdListItem[] = list.items.map((item) => ({
     type: 'listItem',
-    spread: false,
+    // Una lista ordenada anidada que empieza en un número distinto de 1 no puede interrumpir el
+    // párrafo padre en CommonMark. El ítem suelto fuerza la línea en blanco que conserva la jerarquía.
+    spread: (item.children?.length ?? 0) > 0,
     checked: list.style === 'checklist' ? item.checked ?? false : null,
     children: [
       { type: 'paragraph', children: item.content.map(inlineToMdast) } satisfies Paragraph,

@@ -59,6 +59,10 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
     if (block.type === 'paragraph') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: null }];
     if (block.type === 'heading') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: block.level }];
     if (block.type === 'list') return listLines(block, blockIndex);
+    if (block.type === 'opaque-markdown') return [{
+      key: `${blockIndex}-opaque`, prefix: '',
+      content: [{ type: 'text', text: block.source }], headingLevel: null,
+    }];
     return [];
   });
 }

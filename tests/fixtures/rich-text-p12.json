@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 2,
+      "content": [
+        { "type": "text", "text": "Plan ", "marks": ["bold"] },
+        { "type": "link", "href": "https://example.com/plan", "content": [{ "type": "text", "text": "portable", "marks": ["italic"] }] }
+      ]
+    },
+    {
+      "type": "list",
+      "style": "bullet",
+      "items": [
+        {
+          "content": [{ "type": "text", "text": "Principal" }],
+          "children": [
+            {
+              "type": "list",
+              "style": "ordered",
+              "start": 3,
+              "items": [{ "content": [{ "type": "text", "text": "Anidada", "marks": ["italic"] }] }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "style": "checklist",
+      "items": [
+        { "checked": false, "content": [{ "type": "text", "text": "Pendiente" }] },
+        { "checked": true, "content": [{ "type": "text", "text": "Lista" }] }
+      ]
+    },
+    {
+      "type": "image",
+      "assetRef": "assets/images/a.png",
+      "alt": "Diagrama",
+      "caption": [
+        { "type": "text", "text": "Leyenda ", "marks": ["bold"] },
+        { "type": "link", "href": "mailto:equipo@example.com", "content": [{ "type": "text", "text": "equipo" }] }
+      ]
+    },
+    {
+      "type": "table",
+      "rows": [
+        { "cells": [{ "content": [{ "type": "text", "text": "Idea" }] }, { "content": [{ "type": "text", "text": "Activa", "marks": ["bold"] }] }] },
+        { "cells": [{ "content": [{ "type": "text", "text": "Otra" }] }, { "content": [{ "type": "text", "text": "Pausada", "marks": ["italic"] }] }] }
+      ]
+    },
+    { "type": "opaque-markdown", "source": "```ts\nconst literal = '<script>';\n```" },
+    { "type": "opaque-markdown", "source": "<aside onclick=\"alert(1)\">Texto inerte</aside>" }
+  ]
+}

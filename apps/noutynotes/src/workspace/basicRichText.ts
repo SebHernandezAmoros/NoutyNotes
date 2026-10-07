@@ -37,7 +37,8 @@ export function isWebRichTextDocument(document: RichTextDocument): boolean {
 
 /** Android edita el subconjunto básico y muestra sin transformar el alcance web avanzado. */
 export function isNativeRichTextDocument(document: RichTextDocument): boolean {
-  return isBasicRichTextDocument(document) || isWebRichTextDocument(document);
+  return document.blocks.every((block) => block.type === 'opaque-markdown'
+    || isWebRichTextDocument({ schemaVersion: document.schemaVersion, blocks: [block] }));
 }
 
 /**

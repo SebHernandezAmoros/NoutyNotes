@@ -141,6 +141,25 @@ describe('codec Markdown ↔ RichTextDocument (UX7 P03)', () => {
     ]);
   });
 
+  it('conserva una lista ordenada anidada que empieza después de 1', () => {
+    const document: RichTextDocument = {
+      schemaVersion: 1,
+      blocks: [{
+        type: 'list', style: 'bullet', items: [{
+          content: [{ type: 'text', text: 'Principal' }],
+          children: [{
+            type: 'list', style: 'ordered', start: 3,
+            items: [{ content: [{ type: 'text', text: 'Anidada', marks: ['italic'] }] }],
+          }],
+        }],
+      }],
+    };
+
+    const encoded = valueOf(serializeRichTextMarkdown(document));
+    expect(encoded).toContain('Principal\n\n  3.');
+    expect(valueOf(parseRichTextMarkdown(encoded))).toEqual(document);
+  });
+
   it('conserva una tabla sin encabezado mediante una extensión versionada', () => {
     const document: RichTextDocument = {
       schemaVersion: 1,
