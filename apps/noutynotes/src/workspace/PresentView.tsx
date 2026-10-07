@@ -1,10 +1,28 @@
 import type { PrintEntry } from '@noutynotes/application';
+import type { TextSize } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
-import { Image, Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/controls';
-import { markdownExcerpt } from './markdownLists';
+import { ConnectorPreview } from './ConnectorPreview';
+import { floatingTextColor } from './floatingText';
+import { PresentationBody } from './PresentationBody';
+import { ShapePreview } from './ShapePreview';
+import { bodyLineHeight } from './textSizes';
+
+/** Una ficha es un conector (P15) si guarda alguno de sus campos de estilo o anclaje propios. */
+const isConnectorEntry = (entry: PrintEntry): boolean =>
+  entry.connectorColor !== undefined || entry.connectorWidth !== undefined
+  || entry.connectorDash !== undefined || entry.connectorArrows !== undefined || entry.connectorDirection !== undefined;
+
+// Escala propia de la presentación (ADR 0050/P16): mismo criterio de pequeño/mediano/grande que el
+// lienzo, Lista e impresión, pero con una base mayor porque una diapositiva a pantalla completa se
+// lee de lejos; «mediano» coincide con el tamaño fijo que ya tenía esta vista antes de P16.
+const PRESENT_TITLE_PX: Readonly<Record<TextSize, number>> = { small: 22, medium: 28, large: 34 };
+const PRESENT_BODY_PX: Readonly<Record<TextSize, number>> = { small: 15, medium: 18, large: 22 };
+const presentTitlePx = (size: TextSize | undefined): number => PRESENT_TITLE_PX[size ?? 'medium'];
+const presentBodyPx = (size: TextSize | undefined): number => PRESENT_BODY_PX[size ?? 'medium'];
 
 interface PresentViewProps {
   readonly boardTitle: string;
@@ -64,27 +82,53 @@ export function PresentView({ boardTitle, entries, images, onClose }: PresentVie
           <ActionButton label="Cerrar" accessibilityLabel="Cerrar la presentación" onPress={onClose} />
         </View>
         {entry ? (
-          <ScrollView contentContainerStyle={styles.slide}>
-            <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${entry.number}. ${entry.typeLabel.toUpperCase()}`}</Text>
-            <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary }]}>{entry.title}</Text>
-            {entry.content !== '' ? <Text style={[styles.content, { color: colors.textPrimary }]}>{markdownExcerpt(entry.content)}</Text> : null}
-            {entry.imageRefs.map((ref) => (images.get(ref) ? (
-              <Image key={ref} accessibilityRole="image" accessibilityLabel="Imagen de la tarjeta" source={{ uri: images.get(ref) }}
-                resizeMode="contain" style={styles.image} />
-            ) : null))}
-            {entry.tags.length > 0 ? (
-              <Text style={[styles.tags, { color: colors.textSecondary }]}>{entry.tags.map((tag) => `#${tag}`).join('  ')}</Text>
-            ) : null}
-            {entry.connections.length > 0 ? (
-              <View style={styles.connections}>
-                {entry.connections.map((connection, connectionIndex) => (
-                  <Text key={connectionIndex} style={[styles.connection, { color: colors.textSecondary }]}>
-                    {`${connection.direction === 'to' ? '→' : '←'} ${connection.label}: ${connection.otherTitle}`}
-                  </Text>
-                ))}
+          entry.floatingText ? (
+            // Texto flotante (ADR 0057): sin título ni metadatos inventados, igual que la impresión.
+            <ScrollView testID="present-floating-text" contentContainerStyle={styles.slide}>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${entry.number}. ${entry.typeLabel.toUpperCase()}`}</Text>
+              <Text style={[styles.content, {
+                color: floatingTextColor(entry.textColor, colors.textPrimary),
+                textAlign: entry.textAlign ?? 'left',
+                fontSize: presentBodyPx(entry.bodySize),
+                lineHeight: bodyLineHeight(presentBodyPx(entry.bodySize)),
+              }]}>{entry.content}</Text>
+            </ScrollView>
+          ) : entry.shapeKind ? (
+            // Forma (ADR 0058): la geometría del lienzo no aplica aquí; se ilustra solo su estilo.
+            <View testID="present-shape" style={styles.slide}>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${entry.number}. ${entry.typeLabel.toUpperCase()}`}</Text>
+              <View style={styles.shapeSlide}>
+                <ShapePreview card={entry} surface={colors.background} strokeFallback={colors.textSecondary} testID="present-shape-preview" />
               </View>
-            ) : null}
-          </ScrollView>
+            </View>
+          ) : isConnectorEntry(entry) ? (
+            // Conector decorativo (ADR 0059): nunca es una Relation; solo se ilustra su apariencia.
+            <View testID="present-connector" style={styles.slide}>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${entry.number}. ${entry.typeLabel.toUpperCase()}`}</Text>
+              <View style={styles.connectorSlide}>
+                <ConnectorPreview card={entry} surface={colors.background} strokeFallback={colors.textSecondary} testID="present-connector-preview" />
+              </View>
+            </View>
+          ) : (
+            <ScrollView testID="present-note" contentContainerStyle={styles.slide}>
+              <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${entry.number}. ${entry.typeLabel.toUpperCase()}`}</Text>
+              <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary, fontSize: presentTitlePx(entry.titleSize) }]}>{entry.title}</Text>
+              <PresentationBody entry={entry} images={images} color={colors.textPrimary}
+                fontSize={presentBodyPx(entry.bodySize)} lineHeight={bodyLineHeight(presentBodyPx(entry.bodySize))} testID="present-body" />
+              {entry.tags.length > 0 ? (
+                <Text style={[styles.tags, { color: colors.textSecondary }]}>{entry.tags.map((tag) => `#${tag}`).join('  ')}</Text>
+              ) : null}
+              {entry.connections.length > 0 ? (
+                <View style={styles.connections}>
+                  {entry.connections.map((connection, connectionIndex) => (
+                    <Text key={connectionIndex} style={[styles.connection, { color: colors.textSecondary }]}>
+                      {`${connection.direction === 'to' ? '→' : '←'} ${connection.label}: ${connection.otherTitle}`}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+            </ScrollView>
+          )
         ) : (
           <View style={styles.slide}>
             <Text style={[styles.content, { color: colors.textSecondary }]}>Este tablero no tiene tarjetas para presentar.</Text>
@@ -108,7 +152,8 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   title: { fontSize: 28, fontWeight: '900' },
   content: { fontSize: 18, lineHeight: 27 },
-  image: { width: '100%', height: 320 },
+  shapeSlide: { flex: 1, minHeight: 200, padding: 24 },
+  connectorSlide: { flex: 1, minHeight: 80, justifyContent: 'center', padding: 24 },
   tags: { fontSize: 14, fontWeight: '700' },
   connections: { gap: 4 },
   connection: { fontSize: 14 },

@@ -1,11 +1,19 @@
-import type { Card } from '@noutynotes/domain';
+import type { ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth } from '@noutynotes/domain';
 import { StyleSheet, View } from 'react-native';
 
 import { shapeFillColor, shapeStrokeColor, shapeStrokePixels } from './shapeStyle';
 
-/** Representación común de P14 para lienzo y futuras superficies, sin semántica de Relation. */
+/** Solo los campos de estilo de P14: una `Card` los cumple, y también una `PrintEntry` (P16). */
+export interface ShapeStyle {
+  readonly shapeKind?: ShapeKind;
+  readonly shapeFill?: ShapeFill;
+  readonly shapeStroke?: ShapeStroke;
+  readonly shapeStrokeWidth?: ShapeStrokeWidth;
+}
+
+/** Representación común de P14 para lienzo, Lista y Presentación (P16), sin semántica de Relation. */
 export function ShapePreview({ card, surface, strokeFallback, testID }: {
-  readonly card: Card;
+  readonly card: ShapeStyle;
   readonly surface: string;
   readonly strokeFallback: string;
   readonly testID?: string;

@@ -1,6 +1,6 @@
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { RichTextCodec } from '@noutynotes/application';
-import type { BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
+import type { BaseCardKind, BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
 import { useState } from 'react';
@@ -8,9 +8,12 @@ import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native
 
 import { BOARD_ROW_HEIGHT, boardBoxes, relationSegments } from './board-geometry';
 import type { CardBox } from './board-geometry';
+import { ConnectorPreview } from './ConnectorPreview';
+import { floatingTextColor } from './floatingText';
 import { ImagePlaceholder } from './ImagePlaceholder';
 import { t } from '../i18n';
 import { markdownExcerpt } from './markdownLists';
+import { ShapePreview } from './ShapePreview';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
 import { NotePreview } from './canvas/NotePreview';
 import { BasicRichTextPreview } from './BasicRichTextPreview';
@@ -31,6 +34,9 @@ export function cardTitle(card: Card, locale: Locale): string {
     const summary = (card.content ?? '').split('\n').find((line) => line.trim() !== '')?.trim();
     return summary ? summary.slice(0, 80) : (locale === 'es' ? 'Texto vacío' : 'Empty text');
   }
+  if (card.typeId === 'conector') {
+    return locale === 'es' ? 'Conector' : 'Connector';
+  }
   return card.title ?? t('card.untitled', locale);
 }
 
@@ -41,6 +47,11 @@ export function cardDisplayTitle(card: Card): string {
 
 export function isImageCard(workspace: Workspace, card: Card): boolean {
   return workspace.cardTypes.find((type) => type.id === card.typeId)?.base === 'image';
+}
+
+/** Primitivas de P13-P15 (texto flotante, forma, conector): su cuerpo en Lista no es Markdown (P16). */
+function baseKindOf(workspace: Workspace, card: Card): BaseCardKind | undefined {
+  return workspace.cardTypes.find((type) => type.id === card.typeId)?.base;
 }
 
 interface BoardProps {
@@ -96,6 +107,7 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris
             box={box}
             card={card}
             image={isImageCard(workspace, card)}
+            base={baseKindOf(workspace, card)}
             imageUri={imageUris?.get(card.id)}
             noteImages={noteImages ?? emptyNoteImages}
             richTextCodec={richTextCodec}
@@ -127,6 +139,8 @@ interface CardViewProps {
   readonly box: CardBox;
   readonly card: Card;
   readonly image: boolean;
+  /** Primitiva base del tipo (P13-P15: `text`/`shape`/`connector` no son Markdown, UX7 P16). */
+  readonly base: BaseCardKind | undefined;
   /** Vista previa real de una ficha de imagen única; sin ella, de ejemplo (UX7-C3). */
   readonly imageUri: string | undefined;
   /** Imágenes intercaladas en una nota (UX7-C3): mismo mapa que usa el lienzo. */
@@ -136,18 +150,23 @@ interface CardViewProps {
   readonly onPress: () => void;
 }
 
-function CardView({ box, card, image, imageUri, noteImages, connections, selected, onPress, richTextCodec }: CardViewProps) {
+function CardView({ box, card, image, base, imageUri, noteImages, connections, selected, onPress, richTextCodec }: CardViewProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
+  const floatingText = base === 'text';
+  const shape = base === 'shape';
+  const connector = base === 'connector';
   const textColor = image ? colors.textPrimary : colors.noteText;
   // UX7-C3: antes, Lista mostraba el Markdown crudo de la nota (incluida la sintaxis `![...](...)`
   // de una imagen) o siempre un marcador de ejemplo para una ficha de imagen única, sin la imagen real.
+  // P16: texto flotante, forma y conector tampoco son Markdown; interpretarlos como nota (defecto real
+  // de esta fase) podía mostrar `*` o `**` de un texto literal como lista o negrita no pedidas.
   const bodyHeight = Math.max(0, box.height - 56);
-  const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
+  const blocks = image || floatingText || shape || connector ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
-  const richDocument = image || mixed ? null : parseWebRichText(richTextCodec, card.content ?? '');
+  const richDocument = image || floatingText || shape || connector || mixed ? null : parseWebRichText(richTextCodec, card.content ?? '');
   // Tamaño semántico por ficha (ADR 0050): mismo mapa que el lienzo y la impresión.
   const titleSize = titleFontSize(card.titleSize);
   const bodySize = bodyFontSize(card.bodySize);
@@ -175,6 +194,19 @@ function CardView({ box, card, image, imageUri, noteImages, connections, selecte
           <Image testID={`list-image-${card.id}`} accessibilityRole="image" accessibilityLabel={`Imagen ${cardTitle(card, locale)}`}
             source={{ uri: imageUri }} resizeMode="contain" style={[styles.cardImage, { borderColor: colors.border, backgroundColor: colors.surface }]} />
         ) : <ImagePlaceholder />
+      ) : floatingText ? (
+        // P16: contenido literal (ADR 0057), nunca Markdown; mismo criterio que el lienzo/impresión.
+        <Text testID={`list-floating-text-${card.id}`} numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))} style={[styles.cardContent, {
+          color: floatingTextColor(card.textColor, textColor), fontSize: bodySize, lineHeight: bodyLine, textAlign: card.textAlign ?? 'left',
+        }]}>{card.content ?? ''}</Text>
+      ) : shape ? (
+        <View style={styles.shapeBody}>
+          <ShapePreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-shape-${card.id}`} />
+        </View>
+      ) : connector ? (
+        <View style={styles.connectorBody}>
+          <ConnectorPreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-connector-${card.id}`} />
+        </View>
       ) : mixed ? (
         <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
       ) : richDocument ? (
@@ -210,5 +242,7 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
   cardContent: { fontSize: 13, lineHeight: 18 },
   cardImage: { flex: 1, minHeight: 24, borderWidth: 1 },
+  shapeBody: { flex: 1 },
+  connectorBody: { justifyContent: 'center' },
   badge: { fontSize: 11, fontWeight: '700', marginTop: 'auto' },
 });

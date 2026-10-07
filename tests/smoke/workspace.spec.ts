@@ -73,6 +73,16 @@ async function closeEditor(page: Page) {
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
 }
 
+/** Abre Presentación (ADR 0031): en compacto vive en «Más secciones», en ancho es un botón directo. */
+async function openPresent(page: Page) {
+  if (isCompact(page)) {
+    await button(page, 'Más secciones').click();
+    await expect(page.getByTestId('more-sheet')).toBeVisible();
+  }
+  await button(page, 'Presentar este tablero').click();
+  await expect(page.getByTestId('present-view')).toBeVisible();
+}
+
 /** Activa con teclado el control de edición aunque una cabecera compacta no lo pinte en pantalla. */
 async function openCardEditor(page: Page, id: number) {
   if (await page.getByTestId('card-inspector').isVisible()) await closeEditor(page);
@@ -783,6 +793,100 @@ test('P15: crea y configura un conector decorativo sin convertirlo en relación'
   await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('p15-decorative-connector.png'), fullPage: true });
   expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
+test('P16: Lista representa texto flotante, forma y conector con su apariencia propia, no como nota Markdown', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Lista P16');
+  await insertFromMenu(page, 'Insertar texto');
+  await openFullCardEditor(page, card(page, 1));
+  await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('*no es viñeta* literal');
+  await button(page, 'Guardar texto').click();
+  await page.getByTestId('floating-text-style-picker').getByRole('button', { name: 'Azul', exact: true }).click();
+  await closeEditor(page);
+
+  await insertFromMenu(page, 'Insertar forma');
+  await openFullCardEditor(page, card(page, 2));
+  await page.getByTestId('shape-style-picker').getByRole('toolbar', { name: 'Color de relleno' }).getByRole('button', { name: 'Naranja', exact: true }).click();
+  await closeEditor(page);
+
+  await insertFromMenu(page, 'Insertar conector');
+  await openFullCardEditor(page, card(page, 3));
+  await page.getByTestId('connector-style-picker').getByRole('toolbar', { name: 'Color del conector' }).getByRole('button', { name: 'Morado' }).click();
+  await closeEditor(page);
+
+  await button(page, 'Vista de lista').click();
+
+  // Antes de P16, el cuerpo de estas tres primitivas se interpretaba como Markdown de una nota: un
+  // texto flotante literal con `*` podía mostrarse como viñeta o negrita, y forma/conector quedaban
+  // en blanco (sin representar su estilo) o, el conector, con la etiqueta genérica de ficha sin título.
+  const floating = page.getByTestId('list-floating-text-tarjeta-1');
+  await expect(floating).toContainText('*no es viñeta* literal');
+  await expect(floating).toHaveCSS('color', rgb('#2457a6'));
+
+  const shape = page.getByTestId('list-shape-tarjeta-2');
+  await expect(shape).toBeVisible();
+  await expect(shape).toHaveCSS('background-color', rgb('#f2c792'));
+
+  await expect(card(page, 3)).toHaveAttribute('aria-label', 'Tarjeta Conector');
+  await expect(page.getByTestId('list-connector-tarjeta-3')).toBeVisible();
+
+  await page.screenshot({ path: testInfo.outputPath('p16-list-primitives.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await button(page, 'Vista de lista').click();
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
+test('P16: Presentación representa texto flotante, forma, conector y una nota con marcas sin Markdown crudo', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Presentación P16');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await (await openMarkdownEditor(page)).fill('Texto con **negrita** normal.');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  await insertFromMenu(page, 'Insertar texto');
+  await openFullCardEditor(page, card(page, 2));
+  await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('*no es viñeta* literal');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  // Forma y conector quedan con su estilo por defecto: no hace falta abrir su editor para esta prueba.
+  await insertFromMenu(page, 'Insertar forma');
+  await insertFromMenu(page, 'Insertar conector');
+
+  await openPresent(page);
+  await expect(page.getByTestId('present-count')).toHaveText('1 / 4');
+  // Antes de P16, el cuerpo de la nota pasaba por `markdownExcerpt`, que no representa marcas: la
+  // negrita se veía con sus asteriscos crudos en pantalla completa.
+  await expect(page.getByTestId('present-note')).toBeVisible();
+  await expect(page.getByTestId('present-view')).not.toContainText('**negrita**');
+  await expect(page.getByTestId('present-body').getByText('negrita', { exact: true })).toHaveCSS('font-weight', '700');
+
+  await button(page, 'Diapositiva siguiente').click();
+  await expect(page.getByTestId('present-floating-text')).toContainText('*no es viñeta* literal');
+
+  await button(page, 'Diapositiva siguiente').click();
+  await expect(page.getByTestId('present-shape')).toBeVisible();
+  await expect(page.getByTestId('present-shape-preview')).toHaveAttribute('aria-label', 'Rectángulo');
+
+  await button(page, 'Diapositiva siguiente').click();
+  // Antes de P16, esta diapositiva no distinguía un conector de una ficha sin título.
+  await expect(page.getByTestId('present-connector')).toBeVisible();
+  await expect(page.getByTestId('present-connector-preview')).toBeVisible();
+  await expect(page.getByTestId('present-view')).not.toContainText('Sin título');
+
+  await page.screenshot({ path: testInfo.outputPath('p16-present-primitives.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await button(page, 'Cerrar la presentación').click();
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
 });

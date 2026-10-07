@@ -77,7 +77,8 @@ describe('geometría del tablero (fase 7)', () => {
     expect(anchored).toMatchObject({ cardId: 'connector' });
     expect(anchored?.startX).toBeGreaterThanOrEqual(76);
     expect(anchored?.endX).toBeGreaterThanOrEqual(340);
-    const [free] = connectorSegments([{ ...connector, connectorStartCardId: undefined, connectorEndCardId: undefined }], boxes);
+    const { connectorStartCardId: _start, connectorEndCardId: _end, ...withoutAnchors } = connector;
+    const [free] = connectorSegments([withoutAnchors as Card], boxes);
     expect(free).toMatchObject({ startX: 100, startY: 100, endX: 300, endY: 200 });
   });
 });
