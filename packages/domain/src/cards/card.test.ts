@@ -62,6 +62,14 @@ describe('tarjetas', () => {
     expect(problems(validateCard(unsafe({ ...ideaA, textColor: '#123456' }), noteType))).toContain('invalid-value@card.textColor');
   });
 
+  it('acepta únicamente formas y estilos portables cerrados (UX7 P14)', () => {
+    expect(validateCard({ ...ideaA, shapeKind: 'ellipse', shapeFill: 'blue', shapeStroke: 'purple', shapeStrokeWidth: 'thick' }, noteType).ok).toBe(true);
+    expect(problems(validateCard(unsafe({ ...ideaA, shapeKind: 'triangle' }), noteType))).toContain('invalid-value@card.shapeKind');
+    expect(problems(validateCard(unsafe({ ...ideaA, shapeFill: '#123456' }), noteType))).toContain('invalid-value@card.shapeFill');
+    expect(problems(validateCard(unsafe({ ...ideaA, shapeStroke: 'transparent' }), noteType))).toContain('invalid-value@card.shapeStroke');
+    expect(problems(validateCard(unsafe({ ...ideaA, shapeStrokeWidth: 7 }), noteType))).toContain('invalid-value@card.shapeStrokeWidth');
+  });
+
   it.each([
     ['id inválido', { id: 'Idea A' }, 'invalid-id@card.id'],
     ['id de tipo inválido', { typeId: '' }, 'invalid-id@card.typeId'],

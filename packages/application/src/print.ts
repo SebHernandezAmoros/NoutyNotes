@@ -4,7 +4,7 @@
  * en el lienzo). Sin reloj ni acceso a archivos: se arma a partir del workspace ya cargado.
  */
 import { footprint } from '@noutynotes/domain';
-import type { BoardId, CaptionPosition, Card, CardId, FloatingTextAlign, FloatingTextColor, TextSize, Workspace } from '@noutynotes/domain';
+import type { BoardId, CaptionPosition, Card, CardId, FloatingTextAlign, FloatingTextColor, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize, Workspace } from '@noutynotes/domain';
 
 import { noteImageRefs } from './note-blocks';
 
@@ -34,6 +34,10 @@ export interface PrintEntry {
   readonly floatingText?: boolean;
   readonly textAlign?: FloatingTextAlign;
   readonly textColor?: FloatingTextColor;
+  readonly shapeKind?: ShapeKind;
+  readonly shapeFill?: ShapeFill;
+  readonly shapeStroke?: ShapeStroke;
+  readonly shapeStrokeWidth?: ShapeStrokeWidth;
 }
 
 const titleOf = (card: Card | undefined): string => card?.title ?? 'Sin título';
@@ -78,6 +82,10 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
       ...(typeBase.get(card.typeId) === 'text' ? { floatingText: true as const } : {}),
       ...(card.textAlign === undefined ? {} : { textAlign: card.textAlign }),
       ...(card.textColor === undefined ? {} : { textColor: card.textColor }),
+      ...(card.shapeKind === undefined ? {} : { shapeKind: card.shapeKind }),
+      ...(card.shapeFill === undefined ? {} : { shapeFill: card.shapeFill }),
+      ...(card.shapeStroke === undefined ? {} : { shapeStroke: card.shapeStroke }),
+      ...(card.shapeStrokeWidth === undefined ? {} : { shapeStrokeWidth: card.shapeStrokeWidth }),
     }];
   });
 }

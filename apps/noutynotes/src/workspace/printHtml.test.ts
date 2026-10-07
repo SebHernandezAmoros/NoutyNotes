@@ -101,4 +101,17 @@ describe('documento de impresión (ADR 0031)', () => {
     expect(html).not.toContain('<h2');
     expect(html).not.toContain('Sin título');
   });
+
+  it('P14 imprime una forma portable sin título ni texto inventado', () => {
+    const html = buildPrintHtml('T', [{
+      id: id('forma'), number: 1, title: 'Sin título', typeLabel: 'Forma', content: '',
+      tags: [], imageRefs: [], connections: [], shapeKind: 'rounded-rectangle', shapeFill: 'orange', shapeStroke: 'blue', shapeStrokeWidth: 'thick',
+    }], new Map());
+    expect(html).toContain('class="entry shape-entry"');
+    expect(html).toContain('border-radius:18px');
+    expect(html).toContain('background:#f2c792');
+    expect(html).toContain('border:6px solid #2457a6');
+    expect(html).not.toContain('<h2');
+    expect(html).not.toContain('Sin título');
+  });
 });

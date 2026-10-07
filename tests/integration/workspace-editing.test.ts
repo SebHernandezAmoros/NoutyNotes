@@ -46,6 +46,19 @@ describe('crear espacios desde un nombre (fase 7)', () => {
 });
 
 describe('añadir tarjetas (fase 7)', () => {
+  it('P14 crea una forma portable, permite cambiar tipo y estilo y el portapapeles los conserva', async () => {
+    const { storage, workspaceId } = await session();
+    const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'shape' }));
+    const created = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id === cardId);
+    expect(created).toMatchObject({ typeId: 'forma', fields: {}, frameOverride: 'hidden', shapeKind: 'rectangle', shapeFill: 'blue', shapeStroke: 'default', shapeStrokeWidth: 'medium' });
+    ok(await editCardAppearance(storage, workspaceId, cardId, { shapeKind: 'ellipse', shapeFill: 'transparent', shapeStroke: 'red', shapeStrokeWidth: 'thick' }));
+    const snapshot = snapshotSelection(ok(await storage.open(workspaceId)), board, [cardId], 'copy');
+    if (!snapshot) throw new Error('sin instantánea');
+    ok(await pasteSnapshot(storage, workspaceId, board, snapshot));
+    const copied = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id !== cardId);
+    expect(copied).toMatchObject({ shapeKind: 'ellipse', shapeFill: 'transparent', shapeStroke: 'red', shapeStrokeWidth: 'thick' });
+  });
+
   it('crea texto flotante multilínea sin título ni marco, con estilo portable', async () => {
     const { storage, workspaceId } = await session();
     const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'text', content: 'Primera\nSegunda' }));

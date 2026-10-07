@@ -21,6 +21,12 @@ const emptyNoteImages: ReadonlyMap<string, string> = new Map();
 
 /** Etiqueta útil (búsquedas, menús, listas, accesibilidad): localizada, nunca vacía. */
 export function cardTitle(card: Card, locale: Locale): string {
+  if (card.typeId === 'forma') {
+    const labels = locale === 'es'
+      ? { rectangle: 'Rectángulo', 'rounded-rectangle': 'Rectángulo redondeado', ellipse: 'Elipse', line: 'Línea' }
+      : { rectangle: 'Rectangle', 'rounded-rectangle': 'Rounded rectangle', ellipse: 'Ellipse', line: 'Line' };
+    return labels[card.shapeKind ?? 'rectangle'];
+  }
   if (card.typeId === 'texto-flotante') {
     const summary = (card.content ?? '').split('\n').find((line) => line.trim() !== '')?.trim();
     return summary ? summary.slice(0, 80) : (locale === 'es' ? 'Texto vacío' : 'Empty text');

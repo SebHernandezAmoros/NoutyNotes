@@ -674,7 +674,7 @@ test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ p
   await expect(menu.getByRole('button', { name: 'Importar una imagen', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar enlace', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar texto', exact: true })).toBeEnabled();
-  await expect(menu.getByRole('button', { name: 'Insertar forma', exact: true })).toBeDisabled();
+  await expect(menu.getByRole('button', { name: 'Insertar forma', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar conector', exact: true })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('p10-insert-menu.png'), fullPage: true });
   await menu.getByRole('button', { name: 'Insertar tabla 3 por 3', exact: true }).click();
@@ -720,6 +720,40 @@ test('P13: crea y edita texto flotante multilínea con apariencia portable', asy
   await expect(floating).toContainText('Segunda línea');
   await expect(floating.locator('div').last()).toHaveCSS('text-align', 'center');
   await page.screenshot({ path: testInfo.outputPath('p13-floating-text.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+  expect(failedResources).toEqual([]);
+});
+
+test('P14: crea una forma, cambia su geometría y estilo portable', async ({ page }, testInfo) => {
+  const { runtimeErrors, failedResources } = trackProblems(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Formas portables');
+  await insertFromMenu(page, 'Insertar forma');
+
+  const shapeCard = card(page, 1);
+  const preview = page.getByTestId('shape-tarjeta-1');
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveAttribute('aria-label', 'Rectángulo');
+  await openFullCardEditor(page, shapeCard);
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveCount(0);
+  await expect(page.getByLabel('Contenido')).toHaveCount(0);
+
+  const styles = page.getByTestId('shape-style-picker');
+  await styles.getByRole('toolbar', { name: 'Tipo de forma' }).getByRole('button', { name: 'Redondeado', exact: true }).click();
+  await styles.getByRole('toolbar', { name: 'Color de relleno' }).getByRole('button', { name: 'Naranja', exact: true }).click();
+  await styles.getByRole('toolbar', { name: 'Color del borde' }).getByRole('button', { name: 'Azul', exact: true }).click();
+  await styles.getByRole('toolbar', { name: 'Grosor del borde' }).getByRole('button', { name: 'Grueso', exact: true }).click();
+  await expect(feedback(page)).toContainText('Apariencia actualizada');
+  await closeEditor(page);
+
+  await expect(preview).toHaveAttribute('aria-label', 'Rectángulo redondeado');
+  await expect(preview).toHaveCSS('background-color', rgb('#f2c792'));
+  await expect(preview).toHaveCSS('border-color', rgb('#2457a6'));
+  await expect(preview).toHaveCSS('border-width', '6px');
+  await expect(preview).toHaveCSS('border-radius', '18px');
+  await page.screenshot({ path: testInfo.outputPath('p14-rounded-shape.png'), fullPage: true });
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);

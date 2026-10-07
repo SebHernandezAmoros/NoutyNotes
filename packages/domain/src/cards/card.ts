@@ -44,6 +44,11 @@ export interface Card {
   readonly textAlign?: FloatingTextAlign;
   /** Color semántico portable del texto flotante (ADR 0057). Ausente: color del tema. */
   readonly textColor?: FloatingTextColor;
+  /** Geometría y apariencia cerradas de una forma independiente (UX7 P14). */
+  readonly shapeKind?: ShapeKind;
+  readonly shapeFill?: ShapeFill;
+  readonly shapeStroke?: ShapeStroke;
+  readonly shapeStrokeWidth?: ShapeStrokeWidth;
 }
 
 /**
@@ -73,6 +78,18 @@ export type FloatingTextAlign = (typeof floatingTextAlignments)[number];
 
 export const floatingTextColors = ['default', 'red', 'orange', 'green', 'blue', 'purple'] as const;
 export type FloatingTextColor = (typeof floatingTextColors)[number];
+
+export const shapeKinds = ['rectangle', 'rounded-rectangle', 'ellipse', 'line'] as const;
+export type ShapeKind = (typeof shapeKinds)[number];
+
+export const shapeFills = ['transparent', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
+export type ShapeFill = (typeof shapeFills)[number];
+
+export const shapeStrokes = ['default', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
+export type ShapeStroke = (typeof shapeStrokes)[number];
+
+export const shapeStrokeWidths = ['thin', 'medium', 'thick'] as const;
+export type ShapeStrokeWidth = (typeof shapeStrokeWidths)[number];
 
 /**
  * Invariantes propias de la tarjeta. Si se conoce su tipo, también la compatibilidad de campos;
@@ -119,6 +136,18 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   }
   if (card.textColor !== undefined && !floatingTextColors.includes(card.textColor as FloatingTextColor)) {
     issues.push(issue('invalid-value', `${path}.textColor`, 'Debe ser un color semántico admitido.'));
+  }
+  if (card.shapeKind !== undefined && !shapeKinds.includes(card.shapeKind as ShapeKind)) {
+    issues.push(issue('invalid-value', `${path}.shapeKind`, 'Debe ser rectángulo, rectángulo redondeado, elipse o línea.'));
+  }
+  if (card.shapeFill !== undefined && !shapeFills.includes(card.shapeFill as ShapeFill)) {
+    issues.push(issue('invalid-value', `${path}.shapeFill`, 'Debe ser un relleno semántico admitido.'));
+  }
+  if (card.shapeStroke !== undefined && !shapeStrokes.includes(card.shapeStroke as ShapeStroke)) {
+    issues.push(issue('invalid-value', `${path}.shapeStroke`, 'Debe ser un color de borde semántico admitido.'));
+  }
+  if (card.shapeStrokeWidth !== undefined && !shapeStrokeWidths.includes(card.shapeStrokeWidth as ShapeStrokeWidth)) {
+    issues.push(issue('invalid-value', `${path}.shapeStrokeWidth`, 'Debe ser thin, medium o thick.'));
   }
   if (card.assetRefs !== undefined) {
     const refs = listAt(card.assetRefs, `${path}.assetRefs`, issues);

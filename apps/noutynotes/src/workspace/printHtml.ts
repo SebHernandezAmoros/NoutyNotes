@@ -11,6 +11,7 @@ import { parseRichTextMarkdown, serializeRichTextMarkdown } from '@noutynotes/st
 import { markdownExcerpt } from './markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
 import { floatingTextColor } from './floatingText';
+import { shapeFillColor, shapeStrokeColor, shapeStrokePixels } from './shapeStyle';
 
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -101,6 +102,16 @@ function entryHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): stri
     const bodyPx = bodyFontSize(entry.bodySize);
     const bodyLine = bodyLineHeight(bodyPx);
     return `<article class="entry floating-text"><pre style="font-size:${bodyPx}px;line-height:${bodyLine}px;text-align:${entry.textAlign ?? 'left'};color:${floatingTextColor(entry.textColor, '#1e1f1a')};">${escapeHtml(entry.content)}</pre></article>`;
+  }
+  if (entry.shapeKind) {
+    const fill = shapeFillColor(entry.shapeFill, '#ffffff');
+    const stroke = shapeStrokeColor(entry.shapeStroke, '#34362f', '#ffffff');
+    const width = shapeStrokePixels(entry.shapeStrokeWidth);
+    const radius = entry.shapeKind === 'ellipse' ? '999px' : entry.shapeKind === 'rounded-rectangle' ? '18px' : '0';
+    const shape = entry.shapeKind === 'line'
+      ? `<div style="width:100%;height:${width}px;background:${stroke};"></div>`
+      : `<div style="width:240px;height:140px;max-width:100%;box-sizing:border-box;background:${fill};border:${width}px solid ${stroke};border-radius:${radius};"></div>`;
+    return `<article class="entry shape-entry">${shape}</article>`;
   }
   return `
     <article class="entry">

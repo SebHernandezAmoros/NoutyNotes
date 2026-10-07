@@ -58,6 +58,7 @@ export const TRANSLATIONS = {
   'insert.table': { es: 'Insertar tabla 3 por 3', en: 'Insert 3 by 3 table' },
   'insert.table.hint': { es: 'Crea una nota con una tabla editable de 3 filas y 3 columnas', en: 'Create a note with an editable 3-row by 3-column table' },
   'insert.shape': { es: 'Insertar forma', en: 'Insert shape' },
+  'insert.shape.hint': { es: 'Crea una forma portable y editable', en: 'Create a portable editable shape' },
   'insert.connector': { es: 'Insertar conector', en: 'Insert connector' },
   'insert.future.p13': { es: 'Disponible en P13: texto flotante', en: 'Available in P13: floating text' },
   'insert.future.p14': { es: 'Disponible en P14: formas básicas', en: 'Available in P14: basic shapes' },

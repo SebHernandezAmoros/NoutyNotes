@@ -101,6 +101,16 @@ describe('workspace ↔ archivos', () => {
     expect(valueOf(parseWorkspace(files)).cards[0]).toMatchObject({ textAlign: 'center', textColor: 'blue' });
   });
 
+  it('hace round-trip de forma, relleno, borde y grosor en v9 (UX7 P14)', () => {
+    const files = valueOf(serializeWorkspace(withCard(base(), {
+      ...ideaA, shapeKind: 'rounded-rectangle', shapeFill: 'orange', shapeStroke: 'blue', shapeStrokeWidth: 'thick',
+    })));
+    expect(files['cards/idea-a.md']).toContain('schemaVersion: 9');
+    expect(valueOf(parseWorkspace(files)).cards[0]).toMatchObject({
+      shapeKind: 'rounded-rectangle', shapeFill: 'orange', shapeStroke: 'blue', shapeStrokeWidth: 'thick',
+    });
+  });
+
   it('conserva descripciones de board ausentes o presentes con Markdown literal', () => {
     const description = '## Board\r\n\r\n- punto\n';
     const workspace = { ...base(), boards: base().boards.map((b, i) => (i === 0 ? { ...b, description } : b)) };
@@ -141,7 +151,7 @@ describe('lectura de paquetes inválidos', () => {
     ['sin frontmatter', (f) => edit(f, 'cards/idea-b.md', '# Nota\n'), 'invalid-document@cards/idea-b.md'],
     ['contenido con contentPresent false', (f) => edit(f, 'cards/idea-b.md', `${f['cards/idea-b.md'] ?? ''}texto`), 'invalid-document@cards/idea-b.md'],
     ['descripción con descriptionPresent false', (f) => edit(f, 'boards/research.md', `${f['boards/research.md'] ?? ''}texto`), 'invalid-document@boards/research.md'],
-    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 9')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
+    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 10')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
     ['frameOverride sin la versión 5 (ADR 0049)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\nframeOverride: hidden')), 'invalid-document@cards/idea-b.md#schemaVersion'],
     ['titleSize sin la versión 6 (ADR 0050)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ntitleSize: large')), 'invalid-document@cards/idea-b.md#schemaVersion'],
     ['captionPosition sin la versión 7 (ADR 0051)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ncaptionPosition: left')), 'invalid-document@cards/idea-b.md#schemaVersion'],

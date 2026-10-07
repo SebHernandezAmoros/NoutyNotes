@@ -1,6 +1,6 @@
 import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
-import { cardIconNames, floatingTextAlignments, floatingTextColors, linkUrlField } from '@noutynotes/domain';
+import { cardIconNames, floatingTextAlignments, floatingTextColors, linkUrlField, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -92,9 +92,10 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const colors = theme.colors;
   const cardBase = workspace.cardTypes.find((type) => type.id === card.typeId)?.base;
   const floatingText = cardBase === 'text';
+  const shape = cardBase === 'shape';
   const [title, setTitle] = useState(card.title ?? '');
   const [content, setContent] = useState(card.content ?? '');
-  const supportsVisualEditor = !floatingText && (Platform.OS === 'web' || Platform.OS === 'android');
+  const supportsVisualEditor = !floatingText && !shape && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
     : isNativeRichTextDocument(document);
@@ -201,7 +202,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
   };
   const blocksType = cardBase;
-  const withBlocks = blocksType !== 'image' && blocksType !== 'section' && blocksType !== 'text';
+  const withBlocks = blocksType !== 'image' && blocksType !== 'section' && blocksType !== 'text' && blocksType !== 'shape';
   const [imageProblem, setImageProblem] = useState<string | null>(null);
   // Insertar o reemplazar guarda enseguida el contenido del editor con la imagen (y el asset nuevo).
   const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }, draft = content): Promise<RichTextImage | null> => {
@@ -389,7 +390,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       ) : null}
       <View style={styles.section}>
-        {!floatingText ? <TextField label={t('inspector.title.label', locale)} value={title} onChangeText={changeTitle} placeholder={t('trash.item.untitled', locale)} /> : null}
+        {!floatingText && !shape ? <TextField label={t('inspector.title.label', locale)} value={title} onChangeText={changeTitle} placeholder={t('trash.item.untitled', locale)} /> : null}
         {linkKey ? (
           <View testID="card-link" style={styles.tagSection}>
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.section', locale)}</Text>
@@ -444,19 +445,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {t('inspector.visual.fallback', locale)}
           </Text>
         ) : null}
-        {visualEditing || floatingText ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
+        {visualEditing || floatingText || shape ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.format.section', locale)}</Text>
           <ActionButton label="B" accessibilityLabel={t('inspector.format.bold.accessibilityLabel', locale)} onPress={() => applyFormat('bold')} style={styles.listButton} />
           <ActionButton label="I" accessibilityLabel={t('inspector.format.italic.accessibilityLabel', locale)} onPress={() => applyFormat('italic')} style={styles.listButton} />
         </View>}
-        {visualEditing || floatingText ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
+        {visualEditing || floatingText || shape ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.lists.section', locale)}</Text>
           <ActionButton label="−" accessibilityLabel={t('inspector.list.dash.accessibilityLabel', locale)} onPress={() => insertList('dash')} style={styles.listButton} />
           <ActionButton label="•" accessibilityLabel={t('inspector.list.bullet.accessibilityLabel', locale)} onPress={() => insertList('bullet')} style={styles.listButton} />
           <ActionButton label="1." accessibilityLabel={t('inspector.list.number.accessibilityLabel', locale)} onPress={() => insertList('number')} style={styles.listButton} />
           <ActionButton label="☐" accessibilityLabel={t('inspector.list.check.accessibilityLabel', locale)} onPress={() => insertList('check')} style={styles.listButton} />
         </View>}
-        {visualEditing ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
+        {visualEditing || shape ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
           onKeyPress={onContentKeyPress}
@@ -470,7 +471,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             onReplace={(index) => void placeImage({ kind: 'replace', index })} />
         ) : null}
         {imageProblem ? <Text testID="note-image-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{imageProblem}</Text> : null}
-        {!visualEditing && !floatingText && content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
+        {!visualEditing && !floatingText && !shape && content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
           <View testID="checklist-preview" style={styles.preview}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.checklist.section', locale)}</Text>
             {content.split('\n').map((line, index) => {
@@ -484,14 +485,14 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             })}
           </View>
         ) : null}
-        <View style={styles.row}>
+        {!shape ? <View style={styles.row}>
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
             onPress={() => { void ((mode === 'folder' || visualEditing) ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'action.textSaved', { mergeKey: `text:${card.id}` })); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
-        </View>
+        </View> : null}
       </View>
 
       {inSheet ? (
@@ -565,7 +566,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.frame.hint', locale)}</Text>
       </View>
 
-      <View testID="card-text-size-picker" style={styles.section}>
+      {!shape ? <View testID="card-text-size-picker" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.textSize.section', locale)}</Text>
         <View style={styles.row}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.titleRow', locale)}</Text>
@@ -585,7 +586,45 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodySize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' })} />
           ))}
         </View>
-      </View>
+      </View> : null}
+
+      {shape ? (
+        <View testID="shape-style-picker" style={styles.section}>
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>FORMA</Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Tipo</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Tipo de forma">
+            {shapeKinds.map((kind) => (
+              <ActionButton key={kind} label={kind === 'rectangle' ? 'Rectángulo' : kind === 'rounded-rectangle' ? 'Redondeado' : kind === 'ellipse' ? 'Elipse' : 'Línea'}
+                pressed={(card.shapeKind ?? 'rectangle') === kind}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeKind: kind }), { label: 'Apariencia actualizada' })} />
+            ))}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Relleno</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color de relleno">
+            {shapeFills.map((fill) => (
+              <ActionButton key={fill} label={fill === 'transparent' ? 'Transparente' : fill === 'red' ? 'Rojo' : fill === 'orange' ? 'Naranja' : fill === 'yellow' ? 'Amarillo' : fill === 'green' ? 'Verde' : fill === 'blue' ? 'Azul' : 'Morado'}
+                pressed={(card.shapeFill ?? 'blue') === fill}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeFill: fill }), { label: 'Apariencia actualizada' })} />
+            ))}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Borde</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color del borde">
+            {shapeStrokes.map((stroke) => (
+              <ActionButton key={stroke} label={stroke === 'default' ? 'Tema' : stroke === 'red' ? 'Rojo' : stroke === 'orange' ? 'Naranja' : stroke === 'yellow' ? 'Amarillo' : stroke === 'green' ? 'Verde' : stroke === 'blue' ? 'Azul' : 'Morado'}
+                pressed={(card.shapeStroke ?? 'default') === stroke}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStroke: stroke }), { label: 'Apariencia actualizada' })} />
+            ))}
+          </View>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>Grosor</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Grosor del borde">
+            {shapeStrokeWidths.map((width) => (
+              <ActionButton key={width} label={width === 'thin' ? 'Fino' : width === 'medium' ? 'Medio' : 'Grueso'}
+                pressed={(card.shapeStrokeWidth ?? 'medium') === width}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStrokeWidth: width }), { label: 'Apariencia actualizada' })} />
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {floatingText ? (
         <View testID="floating-text-style-picker" style={styles.section}>
@@ -609,7 +648,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       ) : null}
 
-      <View testID="card-caption-position-picker" style={styles.section}>
+      {!shape ? <View testID="card-caption-position-picker" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.captionPosition.section', locale)}</Text>
         <View style={styles.row}>
           {(['bottom', 'top', 'left', 'right'] as const).map((position) => (
@@ -620,7 +659,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           ))}
         </View>
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.captionPosition.hint', locale)}</Text>
-      </View>
+      </View> : null}
 
       {(card.assetRefs?.length ?? 0) > 0 ? (
         <View style={styles.section}>

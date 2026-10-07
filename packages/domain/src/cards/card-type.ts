@@ -4,7 +4,7 @@ import { checkId, checkUniqueIds } from '../ids';
 import type { CardTypeId, FieldKey } from '../ids';
 
 /** Primitivas que el núcleo sabe representar. Los tipos concretos surgen de plantillas. */
-export const baseCardKinds = ['note', 'text', 'image', 'link', 'checklist', 'file', 'section'] as const;
+export const baseCardKinds = ['note', 'text', 'shape', 'image', 'link', 'checklist', 'file', 'section'] as const;
 export type BaseCardKind = (typeof baseCardKinds)[number];
 
 export const fieldKinds = ['text', 'markdown', 'number', 'boolean', 'date', 'url', 'asset', 'select'] as const;

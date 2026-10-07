@@ -15,14 +15,15 @@ const workspace: Workspace = {
     { id: 'nota', label: 'Nota', base: 'note', fields: [] } as unknown as CardTypeDefinition,
     { id: 'imagen', label: 'Imagen', base: 'image', fields: [] } as unknown as CardTypeDefinition,
     { id: 'texto-flotante', label: 'Texto', base: 'text', fields: [] } as unknown as CardTypeDefinition,
+    { id: 'forma', label: 'Forma', base: 'shape', fields: [] } as unknown as CardTypeDefinition,
   ],
   relationTypes: [{ id: 'relacionada' as RelationTypeId, label: 'Relacionada con' }],
   relations: [{ id: 'r1' as RelationId, typeId: 'relacionada' as RelationTypeId, from: 'b' as CardId, to: 'a' as CardId }],
-  boards: [{ id: board, title: 'Principal', cardIds: ['a', 'b', 'sin-sitio', 'imagen-1', 'texto-1'] }],
+  boards: [{ id: board, title: 'Principal', cardIds: ['a', 'b', 'sin-sitio', 'imagen-1', 'texto-1', 'forma-1'] }],
   layouts: [{
     boardId: board,
     // b está más abajo que a pero en la misma columna; c está en la fila de a pero a la derecha: orden esperado a, c, b.
-    placements: [place('a', 0, 0), place('c', 8, 0), place('b', 0, 3), place('minimizada', 4, 6, 4, 3, 'minimized'), place('imagen-1', 0, 10, 4, 3), place('texto-1', 4, 10, 4, 2)],
+    placements: [place('a', 0, 0), place('c', 8, 0), place('b', 0, 3), place('minimizada', 4, 6, 4, 3, 'minimized'), place('imagen-1', 0, 10, 4, 3), place('texto-1', 4, 10, 4, 2), place('forma-1', 8, 10, 4, 3)],
   }],
   cards: [
     // assetRefs ya trae la misma imagen (así la mantiene sincronizada la edición, ADR 0021): no debe duplicarse.
@@ -33,19 +34,26 @@ const workspace: Workspace = {
     card('sin-sitio', { title: 'Sin sitio' }),
     card('imagen-1', { typeId: 'imagen', title: 'Foto', assetRefs: ['assets/images/foto.png'] }),
     card('texto-1', { typeId: 'texto-flotante', title: undefined, content: 'Libre\ny portable', bodySize: 'large', textAlign: 'right', textColor: 'purple' }),
+    card('forma-1', { typeId: 'forma', title: undefined, content: undefined, shapeKind: 'ellipse', shapeFill: 'orange', shapeStroke: 'blue', shapeStrokeWidth: 'thick' }),
   ],
 } as unknown as Workspace;
 
 describe('Imprimir y presentar (ADR 0031)', () => {
   it('el orden de lectura es por fila y columna; lo minimizado cuenta por su huella y lo sin sitio no aparece', () => {
     const doc = printableDocument(workspace, board);
-    expect(doc.map((entry) => entry.id)).toEqual(['a', 'c', 'b', 'minimizada', 'imagen-1', 'texto-1']);
-    expect(doc.map((entry) => entry.number)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(doc.map((entry) => entry.id)).toEqual(['a', 'c', 'b', 'minimizada', 'imagen-1', 'texto-1', 'forma-1']);
+    expect(doc.map((entry) => entry.number)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
   it('proyecta el texto flotante y su estilo portable para impresión', () => {
-    expect(printableDocument(workspace, board).at(-1)).toMatchObject({
+    expect(printableDocument(workspace, board).find((entry) => entry.id === 'texto-1')).toMatchObject({
       id: 'texto-1', floatingText: true, content: 'Libre\ny portable', bodySize: 'large', textAlign: 'right', textColor: 'purple',
+    });
+  });
+
+  it('proyecta una forma sin convertirla en contenido o relación semántica', () => {
+    expect(printableDocument(workspace, board).at(-1)).toMatchObject({
+      id: 'forma-1', shapeKind: 'ellipse', shapeFill: 'orange', shapeStroke: 'blue', shapeStrokeWidth: 'thick',
     });
   });
 

@@ -14,6 +14,7 @@ import { ImagePlaceholder } from '../ImagePlaceholder';
 import { markdownExcerpt, parseChecklistLine } from '../markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from '../textSizes';
 import { floatingTextColor } from '../floatingText';
+import { ShapePreview } from '../ShapePreview';
 import type { GestureController } from './Canvas';
 import { miniIcon } from './cardChrome';
 import { CardIcon } from './CardIcon';
@@ -193,6 +194,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const floatingTitle = card.typeId === 'titulo-flotante';
   const floatingText = type?.base === 'text';
+  const shape = type?.base === 'shape';
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
   const hint = connectHints[connectRole];
   const borderColor = colliding ? colors.danger : selected || focused || connectRole === 'source' ? colors.selection : colors.border;
@@ -276,9 +278,9 @@ export function CanvasCard(props: CanvasCardProps) {
         onFocus={() => { setFocused(true); props.onFocus(); }}
         onBlur={() => setFocused(false)}
         style={[styles.card, {
-          backgroundColor: (floatingTitle || floatingText) && display === 'expanded' ? 'transparent' : colors.cardSurface,
-          borderColor: (floatingTitle || floatingText || hideFrame) && !activeBorder ? 'transparent' : borderColor,
-          borderWidth: activeBorder ? 3 : hideFrame || ((floatingTitle || floatingText) && display === 'expanded') ? 0 : 2,
+          backgroundColor: (floatingTitle || floatingText || shape) && display === 'expanded' ? 'transparent' : colors.cardSurface,
+          borderColor: (floatingTitle || floatingText || shape || hideFrame) && !activeBorder ? 'transparent' : borderColor,
+          borderWidth: activeBorder ? 3 : hideFrame || ((floatingTitle || floatingText || shape) && display === 'expanded') ? 0 : 2,
           opacity: dragging ? 0.85 : 1,
         }]}
       >
@@ -307,6 +309,10 @@ export function CanvasCard(props: CanvasCardProps) {
             }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>
               {card.content ?? ''}
             </Text>
+          </View>
+        ) : shape && display === 'expanded' ? (
+          <View style={[styles.shapeWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+            <ShapePreview card={card} surface={colors.canvas} strokeFallback={colors.border} testID={`shape-${card.id}`} />
           </View>
         ) : display === 'collapsed' ? (
           // Contraída: una barra de título con los controles a la derecha.
@@ -488,6 +494,7 @@ const styles = StyleSheet.create({
   floatingTitleWrap: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 36, paddingBottom: 8 },
   floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },
   floatingTextWrap: { flex: 1, padding: 8, paddingTop: 36 },
+  shapeWrap: { flex: 1, padding: 10, paddingTop: 36 },
   // Si aun así no cabe, cede el texto y no el pie.
   content: { fontSize: 13, lineHeight: 18, flexShrink: 1, overflow: 'hidden' },
   // UX7-B2: envoltorio de texto agrupado + filas de checklist; sin relleno propio, ya lo da `body`.
