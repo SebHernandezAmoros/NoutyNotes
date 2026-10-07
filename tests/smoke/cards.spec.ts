@@ -1994,7 +1994,7 @@ test('Configuración: idioma de la interfaz (ES/EN) traduce la barra, la navegac
   await page.getByLabel('New space name').fill('Otro idioma');
   await button(page, 'Create a space').click();
   await expect(page.getByRole('heading', { name: 'Otro idioma', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Add note' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Insert menu' })).toBeVisible();
 
   // Volver a español (la interfaz sigue en inglés aquí: se abre con sus propios textos).
   if (isCompactWidth(page)) await button(page, 'More sections').click();
@@ -2041,7 +2041,7 @@ test('Idioma (E7a, ADR 0040): Inicio, Papelera, enlaces, búsqueda, Diario, Asse
   await expect(page.getByTestId('trash-panel')).toHaveCount(0);
 
   // Enlace: título y campos del diálogo.
-  await button(page, 'Add link').click();
+  await insertFromMenu(page, 'Insert link', 'Open Insert menu');
   const linkDialog = page.getByTestId('link-dialog');
   await expect(linkDialog).toBeVisible();
   await expect(page.getByRole('heading', { name: 'New link' })).toBeVisible();
@@ -2096,7 +2096,7 @@ test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian 
   await button(page, 'Usar inglés').click();
   await button(page, 'Close settings').click();
 
-  await button(page, 'Add note').click();
+  await insertFromMenu(page, 'Insert note', 'Open Insert menu');
   // Creating no longer opens the editor by itself (interaction audit, 2026-09-29): «Editar»/«Edit» does.
   await openFullCardEditor(page, card(page, 1));
   await expect(page.getByTestId('card-inspector')).toBeVisible();

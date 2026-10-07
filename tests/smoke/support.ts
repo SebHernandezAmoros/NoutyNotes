@@ -1,8 +1,8 @@
 import type { Locator, Page } from '@playwright/test';
 
 /** P10: todas las creaciones del tablero entran por el mismo menú en móvil y escritorio. */
-export async function insertFromMenu(page: Page, label: string): Promise<void> {
-  await page.getByRole('button', { name: 'Abrir menú Insertar', exact: true }).click();
+export async function insertFromMenu(page: Page, label: string, openLabel = 'Abrir menú Insertar'): Promise<void> {
+  await page.getByRole('button', { name: openLabel, exact: true }).click();
   await page.getByTestId('insert-dialog').getByRole('button', { name: label, exact: true }).click();
 }
 
