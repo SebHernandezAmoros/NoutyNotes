@@ -16,6 +16,7 @@ import { markdownExcerpt } from './markdownLists';
 import { ShapePreview } from './ShapePreview';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
 import { NotePreview } from './canvas/NotePreview';
+import { RichNotePreview } from './canvas/RichNotePreview';
 import { BasicRichTextPreview } from './BasicRichTextPreview';
 import { parseWebRichText } from './basicRichText';
 
@@ -166,7 +167,8 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
   const bodyHeight = Math.max(0, box.height - 56);
   const blocks = image || floatingText || shape || connector ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
-  const richDocument = image || floatingText || shape || connector || mixed ? null : parseWebRichText(richTextCodec, card.content ?? '');
+  const richDocument = image || floatingText || shape || connector ? null : parseWebRichText(richTextCodec, card.content ?? '');
+  const mixedRich = mixed && (richDocument?.blocks.some((block) => block.type === 'table') ?? false);
   // Tamaño semántico por ficha (ADR 0050): mismo mapa que el lienzo y la impresión.
   const titleSize = titleFontSize(card.titleSize);
   const bodySize = bodyFontSize(card.bodySize);
@@ -207,6 +209,8 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
         <View style={styles.connectorBody}>
           <ConnectorPreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-connector-${card.id}`} />
         </View>
+      ) : mixedRich && richDocument ? (
+        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} images={noteImages ?? emptyNoteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
       ) : mixed ? (
         <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
       ) : richDocument ? (

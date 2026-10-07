@@ -266,7 +266,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       return;
     }
     if (!await flushPendingText()) return;
-    const target = workspace?.cards.find((candidate) => candidate.id === cardId)?.boardTargetId;
+    const card = workspace?.cards.find((candidate) => candidate.id === cardId);
+    const target = card?.boardTargetId;
     if (target) {
       setEditingId(null);
       setInlineEditing(false);
@@ -281,7 +282,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     // ADR 0048): no hace falta que la ficha YA mida eso. Reproducido el 2026-10-02: con el zoom inicial
     // de 75 % y el tamaño por defecto (4 × 3 celdas de 56 px), la huella real es 168 × 126 px, por debajo
     // del umbral antiguo, así que «Editar dentro de la ficha» abría el editor completo sin avisarlo.
-    const canEditInline = !compact && placement?.display === 'expanded';
+    const base = workspace?.cardTypes.find((candidate) => candidate.id === card?.typeId)?.base;
+    // Formas y conectores no tienen cuerpo de nota: su edición pertenece al inspector de propiedades.
+    const canEditInline = !compact && placement?.display === 'expanded' && base !== 'shape' && base !== 'connector';
     setSelectedId(cardId);
     setEditingId(cardId);
     setInlineEditing(canEditInline);

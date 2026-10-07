@@ -1017,6 +1017,76 @@ test('P17: recorrido de integración — nota con marcas/lista/tabla, texto flot
   expect(failedResources).toEqual([]);
 });
 
+test('P18-A: imagen y tabla se representan juntas sin Markdown crudo y con cabecera legible', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await button(page, 'Tema oscuro').click();
+  await createWorkspace(page, 'Previsualización mixta');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  await (await openMarkdownEditor(page)).fill('![Mapa](assets/images/mapa.png)\n\n| Nombre | Estado |\n| --- | --- |\n| Idea | Activa |\n');
+  await button(page, 'Abrir editor visual').click();
+  for (let i = 0; i < 5; i += 1) await button(page, 'Más alta').click();
+  await closeEditor(page);
+
+  const canvasPreview = page.getByTestId('rich-note-preview-tarjeta-1');
+  await expect(canvasPreview).toContainText('Nombre');
+  await expect(canvasPreview).toContainText('Activa');
+  await expect(canvasPreview).not.toContainText('| Nombre |');
+  await expect(page.getByTestId('rich-note-preview-tarjeta-1-block-1-table-0-header-0')).toHaveCSS('background-color', rgb(themeColors.dark.surfaceRaised));
+
+  await button(page, 'Vista de lista').click();
+  const listPreview = page.getByTestId('list-rich-note-preview-tarjeta-1');
+  await expect(listPreview).toContainText('Nombre');
+  await expect(listPreview).not.toContainText('| Nombre |');
+  await expect(page.getByTestId('list-rich-note-preview-tarjeta-1-block-1-table-0-header-0')).toHaveCSS('background-color', rgb(themeColors.dark.surfaceRaised));
+  await page.screenshot({ path: testInfo.outputPath('p18-a-rich-note-table.png'), fullPage: true });
+});
+
+test('P18-A: formas y conectores omiten la edición rápida y respetan el marco visible', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Primitivas gráficas');
+  await insertFromMenu(page, 'Insertar forma');
+  await card(page, 1).dblclick();
+  await expect(page.getByTestId('inline-card-editor')).toHaveCount(0);
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await button(page, 'Mostrar siempre').click();
+  const positionToggle = page.getByTestId('card-position-toggle');
+  if (await positionToggle.count() > 0) await positionToggle.click();
+  await button(page, 'Más baja').click();
+  await button(page, 'Más baja').click();
+  await closeEditor(page);
+  await expect.poll(() => borderWidth(card(page, 1))).toBe(2);
+  const shapeBox = await box(page.getByTestId('shape-tarjeta-1'));
+  const cardBox = await box(card(page, 1));
+  expect(shapeBox.y).toBeGreaterThanOrEqual(cardBox.y);
+  // RN Web mide el contenido hasta el borde inferior inclusive; toleramos el borde de 2 px de la ficha.
+  expect(shapeBox.y + shapeBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 3);
+
+  await insertFromMenu(page, 'Insertar conector');
+  await card(page, 2).dblclick();
+  await expect(page.getByTestId('inline-card-editor')).toHaveCount(0);
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await button(page, 'Mostrar siempre').click();
+  await closeEditor(page);
+  await expect.poll(() => borderWidth(card(page, 2))).toBe(2);
+  await page.screenshot({ path: testInfo.outputPath('p18-a-shape-connector.png'), fullPage: true });
+});
+
+test('P18-A: una nota con texto oculto lo anuncia en la ficha', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Texto largo');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  await (await openMarkdownEditor(page)).fill(Array.from({ length: 20 }, (_, index) => `Línea ${index + 1}`).join('\n'));
+  await button(page, 'Abrir editor visual').click();
+  await closeEditor(page);
+  await expect(page.getByTestId('card-overflow-tarjeta-1')).toContainText(/líneas más/);
+});
+
 test('P11: pega contenido enriquecido compatible y descarta contenido activo', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');

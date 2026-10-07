@@ -1,6 +1,7 @@
 import type { RichTextDocument, RichTextInline, RichTextList, RichTextTableRow } from '@noutynotes/domain';
 import { Fragment } from 'react';
 import type { ReactNode } from 'react';
+import { useTheme } from '@noutynotes/ui';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface BasicRichTextPreviewProps {
@@ -69,6 +70,7 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
 
 /** Vista semántica P07; Markdown sigue siendo únicamente la persistencia durable. */
 export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID }: BasicRichTextPreviewProps) {
+  const { theme } = useTheme();
   if (document.blocks.some((block) => block.type === 'table')) {
     return (
       <View testID={testID} style={styles.tableDocument}>
@@ -86,9 +88,11 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
               {rows.map(({ row, header }, rowIndex) => (
                 <View key={rowIndex} style={styles.tableRow}>
                   {row.cells.map((cell, cellIndex) => (
-                    <Text key={cellIndex} numberOfLines={2} style={[
+                    <Text key={cellIndex} testID={`${testID}-table-${blockIndex}-${header ? 'header' : `row-${rowIndex}`}-${cellIndex}`} numberOfLines={2} style={[
                       styles.tableCell, header ? styles.tableHeader : null,
-                      { color, borderColor: color, fontSize, lineHeight }, fontFamily === undefined ? null : { fontFamily },
+                      { color, borderColor: color, fontSize, lineHeight },
+                      header ? { backgroundColor: theme.colors.surfaceRaised, color: theme.colors.textPrimary } : null,
+                      fontFamily === undefined ? null : { fontFamily },
                     ]}>
                       {cell.content.map((inline, inlineIndex) => inlineView(inline, rowIndex, inlineIndex, testID))}
                     </Text>

@@ -40,7 +40,7 @@ export function ShapePreview({ card, surface, strokeFallback, testID }: {
 }
 
 const styles = StyleSheet.create({
-  shape: { flex: 1, minWidth: 24, minHeight: 24 },
+  shape: { flex: 1 },
   lineWrap: { flex: 1, justifyContent: 'center' },
   line: { width: '100%' },
 });

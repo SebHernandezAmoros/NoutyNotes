@@ -19,6 +19,8 @@ import type { GestureController } from './Canvas';
 import { miniIcon } from './cardChrome';
 import { CardIcon } from './CardIcon';
 import { NotePreview } from './NotePreview';
+import { previewOverflow } from './previewOverflow';
+import { RichNotePreview } from './RichNotePreview';
 import type { ConnectRole } from './connect';
 import { isDrag } from './geometry';
 import type { PixelBox, ResizeHandle } from './geometry';
@@ -187,7 +189,10 @@ export function CanvasCard(props: CanvasCardProps) {
   // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden.
   const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
   const mixed = blocks.some((block) => block.kind === 'image');
-  const richDocument = image || mixed ? null : parseWebRichText(props.richTextCodec, card.content ?? '');
+  const richDocument = image ? null : parseWebRichText(props.richTextCodec, card.content ?? '');
+  // El visor enriquecido es necesario cuando el legado perdería estructura (tabla + imagen). Para
+  // imagen + texto se conserva NotePreview, que ya cubre las cuatro posiciones de leyenda.
+  const mixedRich = mixed && (richDocument?.blocks.some((block) => block.type === 'table') ?? false);
   const hasChecklist = richDocument?.blocks.some((block) => block.type === 'list' && listContainsChecklist(block)) ?? false;
   const previewDocument = hasChecklist ? null : richDocument;
   const checklistTexts = richDocument?.blocks.flatMap((block) => block.type === 'list' ? checklistTextsOf(block) : []) ?? [];
@@ -213,13 +218,14 @@ export function CanvasCard(props: CanvasCardProps) {
   const linkValue = linkKey ? card.fields[linkKey] : undefined;
   const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
+  const overflow = previewOverflow(card.content ?? '', box.width, contentSize, bodyLines);
   // UX7-B2: cada línea mostrada es texto agrupado o una fila de checklist propia (marcable sin abrir
   // el editor). El recorte por `bodyLines` es el mismo que el bloque único anterior.
   type BodyBlock = { readonly kind: 'text'; readonly text: string }
     | { readonly kind: 'check'; readonly lineIndex: number; readonly checked: boolean; readonly indent: string; readonly text: string };
   const bodyBlocks: BodyBlock[] = [];
   if (!image && !mixed && previewDocument === null) {
-    const shown = (card.content ?? '').split('\n').slice(0, bodyLines);
+    const shown = (card.content ?? '').split('\n').slice(0, overflow.shownLines);
     let checklistIndex = 0;
     for (const [lineIndex, line] of shown.entries()) {
       const check = parseChecklistLine(line);
@@ -280,8 +286,8 @@ export function CanvasCard(props: CanvasCardProps) {
         onBlur={() => setFocused(false)}
         style={[styles.card, {
           backgroundColor: (floatingTitle || floatingText || shape || connector) && display === 'expanded' ? 'transparent' : colors.cardSurface,
-          borderColor: (floatingTitle || floatingText || shape || connector || hideFrame) && !activeBorder ? 'transparent' : borderColor,
-          borderWidth: activeBorder ? 3 : hideFrame || ((floatingTitle || floatingText || shape || connector) && display === 'expanded') ? 0 : 2,
+          borderColor: hideFrame && !activeBorder ? 'transparent' : borderColor,
+          borderWidth: activeBorder ? 3 : hideFrame ? 0 : 2,
           opacity: dragging ? 0.85 : 1,
         }]}
       >
@@ -312,11 +318,11 @@ export function CanvasCard(props: CanvasCardProps) {
             </Text>
           </View>
         ) : shape && display === 'expanded' ? (
-          <View style={[styles.shapeWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+          <View style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             <ShapePreview card={card} surface={colors.canvas} strokeFallback={colors.border} testID={`shape-${card.id}`} />
           </View>
         ) : connector && display === 'expanded' ? (
-          <View testID={`connector-hit-${card.id}`} style={styles.shapeWrap} />
+          <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
         ) : display === 'collapsed' ? (
           // Contraída: una barra de título con los controles a la derecha.
           <View style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
@@ -364,14 +370,17 @@ export function CanvasCard(props: CanvasCardProps) {
                   {`↗ ${link.host}${link.rest}`}
                 </Text>
               ) : null}
-              {mixed ? (
+              {mixedRich && richDocument ? (
+                <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition}
+                  height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
+              ) : mixed ? (
                 <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
               {!image && !mixed && previewDocument && bodyLines > 0 ? (
                 <BasicRichTextPreview
                   document={previewDocument}
-                  numberOfLines={bodyLines}
+                  numberOfLines={overflow.shownLines}
                   color={colors.cardText}
                   fontSize={contentSize}
                   lineHeight={contentLine}
@@ -405,6 +414,11 @@ export function CanvasCard(props: CanvasCardProps) {
                     </Pressable>
                   ))}
                 </View>
+              ) : null}
+              {!image && !mixed && overflow.hiddenLines > 0 ? (
+                <Text testID={`card-overflow-${card.id}`} numberOfLines={1} style={[styles.more, { color: colors.cardText }]}>
+                  {`+${overflow.hiddenLines} ${overflow.hiddenLines === 1 ? 'línea' : 'líneas'} más`}
+                </Text>
               ) : null}
               {!lowZoom && tags.length > 0 ? (
                 // Pie de etiquetas (ADR 0019): hasta tres y el resto como «+n»; el nombre completo va en el inspector.
@@ -498,6 +512,8 @@ const styles = StyleSheet.create({
   floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },
   floatingTextWrap: { flex: 1, padding: 8, paddingTop: 36 },
   shapeWrap: { flex: 1, padding: 10, paddingTop: 36 },
+  // En una sola fila no se añade relleno vertical: RN Web lo suma al tamaño flex y deformaba la grilla.
+  shapeWrapCompact: { padding: 0, paddingTop: 0, paddingHorizontal: 0, minHeight: 0, minWidth: 0 },
   // Si aun así no cabe, cede el texto y no el pie.
   content: { fontSize: 13, lineHeight: 18, flexShrink: 1, overflow: 'hidden' },
   // UX7-B2: envoltorio de texto agrupado + filas de checklist; sin relleno propio, ya lo da `body`.
@@ -506,6 +522,7 @@ const styles = StyleSheet.create({
   checkGlyph: { flexShrink: 0 },
   checkText: { flex: 1 },
   link: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 12, lineHeight: 18, fontWeight: '700', flexShrink: 0 },
+  more: { flexShrink: 0, fontSize: 12, lineHeight: 16, fontWeight: '800' },
   tags: { fontSize: 12, lineHeight: 16, fontWeight: '800', marginTop: 'auto', flexShrink: 0 },
   badge: { fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 'auto', flexShrink: 0 },
   hint: { position: 'absolute', right: 6, bottom: 6, borderWidth: 2, paddingHorizontal: 6, paddingVertical: 2, fontSize: 12, fontWeight: '800' },
