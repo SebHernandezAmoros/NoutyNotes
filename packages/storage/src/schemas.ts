@@ -10,7 +10,8 @@ const text = z.string();
 const fieldValue = z.union([z.string(), z.number(), z.boolean()]);
 
 export const rectSchema = z.strictObject({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
-export const placementSchema = z.strictObject({ cardId: text, rect: rectSchema, display: text });
+const connectorPointSchema = z.strictObject({ x: z.number(), y: z.number() });
+export const placementSchema = z.strictObject({ cardId: text, rect: rectSchema, display: text, connectorPath: z.array(connectorPointSchema).optional() });
 export const frameSchema = z.strictObject({ id: text, title: text, rect: rectSchema });
 export const layoutSchema = z.strictObject({ boardId: text, placements: z.array(placementSchema), frames: z.array(frameSchema).optional() });
 export const relationSchema = z.strictObject({ id: text, typeId: text, from: text, to: text, label: text.optional(), arrow: text.optional() });
@@ -39,7 +40,7 @@ export const boardSchema = z.strictObject({ id: text, title: text, description: 
 export const trashItemSchema = z.strictObject({
   card: z.lazy(() => cardSchema),
   boards: z.array(z.strictObject({ boardId: text, index: z.number() })),
-  placements: z.array(z.strictObject({ boardId: text, rect: rectSchema, display: text })),
+  placements: z.array(z.strictObject({ boardId: text, rect: rectSchema, display: text, connectorPath: z.array(connectorPointSchema).optional() })),
   relations: z.array(relationSchema),
 });
 
@@ -67,7 +68,7 @@ export const workspaceSchema = z.strictObject({
 // Documentos del formato v1.
 // v1: sin flecha. v2: con `arrow` distinto de «forward» (ADR 0034).
 export const relationsFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2)]), relations: z.array(relationSchema) });
-export const layoutFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), layouts: z.array(layoutSchema) });
+export const layoutFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]), layouts: z.array(layoutSchema) });
 export const workspaceManifestSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, metadata: metadataSchema,
   cardTypes: z.array(cardTypeSchema), relationTypes: z.array(relationTypeSchema),

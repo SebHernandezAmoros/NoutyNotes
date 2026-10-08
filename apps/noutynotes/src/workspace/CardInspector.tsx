@@ -1,6 +1,6 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editCardContent, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editCardContent, editConnectorPath, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
-import { cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, floatingTextAlignments, floatingTextColors, linkUrlField, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
+import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -118,6 +118,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const floatingText = cardBase === 'text';
   const shape = cardBase === 'shape';
   const connector = cardBase === 'connector';
+  const connectorPath = placement?.connectorPath;
+  const saveConnectorPath = (path: readonly { readonly x: number; readonly y: number }[]) =>
+    run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' });
   const presentation = cardContentPresentation(card, cardBase);
   const initialContent = editableCardContent(card, cardBase);
   const [title, setTitle] = useState(card.title ?? '');
@@ -665,11 +668,41 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       {connector ? (
         <View testID="connector-style-picker" style={styles.section}>
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>CONECTOR DECORATIVO</Text>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Dirección libre</Text>
-          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Dirección del conector">
-            {connectorDirections.map((direction) => <ActionButton key={direction} label={direction === 'down' ? 'Descendente' : 'Ascendente'} pressed={(card.connectorDirection ?? 'down') === direction}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDirection: direction }), { label: 'Conector actualizado' })} />)}
-          </View>
+          {connectorPath ? (
+            <View testID="connector-route-editor" style={styles.tagSection}>
+              <Text style={[styles.hint, { color: colors.textSecondary }]}>RUTA ORTOGONAL · {connectorPath.length} puntos · {connectorPath.length - 1} tramos</Text>
+              <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Editar ruta ortogonal">
+                <ActionButton label="Añadir desvío" onPress={() => void saveConnectorPath(addConnectorDetour(connectorPath, 0, 1))} />
+                <ActionButton label="Horizontal primero" onPress={() => void saveConnectorPath(resetConnectorPath(connectorPath, 'horizontal-first'))} />
+                <ActionButton label="Vertical primero" onPress={() => void saveConnectorPath(resetConnectorPath(connectorPath, 'vertical-first'))} />
+              </View>
+              {connectorPath.map((point, index) => (
+                <View key={`${point.x}-${point.y}-${index}`} style={styles.row}>
+                  <Text style={[styles.hint, { color: colors.textSecondary }]}>{index === 0 ? 'Inicio' : index === connectorPath.length - 1 ? 'Final' : `Codo ${index}`}</Text>
+                  <ActionButton label="←" accessibilityLabel={`Mover punto ${index + 1} a la izquierda`} onPress={() => void saveConnectorPath(moveConnectorPoint(connectorPath, index, { x: point.x - 0.25, y: point.y }))} />
+                  <ActionButton label="→" accessibilityLabel={`Mover punto ${index + 1} a la derecha`} onPress={() => void saveConnectorPath(moveConnectorPoint(connectorPath, index, { x: point.x + 0.25, y: point.y }))} />
+                  <ActionButton label="↑" accessibilityLabel={`Mover punto ${index + 1} hacia arriba`} onPress={() => void saveConnectorPath(moveConnectorPoint(connectorPath, index, { x: point.x, y: point.y - 0.25 }))} />
+                  <ActionButton label="↓" accessibilityLabel={`Mover punto ${index + 1} hacia abajo`} onPress={() => void saveConnectorPath(moveConnectorPoint(connectorPath, index, { x: point.x, y: point.y + 0.25 }))} />
+                  {index > 0 && index < connectorPath.length - 1 ? <ActionButton label="Quitar" accessibilityLabel={`Quitar codo ${index}`} onPress={() => void saveConnectorPath(removeConnectorPoint(connectorPath, index))} /> : null}
+                </View>
+              ))}
+            </View>
+          ) : placement ? (
+            <View testID="connector-legacy-editor" style={styles.tagSection}>
+              <Text style={[styles.hint, { color: colors.textSecondary }]}>Conector anterior: conserva su diagonal hasta convertirlo.</Text>
+              <ActionButton label="Convertir a ruta ortogonal" onPress={() => {
+                const down = (card.connectorDirection ?? 'down') === 'down';
+                const start = { x: placement.rect.x, y: down ? placement.rect.y : placement.rect.y + placement.rect.h };
+                const end = { x: placement.rect.x + placement.rect.w, y: down ? placement.rect.y + placement.rect.h : placement.rect.y };
+                void saveConnectorPath(createOrthogonalConnectorPath(start, end));
+              }} />
+              <Text style={[styles.hint, { color: colors.textSecondary }]}>Dirección diagonal anterior</Text>
+              <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Dirección del conector anterior">
+                {connectorDirections.map((direction) => <ActionButton key={direction} label={direction === 'down' ? 'Descendente' : 'Ascendente'} pressed={(card.connectorDirection ?? 'down') === direction}
+                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDirection: direction }), { label: 'Conector actualizado' })} />)}
+              </View>
+            </View>
+          ) : null}
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Color</Text>
           <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color del conector">
             {shapeStrokes.map((color) => <ActionButton key={color} label={color === 'default' ? 'Tema' : color === 'red' ? 'Rojo' : color === 'orange' ? 'Naranja' : color === 'yellow' ? 'Amarillo' : color === 'green' ? 'Verde' : color === 'blue' ? 'Azul' : 'Morado'} pressed={(card.connectorColor ?? 'default') === color}

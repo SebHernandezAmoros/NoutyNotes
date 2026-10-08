@@ -35,6 +35,54 @@ async function tapCard(page: Page, id: number, edit = true) {
   // continuación. Sin efecto (a propósito) en una ficha minimizada: no tiene ese botón, solo «Expandir».
   if (edit) await openCardEditor(page, id);
 }
+
+test('UX7 P18-D: crea un conector por dos posiciones y edita una ruta ortogonal desde el trazo', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Ruta ortogonal');
+  if (isCompactWidth(page)) await button(page, 'Abrir un tablero').click();
+  await button(page, 'Crear un tablero').click();
+  await insertFromMenu(page, 'Insertar conector');
+  await expect(page.getByText('Conector: toca una posición libre o una tarjeta para marcar la posición 1.')).toBeVisible();
+
+  const background = page.getByTestId('canvas-background');
+  const canvas = await box(background);
+  const tapPoint = async (x: number, y: number) => {
+    const position = { x, y };
+    if (isCompactWidth(page)) await background.tap({ position });
+    else await background.click({ position });
+  };
+  await tapPoint(Math.min(90, canvas.width / 4), Math.min(110, canvas.height / 3));
+  await expect(page.getByTestId('connector-start')).toBeVisible();
+  await expect(page.getByText('Posición 1 marcada. Toca una segunda posición o una tarjeta para terminar el conector.')).toBeVisible();
+  await tapPoint(Math.min(280, canvas.width - 55), Math.min(260, canvas.height - 80));
+
+  const segments = page.locator('[data-testid^="connector-segment-tarjeta-1-"]');
+  await expect(segments).toHaveCount(2);
+  await expect(page.getByTestId('card-tarjeta-1')).toHaveCount(0);
+  const target = await box(segments.first());
+  expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(43);
+  await page.screenshot({ path: testInfo.outputPath('connector-route.png') });
+  await segments.first().dblclick();
+  await expect(page.getByTestId('connector-route-editor')).toContainText('3 puntos · 2 tramos');
+
+  await button(page, 'Añadir desvío').click();
+  await expect(page.getByTestId('connector-route-editor')).toContainText('5 puntos · 4 tramos');
+  await expect(segments).toHaveCount(4);
+  await page.screenshot({ path: testInfo.outputPath('connector-route-editor.png') });
+  await page.getByRole('button', { name: /^Quitar codo/ }).first().click();
+  await expect(page.getByTestId('connector-route-editor')).toBeVisible();
+
+  await closeEditor(page);
+  await segments.first().dblclick();
+  await expect(page.getByTestId('connector-route-editor')).toBeVisible();
+  if (testInfo.project.name === 'desktop') {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await expect(page.getByTestId('connector-route-editor')).toBeVisible();
+    expect(await hasHorizontalOverflow(page)).toBe(false);
+    await page.getByTestId('connector-route-editor').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('connector-route-tablet.png') });
+  }
+});
 /**
  * Toca una tarjeta mientras la herramienta Conectar está activa (ADR 0048): a diferencia de `tapCard`,
  * no espera `aria-pressed`, porque conectar no selecciona el destino — lo conecta o desconecta. Esperar

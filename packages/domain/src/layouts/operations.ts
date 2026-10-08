@@ -5,6 +5,8 @@ import { candidateRows, cellsOverlap, compareReadingOrder, fitsGrid, footprint, 
 import type { GridCell, GridConfig, GridPoint, GridSize } from './grid';
 import { GRID_SUBDIVISIONS, cardDisplayModes } from './layout';
 import type { BoardLayout, CardDisplayMode, CardPlacement } from './layout';
+import { validateConnectorPath } from './connector-path';
+import type { ConnectorRoutePoint } from './connector-path';
 
 export interface FindFreeSpaceOptions {
   /** Tarjeta cuya huella se ignora, por ejemplo al buscar un nuevo sitio para ella misma. */
@@ -52,8 +54,13 @@ function fitIssues(layout: BoardLayout, index: number, candidate: CardPlacement,
   const cell = footprint(candidate);
   if (!fitsGrid(cell, config)) return [issue('out-of-bounds', boundsPath, 'La tarjeta saldría de los límites de la grilla.')];
   const issues: DomainIssue[] = [];
+  for (const [pointIndex, point] of (candidate.connectorPath ?? []).entries()) {
+    if (!fitsGrid({ x: point.x, y: point.y, w: 0.25, h: 0.25 }, config)) {
+      issues.push(issue('out-of-bounds', `${boundsPath}.connectorPath[${pointIndex}]`, 'El punto saldría de los límites de la grilla.'));
+    }
+  }
   layout.placements.forEach((other, otherIndex) => {
-    if (otherIndex !== index && cellsOverlap(cell, footprint(other))) {
+    if (candidate.connectorPath === undefined && other.connectorPath === undefined && otherIndex !== index && cellsOverlap(cell, footprint(other))) {
       issues.push(issue('grid-collision', `placements[${otherIndex}]`, `Se solaparía con "${other.cardId}".`));
     }
   });
@@ -65,7 +72,10 @@ function replaceAt(layout: BoardLayout, index: number, placement: CardPlacement)
 }
 
 function withCorner(placement: CardPlacement, { x, y }: GridPoint): CardPlacement {
-  return { ...placement, rect: { ...placement.rect, x, y } };
+  const dx = x - placement.rect.x;
+  const dy = y - placement.rect.y;
+  return { ...placement, rect: { ...placement.rect, x, y },
+    ...(placement.connectorPath === undefined ? {} : { connectorPath: placement.connectorPath.map((point) => ({ x: point.x + dx, y: point.y + dy })) }) };
 }
 
 function invalidOptions(options: unknown): DomainIssue[] {
@@ -98,7 +108,7 @@ export function findFreeSpace(layout: BoardLayout, size: GridSize, config: GridC
   if ((!config.world && size.w > config.columns) || (config.rows !== undefined && size.h > config.rows)) {
     return fail(origin, [issue('out-of-bounds', 'size', 'El tamaño no cabe en la grilla.')]);
   }
-  const occupied = layout.placements.filter((placement) => placement.cardId !== options.ignore).map(footprint);
+  const occupied = layout.placements.filter((placement) => placement.cardId !== options.ignore && placement.connectorPath === undefined).map(footprint);
   const start = options.from ?? origin;
   const end = start.x + Math.max(options.columns ?? config.columns, size.w);
   for (const y of candidateRows(occupied, start.y)) {
@@ -121,6 +131,25 @@ export function moveCard(layout: BoardLayout, cardId: CardId, to: GridPoint, con
   if (pointIssues.length > 0) return fail(layout, pointIssues);
   const candidate = withCorner(located.value.placement, to);
   const issues = fitIssues(layout, located.value.index, candidate, config, 'to');
+  return issues.length > 0 ? fail(layout, issues) : resultOf(replaceAt(layout, located.value.index, candidate), []);
+}
+
+/** Sustituye la ruta de una colocación sin convertirla en una caja de colisión. */
+export function setConnectorPath(
+  layout: BoardLayout, cardId: CardId, connectorPath: readonly ConnectorRoutePoint[], config: GridConfig,
+): ValidationResult<BoardLayout> {
+  const located = locate(layout, cardId, config);
+  if (!located.ok) return fail(layout, [...located.issues]);
+  const checked = validateConnectorPath(connectorPath);
+  if (!checked.ok) return fail(layout, [...checked.issues]);
+  const start = connectorPath[0] as ConnectorRoutePoint;
+  const candidate: CardPlacement = {
+    ...located.value.placement,
+    rect: { ...located.value.placement.rect, x: start.x, y: start.y, w: 1, h: 1 },
+    connectorPath: connectorPath.map(({ x, y }) => ({ x, y })),
+    display: 'expanded',
+  };
+  const issues = fitIssues(layout, located.value.index, candidate, config, 'connectorPath');
   return issues.length > 0 ? fail(layout, issues) : resultOf(replaceAt(layout, located.value.index, candidate), []);
 }
 
@@ -231,6 +260,10 @@ export function compactLayout(layout: BoardLayout, config: GridConfig): Validati
   const newY = new Map<CardPlacement, number>();
   const settled: GridCell[] = [];
   for (const placement of [...layout.placements].sort(compareReadingOrder)) {
+    if (placement.connectorPath !== undefined) {
+      newY.set(placement, placement.rect.y);
+      continue;
+    }
     const cell = footprint(placement);
     // En un layout válido, las huellas ya colocadas que comparten columnas quedan por encima.
     const top = settled

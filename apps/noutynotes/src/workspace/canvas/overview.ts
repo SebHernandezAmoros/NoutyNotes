@@ -20,9 +20,13 @@ const union = (a: PixelBox, b: PixelBox): PixelBox => {
 
 /** Rectángulo que contiene todas las tarjetas (con su huella) y los marcos; null si no hay nada. */
 export function contentBounds(layout: BoardLayout | undefined, metrics: CanvasMetrics): PixelBox | null {
+  const routePoints = (layout?.placements ?? []).flatMap((placement) => (placement.connectorPath ?? []).map((point) => ({
+    left: point.x * metrics.cell, top: point.y * metrics.row, width: 0, height: 0,
+  })));
   const boxes = [
     ...(layout?.placements ?? []).map((placement) => cardBox(footprint(placement), metrics)),
     ...(layout?.frames ?? []).map((frame) => cardBox(frame.rect, metrics)),
+    ...routePoints,
   ];
   return boxes.length === 0 ? null : boxes.reduce(union);
 }

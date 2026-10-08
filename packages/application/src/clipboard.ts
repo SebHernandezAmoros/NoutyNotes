@@ -77,10 +77,12 @@ function pasteOnto(workspace: Workspace, boardId: BoardId, snapshot: ClipboardSn
     takenRelations.push(newId);
     return { ...relation, id: newId, from: cardIdMap.get(relation.from) as CardId, to: cardIdMap.get(relation.to) as CardId };
   });
-  const minX = Math.min(...snapshot.placements.map((placement) => placement.rect.x));
-  const minY = Math.min(...snapshot.placements.map((placement) => placement.rect.y));
-  const maxX = Math.max(...snapshot.placements.map((placement) => placement.rect.x + placement.rect.w));
-  const maxY = Math.max(...snapshot.placements.map((placement) => placement.rect.y + placement.rect.h));
+  const placementXs = snapshot.placements.flatMap((placement) => [placement.rect.x, placement.rect.x + placement.rect.w, ...(placement.connectorPath ?? []).map((point) => point.x)]);
+  const placementYs = snapshot.placements.flatMap((placement) => [placement.rect.y, placement.rect.y + placement.rect.h, ...(placement.connectorPath ?? []).map((point) => point.y)]);
+  const minX = Math.min(...placementXs);
+  const minY = Math.min(...placementYs);
+  const maxX = Math.max(...placementXs);
+  const maxY = Math.max(...placementYs);
   const layout = workspace.layouts.find((candidate) => candidate.boardId === boardId) ?? { boardId, placements: [] };
   const spot = findFreeSpace(layout, { w: maxX - minX, h: maxY - minY }, CANONICAL_GRID, { from: { x: minX + 1, y: minY + 1 } });
   if (!spot.ok) return spot;
@@ -89,6 +91,7 @@ function pasteOnto(workspace: Workspace, boardId: BoardId, snapshot: ClipboardSn
     cardId: cardIdMap.get(placement.cardId) as CardId,
     rect: { x: placement.rect.x + delta.x, y: placement.rect.y + delta.y, w: placement.rect.w, h: placement.rect.h },
     display: placement.display,
+    ...(placement.connectorPath === undefined ? {} : { connectorPath: placement.connectorPath.map((point) => ({ x: point.x + delta.x, y: point.y + delta.y })) }),
   }));
   return pasteCardsOnBoard(workspace, { boardId, cards, relations, placements, config: CANONICAL_GRID });
 }

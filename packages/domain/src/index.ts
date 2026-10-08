@@ -41,6 +41,8 @@ export type {
   RichTextTableCell, RichTextTableRow, RichTextTextRun,
 } from './rich-text/rich-text';
 export { GRID_SUBDIVISIONS, MAX_FRAME_TITLE, cardDisplayModes, isFrameTitle, validateLayout } from './layouts/layout';
+export { addConnectorDetour, createOrthogonalConnectorPath, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, validateConnectorPath } from './layouts/connector-path';
+export type { ConnectorBendOrientation, ConnectorRoutePoint } from './layouts/connector-path';
 export { frameAround, frameMembers, moveFrame, removeFrame, renameFrame, resizeFrame } from './layouts/frames';
 export type { BoardLayout, CardDisplayMode, CardPlacement, Frame, GridRect } from './layouts/layout';
 export {
@@ -48,7 +50,7 @@ export {
   cellsOverlap, compareReadingOrder, footprint, snapFineUnit, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,
 } from './layouts/grid';
 export type { GridCell, GridConfig, GridPoint, GridSize } from './layouts/grid';
-export { addGroup, compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setDisplay } from './layouts/operations';
+export { addGroup, compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setConnectorPath, setDisplay } from './layouts/operations';
 export type { FindFreeSpaceOptions, SetDisplayOptions } from './layouts/operations';
 export { projectLayout } from './layouts/projection';
 export type { ProjectedItem, ProjectedLayout } from './layouts/projection';

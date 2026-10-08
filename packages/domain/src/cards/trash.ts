@@ -35,7 +35,8 @@ export function setAsideCard(workspace: Workspace, cardId: CardId): ValidationRe
     }),
     placements: workspace.layouts.flatMap((layout) => layout.placements
       .filter((placement) => placement.cardId === cardId)
-      .map((placement) => ({ boardId: layout.boardId, rect: placement.rect, display: placement.display }))),
+      .map((placement) => ({ boardId: layout.boardId, rect: placement.rect, display: placement.display,
+        ...(placement.connectorPath === undefined ? {} : { connectorPath: placement.connectorPath }) }))),
     relations: workspace.relations.filter((relation) => relation.from === cardId || relation.to === cardId),
   };
   const removed = deleteCard(workspace, cardId, { relations: 'cascade' });
@@ -102,7 +103,8 @@ export function restoreSnapshot(
     if (!boardIds.has(options.fallbackBoardId)) return failure([issue('missing-reference', 'fallbackBoardId', 'No existe el tablero donde restaurar.')]);
     const [first] = entry.placements;
     memberships = [{ boardId: options.fallbackBoardId, index: Number.MAX_SAFE_INTEGER }];
-    placements = [{ boardId: options.fallbackBoardId, rect: first?.rect ?? { x: 0, y: 0, w: 4, h: 3 }, display: first?.display ?? 'expanded' }];
+    placements = [{ boardId: options.fallbackBoardId, rect: first?.rect ?? { x: 0, y: 0, w: 4, h: 3 }, display: first?.display ?? 'expanded',
+      ...(first?.connectorPath === undefined ? {} : { connectorPath: first.connectorPath }) }];
   }
 
   const boards = workspace.boards.map((board) => {
@@ -116,7 +118,8 @@ export function restoreSnapshot(
   const relocated: BoardId[] = [];
   for (const saved of placements) {
     const current = layouts.find((layout) => layout.boardId === saved.boardId) ?? { boardId: saved.boardId, placements: [] };
-    const placed = place(current, { cardId, rect: saved.rect, display: saved.display }, options.config);
+    const placed = place(current, { cardId, rect: saved.rect, display: saved.display,
+      ...(saved.connectorPath === undefined ? {} : { connectorPath: saved.connectorPath }) }, options.config);
     if (!placed.ok) return failure([...placed.issues]);
     if (placed.value.relocated) relocated.push(saved.boardId);
     layouts = layouts.some((layout) => layout.boardId === saved.boardId)

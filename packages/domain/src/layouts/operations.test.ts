@@ -33,6 +33,23 @@ function randomLayout(seed: number, config: GridConfig = DESKTOP_GRID, attempts 
 describe('mover', () => {
   const base = deepFreeze(layoutOf(place('a', 0, 0, 2, 2), place('b', 4, 0, 2, 2)));
 
+  it('una ruta de conector no ocupa una caja y se traslada junto con su colocación', () => {
+    const connector = unsafe<CardPlacement>({
+      cardId: 'connector', display: 'expanded', rect: { x: 0, y: 0, w: 1, h: 1 },
+      connectorPath: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }],
+    });
+    const routed: BoardLayout = { boardId: base.boardId, placements: [
+      connector,
+      unsafe<CardPlacement>({ cardId: 'note', display: 'expanded', rect: { x: 0, y: 0, w: 4, h: 3 } }),
+    ] };
+    expect(validateGridLayout(routed, DESKTOP_GRID).ok).toBe(true);
+    const moved = value(moveCard(routed, connector.cardId, { x: 2, y: 1 }, DESKTOP_GRID));
+    expect(at(moved, 'connector')).toMatchObject({
+      rect: { x: 2, y: 1, w: 1, h: 1 },
+      connectorPath: [{ x: 2, y: 1 }, { x: 6, y: 1 }, { x: 6, y: 4 }],
+    });
+  });
+
   it('mueve a una celda libre sin cambiar tamaño, modo ni el resto de tarjetas', () => {
     const moved = value(moveCard(base, card('a'), { x: 0, y: 5 }, DESKTOP_GRID));
     expect(at(moved, 'a')).toEqual(place('a', 0, 5, 2, 2));

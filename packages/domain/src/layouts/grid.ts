@@ -177,10 +177,16 @@ export function collectGridIssues(layout: BoardLayout, config: GridConfig, issue
       issues.push(issue('out-of-bounds', `${path}.${placement.rect.w > config.columns ? 'w' : 'h'}`,
         'El tamaño expandido no cabe en la grilla.'));
     }
+    for (const [pointIndex, point] of (placement.connectorPath ?? []).entries()) {
+      if (!fitsGrid({ x: point.x, y: point.y, w: 0.25, h: 0.25 }, config)) {
+        issues.push(issue('out-of-bounds', `placements[${index}].connectorPath[${pointIndex}]`, 'El punto sale de los límites de la grilla.'));
+      }
+    }
   });
   layout.placements.forEach((placement, index) => {
     for (let earlier = 0; earlier < index; earlier += 1) {
-      if (cellsOverlap(cells[earlier] as GridCell, cells[index] as GridCell)) {
+      const previous = layout.placements[earlier] as CardPlacement;
+      if (placement.connectorPath === undefined && previous.connectorPath === undefined && cellsOverlap(cells[earlier] as GridCell, cells[index] as GridCell)) {
         issues.push(issue('grid-collision', `placements[${index}]`,
           `"${placement.cardId}" se solapa con "${(layout.placements[earlier] as CardPlacement).cardId}".`));
       }

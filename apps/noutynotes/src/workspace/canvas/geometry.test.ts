@@ -24,6 +24,11 @@ describe('geometría del lienzo (ADR 0013)', () => {
   it('el lienzo mide 12 columnas y deja filas libres debajo de la última tarjeta (mínimo 8)', () => {
     expect(canvasSize(undefined, WIDE_METRICS)).toEqual({ width: 1152, height: 8 * 64, rows: 8 });
     expect(canvasSize(layout, WIDE_METRICS)).toEqual({ width: 1152, height: 10 * 64, rows: 10 });
+    const routed: BoardLayout = { boardId: layout.boardId, placements: [{
+      cardId: id('ruta'), rect: { x: 0, y: 0, w: 1, h: 1 }, display: 'expanded',
+      connectorPath: [{ x: 0, y: 0 }, { x: 0, y: 14.25 }],
+    }] };
+    expect(canvasSize(routed, WIDE_METRICS).rows).toBe(19);
   });
 
   it('el arrastre se convierte en celdas dividiendo por el zoom y redondeando', () => {

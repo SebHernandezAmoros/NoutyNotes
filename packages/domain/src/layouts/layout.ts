@@ -2,6 +2,8 @@ import { isRecord, issue, listAt, resultOf } from '../errors';
 import type { DomainIssue, ValidationResult } from '../errors';
 import { checkId, checkUniqueIds } from '../ids';
 import type { BoardId, CardId } from '../ids';
+import { validateConnectorPath } from './connector-path';
+import type { ConnectorRoutePoint } from './connector-path';
 
 export const cardDisplayModes = ['expanded', 'collapsed', 'minimized'] as const;
 export type CardDisplayMode = (typeof cardDisplayModes)[number];
@@ -19,6 +21,8 @@ export interface CardPlacement {
   readonly cardId: CardId;
   readonly rect: GridRect;
   readonly display: CardDisplayMode;
+  /** Ruta ortogonal propia de este tablero (ADR 0061); sus puntos son coordenadas absolutas de grilla. */
+  readonly connectorPath?: readonly ConnectorRoutePoint[];
 }
 
 /**
@@ -115,6 +119,10 @@ export function collectLayoutIssues(layout: unknown, path: string, issues: Domai
     }
     checkId(placement.cardId, `${placementPath}.cardId`, issues);
     collectRectIssues(placement.rect, `${placementPath}.rect`, issues);
+    if (placement.connectorPath !== undefined) {
+      const checked = validateConnectorPath(placement.connectorPath as readonly ConnectorRoutePoint[]);
+      if (!checked.ok) issues.push(...checked.issues.map((found) => ({ ...found, path: `${placementPath}.${found.path}` })));
+    }
     if (!cardDisplayModes.includes(placement.display as CardDisplayMode)) {
       issues.push(issue('invalid-layout', `${placementPath}.display`, `Modo desconocido: ${String(placement.display)}.`));
     }

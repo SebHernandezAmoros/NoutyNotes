@@ -81,7 +81,8 @@ function trashData(entry: TrashedCard): unknown {
       connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
     },
     boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
-    placements: entry.placements.map(({ boardId, rect, display }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
+    placements: entry.placements.map(({ boardId, rect, display, connectorPath }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+      ...(connectorPath === undefined ? {} : { connectorPath: connectorPath.map(({ x, y }) => ({ x, y })) }) })),
     relations: entry.relations.map(relationData),
   });
 }

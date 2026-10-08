@@ -1,6 +1,6 @@
 import { CANONICAL_GRID } from '@noutynotes/application';
-import { MOBILE_GRID, compareReadingOrder, footprint, projectLayout } from '@noutynotes/domain';
-import type { BoardLayout, Card, CardId, GridCell, Relation, RelationId } from '@noutynotes/domain';
+import { MOBILE_GRID, compareReadingOrder, createOrthogonalConnectorPath, footprint, projectLayout } from '@noutynotes/domain';
+import type { BoardLayout, Card, CardId, CardPlacement, GridCell, Relation, RelationId } from '@noutynotes/domain';
 import type { LayoutMode } from '@noutynotes/ui';
 
 /** Alto de una fila de la grilla en píxeles y separación visual entre tarjetas. */
@@ -68,6 +68,20 @@ export interface RelationSegment {
 
 export interface ConnectorSegment extends Omit<RelationSegment, 'relationId'> {
   readonly cardId: CardId;
+  readonly index: number;
+}
+
+export interface ConnectorRouteGeometry {
+  readonly cardId: CardId;
+  readonly points: readonly { readonly x: number; readonly y: number }[];
+  readonly segments: readonly ConnectorSegment[];
+  readonly legacy: boolean;
+}
+
+export interface ConnectorProjectionMetrics {
+  readonly cell: number;
+  readonly row: number;
+  readonly gap: number;
 }
 
 /** Fracción del vector centro→centro que queda dentro de una caja de semiejes (hw, hh). */
@@ -119,12 +133,70 @@ function pointOnBorder(box: CardBox, targetX: number, targetY: number): { x: num
   return { x: x + dx * fraction, y: y + dy * fraction };
 }
 
-/** Geometría puramente visual de P15: los anclajes son CardId y nunca crean una Relation. */
-export function connectorSegments(connectors: readonly Card[], boxes: readonly CardBox[]): ConnectorSegment[] {
+const segment = (cardId: CardId, index: number, start: { x: number; y: number }, end: { x: number; y: number }): ConnectorSegment | null => {
+  const length = Math.hypot(end.x - start.x, end.y - start.y);
+  if (!(length > 0)) return null;
+  return { cardId, index, startX: start.x, startY: start.y, endX: end.x, endY: end.y,
+    left: (start.x + end.x) / 2 - length / 2, top: (start.y + end.y) / 2,
+    length, angle: (Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI };
+};
+
+/**
+ * Geometría decorativa portable (ADR 0061). La ruta vive en CardPlacement porque puede diferir por tablero.
+ * Los conectores v10 sin ruta conservan su diagonal hasta que la persona los edita deliberadamente.
+ */
+export function connectorRoutes(
+  connectors: readonly Card[], placements: readonly CardPlacement[], boxes: readonly CardBox[], metrics: ConnectorProjectionMetrics,
+): ConnectorRouteGeometry[] {
   const byId = new Map(boxes.map((box) => [box.cardId, box]));
-  return connectors.flatMap((card) => {
+  const placementById = new Map(placements.map((placement) => [placement.cardId, placement]));
+  return connectors.flatMap((card): ConnectorRouteGeometry[] => {
     const own = byId.get(card.id);
     if (!own) return [];
+    const placement = placementById.get(card.id);
+    if (placement?.connectorPath) {
+      const path = placement.connectorPath;
+      const pixels = path.map((point) => ({
+        x: own.left - metrics.gap / 2 + (point.x - placement.rect.x) * metrics.cell,
+        y: own.top - metrics.gap / 2 + (point.y - placement.rect.y) * metrics.row,
+      }));
+      const startBox = card.connectorStartCardId ? byId.get(card.connectorStartCardId) : undefined;
+      const endBox = card.connectorEndCardId ? byId.get(card.connectorEndCardId) : undefined;
+      if (startBox && pixels.length >= 2) {
+        const next = pixels[1] as { x: number; y: number };
+        if (pixels[0]?.y === next.y) {
+          const y = startBox.top + startBox.height / 2;
+          pixels[0] = { x: next.x >= startBox.left + startBox.width / 2 ? startBox.left + startBox.width : startBox.left, y };
+          pixels[1] = { ...next, y };
+        } else {
+          const x = startBox.left + startBox.width / 2;
+          pixels[0] = { x, y: next.y >= startBox.top + startBox.height / 2 ? startBox.top + startBox.height : startBox.top };
+          pixels[1] = { ...next, x };
+        }
+      }
+      if (endBox && pixels.length >= 2) {
+        const previousIndex = pixels.length - 2;
+        const previous = pixels[previousIndex] as { x: number; y: number };
+        const last = pixels[pixels.length - 1] as { x: number; y: number };
+        if (previous.y === last.y) {
+          const y = endBox.top + endBox.height / 2;
+          pixels[pixels.length - 1] = { x: previous.x <= endBox.left + endBox.width / 2 ? endBox.left : endBox.left + endBox.width, y };
+          pixels[previousIndex] = { ...previous, y };
+        } else {
+          const x = endBox.left + endBox.width / 2;
+          pixels[pixels.length - 1] = { x, y: previous.y <= endBox.top + endBox.height / 2 ? endBox.top : endBox.top + endBox.height };
+          pixels[previousIndex] = { ...previous, x };
+        }
+      }
+      const projected = pixels.length === 2 && pixels[0]?.x !== pixels[1]?.x && pixels[0]?.y !== pixels[1]?.y
+        ? createOrthogonalConnectorPath(pixels[0] as { x: number; y: number }, pixels[1] as { x: number; y: number })
+        : pixels;
+      const segments = projected.slice(0, -1).flatMap((start, index) => {
+        const current = segment(card.id, index, start, projected[index + 1] as { x: number; y: number });
+        return current ? [current] : [];
+      });
+      return [{ cardId: card.id, points: projected, segments, legacy: false }];
+    }
     const down = (card.connectorDirection ?? 'down') === 'down';
     let start = { x: own.left, y: down ? own.top : own.top + own.height };
     let end = { x: own.left + own.width, y: down ? own.top + own.height : own.top };
@@ -132,10 +204,16 @@ export function connectorSegments(connectors: readonly Card[], boxes: readonly C
     const endBox = card.connectorEndCardId ? byId.get(card.connectorEndCardId) : undefined;
     if (startBox) start = pointOnBorder(startBox, endBox ? endBox.left + endBox.width / 2 : end.x, endBox ? endBox.top + endBox.height / 2 : end.y);
     if (endBox) end = pointOnBorder(endBox, startBox ? startBox.left + startBox.width / 2 : start.x, startBox ? startBox.top + startBox.height / 2 : start.y);
-    const length = Math.hypot(end.x - start.x, end.y - start.y);
-    if (!(length > 0)) return [];
-    return [{ cardId: card.id, startX: start.x, startY: start.y, endX: end.x, endY: end.y,
-      left: (start.x + end.x) / 2 - length / 2, top: (start.y + end.y) / 2,
-      length, angle: (Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI }];
+    const legacy = segment(card.id, 0, start, end);
+    return legacy ? [{ cardId: card.id, points: [start, end], segments: [legacy], legacy: true }] : [];
   });
+}
+
+/** Compatibilidad con las pruebas y vistas P15 que aún consumen un único tramo diagonal. */
+export function connectorSegments(connectors: readonly Card[], boxes: readonly CardBox[]): ConnectorSegment[] {
+  const placements = connectors.flatMap((card) => {
+    const box = boxes.find((candidate) => candidate.cardId === card.id);
+    return box ? [{ cardId: card.id, rect: { x: 0, y: 0, w: 1, h: 1 }, display: 'expanded' as const }] : [];
+  });
+  return connectorRoutes(connectors, placements, boxes, { cell: 1, row: 1, gap: 0 }).flatMap((route) => route.segments);
 }

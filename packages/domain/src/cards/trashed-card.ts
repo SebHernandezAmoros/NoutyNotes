@@ -4,6 +4,7 @@ import { checkId, checkUniqueIds, isValidId } from '../ids';
 import type { BoardId } from '../ids';
 import { collectLayoutIssues } from '../layouts/layout';
 import type { CardDisplayMode, GridRect } from '../layouts/layout';
+import type { ConnectorRoutePoint } from '../layouts/connector-path';
 import { collectRelationIssues } from '../relations/relation';
 import type { Relation } from '../relations/relation';
 import { collectCardIssues } from './card';
@@ -19,7 +20,7 @@ export interface TrashedCard {
   /** Tableros a los que pertenecía y su posición en `cardIds`. */
   readonly boards: readonly { readonly boardId: BoardId; readonly index: number }[];
   /** Colocación en cada layout donde estaba. */
-  readonly placements: readonly { readonly boardId: BoardId; readonly rect: GridRect; readonly display: CardDisplayMode }[];
+  readonly placements: readonly { readonly boardId: BoardId; readonly rect: GridRect; readonly display: CardDisplayMode; readonly connectorPath?: readonly ConnectorRoutePoint[] }[];
   /** Relaciones que la tocaban. */
   readonly relations: readonly Relation[];
 }
@@ -88,7 +89,8 @@ export function collectTrashIssues(
     listAt(entry.placements, `${path}.placements`, issues).forEach((placement, j) => {
       const at = `${path}.placements[${j}]`;
       if (!isRecord(placement)) return void issues.push(issue('invalid-value', at, 'Debe indicar tablero y colocación.'));
-      collectLayoutIssues({ boardId: placement.boardId, placements: [{ cardId: card.id, rect: placement.rect, display: placement.display }] }, at, issues);
+      collectLayoutIssues({ boardId: placement.boardId, placements: [{ cardId: card.id, rect: placement.rect, display: placement.display,
+        ...(placement.connectorPath === undefined ? {} : { connectorPath: placement.connectorPath }) }] }, at, issues);
     });
     listAt(entry.relations, `${path}.relations`, issues).forEach((relation, j) => {
       const at = `${path}.relations[${j}]`;

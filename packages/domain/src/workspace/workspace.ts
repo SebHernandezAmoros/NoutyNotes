@@ -170,6 +170,11 @@ export function validateWorkspace(workspace: Workspace): ValidationResult<Worksp
       } else if (!members.has(placement.cardId)) {
         issues.push(issue('invalid-membership', path, `"${placement.cardId}" no pertenece al board "${board.id}".`));
       }
+      if (placement.connectorPath !== undefined) {
+        const card = cards.find((candidate) => isRecord(candidate) && candidate.id === placement.cardId);
+        const type = isRecord(card) && isValidId(card.typeId) ? usableCardTypes.get(card.typeId) : undefined;
+        if (type?.base !== 'connector') issues.push(issue('invalid-layout', `layouts[${i}].placements[${j}].connectorPath`, 'Solo una tarjeta de conector admite una ruta.'));
+      }
     });
   });
 

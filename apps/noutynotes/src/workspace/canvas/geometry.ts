@@ -40,9 +40,10 @@ export function cardBox(cell: GridCell, metrics: CanvasMetrics): PixelBox {
 export function canvasSize(layout: BoardLayout | undefined, metrics: CanvasMetrics): { width: number; height: number; rows: number } {
   const bottom = (layout?.placements ?? []).reduce((max, placement) => {
     const cell = footprint(placement);
-    return Math.max(max, cell.y + cell.h);
+    const routeBottom = (placement.connectorPath ?? []).reduce((routeMax, point) => Math.max(routeMax, point.y), 0);
+    return Math.max(max, cell.y + cell.h, routeBottom);
   }, 0);
-  const rows = Math.max(MIN_ROWS, bottom === 0 ? 0 : bottom + FREE_ROWS_BELOW);
+  const rows = Math.max(MIN_ROWS, bottom === 0 ? 0 : Math.ceil(bottom) + FREE_ROWS_BELOW);
   return { width: CANONICAL_GRID.columns * metrics.cell, height: rows * metrics.row, rows };
 }
 

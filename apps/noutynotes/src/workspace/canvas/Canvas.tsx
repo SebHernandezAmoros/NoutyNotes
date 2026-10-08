@@ -1,6 +1,6 @@
 import type { RichTextCodec } from '@noutynotes/application';
 import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
-import { footprint, frameMembers } from '@noutynotes/domain';
+import { footprint, frameMembers, moveConnectorPoint } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
@@ -10,8 +10,9 @@ import { ActionButton } from '../../components/controls';
 import { t } from '../../i18n';
 import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
-import { connectorSegments, relationSegments } from '../board-geometry';
+import { connectorRoutes, relationSegments } from '../board-geometry';
 import { ConnectorLine } from './ConnectorLine';
+import { ConnectorPicker } from './ConnectorPicker';
 import { RelationLine } from './RelationLine';
 import { RelationMenu } from './RelationMenu';
 import { CanvasCard, ResizeHandles } from './CanvasCard';
@@ -30,7 +31,7 @@ import { formatDay } from '../dates';
 import { clampZoom, panToRevealWorld, renderBase, visibleGridLines, worldPan, zoomAroundPoint, zoomIn, zoomOut } from './viewport';
 import type { Point, Size } from './viewport';
 
-export type CanvasTool = 'select' | 'pan' | 'connect';
+export type CanvasTool = 'select' | 'pan' | 'connect' | 'connector';
 
 export interface GestureController {
   canDragCard(): boolean;
@@ -95,6 +96,9 @@ interface CanvasProps {
   /** Tipografía de las notas (ADR 0030), ya resuelta para esta plataforma. */
   readonly noteFontFamily?: string | undefined;
   readonly connectSource: CardId | null;
+  readonly connectorStart: { readonly point: GridPoint; readonly cardId?: CardId } | null;
+  readonly onConnectorTarget: (point: GridPoint, cardId?: CardId) => void;
+  readonly onConnectorPathChange: (cardId: CardId, path: readonly GridPoint[]) => void;
   readonly onCardPress: (cardId: CardId) => void;
   /** UX7-B2: marca o desmarca una línea de checklist directamente en el lienzo. */
   readonly onToggleCheck: (cardId: CardId, lineIndex: number) => void;
@@ -247,6 +251,15 @@ export function Canvas(props: CanvasProps) {
       resetTap: () => { lastTap = null; },
       canDragCard: () => latest.current.props.tool === 'select' && active === null,
       tapCard: (cardId) => {
+        if (latest.current.props.tool === 'connector') {
+          const placement = latest.current.props.layout?.placements.find((candidate) => candidate.cardId === cardId);
+          if (placement) {
+            const cell = footprint(placement);
+            latest.current.props.onConnectorTarget({ x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 }, cardId);
+          }
+          lastTap = null;
+          return;
+        }
         if (swallowTap) {
           // Como antes, selecciona la tarjeta; pero no cuenta para el doble toque.
           swallowTap = false;
@@ -609,7 +622,24 @@ export function Canvas(props: CanvasProps) {
   const boxes = placements.map((placement) => ({ cardId: placement.cardId, ...local(cardBox(footprint(placement), metrics)) }));
   const segments = relationSegments(workspace.relations, boxes);
   const connectorCards = workspace.cards.filter((card) => workspace.cardTypes.find((type) => type.id === card.typeId)?.base === 'connector');
-  const decorativeSegments = connectorSegments(connectorCards, boxes);
+  const decorativeRoutes = connectorRoutes(connectorCards, placements, boxes, metrics);
+  const pickConnectorAt = (locationX: number, locationY: number) => {
+    const point = {
+      x: Math.round((((locationX - pan.x) / zoom) / metrics.cell) * 4) / 4,
+      y: Math.round((((locationY - pan.y) / zoom) / metrics.row) * 4) / 4,
+    };
+    const anchored = [...placements].reverse().find((candidate) => {
+      const cell = footprint(candidate);
+      const target = cards.get(candidate.cardId);
+      const baseType = workspace.cardTypes.find((type) => type.id === target?.typeId)?.base;
+      return baseType !== 'connector' && point.x >= cell.x && point.x <= cell.x + cell.w && point.y >= cell.y && point.y <= cell.y + cell.h;
+    });
+    if (!anchored) props.onConnectorTarget(point);
+    else {
+      const cell = footprint(anchored);
+      props.onConnectorTarget({ x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 }, anchored.cardId);
+    }
+  };
   const empty = placements.length === 0 && props.unplaced.length === 0;
   // Numeración de las fichas (001, 002…) en orden del layout, sin contar los títulos flotantes.
   const numbers = new Map<CardId, number>();
@@ -654,6 +684,7 @@ export function Canvas(props: CanvasProps) {
   if (tool === 'select') {
     for (const rawPlacement of placements) {
       if (gesture?.cardId === rawPlacement.cardId || gesture?.group?.includes(rawPlacement.cardId) || (framePreview && groupMoving.has(rawPlacement.cardId))) continue;
+      if (rawPlacement.connectorPath) continue;
       // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
       if (isFloating(workspace, rawPlacement.cardId) && rawPlacement.cardId !== selectedId) continue;
       // Mismo sitio optimista que el cuerpo de la tarjeta mientras se guarda (ver `pendingRects` arriba).
@@ -716,7 +747,9 @@ export function Canvas(props: CanvasProps) {
       {...panHandlers}
     >
       {/* El papel y la grilla pertenecen al viewport: nunca terminan en la última tarjeta. */}
-      <View testID="canvas-background" style={StyleSheet.absoluteFill} {...background} />
+      {tool === 'connector' ? (
+        <ConnectorPicker onPick={pickConnectorAt} />
+      ) : <View testID="canvas-background" style={StyleSheet.absoluteFill} {...background} />}
       {showGrid ? (
         <View testID="canvas-grid" style={styles.overlay} pointerEvents="none">
           {/* Sin imán, los cuartos son destinos persistibles reales (ADR 0046). */}
@@ -759,6 +792,7 @@ export function Canvas(props: CanvasProps) {
         {placements.map((rawPlacement) => {
           const card = cards.get(rawPlacement.cardId);
           if (!card) return null;
+          if (rawPlacement.connectorPath) return null;
           // Mientras se guarda, se dibuja en el sitio esperado en vez del que todavía tiene `layout»
           // (ver `pendingRects`/`justFinished` y la auditoría de interacción del 2026-09-29).
           const pendingRect = props.pendingRects.get(rawPlacement.cardId) ?? justFinished.get(rawPlacement.cardId);
@@ -806,10 +840,29 @@ export function Canvas(props: CanvasProps) {
             />
           );
         })}
-        {decorativeSegments.flatMap((segment) => {
-          const card = cards.get(segment.cardId);
-          return card ? [<ConnectorLine key={card.id} segment={segment} card={card} />] : [];
+        {decorativeRoutes.flatMap((route) => {
+          const card = cards.get(route.cardId);
+          const placement = placements.find((candidate) => candidate.cardId === route.cardId);
+          return card ? [<ConnectorLine key={card.id} route={route} card={card} selected={selectedId === card.id} zoom={zoom}
+            onSelect={() => props.onCardPress(card.id)} onOpen={() => props.onCardOpen(card.id)}
+            onPointMove={(index, dx, dy) => {
+              if (!placement?.connectorPath) return;
+              const point = placement.connectorPath[index];
+              if (!point) return;
+              const to = {
+                x: point.x + Math.round((dx / zoom / metrics.cell) * 4) / 4,
+                y: point.y + Math.round((dy / zoom / metrics.row) * 4) / 4,
+              };
+              props.onConnectorPathChange(card.id, moveConnectorPoint(placement.connectorPath, index, to));
+            }} />] : [];
         })}
+        {props.connectorStart ? (
+          <View testID="connector-start" pointerEvents="none" style={[styles.connectorStart, {
+            left: props.connectorStart.point.x * metrics.cell - base.x - 7 / zoom,
+            top: props.connectorStart.point.y * metrics.row - base.y - 7 / zoom,
+            width: 14 / zoom, height: 14 / zoom, borderColor: colors.selection,
+          }]} />
+        ) : null}
         {/* Encima de las tarjetas: si dos fichas conectadas quedan pegadas, la línea y el rótulo
             igual se ven, en vez de quedar tapados por el fondo opaco de la tarjeta (ADR 0034). */}
         {segments.flatMap((segment) => {
@@ -866,7 +919,7 @@ export function Canvas(props: CanvasProps) {
         ) : null}
         {/* Una ficha minimizada no se redimensiona desde el lienzo: su tamaño expandido queda oculto y
             sus acciones se abren desde un único menú al lado. El editor conserva «Más ancha/estrecha». */}
-        {selectedPlacement && tool === 'select' && selectedPlacement.display !== 'minimized' ? (
+        {selectedPlacement && !selectedPlacement.connectorPath && tool === 'select' && selectedPlacement.display !== 'minimized' ? (
           <ResizeHandles
             key={selectedPlacement.cardId}
             cardId={selectedPlacement.cardId}
@@ -890,7 +943,7 @@ export function Canvas(props: CanvasProps) {
         />
       ) : null}
       {empty ? (
-        <View testID="board-empty" style={styles.emptyWrap} pointerEvents="box-none">
+        <View testID="board-empty" style={styles.emptyWrap} pointerEvents={tool === 'connector' ? 'none' : 'box-none'}>
           <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text accessibilityRole="header" style={[styles.emptyTitle, { color: colors.textPrimary }]}>Este tablero está vacío</Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -1006,6 +1059,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 15, lineHeight: 22 },
   unplaced: { position: 'absolute', left: 12, right: 12, top: 12, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19 },
   marquee: { position: 'absolute', borderWidth: 2, borderStyle: 'dashed' },
+  connectorStart: { position: 'absolute', borderWidth: 3, borderRadius: 999, backgroundColor: 'transparent' },
   // Encima de los controles inferiores (ADR 0028), que ocupan la esquina de abajo.
   status: { position: 'absolute', left: 12, right: 12, bottom: 72, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19, fontWeight: '700' },
 });

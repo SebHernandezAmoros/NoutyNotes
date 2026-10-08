@@ -1,9 +1,9 @@
 import {
-  WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setDisplay, trashCard,
-  isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateWorkspace,
+  WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard,
+  isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateConnectorPath, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
-  AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, GridConfig, GridPoint, GridSize, RestoreReport,
+  AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, ConnectorRoutePoint, GridConfig, GridPoint, GridSize, RestoreReport,
   RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, ValidationResult, Workspace, WorkspaceId,
 } from '@noutynotes/domain';
 
@@ -76,6 +76,10 @@ export interface AddCardInput {
   readonly createdAt?: string;
   /** Tablero destino; por defecto, el primero (o el del prototipo si no hay ninguno). */
   readonly boardId?: BoardId;
+  /** Solo para `connector`: ruta ortogonal del tablero y anclajes opcionales. */
+  readonly connectorPath?: readonly ConnectorRoutePoint[];
+  readonly connectorStartCardId?: CardId;
+  readonly connectorEndCardId?: CardId;
   /**
    * Zona visible del mundo (P2): la tarjeta va al primer hueco libre que empieza en `x,y` dentro de una
    * banda de `columns` celdas. Sin ella, primer hueco desde el origen en la banda de 12 columnas.
@@ -168,6 +172,9 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const size = isObject(input) ? ownValue(input, 'size') : undefined;
   const icon = isObject(input) ? ownValue(input, 'icon') : undefined;
   const boardTargetId = isObject(input) ? ownValue(input, 'boardTargetId') : undefined;
+  const connectorPath = isObject(input) ? ownValue(input, 'connectorPath') : undefined;
+  const connectorStartCardId = isObject(input) ? ownValue(input, 'connectorStartCardId') : undefined;
+  const connectorEndCardId = isObject(input) ? ownValue(input, 'connectorEndCardId') : undefined;
   if (size !== undefined && !(isObject(size) && [ownValue(size, 'w'), ownValue(size, 'h')].every((side) => Number.isSafeInteger(side) && (side as number) >= 1))) {
     return storageFailure('invalid-workspace', 'size', 'El tamaño debe ser de enteros mayores o iguales que 1.');
   }
@@ -176,7 +183,10 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
     && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
   if ((kind !== 'note' && kind !== 'text' && kind !== 'shape' && kind !== 'connector' && kind !== 'image' && kind !== 'title' && kind !== 'link') || (title !== undefined && typeof title !== 'string')
     || (content !== undefined && ((kind !== 'note' && kind !== 'text') || typeof content !== 'string'))
-    || (requestedBoard !== undefined && typeof requestedBoard !== 'string') || !validNear) {
+    || (requestedBoard !== undefined && typeof requestedBoard !== 'string') || !validNear
+    || (connectorPath !== undefined && (kind !== 'connector' || !Array.isArray(connectorPath)))
+    || (connectorStartCardId !== undefined && (kind !== 'connector' || typeof connectorStartCardId !== 'string'))
+    || (connectorEndCardId !== undefined && (kind !== 'connector' || typeof connectorEndCardId !== 'string'))) {
     return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen, título o enlace) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
   }
   const zone = near === undefined ? undefined : near as NonNullable<AddCardInput['near']>;
@@ -186,6 +196,10 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
     return storageFailure('invalid-asset', 'assetRef', 'Solo una imagen del proyecto (bajo assets/) puede añadirse como tarjeta de imagen.');
   }
   const preset = PROTOTYPE_CARD_PRESETS[kind];
+  if (connectorPath !== undefined) {
+    const checked = validateConnectorPath(connectorPath as readonly ConnectorRoutePoint[]);
+    if (!checked.ok) return storageFailure('invalid-workspace', 'connectorPath', 'La ruta del conector no es válida.', checked.issues);
+  }
   const cardSize = size === undefined ? preset.size ?? DEFAULT_CARD_SIZE : { w: ownValue(size, 'w') as number, h: ownValue(size, 'h') as number };
   let created: CardId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
@@ -212,11 +226,14 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       ...(preset.contentLayout === undefined ? {} : { contentLayout: preset.contentLayout }),
       ...(kind === 'shape' ? { frameOverride: 'hidden' as const, shapeKind: 'rectangle' as const, shapeFill: 'blue' as const, shapeStroke: 'default' as const, shapeStrokeWidth: 'medium' as const } : {}),
       ...(kind === 'connector' ? { frameOverride: 'hidden' as const, connectorColor: 'default' as const, connectorWidth: 'medium' as const, connectorDash: 'solid' as const, connectorArrows: 'end' as const, connectorDirection: 'down' as const } : {}),
+      ...(typeof connectorStartCardId === 'string' ? { connectorStartCardId: connectorStartCardId as CardId } : {}),
+      ...(typeof connectorEndCardId === 'string' ? { connectorEndCardId: connectorEndCardId as CardId } : {}),
       ...(preset.content === undefined ? {} : { content: typeof content === 'string' ? content
         : kind === 'image' && typeof assetRef === 'string' ? insertImageBlock('', undefined, assetRef, title ?? preset.title ?? 'Imagen')
           : preset.content }),
     };
-    const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID });
+    const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID,
+      ...(connectorPath === undefined ? {} : { connectorPath: connectorPath as readonly ConnectorRoutePoint[] }) });
     if (result.ok) created = cardId;
     if (result.ok && (kind !== 'title' || zone)) {
       // La primera tarjeta crea el layout: antes, el tablero está vacío.
@@ -341,6 +358,15 @@ export function editCardAppearance(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId, changes: CardAppearanceChanges,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
   return modifyWorkspace(storage, workspaceId, (workspace) => updateCardAppearance(workspace, cardId, changes));
+}
+
+/** Edita la ruta propia del tablero; estilo y anclajes continúan en la tarjeta. */
+export function editConnectorPath(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId,
+  input: BoardCardTarget & { readonly connectorPath: readonly ConnectorRoutePoint[] },
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => changeBoardLayout(workspace, input.boardId,
+    (layout) => setConnectorPath(layout, input.cardId, input.connectorPath, CANONICAL_GRID)));
 }
 
 /** Crea una ficha navegable al tablero destino; no duplica el tablero ni sus tarjetas. */

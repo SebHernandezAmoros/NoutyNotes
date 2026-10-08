@@ -29,7 +29,8 @@ export function relationsSchemaVersion(relations: readonly Relation[]): 1 | 2 {
 export function layoutData(layout: BoardLayout): BoardLayout {
   return {
     boardId: layout.boardId,
-    placements: layout.placements.map(({ cardId, rect, display }) => ({ cardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })),
+    placements: layout.placements.map(({ cardId, rect, display, connectorPath }) => ({ cardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+      ...(connectorPath === undefined ? {} : { connectorPath: connectorPath.map(({ x, y }) => ({ x, y })) }) })),
     // Marcos (ADR 0027): solo si hay; sin ellos, los bytes v1/v2 no cambian.
     ...(layout.frames === undefined ? {} : { frames: layout.frames.map(({ id, title, rect }) => ({ id, title, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } })) }),
   };
@@ -48,16 +49,21 @@ export function relationIssues(relations: readonly Relation[], path: string, ver
   return [...issues, ...duplicateIdIssues(relations.map((relation) => relation.id), path, 'las relaciones')];
 }
 
-export function layoutIssues(layouts: readonly BoardLayout[], path: string, version: 1 | 2 | 3 | 4 = 1): (StorageIssue | DomainIssue)[] {
+export function layoutIssues(layouts: readonly BoardLayout[], path: string, version: 1 | 2 | 3 | 4 | 5 = 1): (StorageIssue | DomainIssue)[] {
   const issues: (StorageIssue | DomainIssue)[] = [];
   const hasFractions = layouts.some((layout) => layout.placements.some((placement) => Object.values(placement.rect).some((value) => !Number.isInteger(value))));
   if (version === 4 && !hasFractions) issues.push({ code: 'invalid-layout', path, message: 'La versión 4 exige al menos una coordenada subdividida.' });
+  const hasConnectorPath = layouts.some((layout) => layout.placements.some((placement) => placement.connectorPath !== undefined));
+  if (version === 5 && !hasConnectorPath) issues.push({ code: 'invalid-layout', path, message: 'La versión 5 exige al menos una ruta de conector.' });
   layouts.forEach((layout, index) => {
     const checked = validateLayout(layout);
     if (!checked.ok) issues.push(...reprefix(checked.issues, 'layout', `${path}[${index}]`));
     if (version < 3 && layout.frames !== undefined) {
       issues.push({ code: 'invalid-layout', path: `${path}[${index}].frames`, message: `La versión ${version} no admite marcos.` });
     }
+    if (version < 5) layout.placements.forEach((placement, placementIndex) => {
+      if (placement.connectorPath !== undefined) issues.push({ code: 'invalid-layout', path: `${path}[${index}].placements[${placementIndex}].connectorPath`, message: `La versión ${version} no admite rutas de conector.` });
+    });
     if (version < 4) layout.placements.forEach((placement, placementIndex) => {
       for (const axis of ['x', 'y', 'w', 'h'] as const) if (!Number.isInteger(placement.rect[axis])) {
         issues.push({ code: 'invalid-layout', path: `${path}[${index}].placements[${placementIndex}].rect.${axis}`, message: `La versión ${version} no admite subdivisiones.` });
@@ -75,7 +81,8 @@ export function layoutIssues(layouts: readonly BoardLayout[], path: string, vers
 }
 
 /** Marcos: esquema 3 (ADR 0027). Coordenadas negativas: 2. Los archivos viejos conservan v1. */
-export function layoutSchemaVersion(layouts: readonly BoardLayout[]): 1 | 2 | 3 | 4 {
+export function layoutSchemaVersion(layouts: readonly BoardLayout[]): 1 | 2 | 3 | 4 | 5 {
+  if (layouts.some((layout) => layout.placements.some((placement) => placement.connectorPath !== undefined))) return 5;
   if (layouts.some((layout) => layout.placements.some((placement) => Object.values(placement.rect).some((value) => !Number.isInteger(value))))) return 4;
   if (layouts.some((layout) => layout.frames !== undefined)) return 3;
   return layouts.some((layout) => layout.placements.some((placement) => placement.rect.x < 0 || placement.rect.y < 0)) ? 2 : 1;
@@ -116,7 +123,7 @@ export function serializeLayouts(layouts: readonly BoardLayout[]): StorageResult
 }
 
 export function parseLayouts(text: string, file = LAYOUT_FILE): StorageResult<BoardLayout[]> {
-  const read = readVersionedYaml(text, file, layoutFileSchema, [1, 2, 3, 4]);
+  const read = readVersionedYaml(text, file, layoutFileSchema, [1, 2, 3, 4, 5]);
   if (!read.ok) return read;
   // Forma comprobada por Zod; enteros, modos y colocaciones se validan a continuación.
   const layouts = read.value.layouts.map((layout) => layoutData(layout as unknown as BoardLayout));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, moveCardOnBoard, nudgeCardOnBoard, pasteSnapshot, resizeCardOnBoard, snapshotSelection,
+  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, editConnectorPath, moveCardOnBoard, nudgeCardOnBoard, pasteSnapshot, resizeCardOnBoard, snapshotSelection,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId, CardId, RelationId, WorkspaceId } from '../../packages/domain/src/index';
@@ -66,6 +66,37 @@ describe('añadir tarjetas (fase 7)', () => {
     const pastedConnector = pasted.find((candidate) => candidate.typeId === 'conector');
     expect(pastedConnector?.connectorStartCardId).toBe(pastedStart?.id);
     expect(pastedConnector && 'connectorEndCardId' in pastedConnector).toBe(false);
+  });
+
+  it('P18-D crea dos extremos persistentes, edita codos y copia la ruta por tablero', async () => {
+    const { storage, workspaceId } = await session();
+    const start = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', title: 'Inicio' }));
+    const connectorPath = [{ x: 2, y: 1.5 }, { x: 8, y: 1.5 }, { x: 8, y: 6 }];
+    const connector = ok(await addCardToBoard(storage, workspaceId, {
+      kind: 'connector', boardId: board, connectorPath, connectorStartCardId: start,
+    }));
+    let opened = ok(await storage.open(workspaceId));
+    expect(opened.cards.find((candidate) => candidate.id === connector)?.connectorStartCardId).toBe(start);
+    expect(opened.layouts[0]?.placements.find((candidate) => candidate.cardId === connector)?.connectorPath).toEqual(connectorPath);
+    expect(ok(storage.exportPackage(workspaceId))['.nouty/layout.yaml']).toContain('schemaVersion: 5');
+
+    const edited = [{ x: 2, y: 1.5 }, { x: 5, y: 1.5 }, { x: 5, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 6 }];
+    ok(await editConnectorPath(storage, workspaceId, { boardId: board, cardId: connector, connectorPath: edited }));
+    opened = ok(await storage.open(workspaceId));
+    expect(opened.layouts[0]?.placements.find((candidate) => candidate.cardId === connector)?.connectorPath).toEqual(edited);
+
+    const snapshot = snapshotSelection(opened, board, [start, connector], 'copy');
+    if (!snapshot) throw new Error('sin instantánea');
+    ok(await pasteSnapshot(storage, workspaceId, board, snapshot));
+    opened = ok(await storage.open(workspaceId));
+    const copiedConnector = opened.cards.filter((candidate) => candidate.typeId === 'conector').at(-1);
+    const copiedPlacement = opened.layouts[0]?.placements.find((candidate) => candidate.cardId === copiedConnector?.id);
+    const offset = copiedPlacement?.connectorPath?.[0]
+      ? { x: copiedPlacement.connectorPath[0].x - edited[0]!.x, y: copiedPlacement.connectorPath[0].y - edited[0]!.y }
+      : null;
+    expect(offset).not.toBeNull();
+    expect(copiedPlacement?.connectorPath?.map((point, index) => ({ x: point.x - edited[index]!.x, y: point.y - edited[index]!.y })))
+      .toEqual(edited.map(() => offset));
   });
 
   it('P14 crea una forma portable, permite cambiar tipo y estilo y el portapapeles los conserva', async () => {

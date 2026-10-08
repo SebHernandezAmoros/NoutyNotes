@@ -110,6 +110,15 @@ describe('codec de relaciones', () => {
 });
 
 describe('codec de layouts', () => {
+  it('usa v5 para una ruta ortogonal y conserva sus puntos en cuartos de celda', () => {
+    const routed = unsafe<BoardLayout[]>([{ boardId: 'principal', placements: [{
+      cardId: 'connector', display: 'expanded', rect: { x: 0, y: 0, w: 1, h: 1 },
+      connectorPath: [{ x: 0.25, y: 1.5 }, { x: 4, y: 1.5 }, { x: 4, y: 5 }],
+    }] }]);
+    const text = valueOf(serializeLayouts(routed));
+    expect(text).toContain('schemaVersion: 5');
+    expect(valueOf(parseLayouts(text))).toEqual(routed);
+  });
   it('usa v4 solo cuando hay una posición en una subdivisión real', () => {
     const fine = unsafe<BoardLayout[]>([{ boardId: 'principal', placements: [{ cardId: 'a', rect: { x: 0.25, y: 1.5, w: 4, h: 3 }, display: 'expanded' }] }]);
     const text = valueOf(serializeLayouts(fine));

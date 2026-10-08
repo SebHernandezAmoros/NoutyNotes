@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { BoardId, BoardLayout, Card, CardId, RelationId, RelationTypeId } from '@noutynotes/domain';
 
-import { BOARD_GAP, BOARD_ROW_HEIGHT, boardBoxes, connectorSegments, relationSegments } from './board-geometry';
+import { BOARD_GAP, BOARD_ROW_HEIGHT, boardBoxes, connectorRoutes, connectorSegments, relationSegments } from './board-geometry';
 
 const place = (cardId: string, x: number, y: number, w: number, h: number) =>
   ({ cardId: cardId as CardId, rect: { x, y, w, h }, display: 'expanded' as const });
@@ -80,5 +80,38 @@ describe('geometría del tablero (fase 7)', () => {
     const { connectorStartCardId: _start, connectorEndCardId: _end, ...withoutAnchors } = connector;
     const [free] = connectorSegments([withoutAnchors as Card], boxes);
     expect(free).toMatchObject({ startX: 100, startY: 100, endX: 300, endY: 200 });
+  });
+
+  it('proyecta una ruta P18-D como tramos ortogonales sin usar la caja portadora visible', () => {
+    const connector = { id: 'connector', typeId: 'conector', fields: {} } as Card;
+    const placement = {
+      cardId: 'connector' as CardId,
+      rect: { x: 1, y: 2, w: 1, h: 1 },
+      display: 'expanded' as const,
+      connectorPath: [{ x: 1, y: 2 }, { x: 4, y: 2 }, { x: 4, y: 5 }],
+    };
+    const boxes = [{ cardId: 'connector' as CardId, left: 104, top: 116, width: 92, height: 48 }];
+    const [route] = connectorRoutes([connector], [placement], boxes, { cell: 100, row: 56, gap: 8 });
+    expect(route?.legacy).toBe(false);
+    expect(route?.points).toEqual([{ x: 100, y: 112 }, { x: 400, y: 112 }, { x: 400, y: 280 }]);
+    expect(route?.segments.map(({ angle, length }) => [angle, length])).toEqual([[0, 300], [90, 168]]);
+  });
+
+  it('mueve el extremo anclado al borde y conserva el primer tramo ortogonal', () => {
+    const connector = { id: 'connector', typeId: 'conector', fields: {}, connectorStartCardId: 'a' } as Card;
+    const placement = {
+      cardId: 'connector' as CardId,
+      rect: { x: 1, y: 2, w: 1, h: 1 },
+      display: 'expanded' as const,
+      connectorPath: [{ x: 1, y: 2 }, { x: 4, y: 2 }, { x: 4, y: 5 }],
+    };
+    const boxes = [
+      { cardId: 'connector' as CardId, left: 104, top: 116, width: 92, height: 48 },
+      { cardId: 'a' as CardId, left: 10, top: 20, width: 80, height: 60 },
+    ];
+    const [route] = connectorRoutes([connector], [placement], boxes, { cell: 100, row: 56, gap: 8 });
+    expect(route?.points[0]).toEqual({ x: 90, y: 50 });
+    expect(route?.points[1]).toEqual({ x: 400, y: 50 });
+    expect(route?.segments.every((item) => item.angle === 0 || Math.abs(item.angle) === 90)).toBe(true);
   });
 });

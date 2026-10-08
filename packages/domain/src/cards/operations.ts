@@ -4,6 +4,8 @@ import { isValidId } from '../ids';
 import type { BoardId, CardId } from '../ids';
 import type { GridConfig, GridSize } from '../layouts/grid';
 import type { BoardLayout, CardPlacement } from '../layouts/layout';
+import { validateConnectorPath } from '../layouts/connector-path';
+import type { ConnectorRoutePoint } from '../layouts/connector-path';
 import { addGroup, findFreeSpace } from '../layouts/operations';
 import { collectRelationIssues } from '../relations/relation';
 import type { Relation } from '../relations/relation';
@@ -63,6 +65,8 @@ export interface AddCardOptions {
   /** Tamaño expandido inicial, en unidades de la grilla indicada. */
   readonly size: GridSize;
   readonly config: GridConfig;
+  /** Geometría no ocupante de un conector, propia de este board (ADR 0061). */
+  readonly connectorPath?: readonly ConnectorRoutePoint[];
 }
 
 /**
@@ -91,10 +95,19 @@ export function addCard(workspace: Workspace, card: Card, options: AddCardOption
   }
   const current = workspace.layouts.find((layout) => layout.boardId === boardId);
   const layout: BoardLayout = current ?? { boardId, placements: [] };
-  const spot = findFreeSpace(layout, options.size, options.config);
-  if (!spot.ok) return failure(spot.issues);
-  const placement: CardPlacement = {
-    cardId: card.id, rect: { x: spot.value.x, y: spot.value.y, w: options.size.w, h: options.size.h }, display: 'expanded',
+  const routed = options.connectorPath;
+  if (routed !== undefined && type.base !== 'connector') return failure([issue('invalid-value', 'options.connectorPath', 'Solo un conector admite una ruta.')]);
+  if (routed !== undefined) {
+    const path = validateConnectorPath(routed);
+    if (!path.ok) return failure(path.issues);
+  }
+  const spot = routed === undefined ? findFreeSpace(layout, options.size, options.config) : null;
+  if (spot && !spot.ok) return failure(spot.issues);
+  const start = routed?.[0];
+  const placement: CardPlacement = routed && start ? {
+    cardId: card.id, rect: { x: start.x, y: start.y, w: 1, h: 1 }, display: 'expanded', connectorPath: routed.map(({ x, y }) => ({ x, y })),
+  } : {
+    cardId: card.id, rect: { x: spot?.value.x ?? 0, y: spot?.value.y ?? 0, w: options.size.w, h: options.size.h }, display: 'expanded',
   };
   const placed: BoardLayout = { ...layout, placements: [...layout.placements, placement] };
   return validateWorkspace({

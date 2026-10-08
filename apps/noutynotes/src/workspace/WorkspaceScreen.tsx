@@ -1,10 +1,10 @@
 import {
-  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, duplicateSelection, editCardContent, importImageCard,
+  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, duplicateSelection, editCardContent, editConnectorPath, importImageCard,
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, WorkspaceId } from '@noutynotes/domain';
-import { frameMembers } from '@noutynotes/domain';
+import { createOrthogonalConnectorPath, frameMembers } from '@noutynotes/domain';
 import { markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -177,6 +177,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [openBoardIds, setOpenBoardIds] = useState<readonly BoardId[]>([]);
   const [tool, setTool] = useState<CanvasTool>('select');
   const [connectSource, setConnectSource] = useState<CardId | null>(null);
+  const [connectorStart, setConnectorStart] = useState<{ readonly point: GridPoint; readonly cardId?: CardId } | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState<Point>(START_PAN);
   const [boardView, setBoardView] = useState<BoardView>('canvas');
@@ -598,8 +599,39 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const changeTool = (next: CanvasTool) => {
     setTool(next);
     setConnectSource(null);
+    setConnectorStart(null);
     setMulti(null);
     setFrameId(null);
+  };
+
+  const pickConnectorTarget = (point: GridPoint, cardId?: CardId) => {
+    if (!connectorStart) {
+      setConnectorStart({ point, ...(cardId ? { cardId } : {}) });
+      return;
+    }
+    if (!board) {
+      setFeedback({ tone: 'error', text: 'Crea o abre un tablero antes de terminar el conector.' });
+      return;
+    }
+    if (connectorStart.point.x === point.x && connectorStart.point.y === point.y) {
+      setFeedback({ tone: 'error', text: 'Elige una segunda posición distinta.' });
+      return;
+    }
+    const path = createOrthogonalConnectorPath(connectorStart.point, point);
+    const start = connectorStart;
+    setConnectorStart(null);
+    setTool('select');
+    void run((storage, workspaceId) => addCardToBoard(storage, workspaceId, {
+      kind: 'connector', boardId: board.id, createdAt: new Date().toISOString(), connectorPath: path,
+      ...(start.cardId ? { connectorStartCardId: start.cardId } : {}),
+      ...(cardId ? { connectorEndCardId: cardId } : {}),
+    }), additions.connector).then((result) => { if (result.ok) void select(result.value); });
+  };
+
+  const changeConnectorPath = (cardId: CardId, connectorPath: readonly GridPoint[]) => {
+    if (!board) return;
+    void run((storage, workspaceId) => editConnectorPath(storage, workspaceId, { boardId: board.id, cardId, connectorPath }),
+      { label: 'Ruta del conector actualizada' });
   };
 
   // Deshacer y rehacer (ADR 0026): antes se guarda el borrador, que es un paso más.
@@ -643,6 +675,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [connectSource]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || tool !== 'connector') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setConnectorStart(null);
+      setTool('select');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tool]);
 
   // Flechas mueven el conjunto seleccionado una celda (UX7-A1: sustituye los botones ←↑↓→ de la barra).
   const moveManyRef = useRef(moveMany);
@@ -944,6 +987,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Un error nunca usa el color de «guardado»; guardando es neutro y la memoria volátil, aviso.
   const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' ? colors.textSecondary : colors.danger;
   const hint = tool === 'pan' ? 'Mano: arrastra el lienzo para desplazarte. Las tarjetas no se mueven con esta herramienta.'
+    : tool === 'connector'
+      ? connectorStart ? 'Posición 1 marcada. Toca una segunda posición o una tarjeta para terminar el conector.'
+        : 'Conector: toca una posición libre o una tarjeta para marcar la posición 1.'
     : tool === 'connect'
       ? connectSource ? `Origen: «${workspace?.cards.find((card) => card.id === connectSource)?.title ?? t('card.untitled', locale)}». Toca otra tarjeta para conectar o desconectar; toca el origen para cancelar.`
         : 'Conectar: toca la tarjeta de origen.'
@@ -1097,7 +1143,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         borderColor: feedback?.tone === 'error' && connectSource === null ? colors.danger : colors.gridLine,
       }]}
     >
-      {connectSource !== null ? hint : feedback ? feedback.text : hint}
+      {tool === 'connector' || connectSource !== null ? hint : feedback ? feedback.text : hint}
     </Text>
   ) : null;
   const feedbackLine = workspace && compact ? (
@@ -1213,6 +1259,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         hideFrames={preferences.hideFrames}
         noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
         connectSource={connectSource}
+        connectorStart={connectorStart}
+        onConnectorTarget={pickConnectorTarget}
+        onConnectorPathChange={changeConnectorPath}
         onCardPress={pressCard}
         onToggleCheck={toggleCheck}
         onCardEdit={(cardId) => void editCard(cardId)}
@@ -1487,7 +1536,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onLink={() => { setInsertOpen(false); setLinkOpen(true); }}
             onTable={(rows, columns) => { setInsertOpen(false); void addTable(rows, columns); }}
             onShape={() => { setInsertOpen(false); void add('shape'); }}
-            onConnector={() => { setInsertOpen(false); void add('connector'); }}
+            onConnector={() => { setInsertOpen(false); changeTool('connector'); }}
           />
           <Dialog visible={shortcutOpen} title="Acceso a tablero" compact={compact} onClose={() => setShortcutOpen(false)} testID="board-shortcut-dialog">
             <Text style={[styles.body, { color: colors.textSecondary }]}>Elige el tablero que abrirá esta ficha.</Text>
