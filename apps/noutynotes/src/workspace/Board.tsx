@@ -1,5 +1,6 @@
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { RichTextCodec } from '@noutynotes/application';
+import { cardContentPresentation, cardTitleText } from '@noutynotes/domain';
 import type { BaseCardKind, BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
@@ -38,16 +39,16 @@ export function cardTitle(card: Card, locale: Locale): string {
   if (card.typeId === 'conector') {
     return locale === 'es' ? 'Conector' : 'Connector';
   }
-  return card.title ?? t('card.untitled', locale);
+  return cardTitleText(card) || t('card.untitled', locale);
 }
 
 /** Texto visible sobre la propia ficha (UX7-A4): vacío si no hay título, sin «Sin título» de relleno. */
 export function cardDisplayTitle(card: Card): string {
-  return card.title ?? '';
+  return cardTitleText(card);
 }
 
 export function isImageCard(workspace: Workspace, card: Card): boolean {
-  return workspace.cardTypes.find((type) => type.id === card.typeId)?.base === 'image';
+  return workspace.cardTypes.find((type) => type.id === card.typeId)?.base === 'image' && card.content === undefined;
 }
 
 /** Primitivas de P13-P15 (texto flotante, forma, conector): su cuerpo en Lista no es Markdown (P16). */
@@ -159,6 +160,7 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
   const floatingText = base === 'text';
   const shape = base === 'shape';
   const connector = base === 'connector';
+  const presentation = cardContentPresentation(card, base);
   const textColor = image ? colors.textPrimary : colors.noteText;
   // UX7-C3: antes, Lista mostraba el Markdown crudo de la nota (incluida la sintaxis `![...](...)`
   // de una imagen) o siempre un marcador de ejemplo para una ficha de imagen única, sin la imagen real.
@@ -190,8 +192,8 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
         borderWidth: selected ? 4 : focused ? 3 : 2,
       }]}
     >
-      <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }]}>{cardTitle(card, locale)}</Text>
-      {image ? (
+      {presentation.title === 'visible' ? <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }]}>{cardTitle(card, locale)}</Text> : null}
+      {presentation.body === 'hidden' ? null : image ? (
         imageUri ? (
           <Image testID={`list-image-${card.id}`} accessibilityRole="image" accessibilityLabel={`Imagen ${cardTitle(card, locale)}`}
             source={{ uri: imageUri }} resizeMode="contain" style={[styles.cardImage, { borderColor: colors.border, backgroundColor: colors.surface }]} />
@@ -210,9 +212,9 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
           <ConnectorPreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-connector-${card.id}`} />
         </View>
       ) : mixedRich && richDocument ? (
-        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} images={noteImages ?? emptyNoteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
+        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} images={noteImages ?? emptyNoteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout} />
       ) : mixed ? (
-        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} />
+        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout} />
       ) : richDocument ? (
         <BasicRichTextPreview
           document={richDocument}

@@ -81,11 +81,11 @@ describe('añadir tarjetas (fase 7)', () => {
     expect(copied).toMatchObject({ shapeKind: 'ellipse', shapeFill: 'transparent', shapeStroke: 'red', shapeStrokeWidth: 'thick' });
   });
 
-  it('crea texto flotante multilínea sin título ni marco, con estilo portable', async () => {
+  it('crea texto flotante como una nota unificada sin título ni marco, con estilo portable', async () => {
     const { storage, workspaceId } = await session();
     const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'text', content: 'Primera\nSegunda' }));
     const created = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id === cardId);
-    expect(created).toMatchObject({ typeId: 'texto-flotante', content: 'Primera\nSegunda', fields: {}, frameOverride: 'hidden' });
+    expect(created).toMatchObject({ typeId: 'nota', content: 'Primera\nSegunda', fields: {}, frameOverride: 'hidden', titleVisibility: 'hidden', bodyVisibility: 'visible' });
     expect(created && 'title' in created).toBe(false);
     ok(await editCardAppearance(storage, workspaceId, cardId, { bodySize: 'large', textAlign: 'center', textColor: 'blue' }));
     const snapshot = snapshotSelection(ok(await storage.open(workspaceId)), board, [cardId], 'copy');
@@ -94,12 +94,12 @@ describe('añadir tarjetas (fase 7)', () => {
     const copied = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id !== cardId);
     expect(copied).toMatchObject({ content: 'Primera\nSegunda', frameOverride: 'hidden', bodySize: 'large', textAlign: 'center', textColor: 'blue' });
   });
-  it('P3: crea un título flotante como sección portable, editable y con layout propio', async () => {
+  it('P18-C: crea un título flotante como presentación de la nota unificada y con layout propio', async () => {
     const { storage, workspaceId } = await session();
     const titleId = ok(await addCardToBoard(storage, workspaceId, { kind: 'title', title: 'Proyecto Solace' }));
     const opened = ok(await storage.open(workspaceId));
-    expect(opened.cardTypes).toContainEqual({ id: 'titulo-flotante', label: 'Título', base: 'section', fields: [] });
-    expect(opened.cards[0]).toMatchObject({ id: titleId, typeId: 'titulo-flotante', title: 'Proyecto Solace' });
+    expect(opened.cardTypes).toContainEqual({ id: 'nota', label: 'Nota', base: 'note', fields: [] });
+    expect(opened.cards[0]).toMatchObject({ id: titleId, typeId: 'nota', title: 'Proyecto Solace', titleVisibility: 'visible', bodyVisibility: 'hidden', frameOverride: 'hidden' });
     expect(opened.layouts[0]?.placements[0]?.rect).toEqual({ x: 0, y: 0, w: 6, h: 2 });
     const noteId = ok(await addCardToBoard(storage, workspaceId, { kind: 'note' }));
     expect(ok(await storage.open(workspaceId)).layouts[0]?.placements.find((placement) => placement.cardId === noteId)?.rect)
@@ -112,7 +112,7 @@ describe('añadir tarjetas (fase 7)', () => {
     if (!archive.ok) throw new Error(JSON.stringify(archive.issues));
     const restored = readWorkspaceArchive(archive.value);
     if (!restored.ok) throw new Error(JSON.stringify(restored.issues));
-    expect(restored.value.workspace.cards[0]).toMatchObject({ typeId: 'titulo-flotante', title: 'Ideas que perduran' });
+    expect(restored.value.workspace.cards[0]).toMatchObject({ typeId: 'nota', title: 'Ideas que perduran', bodyVisibility: 'hidden' });
     expect(restored.value.workspace.layouts[0]?.placements[0]?.rect).toMatchObject({ x: -3, y: 12 });
   });
   it('P2: una tarjeta nueva va al primer hueco de la zona visible que indica la interfaz, no fuera de la vista', async () => {
@@ -130,13 +130,13 @@ describe('añadir tarjetas (fase 7)', () => {
     expect(ok(await addCardToBoard(storage, workspaceId, { kind: 'note' }))).toBe('tarjeta-1');
     expect(ok(await addCardToBoard(storage, workspaceId, { kind: 'image' }))).toBe('tarjeta-2');
     const workspace = ok(await storage.open(workspaceId));
-    expect(workspace.cardTypes.map(({ id: typeId, base }) => `${typeId}:${base}`)).toEqual(['nota:note', 'imagen:image']);
+    expect(workspace.cardTypes.map(({ id: typeId, base }) => `${typeId}:${base}`)).toEqual(['nota:note']);
     expect(workspace.boards).toEqual([{ id: 'principal', title: 'Tablero principal', cardIds: ['tarjeta-1', 'tarjeta-2'] }]);
     expect(workspace.cards).toEqual([
       { id: 'tarjeta-1', typeId: 'nota', title: 'Nueva nota', content: '', fields: {} },
-      { id: 'tarjeta-2', typeId: 'imagen', title: 'Imagen de ejemplo', fields: {} },
+      { id: 'tarjeta-2', typeId: 'nota', title: 'Imagen', content: '', fields: {}, contentLayout: 'banner' },
     ]);
-    expect(workspace.layouts[0]?.placements.map(({ rect }) => rect)).toEqual([{ x: 0, y: 0, w: 4, h: 3 }, { x: 4, y: 0, w: 4, h: 3 }]);
+    expect(workspace.layouts[0]?.placements.map(({ rect }) => rect)).toEqual([{ x: 0, y: 0, w: 4, h: 3 }, { x: 4, y: 0, w: 6, h: 7 }]);
     expect(Object.keys(ok(storage.exportPackage(workspaceId)))).toContain('cards/tarjeta-1.md');
   });
 
@@ -270,7 +270,7 @@ describe('editar, mover, redimensionar y relacionar a través del puerto (fase 7
     ok(await addCardToBoard(storage, other, { kind: 'image' }));
     ok(await editCardContent(storage, workspaceId, a, { content: 'Persistente en memoria' }));
     expect(ok(await storage.open(workspaceId)).cards[0]?.content).toBe('Persistente en memoria');
-    expect(ok(await storage.open(other)).cards.map(({ typeId }) => typeId)).toEqual(['imagen']);
+    expect(ok(await storage.open(other)).cards.map(({ typeId }) => typeId)).toEqual(['nota']);
     expect(ok(await storage.list()).map(({ id: workspace }) => workspace)).toEqual(['mis-ideas', 'otro']);
   });
 });

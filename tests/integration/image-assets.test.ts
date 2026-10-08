@@ -40,7 +40,10 @@ describe('importar una imagen real como tarjeta (ADR 0015)', () => {
     const cardId = ok(await importImageCard(storage, storage, id, { bytes: PNG, fileName: 'Costa  norte.PNG' }));
     const workspace = ok(await storage.open(id));
     const created = workspace.cards.find((card) => card.id === cardId);
-    expect(created).toMatchObject({ title: 'Costa  norte', typeId: 'imagen', assetRefs: ['assets/images/tarjeta-1.png'] });
+    expect(created).toMatchObject({ title: 'Costa  norte', typeId: 'nota', assetRefs: ['assets/images/tarjeta-1.png'], contentLayout: 'banner' });
+    expect(created?.content).toContain('![Costa norte](assets/images/tarjeta-1.png)');
+    expect(workspace.layouts[0]?.placements.find((placement) => placement.cardId === cardId)?.rect)
+      .toMatchObject({ w: 6, h: 7 });
     expect(ok(await storage.readAsset(id, 'assets/images/tarjeta-1.png' as AssetRef))).toEqual(PNG);
     expect(storage.unexportedIds()).toContain(id);
     const archive = readWorkspaceArchive(ok(storage.exportArchive(id)).bytes);

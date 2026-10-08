@@ -68,14 +68,14 @@ const START_PAN: Point = { x: 16, y: 16 };
 // UX7-D1: el 100 % es ahora el tamaño normal de trabajo (antes 75 %, ADR 0048); la densidad visual
 // equivalente la da el nuevo `rowHeight` por defecto (48 px, en `preferences.ts`), no el zoom.
 const DEFAULT_ZOOM = 1;
-const DEFAULT_TABLE_DOCUMENT: RichTextDocument = {
+const tableDocument = (rows: number, columns: number): RichTextDocument => ({
   schemaVersion: 1,
   blocks: [{
     type: 'table',
-    header: { cells: Array.from({ length: 3 }, () => ({ content: [] })) },
-    rows: Array.from({ length: 2 }, () => ({ cells: Array.from({ length: 3 }, () => ({ content: [] })) })),
+    header: { cells: Array.from({ length: columns }, () => ({ content: [] })) },
+    rows: Array.from({ length: rows - 1 }, () => ({ cells: Array.from({ length: columns }, () => ({ content: [] })) })),
   }],
-};
+});
 
 const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
   expanded: 'action.cardExpanded',
@@ -524,13 +524,18 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     return result.ok ? null : describeFailure(result.issues, storageMode);
   };
 
-  const addTable = async () => {
-    const encoded = markdownRichTextCodec.serialize(DEFAULT_TABLE_DOCUMENT);
+  const addTable = async (rows: number, columns: number) => {
+    const encoded = markdownRichTextCodec.serialize(tableDocument(rows, columns));
     if (!encoded.ok) {
       setFeedback({ tone: 'error', text: 'No se pudo preparar la tabla.' });
       return;
     }
-    const result = await add('note', { content: encoded.value });
+    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    const result = await run((storage, workspaceId) => addCardToBoard(storage, workspaceId, {
+      kind: 'note', content: encoded.value, createdAt: new Date().toISOString(),
+      size: { w: Math.max(4, Math.min(12, columns * 2)), h: Math.max(3, rows + 2) },
+      ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}),
+    }), additions.note);
     if (!result.ok) return;
     setEditingId(result.value);
     setInlineEditing(false);
@@ -1480,7 +1485,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onTitle={() => { setInsertOpen(false); void add('title'); }}
             onImage={() => { setInsertOpen(false); void importImage(); }}
             onLink={() => { setInsertOpen(false); setLinkOpen(true); }}
-            onTable={() => { setInsertOpen(false); void addTable(); }}
+            onTable={(rows, columns) => { setInsertOpen(false); void addTable(rows, columns); }}
             onShape={() => { setInsertOpen(false); void add('shape'); }}
             onConnector={() => { setInsertOpen(false); void add('connector'); }}
           />

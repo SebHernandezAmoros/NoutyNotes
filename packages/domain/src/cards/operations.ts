@@ -11,9 +11,10 @@ import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
 import {
-  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, frameOverrides, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
-  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
+  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
+  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type ContentLayout, type ContentVisibility, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
 } from './card';
+import type { RichTextInline } from '../rich-text/rich-text';
 
 export interface DeleteCardOptions {
   /** Por defecto no permite borrar una tarjeta conectada; cascade elimina sus vínculos explícitamente. */
@@ -170,11 +171,13 @@ export function pasteCardsOnBoard(workspace: Workspace, input: PasteCardsInput):
 export interface CardContentChanges {
   /** Un título en blanco elimina el título (es opcional); cualquier otro se guarda tal cual. */
   readonly title?: string;
+  /** `null` vuelve al título plano/ausente; al establecerlo elimina `title`. */
+  readonly titleRichText?: readonly RichTextInline[] | null;
   /** Markdown opaco: se guarda literal, también vacío. */
   readonly content?: string;
 }
 
-const editableCardKeys: readonly string[] = ['title', 'content'];
+const editableCardKeys: readonly string[] = ['title', 'titleRichText', 'content'];
 
 /** Edita título y Markdown sin tocar campos, assets, representación ni relaciones. */
 export function updateCard(workspace: Workspace, cardId: CardId, changes: CardContentChanges): ValidationResult<Workspace> {
@@ -188,16 +191,26 @@ export function updateCard(workspace: Workspace, cardId: CardId, changes: CardCo
   const issues: DomainIssue[] = Object.keys(input)
     .filter((key) => !editableCardKeys.includes(key))
     .map((key) => issue('unknown-property', `changes.${key}`, 'Solo se pueden editar el título y el contenido.'));
-  for (const key of editableCardKeys) {
+  for (const key of ['title', 'content'] as const) {
     if (Object.hasOwn(input, key) && typeof input[key] !== 'string') {
       issues.push(issue('invalid-value', `changes.${key}`, 'Debe ser texto.'));
     }
   }
+  if (Object.hasOwn(input, 'titleRichText') && input.titleRichText !== null && !Array.isArray(input.titleRichText)) {
+    issues.push(issue('invalid-value', 'changes.titleRichText', 'Debe ser contenido inline o null.'));
+  }
+  if (Object.hasOwn(input, 'title') && Object.hasOwn(input, 'titleRichText')) {
+    issues.push(issue('invalid-value', 'changes.titleRichText', 'Cambia una sola representación del título por operación.'));
+  }
   if (issues.length > 0) return failure(issues);
-  const { title, ...untitled } = card;
+  const { title, titleRichText, ...untitled } = card;
   const nextTitle = changes.title === undefined ? title : changes.title;
   const edited: Card = {
-    ...(isNonBlankString(nextTitle) ? { ...untitled, title: nextTitle } : untitled),
+    ...untitled,
+    ...(changes.titleRichText !== undefined
+      ? changes.titleRichText === null || changes.titleRichText.length === 0 ? {} : { titleRichText: changes.titleRichText }
+      : titleRichText !== undefined ? { titleRichText }
+        : isNonBlankString(nextTitle) ? { title: nextTitle } : {}),
     ...(changes.content === undefined ? {} : { content: changes.content }),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? edited : candidate)) });
@@ -213,6 +226,9 @@ export interface CardAppearanceChanges {
   readonly bodySize?: TextSize | null;
   /** Posición de la leyenda de imágenes intercaladas (ADR 0051); `null` vuelve a `'bottom'` (ausente). */
   readonly captionPosition?: CaptionPosition | null;
+  readonly titleVisibility?: ContentVisibility | null;
+  readonly bodyVisibility?: ContentVisibility | null;
+  readonly contentLayout?: ContentLayout | null;
   readonly textAlign?: FloatingTextAlign | null;
   readonly textColor?: FloatingTextColor | null;
   readonly shapeKind?: ShapeKind | null;
@@ -228,7 +244,7 @@ export interface CardAppearanceChanges {
   readonly connectorEndCardId?: CardId | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId'];
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId'];
 
 /** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
@@ -246,6 +262,9 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const nextTitleSize = changes.titleSize;
   const nextBodySize = changes.bodySize;
   const nextCaptionPosition = changes.captionPosition;
+  const nextTitleVisibility = changes.titleVisibility;
+  const nextBodyVisibility = changes.bodyVisibility;
+  const nextContentLayout = changes.contentLayout;
   const nextTextAlign = changes.textAlign;
   const nextTextColor = changes.textColor;
   const nextShapeKind = changes.shapeKind;
@@ -278,6 +297,9 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   if (nextCaptionPosition !== undefined && nextCaptionPosition !== null && !captionPositions.includes(nextCaptionPosition as CaptionPosition)) {
     return failure([issue('invalid-value', 'changes.captionPosition', 'Debe ser "bottom", "top", "left" o "right".')]);
   }
+  if (nextTitleVisibility !== undefined && nextTitleVisibility !== null && !contentVisibilities.includes(nextTitleVisibility as ContentVisibility)) return failure([issue('invalid-value', 'changes.titleVisibility', 'Visibilidad desconocida.')]);
+  if (nextBodyVisibility !== undefined && nextBodyVisibility !== null && !contentVisibilities.includes(nextBodyVisibility as ContentVisibility)) return failure([issue('invalid-value', 'changes.bodyVisibility', 'Visibilidad desconocida.')]);
+  if (nextContentLayout !== undefined && nextContentLayout !== null && !contentLayouts.includes(nextContentLayout as ContentLayout)) return failure([issue('invalid-value', 'changes.contentLayout', 'Composición desconocida.')]);
   if (nextTextAlign !== undefined && nextTextAlign !== null && !floatingTextAlignments.includes(nextTextAlign as FloatingTextAlign)) {
     return failure([issue('invalid-value', 'changes.textAlign', 'Alineación desconocida.')]);
   }
@@ -300,7 +322,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   }
   const {
     icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize,
-    captionPosition: _captionPosition, textAlign: _textAlign, textColor: _textColor,
+    captionPosition: _captionPosition, titleVisibility: _titleVisibility, bodyVisibility: _bodyVisibility, contentLayout: _contentLayout, textAlign: _textAlign, textColor: _textColor,
     shapeKind: _shapeKind, shapeFill: _shapeFill, shapeStroke: _shapeStroke, shapeStrokeWidth: _shapeStrokeWidth,
     connectorColor: _connectorColor, connectorWidth: _connectorWidth, connectorDash: _connectorDash, connectorArrows: _connectorArrows, connectorDirection: _connectorDirection,
     connectorStartCardId: _connectorStartCardId, connectorEndCardId: _connectorEndCardId, ...base
@@ -318,6 +340,9 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
       : nextBodySize === null ? {} : { bodySize: nextBodySize as TextSize }),
     ...(nextCaptionPosition === undefined ? (card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition })
       : nextCaptionPosition === null ? {} : { captionPosition: nextCaptionPosition as CaptionPosition }),
+    ...(nextTitleVisibility === undefined ? (card.titleVisibility === undefined ? {} : { titleVisibility: card.titleVisibility }) : nextTitleVisibility === null ? {} : { titleVisibility: nextTitleVisibility as ContentVisibility }),
+    ...(nextBodyVisibility === undefined ? (card.bodyVisibility === undefined ? {} : { bodyVisibility: card.bodyVisibility }) : nextBodyVisibility === null ? {} : { bodyVisibility: nextBodyVisibility as ContentVisibility }),
+    ...(nextContentLayout === undefined ? (card.contentLayout === undefined ? {} : { contentLayout: card.contentLayout }) : nextContentLayout === null ? {} : { contentLayout: nextContentLayout as ContentLayout }),
     ...(nextTextAlign === undefined ? (card.textAlign === undefined ? {} : { textAlign: card.textAlign })
       : nextTextAlign === null ? {} : { textAlign: nextTextAlign as FloatingTextAlign }),
     ...(nextTextColor === undefined ? (card.textColor === undefined ? {} : { textColor: card.textColor })

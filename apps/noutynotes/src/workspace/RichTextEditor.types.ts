@@ -13,4 +13,6 @@ export interface RichTextEditorProps {
   readonly onReplaceImage?: ((document: RichTextDocument, blockIndex: number) => Promise<RichTextImage | null>) | undefined;
   /** Reduce la altura del editor cuando se monta directamente sobre una ficha del lienzo. */
   readonly compact?: boolean;
+  /** Título de una sola línea: solo formato inline y sin bloques, tablas o imágenes. */
+  readonly titleOnly?: boolean;
 }

@@ -10,7 +10,7 @@ import type {
 import { nextSequentialId, workspaceIdFromName } from './ids';
 import { resolveRelationType } from './relations';
 import { LINK_CARD_TYPE, linkCardTypeFor } from './links';
-import { syncNoteAssetRefs } from './note-blocks';
+import { insertImageBlock, syncNoteAssetRefs } from './note-blocks';
 import type { WorkspaceAssets } from './workspace-assets';
 import { describeUntrustedValue, storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageIssue, WorkspaceStorageResult, WorkspaceSummary } from './workspace-storage';
@@ -28,6 +28,12 @@ export const DEFAULT_CARD_SIZE: GridSize = { w: 4, h: 3 };
 export const PROTOTYPE_BOARD = { id: 'principal' as BoardId, title: 'Tablero principal' } as const;
 export const RELATED_RELATION_TYPE: RelationTypeDefinition = { id: 'relacionada' as RelationTypeId, label: 'Relacionada con' };
 
+/** Proyección editable de tipos históricos; solo se persiste cuando la persona realmente edita. */
+export function editableCardContent(card: Card, base: CardTypeDefinition['base'] | undefined): string {
+  if (card.content !== undefined || base !== 'image') return card.content ?? '';
+  return (card.assetRefs ?? []).reduce((content, ref) => insertImageBlock(content, undefined, ref, card.title ?? 'Imagen'), '');
+}
+
 export type PrototypeCardKind = 'note' | 'text' | 'shape' | 'connector' | 'image' | 'title' | 'link';
 
 interface CardPreset {
@@ -38,16 +44,20 @@ interface CardPreset {
   /** Apariencia y navegación portable (ADR 0046). */
   readonly icon?: Card['icon'];
   readonly boardTargetId?: BoardId;
+  readonly frameOverride?: Card['frameOverride'];
+  readonly titleVisibility?: Card['titleVisibility'];
+  readonly bodyVisibility?: Card['bodyVisibility'];
+  readonly contentLayout?: Card['contentLayout'];
 }
 
-/** Tipos mínimos que el prototipo añade a demanda. La imagen es un marcador de posición sin asset. */
+/** Tipos mínimos que la interfaz añade a demanda; texto, título e imagen convergen en una nota. */
 export const PROTOTYPE_CARD_PRESETS: Readonly<Record<PrototypeCardKind, CardPreset>> = {
   note: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nueva nota', content: '' },
-  text: { type: { id: 'texto-flotante' as CardTypeId, label: 'Texto', base: 'text', fields: [] }, content: 'Nuevo texto', size: { w: 4, h: 3 } },
+  text: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, content: 'Nuevo texto', size: { w: 4, h: 3 }, frameOverride: 'hidden', titleVisibility: 'hidden', bodyVisibility: 'visible' },
   shape: { type: { id: 'forma' as CardTypeId, label: 'Forma', base: 'shape', fields: [] }, size: { w: 4, h: 3 } },
   connector: { type: { id: 'conector' as CardTypeId, label: 'Conector', base: 'connector', fields: [] }, size: { w: 4, h: 3 } },
-  image: { type: { id: 'imagen' as CardTypeId, label: 'Imagen', base: 'image', fields: [] }, title: 'Imagen de ejemplo' },
-  title: { type: { id: 'titulo-flotante' as CardTypeId, label: 'Título', base: 'section', fields: [] }, title: 'Nuevo título', size: { w: 6, h: 2 } },
+  image: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Imagen', content: '', size: { w: 6, h: 7 }, contentLayout: 'banner' },
+  title: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nuevo título', content: '', size: { w: 6, h: 2 }, frameOverride: 'hidden', titleVisibility: 'visible', bodyVisibility: 'hidden' },
   // El tipo real se elige por proyecto (`linkCardTypeFor`, ADR 0020); este es el que se añade si no hay ninguno.
   link: { type: LINK_CARD_TYPE, title: 'Enlace' },
 };
@@ -60,7 +70,7 @@ export interface AddCardInput {
   readonly content?: string;
   /** Solo para `link`: la dirección tal como la escribe la persona; se normaliza (ADR 0020). */
   readonly url?: string;
-  /** Solo para `image`: un asset que ya existe (biblioteca, ADR 0022); sin él, es la imagen de ejemplo. */
+  /** Solo para `image`: un asset que ya existe (biblioteca, ADR 0022). */
   readonly assetRef?: string;
   /** Creación real (ADR 0024): la pone la interfaz; application no usa el reloj. */
   readonly createdAt?: string;
@@ -143,7 +153,7 @@ function withBoard(workspace: Workspace): { readonly workspace: Workspace; reado
 }
 
 /**
- * Añade una nota, imagen de ejemplo o título flotante al board indicado, en el primer
+ * Añade una nota o una presentación preconfigurada de nota al board indicado, en el primer
  * hueco libre. Un board inexistente es un error y no guarda nada. Devuelve su ID.
  */
 export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: WorkspaceId, input: AddCardInput): Promise<WorkspaceStorageResult<CardId>> {
@@ -196,10 +206,15 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       ...(typeof createdAt === 'string' ? { createdAt } : {}),
       ...(typeof icon === 'string' ? { icon: icon as NonNullable<Card['icon']> } : {}),
       ...(typeof boardTargetId === 'string' ? { boardTargetId: boardTargetId as BoardId } : {}),
-      ...(kind === 'text' ? { frameOverride: 'hidden' as const } : {}),
+      ...(preset.frameOverride === undefined ? {} : { frameOverride: preset.frameOverride }),
+      ...(preset.titleVisibility === undefined ? {} : { titleVisibility: preset.titleVisibility }),
+      ...(preset.bodyVisibility === undefined ? {} : { bodyVisibility: preset.bodyVisibility }),
+      ...(preset.contentLayout === undefined ? {} : { contentLayout: preset.contentLayout }),
       ...(kind === 'shape' ? { frameOverride: 'hidden' as const, shapeKind: 'rectangle' as const, shapeFill: 'blue' as const, shapeStroke: 'default' as const, shapeStrokeWidth: 'medium' as const } : {}),
       ...(kind === 'connector' ? { frameOverride: 'hidden' as const, connectorColor: 'default' as const, connectorWidth: 'medium' as const, connectorDash: 'solid' as const, connectorArrows: 'end' as const, connectorDirection: 'down' as const } : {}),
-      ...(preset.content === undefined ? {} : { content: typeof content === 'string' ? content : preset.content }),
+      ...(preset.content === undefined ? {} : { content: typeof content === 'string' ? content
+        : kind === 'image' && typeof assetRef === 'string' ? insertImageBlock('', undefined, assetRef, title ?? preset.title ?? 'Imagen')
+          : preset.content }),
     };
     const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID });
     if (result.ok) created = cardId;
@@ -207,7 +222,8 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       // La primera tarjeta crea el layout: antes, el tablero está vacío.
       const before = target.layouts.find((layout) => layout.boardId === boardId) ?? { boardId, placements: [] };
       const heading = kind === 'title' ? undefined : before?.placements.find((placement) => placement.rect.x === 0 && placement.rect.y === 0
-        && target.cards.some((candidate) => candidate.id === placement.cardId && candidate.typeId === PROTOTYPE_CARD_PRESETS.title.type.id));
+        && target.cards.some((candidate) => candidate.id === placement.cardId
+          && (candidate.bodyVisibility === 'hidden' || candidate.typeId === 'titulo-flotante')));
       const after = result.value.layouts.find((layout) => layout.boardId === boardId);
       if (before && after && (heading || zone)) {
         // El título al origen funciona como encabezado del tablero: la primera fila de tarjetas

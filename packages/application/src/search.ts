@@ -2,7 +2,7 @@
  * Búsqueda dentro del proyecto abierto (ADR 0019) y en todos los proyectos (ADR 0020). Consulta pura:
  * no escribe, no crea índices y nunca interpreta el contenido (el extracto es texto literal).
  */
-import { normalizeTag } from '@noutynotes/domain';
+import { cardTitleText, normalizeTag } from '@noutynotes/domain';
 import type { BoardId, CardId, CardTypeId, Workspace, WorkspaceId } from '@noutynotes/domain';
 
 import type { WorkspaceStorage } from './workspace-storage';
@@ -62,7 +62,7 @@ export function searchWorkspace(workspace: Workspace, query: string, options: { 
     // Como las palabras, «#japon» encuentra la etiqueta «japón» (sin acentos ni mayúsculas).
     const foldedTags = tags.map(fold);
     if (!tagFilters.every((tag) => foldedTags.includes(tag))) continue;
-    const title = card.title ?? 'Sin título';
+    const title = cardTitleText(card) || 'Sin título';
     const type = types.get(card.typeId);
     const typeLabel = type?.label ?? card.typeId;
     // Los enlaces (campos `url`) también se buscan: «ejemplo.com» encuentra su tarjeta.

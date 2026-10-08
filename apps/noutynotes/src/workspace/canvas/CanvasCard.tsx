@@ -1,4 +1,4 @@
-import { linkDisplay, linkUrlField } from '@noutynotes/domain';
+import { cardContentPresentation, linkDisplay, linkUrlField } from '@noutynotes/domain';
 import type { RichTextCodec } from '@noutynotes/application';
 import type { Card, CardDisplayMode, RichTextInline, RichTextList, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
@@ -174,7 +174,7 @@ export function CanvasCard(props: CanvasCardProps) {
       onPanResponderTerminationRequest: () => false,
     }).panHandlers;
   });
-  const image = isImageCard(workspace, card);
+  const image = isImageCard(workspace, card) && card.content === undefined;
   // A zoom bajo el contenido sigue visible: se compensa la tipografía en vez de convertir la ficha en
   // una caja vacía. La persona trabaja habitualmente al 50 %, así que ocultar Markdown era engañoso.
   const zoomFactor = Math.min(1, Math.max(props.zoom, 0.1));
@@ -199,6 +199,9 @@ export function CanvasCard(props: CanvasCardProps) {
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const floatingTitle = card.typeId === 'titulo-flotante';
   const floatingText = type?.base === 'text';
+  const presentation = cardContentPresentation(card, type?.base);
+  const unifiedFloating = type?.base === 'note' && card.frameOverride === 'hidden'
+    && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);
   const shape = type?.base === 'shape';
   const connector = type?.base === 'connector';
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
@@ -285,7 +288,7 @@ export function CanvasCard(props: CanvasCardProps) {
         onFocus={() => { setFocused(true); props.onFocus(); }}
         onBlur={() => setFocused(false)}
         style={[styles.card, {
-          backgroundColor: (floatingTitle || floatingText || shape || connector) && display === 'expanded' ? 'transparent' : colors.cardSurface,
+          backgroundColor: (unifiedFloating || floatingTitle || floatingText || shape || connector) && display === 'expanded' ? 'transparent' : colors.cardSurface,
           borderColor: hideFrame && !activeBorder ? 'transparent' : borderColor,
           borderWidth: activeBorder ? 3 : hideFrame ? 0 : 2,
           opacity: dragging ? 0.85 : 1,
@@ -298,6 +301,19 @@ export function CanvasCard(props: CanvasCardProps) {
             {/* UX7-A4: título borrado conscientemente no dibuja relleno; el nombre accesible del botón ya anuncia «Nota sin título». */}
             {cardDisplayTitle(card) ? (
               <Text numberOfLines={icon ? (box.height >= 56 ? 2 : 1) : 3} style={[styles.miniTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>
+            ) : null}
+          </View>
+        ) : unifiedFloating && display === 'expanded' ? (
+          <View testID={`unified-content-${card.id}`} style={[styles.floatingTextWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+            {presentation.title === 'visible' && cardDisplayTitle(card) ? (
+              card.titleRichText ? (
+                <BasicRichTextPreview document={{ schemaVersion: 1, blocks: [{ type: 'paragraph', content: card.titleRichText }] }} numberOfLines={3}
+                  color={colors.textPrimary} fontSize={28} lineHeight={34} fontFamily={props.noteFontFamily} testID={`card-rich-title-${card.id}`} />
+              ) : <Text numberOfLines={3} style={[styles.floatingTitle, { color: colors.textPrimary }]}>{cardDisplayTitle(card)}</Text>
+            ) : null}
+            {presentation.body === 'visible' && previewDocument ? (
+              <BasicRichTextPreview document={previewDocument} numberOfLines={Math.max(1, bodyLines)} color={colors.cardText}
+                fontSize={contentSize} lineHeight={contentLine} fontFamily={props.noteFontFamily} testID={`card-rich-text-${card.id}`} />
             ) : null}
           </View>
         ) : floatingTitle && display === 'expanded' ? (
@@ -342,7 +358,7 @@ export function CanvasCard(props: CanvasCardProps) {
               </View>
             </View>
             <View style={styles.body}>
-              {cardDisplayTitle(card) ? (
+              {presentation.title === 'visible' && cardDisplayTitle(card) ? (
                 <Text
                   numberOfLines={lowZoom ? 3 : 2}
                   style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
@@ -350,7 +366,7 @@ export function CanvasCard(props: CanvasCardProps) {
                   {cardDisplayTitle(card)}
                 </Text>
               ) : null}
-              {image ? (props.imageUri ? (
+              {presentation.body === 'visible' && image ? (props.imageUri ? (
                 // «contain», no «cover» (auditoría visual, 2026-09-29): recortar sin que la persona lo
                 // pida oculta parte de su imagen; se ve completa, con el fondo de la tarjeta alrededor
                 // si su proporción no llena el hueco. Elegir un recorte deliberado queda pendiente.
@@ -365,19 +381,19 @@ export function CanvasCard(props: CanvasCardProps) {
               ) : (card.assetRefs?.length ?? 0) > 0 ? (
                 <Text style={[styles.content, { color: colors.textSecondary }]}>Cargando imagen…</Text>
               ) : <ImagePlaceholder />) : null}
-              {!image && link ? (
+              {presentation.body === 'visible' && !image && link ? (
                 <Text testID={`card-link-${card.id}`} numberOfLines={1} style={[styles.link, { color: colors.cardText }]}>
                   {`↗ ${link.host}${link.rest}`}
                 </Text>
               ) : null}
-              {mixedRich && richDocument ? (
-                <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition}
+              {presentation.body === 'visible' && mixedRich && richDocument ? (
+                <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
-              ) : mixed ? (
-                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition}
+              ) : presentation.body === 'visible' && mixed ? (
+                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
-              {!image && !mixed && previewDocument && bodyLines > 0 ? (
+              {presentation.body === 'visible' && !image && !mixed && previewDocument && bodyLines > 0 ? (
                 <BasicRichTextPreview
                   document={previewDocument}
                   numberOfLines={overflow.shownLines}
@@ -388,7 +404,7 @@ export function CanvasCard(props: CanvasCardProps) {
                   testID={`card-rich-text-${card.id}`}
                 />
               ) : null}
-              {!image && !mixed && bodyBlocks.length > 0 ? (
+              {presentation.body === 'visible' && !image && !mixed && bodyBlocks.length > 0 ? (
                 <View style={styles.bodyBlocks}>
                   {bodyBlocks.map((block, index) => block.kind === 'text' ? (
                     <Text key={index} numberOfLines={block.text.split('\n').length}

@@ -3,7 +3,7 @@
  * proyección pura, en el orden de lectura de las tarjetas (fila, luego columna, igual que su numeración
  * en el lienzo). Sin reloj ni acceso a archivos: se arma a partir del workspace ya cargado.
  */
-import { footprint } from '@noutynotes/domain';
+import { cardContentPresentation, cardTitleText, footprint } from '@noutynotes/domain';
 import type { BoardId, CaptionPosition, Card, CardId, ConnectorArrows, ConnectorDash, ConnectorDirection, FloatingTextAlign, FloatingTextColor, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize, Workspace } from '@noutynotes/domain';
 
 import { noteImageRefs } from './note-blocks';
@@ -45,7 +45,7 @@ export interface PrintEntry {
   readonly connectorDirection?: ConnectorDirection;
 }
 
-const titleOf = (card: Card | undefined): string => card?.title ?? 'Sin título';
+const titleOf = (card: Card | undefined): string => card ? cardTitleText(card) || 'Sin título' : 'Sin título';
 
 /** Conexiones de una tarjeta como texto: reutiliza `label` de la relación o, si no tiene, el de su tipo. */
 function connectionsOf(workspace: Workspace, cardId: CardId, cards: ReadonlyMap<CardId, Card>): PrintConnection[] {
@@ -77,10 +77,12 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
   return ordered.flatMap((placement, index): PrintEntry[] => {
     const card = cards.get(placement.cardId);
     if (!card) return [];
-    const imageRefs = typeBase.get(card.typeId) === 'image' ? [...(card.assetRefs ?? [])] : noteImageRefs(card.content ?? '');
+    const base = typeBase.get(card.typeId);
+    const presentation = cardContentPresentation(card, base);
+    const imageRefs = presentation.body === 'hidden' ? [] : base === 'image' ? [...(card.assetRefs ?? [])] : noteImageRefs(card.content ?? '');
     return [{
-      id: card.id, number: index + 1, title: titleOf(card), typeLabel: typeLabel.get(card.typeId) ?? '',
-      content: card.content ?? '', tags: card.tags ?? [], imageRefs, connections: connectionsOf(workspace, card.id, cards),
+      id: card.id, number: index + 1, title: presentation.title === 'visible' ? titleOf(card) : '', typeLabel: typeLabel.get(card.typeId) ?? '',
+      content: presentation.body === 'visible' ? card.content ?? '' : '', tags: card.tags ?? [], imageRefs, connections: connectionsOf(workspace, card.id, cards),
       ...(card.titleSize === undefined ? {} : { titleSize: card.titleSize }),
       ...(card.bodySize === undefined ? {} : { bodySize: card.bodySize }),
       ...(card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition }),

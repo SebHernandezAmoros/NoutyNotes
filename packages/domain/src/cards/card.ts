@@ -10,6 +10,8 @@ import { collectFieldValueIssues } from './field-values';
 import type { FieldValue } from './field-values';
 import { collectTagIssues } from './tags';
 import { isArchiveInstant } from './trashed-card';
+import { RICH_TEXT_SCHEMA_VERSION, validateRichTextDocument } from '../rich-text/rich-text';
+import type { RichTextInline } from '../rich-text/rich-text';
 
 /**
  * Unidad de contenido. Pertenece al workspace, no a un board: los boards la referencian por ID
@@ -20,6 +22,8 @@ export interface Card {
   readonly id: CardId;
   readonly typeId: CardTypeId;
   readonly title?: string;
+  /** Título enriquecido inline (P18-C). Es fuente única y no puede coexistir con `title`. */
+  readonly titleRichText?: readonly RichTextInline[];
   /** Markdown opaco para el dominio: no se interpreta ni se reescribe. */
   readonly content?: string;
   readonly fields: Readonly<Record<string, FieldValue>>;
@@ -40,6 +44,11 @@ export interface Card {
   readonly bodySize?: TextSize;
   /** Posición de la leyenda de las imágenes intercaladas (ADR 0051). Ausente: `'bottom'`. */
   readonly captionPosition?: CaptionPosition;
+  /** Visibilidad independiente de las dos zonas de una nota unificada (P18-C). */
+  readonly titleVisibility?: ContentVisibility;
+  readonly bodyVisibility?: ContentVisibility;
+  /** Flujo de documento o composición de imágenes tipo banner (P18-C). */
+  readonly contentLayout?: ContentLayout;
   /** Alineación horizontal del texto flotante (ADR 0057). Ausente: izquierda. */
   readonly textAlign?: FloatingTextAlign;
   /** Color semántico portable del texto flotante (ADR 0057). Ausente: color del tema. */
@@ -81,6 +90,40 @@ export type TextSize = (typeof textSizes)[number];
 export const captionPositions = ['bottom', 'top', 'left', 'right'] as const;
 export type CaptionPosition = (typeof captionPositions)[number];
 
+export const contentVisibilities = ['visible', 'hidden'] as const;
+export type ContentVisibility = (typeof contentVisibilities)[number];
+
+export const contentLayouts = ['document', 'banner'] as const;
+export type ContentLayout = (typeof contentLayouts)[number];
+
+export function richTextInlineText(inlines: readonly RichTextInline[] | undefined): string {
+  return (inlines ?? []).map((inline) => inline.type === 'hard-break' ? '\n'
+    : inline.type === 'link' ? richTextInlineText(inline.content) : inline.text).join('');
+}
+
+/** Nombre plano estable para búsqueda, accesibilidad, Lista, impresión y archivos históricos. */
+export function cardTitleText(card: Pick<Card, 'title' | 'titleRichText'>): string {
+  return card.titleRichText === undefined ? card.title ?? '' : richTextInlineText(card.titleRichText);
+}
+
+export interface CardContentPresentation {
+  readonly title: ContentVisibility;
+  readonly body: ContentVisibility;
+  readonly layout: ContentLayout;
+}
+
+/** Adapta tipos históricos sin reescribirlos; los campos explícitos mandan en notas nuevas. */
+export function cardContentPresentation(
+  card: Pick<Card, 'titleVisibility' | 'bodyVisibility' | 'contentLayout'>,
+  base: CardTypeDefinition['base'] | undefined,
+): CardContentPresentation {
+  return {
+    title: card.titleVisibility ?? (base === 'text' ? 'hidden' : 'visible'),
+    body: card.bodyVisibility ?? (base === 'section' ? 'hidden' : 'visible'),
+    layout: card.contentLayout ?? (base === 'image' ? 'banner' : 'document'),
+  };
+}
+
 export const floatingTextAlignments = ['left', 'center', 'right'] as const;
 export type FloatingTextAlign = (typeof floatingTextAlignments)[number];
 
@@ -120,6 +163,13 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   checkId(card.id, `${path}.id`, issues);
   checkId(card.typeId, `${path}.typeId`, issues);
   checkOptionalText(card.title, `${path}.title`, issues);
+  if (card.title !== undefined && card.titleRichText !== undefined) {
+    issues.push(issue('invalid-value', `${path}.titleRichText`, 'El título plano y el enriquecido no pueden coexistir.'));
+  }
+  if (card.titleRichText !== undefined) {
+    const checkedTitle = validateRichTextDocument({ schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: [{ type: 'paragraph', content: card.titleRichText }] });
+    if (!checkedTitle.ok) issues.push(issue('invalid-value', `${path}.titleRichText`, 'Debe ser contenido inline enriquecido válido.'));
+  }
   if (card.content !== undefined && typeof card.content !== 'string') {
     issues.push(issue('invalid-value', `${path}.content`, 'Debe ser texto Markdown.'));
   }
@@ -147,6 +197,15 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   }
   if (card.captionPosition !== undefined && !captionPositions.includes(card.captionPosition as CaptionPosition)) {
     issues.push(issue('invalid-value', `${path}.captionPosition`, 'Debe ser "bottom", "top", "left" o "right".'));
+  }
+  if (card.titleVisibility !== undefined && !contentVisibilities.includes(card.titleVisibility as ContentVisibility)) {
+    issues.push(issue('invalid-value', `${path}.titleVisibility`, 'Debe ser "visible" u "hidden".'));
+  }
+  if (card.bodyVisibility !== undefined && !contentVisibilities.includes(card.bodyVisibility as ContentVisibility)) {
+    issues.push(issue('invalid-value', `${path}.bodyVisibility`, 'Debe ser "visible" u "hidden".'));
+  }
+  if (card.contentLayout !== undefined && !contentLayouts.includes(card.contentLayout as ContentLayout)) {
+    issues.push(issue('invalid-value', `${path}.contentLayout`, 'Debe ser "document" o "banner".'));
   }
   if (card.textAlign !== undefined && !floatingTextAlignments.includes(card.textAlign as FloatingTextAlign)) {
     issues.push(issue('invalid-value', `${path}.textAlign`, 'Debe ser "left", "center" o "right".'));

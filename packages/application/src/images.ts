@@ -95,8 +95,13 @@ export async function importImageCard(
     const [first] = typed.boards;
     const withBoard = input.boardId !== undefined || first ? typed : { ...typed, boards: [{ ...PROTOTYPE_BOARD, cardIds: [] }] };
     const boardId = input.boardId ?? first?.id ?? PROTOTYPE_BOARD.id;
-    const card: Card = { id: cardId, typeId: preset.type.id, title: titleFrom(input.fileName), fields: {}, assetRefs: [assetRef], ...(input.createdAt ? { createdAt: input.createdAt } : {}) };
-    return addCard(withBoard, card, { boardId, size: DEFAULT_CARD_SIZE, config: CANONICAL_GRID });
+    const title = titleFrom(input.fileName);
+    const card: Card = {
+      id: cardId, typeId: preset.type.id, title, fields: {}, assetRefs: [assetRef],
+      content: insertImageBlock('', undefined, assetRef, title), contentLayout: 'banner',
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+    };
+    return addCard(withBoard, card, { boardId, size: preset.size ?? DEFAULT_CARD_SIZE, config: CANONICAL_GRID });
   });
   if (saved.ok) return { ok: true, value: cardId };
   return withdraw(assets, workspaceId, assetRef, saved);

@@ -1,5 +1,5 @@
 import type { NoteBlock } from '@noutynotes/application';
-import type { CaptionPosition, TextSize } from '@noutynotes/domain';
+import type { CaptionPosition, ContentLayout, TextSize } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import type { ColorValue } from 'react-native';
@@ -16,7 +16,7 @@ const GAP = 6;
  * Ficha de una nota con imágenes (ADR 0021): texto resumido e imágenes en el orden del documento
  * hasta llenar el alto disponible; si quedan bloques, «+n». El texto nunca se interpreta como HTML.
  */
-export function NotePreview({ blocks, images, height, testID, fontFamily, bodySize, captionPosition }: {
+export function NotePreview({ blocks, images, height, testID, fontFamily, bodySize, captionPosition, layout = 'document' }: {
   readonly blocks: readonly NoteBlock[];
   readonly images: ReadonlyMap<string, string>;
   /** Alto en píxeles para los bloques (sin título ni pie). */
@@ -28,6 +28,8 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
   readonly bodySize?: TextSize | undefined;
   /** Posición de la leyenda de imagen (ADR 0051); sin ella, `'bottom'`. */
   readonly captionPosition?: CaptionPosition | undefined;
+  /** Documento conserva la imagen completa; banner llena el marco deliberadamente. */
+  readonly layout?: ContentLayout | undefined;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -63,12 +65,15 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
     }
   }
   const hidden = blocks.length - shown.length;
-  const imageNode = (block: Extract<NoteBlock, { kind: 'image' }>, size: number, flexStyle: { flex: number } | null) => (
+  const imageNode = (block: Extract<NoteBlock, { kind: 'image' }>, size: number, flexStyle: { flex: number } | null, blockIndex: number) => (
     images.get(block.ref) ? (
-      <Image accessibilityRole="image" accessibilityLabel={block.alt || 'Imagen de la nota'} source={{ uri: images.get(block.ref) }}
+      <Image testID={`${testID}-image-${blockIndex}`} accessibilityRole="image" accessibilityLabel={block.alt || 'Imagen de la nota'} source={{ uri: images.get(block.ref) }}
         // «contain», no «cover» (UX7-C2, mismo criterio que la ficha de imagen única en CanvasCard):
         // recortar sin que la persona lo pida oculta parte de su imagen.
-        resizeMode="contain" style={[styles.thumb, { height: size, borderColor: colors.border, backgroundColor: colors.surface }, flexStyle]} />
+        resizeMode={layout === 'banner' ? 'cover' : 'contain'} style={[styles.thumb, {
+          height: size, borderColor: colors.border, backgroundColor: colors.surface,
+          objectFit: layout === 'banner' ? 'cover' : 'contain',
+        }, flexStyle]} />
     ) : (
       <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.ref}`} style={[styles.thumb, styles.missing, { height: size, borderColor: colors.border }, flexStyle]}>
         <Text numberOfLines={2} style={[styles.missingText, { color: colors.cardText }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
@@ -88,13 +93,13 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
         sideways && caption ? (
           <View key={index} style={styles.imageRow}>
             {position === 'left' ? captionNode(block, size, colors.cardText) : null}
-            {imageNode(block, size, { flex: 2 })}
+            {imageNode(block, size, { flex: 2 }, index)}
             {position === 'right' ? captionNode(block, size, colors.cardText) : null}
           </View>
         ) : (
           <View key={index} style={styles.imageBlock}>
             {position === 'top' && caption ? captionNode(block, size, colors.cardText) : null}
-            {imageNode(block, size, null)}
+            {imageNode(block, size, null, index)}
             {position !== 'top' && caption ? captionNode(block, size, colors.cardText) : null}
           </View>
         )

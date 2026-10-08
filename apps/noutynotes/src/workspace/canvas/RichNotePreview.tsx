@@ -1,4 +1,4 @@
-import type { CaptionPosition, RichTextDocument, TextSize } from '@noutynotes/domain';
+import type { CaptionPosition, ContentLayout, RichTextDocument, TextSize } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
@@ -8,7 +8,7 @@ import { bodyFontSize, bodyLineHeight } from '../textSizes';
 const IMAGE_HEIGHT = 88;
 
 /** Vista acotada de una nota enriquecida que conserva imágenes, tablas y texto en su orden. */
-export function RichNotePreview({ document, images, height, testID, fontFamily, bodySize, captionPosition }: {
+export function RichNotePreview({ document, images, height, testID, fontFamily, bodySize, captionPosition, layout = 'document' }: {
   readonly document: RichTextDocument;
   readonly images: ReadonlyMap<string, string>;
   readonly height: number;
@@ -16,6 +16,7 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
+  readonly layout?: ContentLayout | undefined;
 }) {
   const { theme } = useTheme();
   const fontSize = bodyFontSize(bodySize);
@@ -32,11 +33,15 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
           ) : null}
           {images.get(block.assetRef) ? (
             <Image
+              testID={`${testID}-image-${blockIndex}`}
               accessibilityRole="image"
               accessibilityLabel={block.alt || 'Imagen de la nota'}
-              resizeMode="contain"
+              resizeMode={layout === 'banner' ? 'cover' : 'contain'}
               source={{ uri: images.get(block.assetRef) }}
-              style={[styles.image, sideways ? styles.imageSide : null, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
+              style={[styles.image, sideways ? styles.imageSide : null, {
+                borderColor: theme.colors.border, backgroundColor: theme.colors.surface,
+                objectFit: layout === 'banner' ? 'cover' : 'contain',
+              }]}
             />
           ) : (
             <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.assetRef}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>

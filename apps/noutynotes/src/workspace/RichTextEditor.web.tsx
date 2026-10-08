@@ -22,9 +22,10 @@ import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text';
 import { $setBlocksType } from '@lexical/selection';
-import { $isTableCellNode, INSERT_TABLE_COMMAND, TableCellNode, TableNode, TableRowNode } from '@lexical/table';
+import { $isTableCellNode, $isTableNode, INSERT_TABLE_COMMAND, TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import {
   $createParagraphNode,
+  $createTextNode,
   $getRoot,
   $getSelection,
   $insertNodes,
@@ -46,6 +47,7 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { isLinkUrl } from '@noutynotes/domain';
+import type { RichTextTable, RichTextTableRow } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 
 import { t } from '../i18n';
@@ -59,7 +61,7 @@ type BlockKind = 'paragraph' | `heading-${HeadingLevel}` | 'bullet' | 'ordered' 
 const MAX_TABLE_ROWS = 20;
 const MAX_TABLE_COLUMNS = 12;
 
-function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertImage'>) {
+function EditorToolbar({ onInsertImage, titleOnly = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'titleOnly'>) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -68,6 +70,7 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
   const [italic, setItalic] = useState(false);
   const [block, setBlock] = useState<BlockKind>('paragraph');
   const [inTable, setInTable] = useState(false);
+  const [tableBlockIndex, setTableBlockIndex] = useState<number | null>(null);
   const [selectionLink, setSelectionLink] = useState('');
   const [linkHref, setLinkHref] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
@@ -82,17 +85,23 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
     const selection = $getSelection();
     setBold($isRangeSelection(selection) && selection.hasFormat('bold'));
     setItalic($isRangeSelection(selection) && selection.hasFormat('italic'));
-    if (!$isRangeSelection(selection)) { setInTable(false); return false; }
+    // Al pulsar un control de la barra el foco sale momentáneamente del contenido y Lexical publica
+    // una selección nula antes del `onPress`. Se conserva la última tabla en ese tránsito; una nueva
+    // selección de rango fuera de la tabla sí limpia el contexto unas líneas más abajo.
+    if (!$isRangeSelection(selection)) return false;
     let selectionNode = selection.anchor.getNode();
     let insideTable = false;
+    let selectedTable: TableNode | null = null;
     while (selectionNode.getParent() !== null) {
       if ($isTableCellNode(selectionNode)) insideTable = true;
+      if ($isTableNode(selectionNode)) selectedTable = selectionNode;
       selectionNode = selectionNode.getParent() ?? selectionNode;
     }
     setInTable(insideTable);
-    const top = selection.anchor.getNode().getTopLevelElement();
+    const top = selectedTable ?? selection.anchor.getNode().getTopLevelElement();
     // Los controles de una imagen decorada pueden dejar el ancla temporalmente en la raíz.
-    if (!top) return false;
+    if (!top) { setTableBlockIndex(null); return false; }
+    setTableBlockIndex(insideTable ? $getRoot().getChildren().indexOf(top) : null);
     if ($isHeadingNode(top)) setBlock(`heading-${Number(top.getTag().slice(1)) as HeadingLevel}`);
     else if ($isListNode(top)) setBlock(top.getListType() === 'number' ? 'ordered' : top.getListType() === 'check' ? 'checklist' : 'bullet');
     else setBlock('paragraph');
@@ -135,6 +144,7 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
   }, [selectionLink]);
 
   useEffect(() => editor.registerCommand(KEY_DOWN_COMMAND, (event) => {
+    if (titleOnly && event.key === 'Enter') { event.preventDefault(); return true; }
     if (!(event.ctrlKey || event.metaKey)) return false;
     const key = event.key.toLowerCase();
     if (key === 'k') { event.preventDefault(); openLink(); return true; }
@@ -149,7 +159,7 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
       return true;
     }
     return false;
-  }, COMMAND_PRIORITY_LOW), [chooseBlock, editor, openLink]);
+  }, COMMAND_PRIORITY_LOW), [chooseBlock, editor, openLink, titleOnly]);
 
   const applyLink = () => {
     const href = linkHref.trim();
@@ -176,6 +186,17 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
     });
     setTableOpen(false);
   };
+  const editSelectedTable = (change: (table: RichTextTable) => RichTextTable) => {
+    if (tableBlockIndex === null) return;
+    editor.update(() => {
+      const document = $readWebRichTextDocument();
+      const table = document?.blocks[tableBlockIndex];
+      if (!document || table?.type !== 'table') return;
+      $loadWebRichTextDocument({ ...document, blocks: document.blocks.map((block, index) => index === tableBlockIndex ? change(table) : block) });
+    });
+  };
+  const emptyRow = (columns: number): RichTextTableRow => ({ cells: Array.from({ length: columns }, () => ({ content: [] })) });
+  const tableWidth = (table: RichTextTable) => table.header?.cells.length ?? table.rows[0]?.cells.length ?? 1;
   const insertImage = async () => {
     if (!onInsertImage) return;
     const snapshot = editor.getEditorState().read(() => {
@@ -224,7 +245,7 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
   return (
     <View>
       <View accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)} style={styles.toolbar}>
-        <select
+        {titleOnly ? null : <select
           aria-label={t('editor.visual.block', locale)}
           disabled={inTable}
           value={block.startsWith('heading-') || block === 'paragraph' ? block : 'paragraph'}
@@ -233,16 +254,31 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
         >
           <option value="paragraph">{t('editor.visual.paragraph', locale)}</option>
           {([1, 2, 3, 4, 5, 6] as const).map((level) => <option key={level} value={`heading-${level}`}>{`${t('editor.visual.heading', locale)} ${level}`}</option>)}
-        </select>
+        </select>}
         {button('B', t('editor.visual.bold', locale), bold, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold'); })}
         {button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
-        <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
-        {button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
-        {button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
-        {button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
+        {titleOnly ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
+        {titleOnly ? null : button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
+        {titleOnly ? null : button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
+        {titleOnly ? null : button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
         {button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink)}
-        {onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }) : null}
-        {button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open))}
+        {!titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }) : null}
+        {titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open))}
+        {!titleOnly && inTable ? button('+F', t('editor.visual.table.addRow', locale), false, false, () => editSelectedTable((table) => ({ ...table, rows: [...table.rows, emptyRow(tableWidth(table))] }))) : null}
+        {!titleOnly && inTable ? button('−F', t('editor.visual.table.removeRow', locale), false, false, () => editSelectedTable((table) => table.rows.length <= 1 ? table : ({ ...table, rows: table.rows.slice(0, -1) }))) : null}
+        {!titleOnly && inTable ? button('+C', t('editor.visual.table.addColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) >= MAX_TABLE_COLUMNS ? table : ({
+          ...table,
+          ...(table.header ? { header: { cells: [...table.header.cells, { content: [] }] } } : {}),
+          rows: table.rows.map((row) => ({ cells: [...row.cells, { content: [] }] })),
+        }))) : null}
+        {!titleOnly && inTable ? button('−C', t('editor.visual.table.removeColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) <= 1 ? table : ({
+          ...table,
+          ...(table.header ? { header: { cells: table.header.cells.slice(0, -1) } } : {}),
+          rows: table.rows.map((row) => ({ cells: row.cells.slice(0, -1) })),
+        }))) : null}
+        {!titleOnly && inTable ? button('H', t('editor.visual.table.toggleHeader', locale), false, false, () => editSelectedTable((table) => table.header
+          ? { type: 'table', rows: [table.header, ...table.rows] }
+          : { type: 'table', header: table.rows[0] as RichTextTableRow, rows: table.rows.length > 1 ? table.rows.slice(1) : [emptyRow(tableWidth(table))] })) : null}
         <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
         {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
         {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
@@ -269,7 +305,7 @@ function EditorToolbar({ onInsertImage }: Pick<RichTextEditorProps, 'onInsertIma
           {linkProblem ? <Text accessibilityLiveRegion="polite" style={{ color: colors.danger }}>{t('editor.visual.link.invalid', locale)}</Text> : null}
         </View>
       ) : null}
-      {tableOpen ? (
+      {!titleOnly && tableOpen ? (
         <View style={[styles.tableEditor, { borderColor: colors.gridLine, backgroundColor: colors.surface }]}>
           <Text style={[styles.tableLabel, { color: colors.textPrimary }]}>{t('editor.visual.table.rows', locale)}</Text>
           <TextInput
@@ -319,7 +355,7 @@ function ImageEditorBridge({ images, captionPosition, onReplaceImage, children }
   );
 }
 
-function SafePastePlugin() {
+function SafePastePlugin({ titleOnly = false }: Pick<RichTextEditorProps, 'titleOnly'>) {
   const [editor] = useLexicalComposerContext();
   useEffect(() => editor.registerCommand(PASTE_COMMAND, (event) => {
     const clipboard = event instanceof ClipboardEvent ? event.clipboardData : event instanceof InputEvent ? event.dataTransfer : null;
@@ -328,9 +364,9 @@ function SafePastePlugin() {
     const text = clipboard.getData('text/plain');
     if (html === '' && text === '') return false;
     event.preventDefault();
-    $insertNodes($createWebRichTextNodes(parsePastedRichText(html, text)));
+    $insertNodes(titleOnly ? [$createTextNode(text.replace(/\s+/g, ' ').trim())] : $createWebRichTextNodes(parsePastedRichText(html, text)));
     return true;
-  }, COMMAND_PRIORITY_HIGH), [editor]);
+  }, COMMAND_PRIORITY_HIGH), [editor, titleOnly]);
   return null;
 }
 
@@ -369,7 +405,7 @@ const editorTheme = {
   tableCellHeader: 'nouty-table-cell-header',
 };
 
-export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, compact = false }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, compact = false, titleOnly = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -401,16 +437,16 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
       `}</style>
       <LexicalComposer initialConfig={initialConfig}>
         <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage}>
-        <EditorToolbar onInsertImage={onInsertImage} />
+        <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} />
         <View style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
             contentEditable={(
               <ContentEditable
-                aria-label={t('editor.visual.content', locale)}
+                aria-label={titleOnly ? t('inspector.title.label', locale) : t('editor.visual.content', locale)}
                 data-testid="web-rich-text-content"
                 spellCheck
                 style={{
-                  boxSizing: 'border-box', minHeight: compact ? 96 : 220, outline: 'none', padding: 14,
+                  boxSizing: 'border-box', minHeight: titleOnly ? 56 : compact ? 96 : 220, outline: 'none', padding: 14,
                   color: colors.cardText,
                   fontFamily: fontFamily ?? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
                   fontSize: 16, lineHeight: 1.55, whiteSpace: 'pre-wrap',
@@ -426,7 +462,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         <CheckListPlugin />
         <LinkPlugin validateUrl={isLinkUrl} attributes={{ rel: 'noreferrer' }} />
         <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} hasTabHandler hasHorizontalScroll />
-        <SafePastePlugin />
+        <SafePastePlugin titleOnly={titleOnly} />
         <AutoFocusPlugin />
         <DocumentChanges document={document} initialDocument={initialDocument} onChange={onChange} />
         </ImageEditorBridge>

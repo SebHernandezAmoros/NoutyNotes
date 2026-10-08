@@ -1,6 +1,6 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editCardAppearance, editCardContent, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editCardContent, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
-import { cardIconNames, connectorArrows, connectorDashes, connectorDirections, floatingTextAlignments, floatingTextColors, linkUrlField, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
+import { cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, floatingTextAlignments, floatingTextColors, linkUrlField, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -118,27 +118,37 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const floatingText = cardBase === 'text';
   const shape = cardBase === 'shape';
   const connector = cardBase === 'connector';
+  const presentation = cardContentPresentation(card, cardBase);
+  const initialContent = editableCardContent(card, cardBase);
   const [title, setTitle] = useState(card.title ?? '');
-  const [content, setContent] = useState(card.content ?? '');
-  const supportsVisualEditor = !floatingText && !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
+  const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => ({
+    schemaVersion: 1,
+    blocks: [{ type: 'paragraph', content: card.titleRichText ?? (card.title ? [{ type: 'text', text: card.title }] : []) }],
+  }));
+  const [content, setContent] = useState(initialContent);
+  const supportsVisualEditor = !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
     : isNativeRichTextDocument(document);
   const [visualRequested, setVisualRequested] = useState(() => {
     if (!supportsVisualEditor) return false;
-    const parsed = richTextCodec.parse(card.content ?? '');
+    const parsed = richTextCodec.parse(initialContent);
     return parsed.ok && supportsVisualDocument(parsed.value);
   });
   const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
   const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
-  const dirty = title !== (card.title ?? '') || content !== (card.content ?? '');
+  const dirty = title !== cardTitleText(card) || content !== initialContent;
   const parsedRichText = supportsVisualEditor ? richTextCodec.parse(content) : null;
   const visualDocument = parsedRichText?.ok && supportsVisualDocument(parsedRichText.value) ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
   const visualEditing = visualRequested && visualAvailable;
-  const changeTitle = (value: string) => {
-    setTitle(value);
-    if (mode === 'folder') onDraftChange({ cardId: card.id, title: value, content });
+  const changeTitleDocument = (document: RichTextDocument) => {
+    const block = document.blocks.length === 1 ? document.blocks[0] : undefined;
+    if (block?.type !== 'paragraph') return;
+    setTitleDocument(document);
+    const plain = cardTitleText({ titleRichText: block.content });
+    setTitle(plain);
+    void run((storage, id) => editCardContent(storage, id, card.id, { titleRichText: block.content.length > 0 ? block.content : null }), 'action.textSaved', { mergeKey: `title:${card.id}` });
   };
   const changeContent = (value: string) => {
     if (floatingText) {
@@ -415,7 +425,13 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       ) : null}
       <View style={styles.section}>
-        {!floatingText && !shape && !connector ? <TextField label={t('inspector.title.label', locale)} value={title} onChangeText={changeTitle} placeholder={t('trash.item.untitled', locale)} /> : null}
+        {!shape && !connector && presentation.title === 'visible' ? (
+          <View testID="rich-title-editor">
+            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.title.label', locale)}</Text>
+            <RichTextEditor cardId={`${card.id}-title`} document={titleDocument} codec={richTextCodec} onChange={changeTitleDocument}
+              fontFamily={noteFontFamily} compact titleOnly />
+          </View>
+        ) : null}
         {linkKey ? (
           <View testID="card-link" style={styles.tagSection}>
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.section', locale)}</Text>
@@ -482,7 +498,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton label="1." accessibilityLabel={t('inspector.list.number.accessibilityLabel', locale)} onPress={() => insertList('number')} style={styles.listButton} />
           <ActionButton label="☐" accessibilityLabel={t('inspector.list.check.accessibilityLabel', locale)} onPress={() => insertList('check')} style={styles.listButton} />
         </View>}
-        {visualEditing || shape || connector ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
+        {presentation.body === 'hidden' || visualEditing || shape || connector ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
           onKeyPress={onContentKeyPress}
@@ -490,7 +506,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             selectionRef.current = selection;
             if (forcedSelection && selection.start === forcedSelection.start && selection.end === forcedSelection.end) setForcedSelection(undefined);
           }} />}
-        {!visualEditing && withBlocks ? (
+        {presentation.body === 'visible' && !visualEditing && withBlocks ? (
           <NoteBlocksEditor content={content} onChange={changeBlocks} images={noteImages} canPickImages={supportsImageImport()}
             onInsert={() => void placeImage({ kind: 'insert', caret: selectionRef.current.start })}
             onReplace={(index) => void placeImage({ kind: 'replace', index })} />
@@ -514,7 +530,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
-            onPress={() => { void ((mode === 'folder' || visualEditing) ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { title, content }), 'action.textSaved', { mergeKey: `text:${card.id}` })); }}
+            onPress={() => { void ((mode === 'folder' || visualEditing) ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { content }), 'action.textSaved', { mergeKey: `text:${card.id}` })); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
         </View> : null}
@@ -586,30 +602,27 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton label={t('inspector.frame.hidden', locale)} pressed={card.frameOverride === 'hidden'}
             onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'hidden' }), { label: 'Apariencia actualizada' })} />
         </View>
+        {!shape && !connector ? (
+          <>
+            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.contentVisibility.section', locale)}</Text>
+            <View style={styles.row}>
+              <ActionButton label={t('inspector.contentVisibility.title', locale)} pressed={presentation.title === 'visible'}
+                accessibilityLabel={t('inspector.contentVisibility.title.accessibilityLabel', locale)}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleVisibility: presentation.title === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' })} />
+              <ActionButton label={t('inspector.contentVisibility.body', locale)} pressed={presentation.body === 'visible'}
+                accessibilityLabel={t('inspector.contentVisibility.body.accessibilityLabel', locale)}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodyVisibility: presentation.body === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' })} />
+            </View>
+            <View style={styles.row}>
+              <ActionButton label={t('inspector.contentLayout.document', locale)} pressed={presentation.layout === 'document'}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'document' }), { label: 'Apariencia actualizada' })} />
+              <ActionButton label={t('inspector.contentLayout.banner', locale)} pressed={presentation.layout === 'banner'}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'banner' }), { label: 'Apariencia actualizada' })} />
+            </View>
+          </>
+        ) : null}
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.frame.hint', locale)}</Text>
       </View>
-
-      {!shape ? <View testID="card-text-size-picker" style={styles.section}>
-        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.textSize.section', locale)}</Text>
-        <View style={styles.row}>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.titleRow', locale)}</Text>
-          {(['small', 'medium', 'large'] as const).map((size) => (
-            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
-              accessibilityLabel={t(`inspector.textSize.title.${size}.accessibilityLabel`, locale)}
-              pressed={(card.titleSize ?? 'medium') === size}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleSize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' })} />
-          ))}
-        </View>
-        <View style={styles.row}>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.bodyRow', locale)}</Text>
-          {(['small', 'medium', 'large'] as const).map((size) => (
-            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
-              accessibilityLabel={t(`inspector.textSize.body.${size}.accessibilityLabel`, locale)}
-              pressed={(card.bodySize ?? 'medium') === size}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodySize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' })} />
-          ))}
-        </View>
-      </View> : null}
 
       {shape ? (
         <View testID="shape-style-picker" style={styles.section}>

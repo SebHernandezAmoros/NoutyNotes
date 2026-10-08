@@ -518,7 +518,7 @@ test('menú de ficha minimizada: editar y empezar una conexión sin abrir el ins
   await expect(feedback(page)).toContainText('conectadas');
 });
 
-test('imagen real: vista previa, formato inválido y cancelación', async ({ page }, testInfo) => {
+test('P18-C: una imagen real crea un banner y permite añadir una segunda imagen', async ({ page }, testInfo) => {
   const { runtimeErrors } = trackProblems(page);
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
@@ -543,14 +543,22 @@ test('imagen real: vista previa, formato inválido y cancelación', async ({ pag
   await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).setFiles(image);
   await expect(feedback(page)).toHaveText('Imagen «app-icon.png» importada. Guardado en memoria.');
-  await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
-  await expect(page.getByTestId('image-preview-tarjeta-1')).toHaveAttribute('aria-label', 'Imagen app-icon');
-  await expect(page.getByTestId('image-preview-tarjeta-1')).toHaveAttribute('role', 'img');
+  const banner = page.getByTestId('note-preview-tarjeta-1');
+  await expect(banner.locator('img')).toHaveCount(1);
+  await expect(banner.locator('img')).toBeVisible();
+  await expect(page.getByTestId('note-preview-tarjeta-1-image-0')).toHaveCSS('object-fit', 'cover');
   await expect(page.getByTestId('export-status')).toContainText('CAMBIOS SIN EXPORTAR');
-  // «card-asset» vive en el editor: hace falta «Editar» para verlo.
+  // El banner es la misma nota rica: desde su editor se añade otra imagen, en orden, sin crear otro tipo.
   await openCardEditor(page, 1);
   await expect(page.getByTestId('card-asset')).toHaveText('assets/images/tarjeta-1.png');
+  chooser = page.waitForEvent('filechooser');
+  await button(page, 'Insertar una imagen').click();
+  await (await chooser).setFiles(image);
+  await expect(feedback(page)).toHaveText('Imagen «app-icon.png» insertada en la nota. Guardado en memoria.');
+  await expect(page.getByTestId('card-inspector').locator('[data-testid^="rich-image-"]')).toHaveCount(2);
+  await expect(page.getByTestId('card-asset')).toContainText('assets/images/tarjeta-1-1.png');
   await closeEditor(page);
+  await expect(banner.locator('img')).toHaveCount(2);
 
   await page.screenshot({ path: testInfo.outputPath('image-imported.png') });
   expect(runtimeErrors).toEqual([]);
@@ -584,9 +592,8 @@ test('vista Lista muestra las imágenes reales, no el Markdown crudo ni siempre 
   // comprueba en la vista Lista, con más espacio por fila que la ficha de tamaño inicial del lienzo.
   await button(page, 'Vista de lista').click();
   await expect(page.getByTestId('board-list')).toBeVisible();
-  // La ficha de imagen única muestra la imagen real, no el marcador de ejemplo.
-  await expect(page.getByTestId('list-image-tarjeta-1')).toBeVisible();
-  await expect(page.getByTestId('list-image-tarjeta-1')).toHaveAttribute('role', 'img');
+  // El banner unificado muestra la imagen real, no el marcador de ejemplo ni un tipo especial.
+  await expect(page.getByTestId('list-note-preview-tarjeta-1').locator('img')).toBeVisible();
   await expect(page.getByRole('img', { name: 'Imagen de ejemplo (marcador de posición, sin archivo)' })).toHaveCount(0);
   // La nota muestra la imagen intercalada con su leyenda, no la sintaxis Markdown cruda.
   await expect(page.getByTestId('list-note-preview-tarjeta-2').getByRole('img').first()).toBeVisible();

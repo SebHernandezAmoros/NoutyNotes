@@ -44,7 +44,7 @@ function inlineText(content: Extract<RichTextEditorProps['document']['blocks'][n
     ? inline.content.map((leaf) => leaf.type === 'hard-break' ? '\n' : leaf.text).join('') : inline.text).join('');
 }
 
-export function RichTextEditor({ document, codec, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, compact = false }: RichTextEditorProps) {
+export function RichTextEditor({ document, codec, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, compact = false, titleOnly = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -130,12 +130,12 @@ export function RichTextEditor({ document, codec, onChange, images = new Map(), 
       <EnrichedMarkdownTextInput
         ref={inputRef}
         testID="native-rich-text-content"
-        accessibilityLabel={t('editor.visual.content', locale)}
+        accessibilityLabel={titleOnly ? t('inspector.title.label', locale) : t('editor.visual.content', locale)}
         defaultValue={initialMarkdown}
         placeholder={t('editor.visual.placeholder', locale)}
         placeholderTextColor={colors.textSecondary}
         autoFocus
-        multiline
+        multiline={!titleOnly}
         scrollEnabled
         markdownShortcuts={false}
         linkRegex={null}
@@ -145,7 +145,7 @@ export function RichTextEditor({ document, codec, onChange, images = new Map(), 
           strong: { color: colors.cardText },
           em: { color: colors.cardText },
         }}
-        style={StyleSheet.flatten([styles.input, compact ? styles.inputCompact : null, { color: colors.cardText, backgroundColor: colors.cardSurface, fontFamily }])}
+        style={StyleSheet.flatten([styles.input, titleOnly ? styles.inputTitle : compact ? styles.inputCompact : null, { color: colors.cardText, backgroundColor: colors.cardSurface, fontFamily }])}
         selectionMenuConfig={{
           format: { enabled: true, label: t('editor.visual.format', locale) },
           copyAsMarkdown: { enabled: false },
@@ -178,6 +178,7 @@ const styles = StyleSheet.create({
   separator: { width: 1, height: 30, marginHorizontal: 2 },
   input: { minHeight: 220, maxHeight: 360, padding: 14, fontSize: 16, lineHeight: 24 },
   inputCompact: { minHeight: 96, maxHeight: 180 },
+  inputTitle: { minHeight: 56, maxHeight: 96 },
   status: { minHeight: 30, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12 },
   mixedContent: { minHeight: 220, padding: 14, gap: 10 },
   nativeImageBlock: { borderWidth: 1, padding: 8, gap: 8 },

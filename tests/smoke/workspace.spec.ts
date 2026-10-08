@@ -660,7 +660,7 @@ test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista',
   expect(failedResources).toEqual([]);
 });
 
-test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ page }, testInfo) => {
+test('P18-C: una tabla configurable cambia filas, columnas y cabecera y conserva el documento', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');
   await createWorkspace(page, 'Insertar coherente');
@@ -680,49 +680,67 @@ test('P10: unifica las inserciones y crea una tabla 3 × 3 editable', async ({ p
   await expect(menu.getByRole('button', { name: 'Insertar forma', exact: true })).toBeEnabled();
   await expect(menu.getByRole('button', { name: 'Insertar conector', exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('p10-insert-menu.png'), fullPage: true });
-  await menu.getByRole('button', { name: 'Insertar tabla 3 por 3', exact: true }).click();
+  await menu.getByRole('button', { name: 'Insertar tabla', exact: true }).first().click();
+  const size = menu.getByTestId('insert-table-size');
+  await size.getByLabel('Filas').fill('4');
+  await size.getByLabel('Columnas').fill('2');
+  await size.getByRole('button', { name: 'Insertar tabla', exact: true }).click();
 
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   const visual = page.getByLabel('Contenido visual');
-  await expect(visual.locator('th, td')).toHaveCount(9);
+  await expect(visual.locator('th, td')).toHaveCount(8);
+  await expect(visual.locator('th')).toHaveCount(2);
+  await visual.locator('td').first().click();
+  await button(page, 'Añadir fila al final').click();
+  await expect(visual.locator('th, td')).toHaveCount(10);
+  await visual.locator('td').first().click();
+  await button(page, 'Quitar última columna').click();
+  await expect(visual.locator('th, td')).toHaveCount(5);
+  await visual.locator('td').first().click();
+  await button(page, 'Alternar primera fila como cabecera').click();
+  await expect(visual.locator('th')).toHaveCount(0);
   await expect(page.getByRole('dialog', { name: 'Insertar' })).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath('p10-table-from-insert.png'), fullPage: true });
+  await closeEditor(page);
+  await openFullCardEditor(page, card(page, 1));
+  await expect(page.getByLabel('Contenido visual').locator('th, td')).toHaveCount(5);
+  await expect(page.getByLabel('Contenido visual').locator('th')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('p18-c-table-from-insert.png'), fullPage: true });
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
 });
 
-test('P13: crea y edita texto flotante multilínea con apariencia portable', async ({ page }, testInfo) => {
+test('P18-C: texto y título flotantes usan una nota rica con zonas y marco independientes', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');
-  await createWorkspace(page, 'Texto flotante');
+  await createWorkspace(page, 'Contenido unificado');
   await insertFromMenu(page, 'Insertar texto');
-  const floating = page.getByTestId('floating-text-tarjeta-1');
+  const floating = page.getByTestId('unified-content-tarjeta-1');
   await expect(floating).toContainText('Nuevo texto');
-
-  if ((page.viewportSize()?.width ?? 0) >= 800) {
-    await card(page, 1).dblclick();
-    await expect(page.getByTestId('inline-card-title')).toHaveCount(0);
-    await page.getByTestId('inline-floating-text').fill('Primera línea\nSegunda línea');
-    await button(page, 'Guardar y cerrar la edición rápida').click();
-  }
   await openFullCardEditor(page, card(page, 1));
   await expect(page.getByLabel('Título de la tarjeta')).toHaveCount(0);
-  if ((page.viewportSize()?.width ?? 0) < 800) {
-    await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('Primera línea\nSegunda línea');
-  } else {
-    await expect(page.getByRole('textbox', { name: 'Texto flotante', exact: true })).toHaveValue('Primera línea\nSegunda línea');
-  }
-  await button(page, 'Guardar texto').click();
-  await page.getByTestId('floating-text-style-picker').getByRole('button', { name: 'Centro', exact: true }).click();
-  await page.getByTestId('floating-text-style-picker').getByRole('button', { name: 'Azul', exact: true }).click();
-  await page.getByTestId('card-text-size-picker').getByRole('button', { name: 'Cuerpo grande', exact: true }).click();
+  await page.getByLabel('Contenido visual').fill('Primera línea\nSegunda línea');
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await button(page, 'Mostrar u ocultar el título de la nota').click();
+  const titleEditor = page.getByTestId('rich-title-editor');
+  await expect(titleEditor).toBeVisible();
+  await expect(titleEditor.getByRole('button', { name: 'Insertar tabla', exact: true })).toHaveCount(0);
+  await expect(titleEditor.getByLabel('Tipo de bloque')).toHaveCount(0);
+  await titleEditor.getByLabel('Título de la tarjeta').fill('Título rico');
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await button(page, 'Mostrar u ocultar el cuerpo de la nota').click();
   await closeEditor(page);
 
-  await expect(floating).toContainText('Primera línea');
-  await expect(floating).toContainText('Segunda línea');
-  await expect(floating.locator('div').last()).toHaveCSS('text-align', 'center');
-  await page.screenshot({ path: testInfo.outputPath('p13-floating-text.png'), fullPage: true });
+  await expect(floating).toContainText('Título rico');
+  await expect(floating).not.toContainText('Primera línea');
+  expect(await borderWidth(card(page, 1))).toBe(0);
+
+  await openFullCardEditor(page, card(page, 1));
+  await expect(button(page, 'Mostrar u ocultar el título de la nota')).toHaveAttribute('aria-pressed', 'true');
+  await expect(button(page, 'Mostrar u ocultar el cuerpo de la nota')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByLabel('Título de la tarjeta')).toContainText('Título rico');
+  await closeEditor(page);
+  await page.screenshot({ path: testInfo.outputPath('p18-c-unified-note.png'), fullPage: true });
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
@@ -1137,6 +1155,8 @@ test('P18-B: Supr envía una selección simple o múltiple a la Papelera y respe
   await page.getByLabel('Título de la tarjeta').focus();
   await page.keyboard.press('Delete');
   await expect(card(page, 2)).toBeAttached();
+  await page.getByLabel('Título de la tarjeta').fill('Nueva nota');
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
   await closeEditor(page);
 
   await enterMultiWithOne(page, 2, 'Nueva nota');
