@@ -120,7 +120,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const connector = cardBase === 'connector';
   const connectorPath = placement?.connectorPath;
   const saveConnectorPath = (path: readonly { readonly x: number; readonly y: number }[]) =>
-    run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' });
+    run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' }, { reactive: true });
   const presentation = cardContentPresentation(card, cardBase);
   const initialContent = editableCardContent(card, cardBase);
   const [title, setTitle] = useState(card.title ?? '');
@@ -151,7 +151,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     setTitleDocument(document);
     const plain = cardTitleText({ titleRichText: block.content });
     setTitle(plain);
-    void run((storage, id) => editCardContent(storage, id, card.id, { titleRichText: block.content.length > 0 ? block.content : null }), 'action.textSaved', { mergeKey: `title:${card.id}` });
+    void run((storage, id) => editCardContent(storage, id, card.id, { titleRichText: block.content.length > 0 ? block.content : null }), 'action.textSaved', { mergeKey: `title:${card.id}`, reactive: true });
   };
   const changeContent = (value: string) => {
     if (floatingText) {
@@ -197,11 +197,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // Etiquetas (ADR 0019): se guardan al momento, aparte del texto; lo escrito se normaliza (#Idea → idea).
   const [tagDraft, setTagDraft] = useState('');
   const addTag = (value: string = tagDraft) => {
-    void run((storage, id) => addCardTag(storage, id, card.id, value), 'action.tagAdded')
+    void run((storage, id) => addCardTag(storage, id, card.id, value), 'action.tagAdded', { reactive: true })
       .then((result) => { if (result.ok) setTagDraft(''); });
   };
   const removeTag = (tag: string) => {
-    void run((storage, id) => removeCardTag(storage, id, card.id, tag), { key: 'action.tagRemoved', params: { tag } });
+    void run((storage, id) => removeCardTag(storage, id, card.id, tag), { key: 'action.tagRemoved', params: { tag } }, { reactive: true });
   };
   // UX7-B4: sugiere etiquetas ya usadas en el proyecto (no las que la ficha ya tiene), filtradas por lo
   // escrito; un toque la añade sin volver a escribirla entera. La deduplicación ya la hace el dominio
@@ -378,7 +378,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                 accessibilityLabel={t(move.nameKey, locale)}
                 onPress={() => void run((storage, id) => nudgeCardOnBoard(storage, id, {
                   boardId, cardId: card.id, delta: { x: move.dx, y: move.dy },
-                }), 'action.cardMoved')}
+                }), 'action.cardMoved', { reactive: true })}
               />
             ))}
           </View>
@@ -390,7 +390,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                 accessibilityLabel={t(resize.nameKey, locale)}
                 onPress={() => void run((storage, id) => resizeCardOnBoard(storage, id, {
                   boardId, cardId: card.id, size: { w: rect.w + resize.dw, h: rect.h + resize.dh },
-                }), 'action.sizeChanged')}
+                }), 'action.sizeChanged', { reactive: true })}
               />
             ))}
           </View>
@@ -533,7 +533,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
-            onPress={() => { void ((mode === 'folder' || visualEditing) ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { content }), 'action.textSaved', { mergeKey: `text:${card.id}` })); }}
+            onPress={() => { void ((mode === 'folder' || visualEditing) ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { content }), 'action.textSaved', { mergeKey: `text:${card.id}`, reactive: true })); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
         </View> : null}
@@ -586,7 +586,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         <View style={styles.iconGrid}>
           {cardIconNames.map((icon) => (
             <CardIconChoice key={icon} icon={icon} selected={(card.icon ?? 'note') === icon}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { icon }), { label: 'Apariencia actualizada' })} />
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { icon }), { label: 'Apariencia actualizada' }, { reactive: true })} />
           ))}
         </View>
         {card.boardTargetId ? (
@@ -599,11 +599,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.frame.section', locale)}</Text>
         <View style={styles.row}>
           <ActionButton label={t('inspector.frame.followGlobal', locale)} pressed={card.frameOverride === undefined}
-            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: null }), { label: 'Apariencia actualizada' })} />
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: null }), { label: 'Apariencia actualizada' }, { reactive: true })} />
           <ActionButton label={t('inspector.frame.visible', locale)} pressed={card.frameOverride === 'visible'}
-            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'visible' }), { label: 'Apariencia actualizada' })} />
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
           <ActionButton label={t('inspector.frame.hidden', locale)} pressed={card.frameOverride === 'hidden'}
-            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'hidden' }), { label: 'Apariencia actualizada' })} />
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'hidden' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
         </View>
         {!shape && !connector ? (
           <>
@@ -611,16 +611,16 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <View style={styles.row}>
               <ActionButton label={t('inspector.contentVisibility.title', locale)} pressed={presentation.title === 'visible'}
                 accessibilityLabel={t('inspector.contentVisibility.title.accessibilityLabel', locale)}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleVisibility: presentation.title === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleVisibility: presentation.title === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
               <ActionButton label={t('inspector.contentVisibility.body', locale)} pressed={presentation.body === 'visible'}
                 accessibilityLabel={t('inspector.contentVisibility.body.accessibilityLabel', locale)}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodyVisibility: presentation.body === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodyVisibility: presentation.body === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             </View>
             <View style={styles.row}>
               <ActionButton label={t('inspector.contentLayout.document', locale)} pressed={presentation.layout === 'document'}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'document' }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'document' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
               <ActionButton label={t('inspector.contentLayout.banner', locale)} pressed={presentation.layout === 'banner'}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'banner' }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'banner' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             </View>
           </>
         ) : null}
@@ -635,7 +635,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {shapeKinds.map((kind) => (
               <ActionButton key={kind} label={kind === 'rectangle' ? 'Rectángulo' : kind === 'rounded-rectangle' ? 'Redondeado' : kind === 'ellipse' ? 'Elipse' : 'Línea'}
                 pressed={(card.shapeKind ?? 'rectangle') === kind}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeKind: kind }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeKind: kind }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             ))}
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Relleno</Text>
@@ -643,7 +643,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {shapeFills.map((fill) => (
               <ActionButton key={fill} label={fill === 'transparent' ? 'Transparente' : fill === 'red' ? 'Rojo' : fill === 'orange' ? 'Naranja' : fill === 'yellow' ? 'Amarillo' : fill === 'green' ? 'Verde' : fill === 'blue' ? 'Azul' : 'Morado'}
                 pressed={(card.shapeFill ?? 'blue') === fill}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeFill: fill }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeFill: fill }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             ))}
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Borde</Text>
@@ -651,7 +651,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {shapeStrokes.map((stroke) => (
               <ActionButton key={stroke} label={stroke === 'default' ? 'Tema' : stroke === 'red' ? 'Rojo' : stroke === 'orange' ? 'Naranja' : stroke === 'yellow' ? 'Amarillo' : stroke === 'green' ? 'Verde' : stroke === 'blue' ? 'Azul' : 'Morado'}
                 pressed={(card.shapeStroke ?? 'default') === stroke}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStroke: stroke }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStroke: stroke }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             ))}
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Grosor</Text>
@@ -659,7 +659,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {shapeStrokeWidths.map((width) => (
               <ActionButton key={width} label={width === 'thin' ? 'Fino' : width === 'medium' ? 'Medio' : 'Grueso'}
                 pressed={(card.shapeStrokeWidth ?? 'medium') === width}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStrokeWidth: width }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStrokeWidth: width }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             ))}
           </View>
         </View>
@@ -699,40 +699,40 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               <Text style={[styles.hint, { color: colors.textSecondary }]}>Dirección diagonal anterior</Text>
               <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Dirección del conector anterior">
                 {connectorDirections.map((direction) => <ActionButton key={direction} label={direction === 'down' ? 'Descendente' : 'Ascendente'} pressed={(card.connectorDirection ?? 'down') === direction}
-                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDirection: direction }), { label: 'Conector actualizado' })} />)}
+                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDirection: direction }), { label: 'Conector actualizado' }, { reactive: true })} />)}
               </View>
             </View>
           ) : null}
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Color</Text>
           <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color del conector">
             {shapeStrokes.map((color) => <ActionButton key={color} label={color === 'default' ? 'Tema' : color === 'red' ? 'Rojo' : color === 'orange' ? 'Naranja' : color === 'yellow' ? 'Amarillo' : color === 'green' ? 'Verde' : color === 'blue' ? 'Azul' : 'Morado'} pressed={(card.connectorColor ?? 'default') === color}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorColor: color }), { label: 'Conector actualizado' })} />)}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorColor: color }), { label: 'Conector actualizado' }, { reactive: true })} />)}
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Grosor</Text>
           <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Grosor del conector">
             {shapeStrokeWidths.map((width) => <ActionButton key={width} label={width === 'thin' ? 'Fino' : width === 'medium' ? 'Medio' : 'Grueso'} pressed={(card.connectorWidth ?? 'medium') === width}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorWidth: width }), { label: 'Conector actualizado' })} />)}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorWidth: width }), { label: 'Conector actualizado' }, { reactive: true })} />)}
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Trazo</Text>
           <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Trazo del conector">
             {connectorDashes.map((dash) => <ActionButton key={dash} label={dash === 'solid' ? 'Continuo' : dash === 'dashed' ? 'Discontinuo' : 'Punteado'} pressed={(card.connectorDash ?? 'solid') === dash}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDash: dash }), { label: 'Conector actualizado' })} />)}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorDash: dash }), { label: 'Conector actualizado' }, { reactive: true })} />)}
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Puntas</Text>
           <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Puntas del conector">
             {connectorArrows.map((arrows) => <ActionButton key={arrows} label={arrows === 'none' ? 'Ninguna' : arrows === 'start' ? 'Inicial' : arrows === 'end' ? 'Final' : 'Doble'} pressed={(card.connectorArrows ?? 'end') === arrows}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorArrows: arrows }), { label: 'Conector actualizado' })} />)}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { connectorArrows: arrows }), { label: 'Conector actualizado' }, { reactive: true })} />)}
           </View>
           {(['connectorStartCardId', 'connectorEndCardId'] as const).map((field, endpoint) => <View key={field}>
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{endpoint === 0 ? 'Extremo inicial' : 'Extremo final'}</Text>
             <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={`Anclaje del extremo ${endpoint === 0 ? 'inicial' : 'final'}`}>
               <ActionButton label="Libre" pressed={card[field] === undefined}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { [field]: null }), { label: 'Anclaje actualizado' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { [field]: null }), { label: 'Anclaje actualizado' }, { reactive: true })} />
               {(workspace.boards.find((candidate) => candidate.id === boardId)?.cardIds ?? []).filter((candidate) => candidate !== card.id).map((candidate) => {
                 const target = workspace.cards.find((item) => item.id === candidate);
                 const label = target ? cardTitle(target, locale) : candidate;
                 return <ActionButton key={candidate} label={label} accessibilityLabel={`Anclar extremo ${endpoint === 0 ? 'inicial' : 'final'} a ${label}`} pressed={card[field] === candidate}
-                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { [field]: candidate }), { label: 'Anclaje actualizado' })} />;
+                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { [field]: candidate }), { label: 'Anclaje actualizado' }, { reactive: true })} />;
               })}
             </View>
           </View>)}
@@ -747,7 +747,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {floatingTextAlignments.map((alignment) => (
               <ActionButton key={alignment} label={alignment === 'left' ? 'Izquierda' : alignment === 'center' ? 'Centro' : 'Derecha'}
                 pressed={(card.textAlign ?? 'left') === alignment}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textAlign: alignment === 'left' ? null : alignment }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textAlign: alignment === 'left' ? null : alignment }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             ))}
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>Color</Text>
@@ -755,7 +755,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {floatingTextColors.map((color) => (
               <ActionButton key={color} label={color === 'default' ? 'Tema' : color === 'red' ? 'Rojo' : color === 'orange' ? 'Naranja' : color === 'green' ? 'Verde' : color === 'blue' ? 'Azul' : 'Morado'}
                 pressed={(card.textColor ?? 'default') === color}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textColor: color === 'default' ? null : color }), { label: 'Apariencia actualizada' })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textColor: color === 'default' ? null : color }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             ))}
           </View>
         </View>
@@ -768,7 +768,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <ActionButton key={position} label={t(`inspector.captionPosition.${position}`, locale)}
               accessibilityLabel={t(`inspector.captionPosition.${position}.accessibilityLabel`, locale)}
               pressed={(card.captionPosition ?? 'bottom') === position}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { captionPosition: position === 'bottom' ? null : position }), { label: 'Apariencia actualizada' })} />
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { captionPosition: position === 'bottom' ? null : position }), { label: 'Apariencia actualizada' }, { reactive: true })} />
           ))}
         </View>
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.captionPosition.hint', locale)}</Text>

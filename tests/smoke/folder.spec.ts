@@ -408,7 +408,8 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   await page.getByRole('button', { name: 'Ir al proyecto Uno', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Uno', exact: true })).toBeVisible();
   const card = new TextDecoder().decode(new Uint8Array((await files())['dos/cards/tarjeta-1.md'] ?? []));
-  expect(card).toContain('title: Borrador sin guardar');
+  expect(card).toContain('titleRichText:');
+  expect(card).toContain('text: Borrador sin guardar');
 });
 
 test('recargar con texto pendiente exige confirmar la salida', async ({ page }) => {

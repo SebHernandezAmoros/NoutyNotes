@@ -24,6 +24,10 @@ export type { FrameTarget } from './frames';
 export { EMPTY_HISTORY, HISTORY_LIMIT, recordStep, redoStep, sameWorkspace, undoStep } from './history';
 export type { HistoryStep, UndoHistory } from './history';
 export { revertWorkspace } from './revert';
+export { ReactiveWorkspaceEditor } from './reactive-workspace';
+export type {
+  ReactiveDispatch, ReactiveRunOptions, ReactiveSaveStatus, ReactiveWorkspaceAction, ReactiveWorkspaceSnapshot,
+} from './reactive-workspace';
 export { MAX_IMAGE_BYTES, addNoteImage, importImageCard, inspectImage } from './images';
 export type { AddNoteImageInput, ImageKind, ImportImageInput } from './images';
 export {

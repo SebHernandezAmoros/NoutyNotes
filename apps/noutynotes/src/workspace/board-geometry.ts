@@ -1,7 +1,10 @@
 import { CANONICAL_GRID } from '@noutynotes/application';
 import { MOBILE_GRID, compareReadingOrder, createOrthogonalConnectorPath, footprint, projectLayout } from '@noutynotes/domain';
-import type { BoardLayout, Card, CardId, CardPlacement, GridCell, Relation, RelationId } from '@noutynotes/domain';
+import type { BoardLayout, Card, CardId, CardPlacement, GridCell, GridRect, Relation, RelationId } from '@noutynotes/domain';
 import type { LayoutMode } from '@noutynotes/ui';
+
+import { cardBox } from './canvas/geometry';
+import type { CanvasMetrics, PixelBox } from './canvas/geometry';
 
 /** Alto de una fila de la grilla en píxeles y separación visual entre tarjetas. */
 export const BOARD_ROW_HEIGHT = 56;
@@ -14,6 +17,25 @@ export interface CardBox {
   readonly top: number;
   readonly width: number;
   readonly height: number;
+}
+
+/**
+ * Única proyección visual de las tarjetas durante P18-E1. Los rectángulos confirmados, los cambios
+ * locales pendientes y las cajas exactas de un gesto activo confluyen aquí; relaciones, conectores,
+ * tarjetas y controles consumen después el mismo resultado.
+ */
+export function projectedCardBoxes(
+  placements: readonly CardPlacement[],
+  metrics: CanvasMetrics,
+  rectOverrides: ReadonlyMap<CardId, GridRect> = new Map(),
+  boxOverrides: ReadonlyMap<CardId, PixelBox> = new Map(),
+): CardBox[] {
+  return placements.map((placement) => {
+    const exact = boxOverrides.get(placement.cardId);
+    const rect = rectOverrides.get(placement.cardId);
+    const box = exact ?? cardBox(footprint(rect ? { ...placement, rect } : placement), metrics);
+    return { cardId: placement.cardId, ...box };
+  });
 }
 
 export interface BoardGeometry {

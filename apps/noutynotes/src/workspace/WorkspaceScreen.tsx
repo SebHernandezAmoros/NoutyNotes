@@ -159,7 +159,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [archiveMessage, setArchiveMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(
     notice !== '' ? { tone: 'success', text: notice } : null,
   );
-  const { view, feedback, saving, run, setFeedback, undo, redo, revision, undoLabel, redoLabel } = useWorkspaceEditor(id);
+  const {
+    view, feedback, saving, saveState, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal,
+    flush: flushWorkspace, revision, undoLabel, redoLabel,
+  } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
   // Editor visible (auditoría de interacción, 2026-09-29): separado de `selectedId» a propósito.
   // Seleccionar una tarjeta ya no abre su editor ni reduce el lienzo; solo «Editar» (doble clic/toque,
@@ -217,13 +220,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const { flushPendingText, setPendingText } = usePendingText(run);
 
   const goHome = async () => {
-    if (!await flushPendingText()) return;
+    if (!await flushPendingText() || !await flushWorkspace()) return;
     if (router.canGoBack()) router.back();
     else router.replace('/');
   };
 
   const openSpace = async (target: string) => {
-    if (target === id || !await flushPendingText()) return;
+    if (target === id || !await flushPendingText() || !await flushWorkspace()) return;
     router.replace({ pathname: '/workspace', params: { id: target } });
   };
 
@@ -351,7 +354,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const moveMany = (cardIds: readonly CardId[], delta: GridPoint) => {
     if (!board || cardIds.length === 0) return;
     const action = run((storage, workspaceId) => moveCardsOnBoard(storage, workspaceId, { boardId: board.id, cardIds, delta }),
-      pluralAction(cardIds.length, 'action.cardMoved', 'action.cardsMoved.many'));
+      pluralAction(cardIds.length, 'action.cardMoved', 'action.cardsMoved.many'), { reactive: true });
     // Posición optimista de cada tarjeta del conjunto (mismo motivo que `move`, ver `withPendingRect`).
     setPendingRects((current) => {
       const next = new Map(current);
@@ -480,7 +483,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     revealCard(result.cardId);
   };
   const goToProject = async (target: WorkspaceId, cardId: CardId) => {
-    if (!await flushPendingText()) return;
+    if (!await flushPendingText() || !await flushWorkspace()) return;
     router.replace({ pathname: '/workspace', params: { id: target, card: cardId } });
   };
   // Llegada desde la búsqueda global (`?card=`): una vez, cuando el proyecto está listo.
@@ -631,7 +634,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const changeConnectorPath = (cardId: CardId, connectorPath: readonly GridPoint[]) => {
     if (!board) return;
     void run((storage, workspaceId) => editConnectorPath(storage, workspaceId, { boardId: board.id, cardId, connectorPath }),
-      { label: 'Ruta del conector actualizada' });
+      { label: 'Ruta del conector actualizada' }, { reactive: true });
   };
 
   // Deshacer y rehacer (ADR 0026): antes se guarda el borrador, que es un paso más.
@@ -712,7 +715,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!board) return;
     setRelocateOffer(null);
     void run((storage, workspaceId) => setCardDisplay(storage, workspaceId, { boardId: board.id, cardId, display, relocate }),
-      relocate ? 'action.cardExpandedRelocated' : displayMessages[display])
+      relocate ? 'action.cardExpandedRelocated' : displayMessages[display], { reactive: true })
       .then((result) => {
         const cause = result.ok ? undefined : result.issues[0]?.details?.[0]?.code;
         if (display === 'expanded' && !relocate && cause === 'grid-collision') setRelocateOffer(cardId);
@@ -924,14 +927,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
     if (!placement) return;
     void withPendingRect(cardId, { ...placement.rect, ...to },
-      run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'action.cardMoved'));
+      run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'action.cardMoved', { reactive: true }));
   };
   const resize = (cardId: CardId, size: GridSize) => {
     if (!board) return;
     const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
     if (!placement) return;
     void withPendingRect(cardId, { ...placement.rect, ...size },
-      run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged'));
+      run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged', { reactive: true }));
   };
 
   // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
@@ -1040,7 +1043,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
   const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setInlineEditing(false); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
   const saveInlineCard = useCallback(async (cardId: CardId, title: string, content: string) => {
-    const result = await run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { title, content }), 'action.textSaved', { mergeKey: `text:${cardId}` });
+    const result = await run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { title, content }), 'action.textSaved', { mergeKey: `text:${cardId}`, reactive: true });
     return result.ok;
   }, [run]);
   // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor (`toggleChecklistLine`)
@@ -1050,7 +1053,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!target) return;
     const next = toggleChecklistLine(target.content ?? '', lineIndex);
     if (next === null) return;
-    void run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { content: next }), 'action.textSaved');
+    void run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { content: next }), 'action.textSaved', { reactive: true });
   };
 
   // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
@@ -1143,15 +1146,22 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         borderColor: feedback?.tone === 'error' && connectSource === null ? colors.danger : colors.gridLine,
       }]}
     >
-      {tool === 'connector' || connectSource !== null ? hint : feedback ? feedback.text : hint}
+      {tool === 'connector' || connectSource !== null ? hint : feedback ? feedback.text
+        : pendingCount > 0 ? `${pendingCount} ${pendingCount === 1 ? 'cambio pendiente' : 'cambios pendientes'}` : hint}
     </Text>
   ) : null;
-  const feedbackLine = workspace && compact ? (
+  const recoveryPending = saveState === 'error' || saveState === 'conflict';
+  const feedbackLine = workspace && (compact || recoveryPending) ? (
     <View style={styles.feedbackRow}>
       <View style={styles.feedbackGrow}>{feedbackText}</View>
-      <ActionButton label="↶" accessibilityLabel={undoLabel ? `${t('undo', locale)}: ${undoLabel}` : t('undo', locale)} disabled={undoLabel === null} onPress={() => void undoLast()} />
-      <ActionButton label="↷" accessibilityLabel={redoLabel ? `${t('redo', locale)}: ${redoLabel}` : t('redo', locale)} disabled={redoLabel === null} onPress={() => void redoLast()} />
-      <ActionButton label={t('paste', locale)} accessibilityLabel={clipboard ? t('paste', locale) : t('paste.empty', locale)} disabled={clipboard === null} onPress={() => void pasteClipboard()} />
+      {recoveryPending ? <ActionButton label={saveState === 'conflict' ? 'Recargar y reaplicar' : 'Reintentar'}
+        accessibilityLabel={saveState === 'conflict' ? 'Recargar el proyecto y reaplicar los cambios pendientes' : 'Reintentar los cambios pendientes'}
+        onPress={() => void (saveState === 'conflict' ? recoverExternal() : retry())} /> : null}
+      {compact ? <>
+        <ActionButton label="↶" accessibilityLabel={undoLabel ? `${t('undo', locale)}: ${undoLabel}` : t('undo', locale)} disabled={undoLabel === null} onPress={() => void undoLast()} />
+        <ActionButton label="↷" accessibilityLabel={redoLabel ? `${t('redo', locale)}: ${redoLabel}` : t('redo', locale)} disabled={redoLabel === null} onPress={() => void redoLast()} />
+        <ActionButton label={t('paste', locale)} accessibilityLabel={clipboard ? t('paste', locale) : t('paste.empty', locale)} disabled={clipboard === null} onPress={() => void pasteClipboard()} />
+      </> : null}
     </View>
   ) : feedbackText;
 
@@ -1612,7 +1622,7 @@ function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run']) {
       if (!draft) return true;
       const task: Promise<boolean> = run((storage, workspaceId) => editCardContent(storage, workspaceId, draft.cardId, {
         title: draft.title, content: draft.content,
-      }), 'action.textSaved', { mergeKey: `text:${draft.cardId}` }).then((result) => {
+      }), 'action.textSaved', { mergeKey: `text:${draft.cardId}`, reactive: true }).then((result) => {
         if (result.ok && pendingText.current === draft) pendingText.current = null;
         return result.ok;
       }).finally(() => { if (pendingSave.current === task) pendingSave.current = null; });

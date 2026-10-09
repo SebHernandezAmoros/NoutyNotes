@@ -49,6 +49,11 @@ export interface WorkspaceStorage {
   rename(from: WorkspaceId, to: WorkspaceId): Promise<WorkspaceStorageResult<WorkspaceSummary>>;
   /** Elimina un workspace existente. */
   delete(id: WorkspaceId): Promise<WorkspaceStorageResult<null>>;
+  /**
+   * Confirma que la persona decidió reconciliar un cambio externo antes de volver a abrir.
+   * Solo los puertos que detectan huellas externas necesitan implementarlo.
+   */
+  acknowledgeExternalChange?(id: WorkspaceId): void | Promise<void>;
 }
 
 /**

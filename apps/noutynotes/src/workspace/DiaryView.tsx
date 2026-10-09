@@ -115,7 +115,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const save = () => {
     if (!editing) return;
     const { id, title, content } = editing;
-    void run((storage, workspaceId) => editCardContent(storage, workspaceId, id, { title, content }), 'action.diaryEntrySaved')
+    void run((storage, workspaceId) => editCardContent(storage, workspaceId, id, { title, content }), 'action.diaryEntrySaved', { reactive: true })
       .then((result) => { if (result.ok) setEditing(null); });
   };
   const timeline = (items: readonly TimedCard[], verb: string, testID: string) => items.map(({ card, time }) => (

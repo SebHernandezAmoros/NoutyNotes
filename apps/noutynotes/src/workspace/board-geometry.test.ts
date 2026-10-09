@@ -2,13 +2,70 @@ import { describe, expect, it } from 'vitest';
 
 import type { BoardId, BoardLayout, Card, CardId, RelationId, RelationTypeId } from '@noutynotes/domain';
 
-import { BOARD_GAP, BOARD_ROW_HEIGHT, boardBoxes, connectorRoutes, connectorSegments, relationSegments } from './board-geometry';
+import { BOARD_GAP, BOARD_ROW_HEIGHT, boardBoxes, connectorRoutes, connectorSegments, projectedCardBoxes, relationSegments } from './board-geometry';
 
 const place = (cardId: string, x: number, y: number, w: number, h: number) =>
   ({ cardId: cardId as CardId, rect: { x, y, w, h }, display: 'expanded' as const });
 const layout: BoardLayout = { boardId: 'b' as BoardId, placements: [place('b', 4, 0, 4, 3), place('a', 0, 0, 4, 3), place('c', 0, 3, 12, 2)] };
 
 describe('geometría del tablero (fase 7)', () => {
+  it('comparte la caja provisional exacta entre tarjetas, relaciones y conectores', () => {
+    const placements = [
+      { cardId: 'a' as CardId, rect: { x: 0, y: 0, w: 2, h: 2 }, display: 'expanded' as const },
+      { cardId: 'b' as CardId, rect: { x: 4, y: 0, w: 2, h: 2 }, display: 'expanded' as const },
+    ];
+    const exact = new Map([[placements[0]!.cardId, { left: 100, top: 25, width: 92, height: 92 }]]);
+    const boxes = projectedCardBoxes(placements, { cell: 50, row: 50, gap: 8 }, new Map(), exact);
+    expect(boxes[0]).toMatchObject(exact.get(placements[0]!.cardId)!);
+    const [line] = relationSegments([{ id: 'r' as RelationId, typeId: 't' as RelationTypeId, from: placements[0]!.cardId, to: placements[1]!.cardId }], boxes);
+    expect(line?.startX).toBeGreaterThanOrEqual(100);
+  });
+
+  it('redimensiona una nota y mueve con ella la relación y el conector anclado', () => {
+    const placements = [
+      place('a', 0, 0, 2, 2),
+      place('b', 6, 0, 2, 2),
+      {
+        ...place('connector', 2, 3, 2, 1),
+        connectorPath: [{ x: 2, y: 3 }, { x: 6, y: 3 }, { x: 6, y: 1 }],
+      },
+    ];
+    const metrics = { cell: 50, row: 50, gap: 8 };
+    const relation = { id: 'r' as RelationId, typeId: 't' as RelationTypeId, from: 'a' as CardId, to: 'b' as CardId };
+    const connector = {
+      id: 'connector', typeId: 'conector', fields: {},
+      connectorStartCardId: 'a', connectorEndCardId: 'b',
+    } as Card;
+    const before = projectedCardBoxes(placements, metrics);
+    const after = projectedCardBoxes(
+      placements,
+      metrics,
+      new Map([['a' as CardId, { x: 0, y: 0, w: 4, h: 3 }]]),
+    );
+
+    expect(relationSegments([relation], after)[0]?.startX).toBeGreaterThan(relationSegments([relation], before)[0]?.startX ?? 0);
+    const beforeRoute = connectorRoutes([connector], placements, before, metrics)[0];
+    const afterRoute = connectorRoutes([connector], placements, after, metrics)[0];
+    expect(afterRoute?.points[0]).not.toEqual(beforeRoute?.points[0]);
+    expect(afterRoute?.segments.every(({ angle }) => angle === 0 || Math.abs(angle) === 90)).toBe(true);
+  });
+
+  it('proyecta una selección múltiple como una sola geometría y cancelar restaura la base', () => {
+    const placements = [place('a', 0, 0, 2, 2), place('b', 5, 0, 2, 2)];
+    const metrics = { cell: 50, row: 50, gap: 8 };
+    const relation = { id: 'r' as RelationId, typeId: 't' as RelationTypeId, from: 'a' as CardId, to: 'b' as CardId };
+    const baseBoxes = projectedCardBoxes(placements, metrics);
+    const movedBoxes = projectedCardBoxes(placements, metrics, new Map([
+      ['a' as CardId, { x: 2, y: 3, w: 2, h: 2 }],
+      ['b' as CardId, { x: 7, y: 3, w: 2, h: 2 }],
+    ]));
+    const base = relationSegments([relation], baseBoxes)[0];
+    const moved = relationSegments([relation], movedBoxes)[0];
+
+    expect(moved?.startX).toBe((base?.startX ?? 0) + 100);
+    expect(moved?.startY).toBe((base?.startY ?? 0) + 150);
+    expect(relationSegments([relation], projectedCardBoxes(placements, metrics))[0]).toEqual(base);
+  });
   it('en modo amplio dibuja el layout canónico de 12 columnas sin modificarlo', () => {
     const board = boardBoxes(layout, 'wide', 1200);
     expect(board?.columns).toBe(12);

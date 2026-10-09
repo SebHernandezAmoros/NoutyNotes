@@ -1,5 +1,5 @@
-import { EMPTY_HISTORY, recordStep, redoStep, revertWorkspace, undoStep } from '@noutynotes/application';
-import type { UndoHistory, WorkspaceStorage, WorkspaceStorageResult } from '@noutynotes/application';
+import { EMPTY_HISTORY, ReactiveWorkspaceEditor, recordStep } from '@noutynotes/application';
+import type { ReactiveSaveStatus, ReactiveWorkspaceSnapshot, UndoHistory, WorkspaceStorage, WorkspaceStorageResult } from '@noutynotes/application';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
 import { useLocale } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +33,8 @@ export interface RunOptions {
   readonly history?: 'record' | 'clear';
   /** Pasos seguidos con la misma clave se agrupan (el texto de una tarjeta). */
   readonly mergeKey?: string;
+  /** Publica la transformación antes de persistirla mediante la cola P18-E1. */
+  readonly reactive?: boolean;
 }
 
 /**
@@ -48,8 +50,12 @@ export function useWorkspaceEditor(id: string | undefined) {
   const [view, setView] = useState<WorkspaceView>({ kind: 'loading' });
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<ReactiveSaveStatus>('saved');
+  const [pendingCount, setPendingCount] = useState(0);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const mounted = useRef(false);
+  const reactive = useRef<ReactiveWorkspaceEditor | null>(null);
+  const unsubscribe = useRef<(() => void) | null>(null);
   // Historial de la sesión (ADR 0026): el último estado leído es el «antes» de la siguiente acción.
   const current = useRef<Workspace | null>(null);
   const history = useRef<UndoHistory>(EMPTY_HISTORY);
@@ -61,36 +67,98 @@ export function useWorkspaceEditor(id: string | undefined) {
     if (mounted.current) setSteps(next);
   }, []);
 
+  const reflectReactive = useCallback((snapshot: ReactiveWorkspaceSnapshot) => {
+    current.current = snapshot.workspace;
+    history.current = snapshot.history;
+    if (!mounted.current) return;
+    setView({ kind: 'ready', workspace: snapshot.workspace });
+    setSteps(snapshot.history);
+    setRevision(snapshot.revision);
+    setSaveState(snapshot.status);
+    setPendingCount(snapshot.pendingCount);
+    setSaving(snapshot.status === 'saving');
+  }, []);
+
+  const installReactive = useCallback((workspace: Workspace) => {
+    unsubscribe.current?.();
+    const next = new ReactiveWorkspaceEditor(storage, workspaceId, workspace);
+    reactive.current = next;
+    unsubscribe.current = next.subscribe(reflectReactive);
+  }, [reflectReactive, storage, workspaceId]);
+
   const reload = useCallback(async (): Promise<Workspace | null> => {
     const opened = await storage.open(workspaceId);
     current.current = opened.ok ? opened.value : null;
     if (!mounted.current) return current.current;
-    setView(opened.ok ? { kind: 'ready', workspace: opened.value } : { kind: 'missing', message: describeFailure(opened.issues, mode) });
+    if (opened.ok) installReactive(opened.value);
+    else setView({ kind: 'missing', message: describeFailure(opened.issues, mode) });
     return current.current;
-  }, [storage, workspaceId, mode]);
+  }, [storage, workspaceId, mode, installReactive]);
 
   useEffect(() => {
     mounted.current = true;
-    void reload();
+    // La carga comienza en la microtarea siguiente; el efecto solo instala/cancela la suscripción.
+    void Promise.resolve().then(reload);
     return () => {
       mounted.current = false;
+      unsubscribe.current?.();
+      unsubscribe.current = null;
+      reactive.current = null;
     };
   }, [reload]);
 
   const run = useCallback(<T>(action: WorkspaceAction<T>, success: ActionSuccess, options: RunOptions = {}): Promise<WorkspaceStorageResult<T>> => {
-    setSaving(true);
     const { label, text } = resolveAction(success, mode, locale);
+    const active = reactive.current;
+    if (options.reactive && active) {
+      const request = active.dispatch(action, {
+        label,
+        ...(options.mergeKey ? { mergeKey: options.mergeKey } : {}),
+        ...(options.history ? { history: options.history } : {}),
+      });
+      void request.applied.then((result) => {
+        if (!result.ok && mounted.current) {
+          setFeedback({ tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
+        }
+      });
+      return request.persisted.then((result) => {
+        if (mounted.current) setFeedback(result.ok
+          ? { tone: 'success', text }
+          : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
+        return result;
+      });
+    }
+    setSaving(true);
     const task = queue.current.then(async () => {
+      const flushed = await reactive.current?.flush();
+      if (flushed && !flushed.ok) {
+        const blocked = { ok: false as const, issues: flushed.issues };
+        if (mounted.current) {
+          setSaving(false);
+          setFeedback({ tone: 'error', text: describeFailure(blocked.issues, mode), saveFailed: isSaveFailure(blocked.issues) });
+        }
+        return blocked as WorkspaceStorageResult<T>;
+      }
       const before = current.current;
       const result = await action(storage, workspaceId);
       if (mounted.current) {
         setFeedback(result.ok ? { tone: 'success', text } : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
       }
       if (result.ok) {
-        const after = await reload();
+        const opened = await storage.open(workspaceId);
+        const after = opened.ok ? opened.value : null;
+        current.current = after;
+        if (after && reactive.current) reactive.current.adopt(after, {
+          label,
+          ...(options.mergeKey ? { mergeKey: options.mergeKey } : {}),
+          ...(options.history ? { history: options.history } : {}),
+        });
+        else if (after) installReactive(after);
+        else if (mounted.current && !opened.ok) setView({ kind: 'missing', message: describeFailure(opened.issues, mode) });
         if (options.history === 'clear') setHistory(EMPTY_HISTORY);
         else if (before && after) {
-          setHistory(recordStep(history.current, { label, before, after, ...(options.mergeKey ? { mergeKey: options.mergeKey } : {}) }));
+          // `adopt` ya registró el paso en el coordinador; este fallback solo cubre la carga inicial.
+          if (!reactive.current) setHistory(recordStep(history.current, { label, before, after, ...(options.mergeKey ? { mergeKey: options.mergeKey } : {}) }));
         }
       }
       if (mounted.current) setSaving(false);
@@ -98,50 +166,50 @@ export function useWorkspaceEditor(id: string | undefined) {
     });
     queue.current = task.catch(() => { if (mounted.current) setSaving(false); });
     return task;
-  }, [storage, workspaceId, reload, mode, locale, setHistory]);
+  }, [storage, workspaceId, mode, locale, setHistory, installReactive]);
 
-  // Deshacer o rehacer: vuelve a la instantánea solo si lo guardado sigue siendo el estado esperado.
+  // Deshacer o rehacer también publica primero y respeta el orden de la cola reactiva.
   const travel = useCallback((direction: 'undo' | 'redo'): Promise<boolean> => {
-    setSaving(true);
-    const task = queue.current.then(async () => {
-      const moved = direction === 'undo' ? undoStep(history.current) : redoStep(history.current);
-      if (!moved) {
-        if (mounted.current) setSaving(false);
-        return false;
-      }
-      const { step } = moved;
-      const result = await revertWorkspace(storage, workspaceId, direction === 'undo'
-        ? { expected: step.after, target: step.before } : { expected: step.before, target: step.after });
+    const editor = reactive.current;
+    const step = direction === 'undo' ? history.current.past.at(-1) : history.current.future.at(-1);
+    const request = editor ? (direction === 'undo' ? editor.undo() : editor.redo()) : null;
+    if (!request || !step) return Promise.resolve(false);
+    const task = request.persisted.then(async (result) => {
       if (result.ok) {
-        setHistory(moved.history);
-        await reload();
         if (mounted.current) {
-          setRevision((value) => value + 1);
           const prefix = t(direction === 'undo' ? 'workview.undone' : 'workview.redone', locale);
           setFeedback({ tone: 'success', text: composeSaved(`${prefix}: ${step.label}`, mode, locale) });
         }
       } else {
-        const external = result.issues[0]?.path === 'history';
-        // Otra app o ventana cambió el proyecto: el historial ya no describe lo guardado.
-        if (external) setHistory(EMPTY_HISTORY);
-        await reload();
         if (mounted.current) {
-          setFeedback(external
-            ? { tone: 'error', text: t('workview.externalChange', locale) }
-            : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
+          setFeedback({ tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
         }
       }
-      if (mounted.current) setSaving(false);
       return result.ok;
     });
-    queue.current = task.catch(() => { if (mounted.current) setSaving(false); });
     return task;
-  }, [storage, workspaceId, reload, mode, locale, setHistory]);
+  }, [mode, locale]);
   const undo = useCallback(() => travel('undo'), [travel]);
   const redo = useCallback(() => travel('redo'), [travel]);
 
+  const retry = useCallback(async () => {
+    const result = await reactive.current?.retry();
+    if (result && mounted.current) setFeedback(result.ok
+      ? { tone: 'success', text: composeSaved('Cambios reintentados', mode, locale) }
+      : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: true });
+    return result?.ok ?? false;
+  }, [locale, mode]);
+  const recoverExternal = useCallback(async () => {
+    const result = await reactive.current?.recoverExternal();
+    if (result && mounted.current) setFeedback(result.ok
+      ? { tone: 'success', text: composeSaved('Cambios reaplicados', mode, locale) }
+      : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: true });
+    return result?.ok ?? false;
+  }, [locale, mode]);
+  const flush = useCallback(async () => (await reactive.current?.flush())?.ok ?? true, []);
+
   return {
-    view, feedback, saving, run, setFeedback, undo, redo, revision,
+    view, feedback, saving, saveState, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal, flush, revision,
     undoLabel: steps.past.at(-1)?.label ?? null,
     redoLabel: steps.future.at(-1)?.label ?? null,
   };

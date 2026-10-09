@@ -1526,6 +1526,21 @@ test('arrastrar con ratón: vista previa con imán, colisión y límites visible
   await sideBySide(page);
   const cell = cellSize(page);
 
+  // P18-E1: la relación consume la misma caja provisional que la tarjeta y vuelve a su sitio al
+  // cancelar. Antes se calculaba con el layout persistido y quedaba inmóvil durante el gesto.
+  if (isCompact(page)) await page.getByTestId('card-actions-tarjeta-1').click();
+  else await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Conectar desde Nueva nota').click();
+  await tapCard(page, 2, false);
+  await button(page, 'Herramienta Seleccionar').click();
+  const relation = page.getByTestId('relation-line-relacion-1');
+  const relationBefore = await box(relation);
+  await mouseDrag(page, card(page, 1), 0, 4 * cell.y, { release: false });
+  await expect.poll(async () => Math.round((await box(relation)).y)).not.toBe(Math.round(relationBefore.y));
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await box(relation)).y)).toBe(Math.round(relationBefore.y));
+
   // Vista previa válida y cancelación con Escape: no se guarda nada (el aviso no cambia).
   const lastFeedback = await feedback(page).innerText();
   await mouseDrag(page, card(page, 1), 0, 4 * cell.y, { release: false });

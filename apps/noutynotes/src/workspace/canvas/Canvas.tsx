@@ -10,7 +10,7 @@ import { ActionButton } from '../../components/controls';
 import { t } from '../../i18n';
 import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
-import { connectorRoutes, relationSegments } from '../board-geometry';
+import { connectorRoutes, projectedCardBoxes, relationSegments } from '../board-geometry';
 import { ConnectorLine } from './ConnectorLine';
 import { ConnectorPicker } from './ConnectorPicker';
 import { RelationLine } from './RelationLine';
@@ -26,7 +26,7 @@ import { InlineCardEditor } from './InlineCardEditor';
 import { connectTarget } from './connect';
 import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
 import { cardsInArea, contentBounds, fitView } from './overview';
-import type { CanvasMetrics, PlacementCheck, ResizeHandle } from './geometry';
+import type { CanvasMetrics, PixelBox, PlacementCheck, ResizeHandle } from './geometry';
 import { formatDay } from '../dates';
 import { clampZoom, panToRevealWorld, renderBase, visibleGridLines, worldPan, zoomAroundPoint, zoomIn, zoomOut } from './viewport';
 import type { Point, Size } from './viewport';
@@ -619,7 +619,28 @@ export function Canvas(props: CanvasProps) {
   // números pintados son pequeños aunque las tarjetas estén a un millón de celdas (ADR 0017).
   const base = renderBase(pan, zoom);
   const local = <T extends { readonly left: number; readonly top: number }>(box: T): T => ({ ...box, left: box.left - base.x, top: box.top - base.y });
-  const boxes = placements.map((placement) => ({ cardId: placement.cardId, ...local(cardBox(footprint(placement), metrics)) }));
+  const rectOverrides = new Map<CardId, GridRect>(justFinished);
+  for (const [cardId, rect] of props.pendingRects) rectOverrides.set(cardId, rect);
+  const gestureBoxes = new Map<CardId, PixelBox>();
+  for (const rawPlacement of placements) {
+    const rect = rectOverrides.get(rawPlacement.cardId);
+    const placement = rect ? { ...rawPlacement, rect } : rawPlacement;
+    const cell = footprint(placement);
+    const dragging = gesture?.cardId === placement.cardId || groupMoving.has(placement.cardId);
+    if (!dragging) continue;
+    const box = pointer && groupDelta && (framePreview || preview)
+      ? previewBox(cell, { x: placement.rect.x + groupDelta.x, y: placement.rect.y + groupDelta.y }, pointer.dx, pointer.dy, zoom, snap, metrics)
+      : preview && gesture
+        ? gesture.kind === 'move'
+          ? previewBox(cell, { x: preview.rect.x, y: preview.rect.y }, gesture.dx, gesture.dy, zoom, snap, metrics)
+          : cardBox(footprint({ ...placement, rect: preview.rect }), metrics)
+        : cardBox(cell, metrics);
+    gestureBoxes.set(placement.cardId, box);
+  }
+  const worldBoxes = projectedCardBoxes(placements, metrics, rectOverrides, gestureBoxes);
+  const worldBoxById = new Map(worldBoxes.map((box) => [box.cardId, box]));
+  const boxes = worldBoxes.map((box) => ({ ...box, ...local(box) }));
+  const boxById = new Map(boxes.map((box) => [box.cardId, box]));
   const segments = relationSegments(workspace.relations, boxes);
   const connectorCards = workspace.cards.filter((card) => workspace.cardTypes.find((type) => type.id === card.typeId)?.base === 'connector');
   const decorativeRoutes = connectorRoutes(connectorCards, placements, boxes, metrics);
@@ -688,9 +709,8 @@ export function Canvas(props: CanvasProps) {
       // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
       if (isFloating(workspace, rawPlacement.cardId) && rawPlacement.cardId !== selectedId) continue;
       // Mismo sitio optimista que el cuerpo de la tarjeta mientras se guarda (ver `pendingRects` arriba).
-      const pendingRect = props.pendingRects.get(rawPlacement.cardId) ?? justFinished.get(rawPlacement.cardId);
-      const placement = pendingRect ? { ...rawPlacement, rect: pendingRect } : rawPlacement;
-      const box = cardBox(footprint(placement), metrics);
+      const placement = rectOverrides.has(rawPlacement.cardId) ? { ...rawPlacement, rect: rectOverrides.get(rawPlacement.cardId)! } : rawPlacement;
+      const box = worldBoxById.get(rawPlacement.cardId) ?? cardBox(footprint(placement), metrics);
       const screen = { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
       const isSelected = placement.cardId === selectedId;
       const found = chromeFor(placement.display, screen, isSelected, viewport);
@@ -714,9 +734,7 @@ export function Canvas(props: CanvasProps) {
   const inlinePlacement = props.inlineEditingId ? placements.find((placement) => placement.cardId === props.inlineEditingId) : undefined;
   const inlineCard = inlinePlacement ? cards.get(inlinePlacement.cardId) : undefined;
   const inlineBox = inlinePlacement ? (() => {
-    const pendingRect = props.pendingRects.get(inlinePlacement.cardId) ?? justFinished.get(inlinePlacement.cardId);
-    const placement = pendingRect ? { ...inlinePlacement, rect: pendingRect } : inlinePlacement;
-    const box = cardBox(footprint(placement), metrics);
+    const box = worldBoxById.get(inlinePlacement.cardId) ?? cardBox(footprint(inlinePlacement), metrics);
     return { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
   })() : null;
   const status = framePreview && draggedFrame
@@ -795,18 +813,11 @@ export function Canvas(props: CanvasProps) {
           if (rawPlacement.connectorPath) return null;
           // Mientras se guarda, se dibuja en el sitio esperado en vez del que todavía tiene `layout»
           // (ver `pendingRects`/`justFinished` y la auditoría de interacción del 2026-09-29).
-          const pendingRect = props.pendingRects.get(rawPlacement.cardId) ?? justFinished.get(rawPlacement.cardId);
-          const placement = pendingRect ? { ...rawPlacement, rect: pendingRect } : rawPlacement;
+          const rect = rectOverrides.get(rawPlacement.cardId);
+          const placement = rect ? { ...rawPlacement, rect } : rawPlacement;
           const index = numbers.get(card.id) ?? 0;
-          const cell = footprint(placement);
           const dragging = gesture?.cardId === card.id || groupMoving.has(card.id);
-          const box = local(dragging && pointer && groupDelta && (framePreview || preview)
-            ? previewBox(cell, { x: placement.rect.x + groupDelta.x, y: placement.rect.y + groupDelta.y }, pointer.dx, pointer.dy, zoom, snap, metrics)
-            : dragging && preview && gesture
-            ? gesture.kind === 'move'
-              ? previewBox(cell, { x: preview.rect.x, y: preview.rect.y }, gesture.dx, gesture.dy, zoom, snap, metrics)
-              : cardBox(footprint({ ...placement, rect: preview.rect }), metrics)
-            : cardBox(cell, metrics));
+          const box = boxById.get(card.id) ?? local(cardBox(footprint(placement), metrics));
           const selected = selectedId === card.id || props.selectedIds.has(card.id);
           return (
             <CanvasCard
