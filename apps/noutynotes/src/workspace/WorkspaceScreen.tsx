@@ -2,7 +2,7 @@ import {
   PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardContent, editConnectorPath, importImageCard,
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
-import type { ClipboardSnapshot, DraftGeneration, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
+import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
 import { cardTitleText, createOrthogonalConnectorPath, frameMembers } from '@noutynotes/domain';
 import { markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
@@ -218,7 +218,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   }, [workspaceIdForFont, customFontRef, session.storage]);
 
   const {
-    flushPendingText, setPendingText, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText,
+    flushPendingText, setPendingText, activateSurface, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText,
   } = usePendingText(run, workspace, session);
 
   const goHome = async () => {
@@ -246,6 +246,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // pasar por un doble clic/toque (auditoría de interacción, 2026-09-29).
   const editCard = async (cardId: CardId) => {
     if (!await flushPendingText()) return;
+    if (!activateSurface(cardId, 'full')) return;
     setSelectedId(cardId);
     setEditingId(cardId);
     setInlineEditing(false);
@@ -292,6 +293,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const base = workspace?.cardTypes.find((candidate) => candidate.id === card?.typeId)?.base;
     // Formas y conectores no tienen cuerpo de nota: su edición pertenece al inspector de propiedades.
     const canEditInline = !compact && placement?.display === 'expanded' && base !== 'shape' && base !== 'connector';
+    if (!activateSurface(cardId, canEditInline ? 'quick' : 'full')) return;
     setSelectedId(cardId);
     setEditingId(cardId);
     setInlineEditing(canEditInline);
@@ -319,6 +321,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const selected = workspace?.cards.find((card) => card.id === editingId && visibleIds.has(card.id));
   // Resaltado/arrastre en el lienzo: sigue siendo por `selectedId`, filtrado igual que `selected`.
   const selectedOnBoard = workspace?.cards.find((card) => card.id === selectedId && visibleIds.has(card.id));
+  useEffect(() => {
+    if (!selected || inlineEditing || (authority?.cardId === selected.id && authority.surface === 'full')) return;
+    activateSurface(selected.id, 'full');
+  }, [activateSurface, authority?.cardId, authority?.surface, inlineEditing, selected]);
   const multiIds = (multi ?? []).filter((cardId) => visibleIds.has(cardId));
   const multiSet = new Set(multiIds);
 
@@ -1034,8 +1040,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       card={selected}
       placement={layout?.placements.find((placement) => placement.cardId === selected.id)}
       run={run}
-      onDraftChange={setPendingText}
-      flushPendingText={flushPendingText}
+      onDraftChange={(draft) => { setPendingText(draft, authority); }}
+      flushPendingText={() => flushPendingText(authority ?? undefined)}
       onClose={() => { setEditingId(null); setInlineEditing(false); setSelectedId(null); }}
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
@@ -1055,10 +1061,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const focusing = focus && cardInspector !== null;
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
   const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setInlineEditing(false); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
-  const saveInlineCard = useCallback(async (cardId: CardId, title: string, content: string) => {
-    setPendingText({ cardId, title, content }, 'quick');
-    return flushPendingText();
-  }, [flushPendingText, setPendingText]);
+  const saveInlineCard = useCallback(async (cardId: CardId, title: string, content: string, titleDocument: RichTextDocument) => {
+    if (!setPendingText({ cardId, title, content, titleDocument }, authority)) return true;
+    return flushPendingText(authority ?? undefined);
+  }, [authority, flushPendingText, setPendingText]);
   // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor (`toggleChecklistLine`)
   // y el mismo caso de uso de guardado; no abre el editor ni cambia la selección.
   const toggleCheck = (cardId: CardId, lineIndex: number) => {
@@ -1337,9 +1343,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardOpen={(cardId) => void openCard(cardId)}
         inlineEditingId={inlineEditing ? editingId : null}
         richTextCodec={markdownRichTextCodec}
+        inlineDraft={recoveredText?.cardId === editingId ? recoveredText : undefined}
+        onInlineDraftChange={(draft) => { setPendingText(draft, authority); }}
         onInlineSave={saveInlineCard}
         onInlineClose={() => { setEditingId(null); setInlineEditing(false); setFocus(false); }}
-        onInlineAdvanced={(cardId) => { setSelectedId(cardId); setEditingId(cardId); setInlineEditing(false); setFocus(true); }}
+        onInlineAdvanced={(cardId) => {
+          if (!activateSurface(cardId, 'full')) return;
+          setSelectedId(cardId); setEditingId(cardId); setInlineEditing(false); setFocus(true);
+        }}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onTrash={(cardId) => void sendToTrash(cardId)}
         onArchive={(cardId) => void archiveSelected(cardId)}
@@ -1659,6 +1670,14 @@ interface PendingEditorialText {
   readonly titleDocument?: RichTextDocument;
   readonly sequence: number;
   readonly surface: 'quick' | 'full';
+  readonly authority: EditorialAuthority;
+}
+
+interface EditorialAuthority {
+  readonly cardId: CardId;
+  readonly surface: DraftSurface;
+  readonly title: EditorialSessionLease;
+  readonly body: EditorialSessionLease;
 }
 
 function usePendingText(
@@ -1674,10 +1693,13 @@ function usePendingText(
   const persistedSequence = useRef(0);
   const generations = useRef(new Map<string, DraftGeneration>());
   const baseRevisions = useRef(new Map<string, ReturnType<typeof draftRevision>>());
+  const conflicts = useRef(new Set<string>());
   const leases = useRef(new Map<string, EditorialSessionLease>());
+  const authorityRef = useRef<EditorialAuthority | null>(null);
+  const [authority, setAuthority] = useState<EditorialAuthority | null>(null);
   const [recoverableDrafts, setRecoverableDrafts] = useState<readonly EditorialDraft[]>([]);
   const [draftProblem, setDraftProblem] = useState<string | null>(null);
-  const [recoveredText, setRecoveredText] = useState<Omit<PendingEditorialText, 'sequence' | 'surface'> | null>(null);
+  const [recoveredText, setRecoveredText] = useState<Omit<PendingEditorialText, 'sequence' | 'surface' | 'authority'> | null>(null);
 
   const refreshDrafts = useCallback(async () => {
     if (!workspace) { setRecoverableDrafts([]); return; }
@@ -1698,18 +1720,62 @@ function usePendingText(
     return draftRevision(JSON.stringify(zone === 'title' ? (card.titleRichText ?? card.title ?? '') : (card.contentDocument ?? card.content ?? '')));
   }, [workspace]);
 
-  const ensureLease = useCallback((cardId: CardId, zone: 'title' | 'body', surface: 'quick' | 'full') => {
-    if (!workspace) return;
-    const label = keyLabel(cardId, zone);
-    const current = leases.current.get(label);
-    if (current?.surface === surface && session.editorialSessions.owns(current)) return;
-    const key = createDraftKey(workspace.id, cardId, zone);
-    const acquired = current && session.editorialSessions.owns(current)
-      ? session.editorialSessions.transfer(current, surface)
-      : session.editorialSessions.acquire(key, surface);
-    if (acquired.ok) leases.current.set(label, acquired.value);
-    else setDraftProblem('Otra superficie mantiene la autoridad de edición de esta nota. Cambia de editor de forma explícita.');
-  }, [session.editorialSessions, workspace]);
+  const ownsAuthority = useCallback((candidate: EditorialAuthority | null | undefined) => Boolean(candidate
+    && session.editorialSessions.owns(candidate.title) && session.editorialSessions.owns(candidate.body)), [session.editorialSessions]);
+
+  const activateSurface = useCallback((cardId: CardId, surface: DraftSurface): EditorialAuthority | null => {
+    if (!workspace) return null;
+    const card = workspace.cards.find((candidate) => candidate.id === cardId);
+    if (!card) return null;
+    const previous = authorityRef.current;
+    if (previous && previous.cardId !== cardId) {
+      session.editorialSessions.release(previous.title);
+      session.editorialSessions.release(previous.body);
+    }
+    const draft = pendingText.current?.cardId === cardId ? pendingText.current : null;
+    const titleDocument = draft?.titleDocument ?? {
+      schemaVersion: 1 as const,
+      blocks: [{ type: 'paragraph' as const, content: (draft?.title ?? cardTitleText(card)) ? [{ type: 'text' as const, text: draft?.title ?? cardTitleText(card) }] : [] }],
+    };
+    const content = draft?.content ?? card.content ?? '';
+    const parsed = markdownRichTextCodec.parse(content);
+    const acquireZone = (zone: 'title' | 'body') => {
+      const key = createDraftKey(workspace.id, cardId, zone);
+      const old = previous?.cardId === cardId ? previous[zone] : undefined;
+      return old && session.editorialSessions.owns(old)
+        ? session.editorialSessions.transfer(old, surface)
+        : session.editorialSessions.acquire(key, surface, {
+          source: zone === 'title' ? { format: 'rich-text', value: titleDocument } : { format: 'legacy-markdown', value: content },
+          lastValidDocument: zone === 'title' ? titleDocument : parsed.ok ? parsed.value : null,
+          baseRevision: durableZoneRevision(cardId, zone), validation: { status: 'valid' }, persistence: 'saved',
+        });
+    };
+    const titleResult = acquireZone('title');
+    const bodyResult = acquireZone('body');
+    if (!titleResult.ok || !bodyResult.ok) {
+      if (titleResult.ok) session.editorialSessions.release(titleResult.value);
+      if (bodyResult.ok) session.editorialSessions.release(bodyResult.value);
+      setDraftProblem('Otra superficie mantiene la autoridad de edición de esta nota. Cambia de editor de forma explícita.');
+      return null;
+    }
+    const next = { cardId, surface, title: titleResult.value, body: bodyResult.value } as const;
+    leases.current.set(keyLabel(cardId, 'title'), next.title);
+    leases.current.set(keyLabel(cardId, 'body'), next.body);
+    authorityRef.current = next;
+    setAuthority(next);
+    if (draft) pendingText.current = { ...draft, surface, authority: next };
+    const titleState = session.editorialSessions.read(next.title.key);
+    const bodyState = session.editorialSessions.read(next.body.key);
+    const currentTitleDocument = titleState?.source.format === 'rich-text' ? titleState.source.value : titleDocument;
+    const titleBlock = currentTitleDocument.blocks.length === 1 ? currentTitleDocument.blocks[0] : undefined;
+    setRecoveredText({
+      cardId,
+      title: titleBlock?.type === 'paragraph' ? cardTitleText({ titleRichText: titleBlock.content }) : cardTitleText(card),
+      content: bodyState?.source.format === 'legacy-markdown' ? bodyState.source.value : content,
+      titleDocument: currentTitleDocument,
+    });
+    return next;
+  }, [durableZoneRevision, session.editorialSessions, workspace]);
 
   const persistPrivate = useCallback((draft: PendingEditorialText): Promise<void> => {
     if (!workspace || persistedSequence.current >= draft.sequence) return privateTail.current;
@@ -1726,21 +1792,23 @@ function usePendingText(
         key: createDraftKey(workspace.id, draft.cardId, 'title'), source: { format: 'rich-text', value: titleDocument },
         baseRevision: titleBase, validation: { status: 'valid' },
       });
-      if (!titleSaved.ok) { setDraftProblem(`${titleSaved.issues[0]?.message ?? 'No se pudo proteger el título.'} El texto continúa en memoria mientras esta pantalla permanezca abierta.`); return; }
+      if (!titleSaved.ok) { session.editorialSessions.update(draft.authority.title, { persistence: 'error' }); setDraftProblem(`${titleSaved.issues[0]?.message ?? 'No se pudo proteger el título.'} El texto continúa en memoria mientras esta pantalla permanezca abierta.`); return; }
       generations.current.set(titleLabel, titleSaved.value.generation);
+      session.editorialSessions.update(draft.authority.title, { draftGeneration: titleSaved.value.generation, persistence: 'protected' });
       const bodySaved = await session.drafts.save({
         key: createDraftKey(workspace.id, draft.cardId, 'body'), source: { format: 'legacy-markdown', value: draft.content },
         baseRevision: bodyBase, validation: { status: 'valid' },
       });
-      if (!bodySaved.ok) { setDraftProblem(`${bodySaved.issues[0]?.message ?? 'No se pudo proteger el cuerpo.'} El texto continúa en memoria mientras esta pantalla permanezca abierta.`); return; }
+      if (!bodySaved.ok) { session.editorialSessions.update(draft.authority.body, { persistence: 'error' }); setDraftProblem(`${bodySaved.issues[0]?.message ?? 'No se pudo proteger el cuerpo.'} El texto continúa en memoria mientras esta pantalla permanezca abierta.`); return; }
       generations.current.set(bodyLabel, bodySaved.value.generation);
+      session.editorialSessions.update(draft.authority.body, { draftGeneration: bodySaved.value.generation, persistence: 'protected' });
       persistedSequence.current = draft.sequence;
       setDraftProblem(null);
       await refreshDrafts();
     });
     privateTail.current = task.catch(() => { setDraftProblem('Falló el almacenamiento privado del borrador. El texto continúa en memoria mientras esta pantalla permanezca abierta.'); });
     return privateTail.current;
-  }, [durableZoneRevision, refreshDrafts, session.drafts, workspace]);
+  }, [durableZoneRevision, refreshDrafts, session.drafts, session.editorialSessions, workspace]);
 
   const flushPrivate = useCallback(async () => {
     if (privateTimer.current) { clearTimeout(privateTimer.current); privateTimer.current = null; }
@@ -1749,15 +1817,26 @@ function usePendingText(
     await privateTail.current;
   }, [persistPrivate]);
 
-  const flushPendingText = useCallback(async (): Promise<boolean> => {
+  const flushPendingText = useCallback(async (requestedAuthority?: EditorialAuthority): Promise<boolean> => {
+    if (requestedAuthority && !ownsAuthority(requestedAuthority)) return true;
     while (true) {
+      if (requestedAuthority && !ownsAuthority(requestedAuthority)) return true;
       if (pendingSave.current) {
         if (!await pendingSave.current) return false;
         continue;
       }
       const draft = pendingText.current;
       if (!draft) return true;
+      if (!ownsAuthority(draft.authority)) return true;
+      if (conflicts.current.has(keyLabel(draft.cardId, 'title')) || conflicts.current.has(keyLabel(draft.cardId, 'body'))) {
+        session.editorialSessions.update(draft.authority.title, { persistence: 'conflict' });
+        session.editorialSessions.update(draft.authority.body, { persistence: 'conflict' });
+        setDraftProblem('El documento durable cambió desde que comenzó este borrador. Conservamos ambas versiones; copia el borrador o descártalo antes de continuar.');
+        return false;
+      }
       await flushPrivate();
+      session.editorialSessions.update(draft.authority.title, { persistence: 'save-pending' });
+      session.editorialSessions.update(draft.authority.body, { persistence: 'save-pending' });
       const confirmedGenerations = new Map(generations.current);
       const block = draft.titleDocument?.blocks.length === 1 ? draft.titleDocument.blocks[0] : undefined;
       const task: Promise<boolean> = run((storage, workspaceId) => editCardContent(storage, workspaceId, draft.cardId, {
@@ -1765,6 +1844,8 @@ function usePendingText(
         content: draft.content,
       }), 'action.textSaved', { mergeKey: `text:${draft.cardId}`, reactive: true }).then(async (result) => {
         if (result.ok && workspace) {
+          session.editorialSessions.update(draft.authority.title, { persistence: 'saved' });
+          session.editorialSessions.update(draft.authority.body, { persistence: 'saved' });
           const confirmations: Promise<unknown>[] = [];
           for (const zone of ['title', 'body'] as const) {
             const label = keyLabel(draft.cardId, zone);
@@ -1775,14 +1856,6 @@ function usePendingText(
           if (pendingText.current === draft) {
             pendingText.current = null;
             setRecoveredText(null);
-            for (const zone of ['title', 'body'] as const) {
-              const label = keyLabel(draft.cardId, zone);
-              const lease = leases.current.get(label);
-              if (lease) session.editorialSessions.release(lease);
-              leases.current.delete(label);
-              baseRevisions.current.delete(label);
-              generations.current.delete(label);
-            }
           }
           await refreshDrafts();
         }
@@ -1791,16 +1864,19 @@ function usePendingText(
       pendingSave.current = task;
       if (!await task) return false;
     }
-  }, [durableZoneRevision, flushPrivate, refreshDrafts, run, session.drafts, session.editorialSessions, workspace]);
+  }, [durableZoneRevision, flushPrivate, ownsAuthority, refreshDrafts, run, session.drafts, session.editorialSessions, workspace]);
 
-  const setPendingText = useCallback((draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }, surface: 'quick' | 'full' = 'full') => {
-    ensureLease(draft.cardId, 'title', surface);
-    ensureLease(draft.cardId, 'body', surface);
-    const next: PendingEditorialText = { ...draft, sequence: ++sequence.current, surface };
+  const setPendingText = useCallback((draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }, requestedAuthority: EditorialAuthority | null = authorityRef.current) => {
+    if (!requestedAuthority || requestedAuthority.cardId !== draft.cardId || !ownsAuthority(requestedAuthority)) return false;
+    const titleDocument = draft.titleDocument ?? { schemaVersion: 1 as const, blocks: [{ type: 'paragraph' as const, content: draft.title ? [{ type: 'text' as const, text: draft.title }] : [] }] };
+    session.editorialSessions.update(requestedAuthority.title, { source: { format: 'rich-text', value: titleDocument }, lastValidDocument: titleDocument, validation: { status: 'valid' }, persistence: 'protection-pending' });
+    session.editorialSessions.update(requestedAuthority.body, { source: { format: 'legacy-markdown', value: draft.content }, validation: { status: 'valid' }, persistence: 'protection-pending' });
+    const next: PendingEditorialText = { ...draft, titleDocument, sequence: ++sequence.current, surface: requestedAuthority.surface, authority: requestedAuthority };
     pendingText.current = next;
     if (privateTimer.current) clearTimeout(privateTimer.current);
     privateTimer.current = setTimeout(() => { privateTimer.current = null; void persistPrivate(next); }, 250);
-  }, [ensureLease, persistPrivate]);
+    return true;
+  }, [ownsAuthority, persistPrivate, session.editorialSessions]);
 
   useEffect(() => () => {
     if (privateTimer.current) clearTimeout(privateTimer.current);
@@ -1826,23 +1902,30 @@ function usePendingText(
       if (!draft) continue;
       baseRevisions.current.set(keyLabel(cardId, draft.key.zone), draft.baseRevision);
       generations.current.set(keyLabel(cardId, draft.key.zone), draft.generation);
-      if (session.drafts.conflicts(draft, durableZoneRevision(cardId, draft.key.zone))) setDraftProblem('El documento durable cambió desde que comenzó este borrador. Revísalo antes de guardar; no se fusionará automáticamente.');
+      if (session.drafts.conflicts(draft, durableZoneRevision(cardId, draft.key.zone))) {
+        conflicts.current.add(keyLabel(cardId, draft.key.zone));
+        setDraftProblem('El documento durable cambió desde que comenzó este borrador. Revísalo antes de guardar; no se fusionará automáticamente.');
+      }
     }
     const recovered = { cardId, title, content, ...(titleDocument ? { titleDocument } : {}) };
-    setRecoveredText(recovered);
-    setPendingText(recovered, 'full');
+    const recoveredAuthority = activateSurface(cardId, 'full');
+    if (recoveredAuthority) {
+      setRecoveredText(recovered);
+      setPendingText(recovered, recoveredAuthority);
+    }
     return true;
-  }, [durableZoneRevision, recoverableDrafts, session.drafts, setPendingText, workspace]);
+  }, [activateSurface, durableZoneRevision, recoverableDrafts, session.drafts, setPendingText, workspace]);
 
   const discardDrafts = useCallback(async (cardId?: CardId) => {
     if (!workspace) return;
     const targets = recoverableDrafts.filter((draft) => cardId === undefined || draft.key.cardId === cardId);
     await Promise.all(targets.map((draft) => session.drafts.discard(draft.key, draft.generation)));
+    for (const draft of targets) conflicts.current.delete(keyLabel(draft.key.cardId as CardId, draft.key.zone));
     if (cardId === undefined || pendingText.current?.cardId === cardId) { pendingText.current = null; setRecoveredText(null); }
     await refreshDrafts();
   }, [recoverableDrafts, refreshDrafts, session.drafts, workspace]);
 
-  return { flushPendingText, setPendingText, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText };
+  return { flushPendingText, setPendingText, activateSurface, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText };
 }
 
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });

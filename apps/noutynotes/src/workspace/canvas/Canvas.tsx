@@ -1,5 +1,5 @@
 import type { RichTextCodec } from '@noutynotes/application';
-import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
+import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace } from '@noutynotes/domain';
 import { footprint, frameMembers, moveConnectorPoint } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -123,7 +123,9 @@ interface CanvasProps {
   /** Tarjeta cuya edición rápida está superpuesta sobre la propia ficha (ADR 0047). */
   readonly inlineEditingId: CardId | null;
   readonly richTextCodec: RichTextCodec;
-  readonly onInlineSave: (cardId: CardId, title: string, content: string) => Promise<boolean>;
+  readonly inlineDraft?: { readonly cardId: CardId; readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
+  readonly onInlineDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
+  readonly onInlineSave: (cardId: CardId, title: string, content: string, titleDocument: RichTextDocument) => Promise<boolean>;
   readonly onInlineClose: () => void;
   readonly onInlineAdvanced: (cardId: CardId) => void;
   /** Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): un solo clic ya
@@ -948,6 +950,8 @@ export function Canvas(props: CanvasProps) {
           box={inlineBox}
           richTextCodec={props.richTextCodec}
           noteFontFamily={props.noteFontFamily}
+          initialDraft={props.inlineDraft?.cardId === inlineCard.id ? props.inlineDraft : undefined}
+          onDraftChange={props.onInlineDraftChange}
           onSave={props.onInlineSave}
           onAdvanced={() => props.onInlineAdvanced(inlineCard.id)}
           onClose={props.onInlineClose}

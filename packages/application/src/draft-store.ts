@@ -303,21 +303,55 @@ export interface EditorialSessionLease {
   readonly token: string;
 }
 
+export type EditorialPersistenceState =
+  | 'editing'
+  | 'protection-pending'
+  | 'protected'
+  | 'save-pending'
+  | 'saved'
+  | 'error'
+  | 'conflict';
+
+/** Estado efímero de una zona. DraftStore sigue siendo la copia privada recuperable. */
+export interface EditorialSessionState {
+  readonly key: DraftKey;
+  readonly source: DraftSource;
+  readonly lastValidDocument: RichTextDocument | null;
+  readonly baseRevision: DraftRevision;
+  readonly draftGeneration?: DraftGeneration;
+  readonly validation: DraftValidation;
+  readonly persistence: EditorialPersistenceState;
+  readonly version: number;
+}
+
+export type EditorialSessionSeed = Omit<EditorialSessionState, 'key' | 'version'>;
+
+export interface EditorialSessionUpdate {
+  readonly source?: DraftSource;
+  readonly lastValidDocument?: RichTextDocument | null;
+  readonly baseRevision?: DraftRevision;
+  readonly draftGeneration?: DraftGeneration;
+  readonly validation?: DraftValidation;
+  readonly persistence?: EditorialPersistenceState;
+}
+
 export type SessionResult = { readonly ok: true; readonly value: EditorialSessionLease } | { readonly ok: false; readonly active: EditorialSessionLease };
 
 /** Autoridad en memoria por workspace/tarjeta/zona; no es un bloqueo distribuido. */
 export class EditorialSessionCoordinator {
   private readonly active = new Map<string, EditorialSessionLease>();
+  private readonly states = new Map<string, EditorialSessionState>();
   private sequence = 0;
 
   constructor(private readonly createToken: () => string) {}
 
-  acquire(key: DraftKey, surface: DraftSurface): SessionResult {
+  acquire(key: DraftKey, surface: DraftSurface, seed?: EditorialSessionSeed): SessionResult {
     const identity = keyOf(key);
     const active = this.active.get(identity);
     if (active) return { ok: false, active };
     const lease = { key: { ...key }, surface, token: `${this.createToken()}:${++this.sequence}` } as const;
     this.active.set(identity, lease);
+    if (!this.states.has(identity) && seed) this.states.set(identity, { key: { ...key }, ...seed, version: 0 });
     return { ok: true, value: lease };
   }
 
@@ -331,8 +365,28 @@ export class EditorialSessionCoordinator {
 
   owns(lease: EditorialSessionLease): boolean { return this.active.get(keyOf(lease.key))?.token === lease.token; }
 
+  read(key: DraftKey): EditorialSessionState | null { return this.states.get(keyOf(key)) ?? null; }
+
+  update(lease: EditorialSessionLease, update: EditorialSessionUpdate): EditorialSessionState | null {
+    if (!this.owns(lease)) return null;
+    const identity = keyOf(lease.key);
+    const current = this.states.get(identity);
+    if (!current) return null;
+    const next: EditorialSessionState = { ...current, ...update, key: current.key, version: current.version + 1 };
+    this.states.set(identity, next);
+    return next;
+  }
+
+  clear(lease: EditorialSessionLease): boolean {
+    if (!this.owns(lease)) return false;
+    this.states.delete(keyOf(lease.key));
+    return true;
+  }
+
   release(lease: EditorialSessionLease): boolean {
     if (!this.owns(lease)) return false;
-    return this.active.delete(keyOf(lease.key));
+    const identity = keyOf(lease.key);
+    this.states.delete(identity);
+    return this.active.delete(identity);
   }
 }

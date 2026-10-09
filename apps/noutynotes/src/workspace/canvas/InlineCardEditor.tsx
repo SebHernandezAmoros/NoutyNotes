@@ -1,5 +1,5 @@
 import type { RichTextCodec } from '@noutynotes/application';
-import type { Card, CardId } from '@noutynotes/domain';
+import type { Card, CardId, RichTextDocument } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -14,23 +14,28 @@ interface InlineCardEditorProps {
   readonly box: ScreenBox;
   readonly richTextCodec: RichTextCodec;
   readonly noteFontFamily?: string | undefined;
-  readonly onSave: (cardId: CardId, title: string, content: string) => Promise<boolean>;
+  readonly initialDraft?: { readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
+  readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
+  readonly onSave: (cardId: CardId, title: string, content: string, titleDocument: RichTextDocument) => Promise<boolean>;
   readonly onAdvanced: () => void;
   readonly onClose: () => void;
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const [title, setTitle] = useState(card.title ?? '');
-  const [content, setContent] = useState(card.content ?? '');
+  const [title, setTitle] = useState(initialDraft?.title ?? card.title ?? '');
+  const [content, setContent] = useState(initialDraft?.content ?? card.content ?? '');
+  const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
+    schemaVersion: 1, blocks: [{ type: 'paragraph', content: (initialDraft?.title ?? card.title) ? [{ type: 'text', text: initialDraft?.title ?? card.title ?? '' }] : [] }],
+  }));
   const floatingText = card.typeId === 'texto-flotante';
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document) && !document.blocks.some((block) => block.type === 'image')
     : isBasicRichTextDocument(document);
   const [visualDocument, setVisualDocument] = useState<Parameters<RichTextCodec['serialize']>[0] | null>(() => {
-    const parsed = richTextCodec.parse(card.content ?? '');
+    const parsed = richTextCodec.parse(initialDraft?.content ?? card.content ?? '');
     return parsed.ok && supportsVisualDocument(parsed.value) ? parsed.value : null;
   });
   const [saving, setSaving] = useState(false);
@@ -41,10 +46,11 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
     if (encoded.ok) {
       setVisualDocument(document);
       setContent(encoded.value);
+      onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument });
     }
   };
   const current = useRef({ title, content });
-  const saved = useRef({ title: card.title ?? '', content: card.content ?? '' });
+  const saved = useRef({ title: initialDraft?.title ?? card.title ?? '', content: initialDraft?.content ?? card.content ?? '' });
   const queued = useRef<{ title: string; content: string } | null>(null);
   const queue = useRef<Promise<boolean>>(Promise.resolve(true));
   useEffect(() => { current.current = { title, content }; }, [title, content]);
@@ -56,7 +62,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
     setSaving(true);
     setProblem(null);
     queued.current = draft;
-    const task = queue.current.then(() => onSave(card.id, draft.title, draft.content)).then((ok) => {
+    const task = queue.current.then(() => onSave(card.id, draft.title, draft.content, titleDocument)).then((ok) => {
       if (ok) saved.current = draft;
       else setProblem('No se pudo guardar. La edición sigue abierta.');
       return ok;
@@ -68,7 +74,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
     });
     queue.current = task;
     return task;
-  }, [card.id, content, onSave, title]);
+  }, [card.id, content, onSave, title, titleDocument]);
 
   useEffect(() => {
     if (title === saved.current.title && content === saved.current.content) return undefined;
@@ -87,7 +93,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
   }, []);
 
   const close = () => { void persist().then((ok) => { if (ok) onClose(); }); };
-  const advanced = () => { void persist().then((ok) => { if (ok) onAdvanced(); }); };
+  const advanced = () => { onAdvanced(); };
   return (
     <View
       testID="inline-card-editor"
@@ -112,7 +118,10 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
         testID="inline-card-title"
         accessibilityLabel="Título de la tarjeta"
         value={title}
-        onChangeText={setTitle}
+        onChangeText={(value) => {
+          const document: RichTextDocument = { schemaVersion: 1, blocks: [{ type: 'paragraph', content: value ? [{ type: 'text', text: value }] : [] }] };
+          setTitle(value); setTitleDocument(document); onDraftChange({ cardId: card.id, title: value, content, titleDocument: document });
+        }}
         onBlur={() => { void persist(); }}
         placeholder="Título"
         placeholderTextColor={colors.textSecondary}
@@ -123,7 +132,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, onS
           testID="inline-floating-text"
           accessibilityLabel="Texto flotante"
           value={content}
-          onChangeText={setContent}
+          onChangeText={(value) => { setContent(value); onDraftChange({ cardId: card.id, title, content: value, titleDocument }); }}
           onBlur={() => { void persist(); }}
           multiline
           autoFocus

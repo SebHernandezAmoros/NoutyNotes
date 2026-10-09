@@ -56,4 +56,12 @@ describe('JournalDraftPersistence', () => {
     await expect(journal.write('B')).rejects.toThrow('verification failed');
     expect(await new JournalDraftPersistence(slots).read()).toBe('A');
   });
+
+  it('mantiene tamaño constante y recupera la última de muchas escrituras', async () => {
+    const slots = new Slots();
+    const journal = new JournalDraftPersistence(slots);
+    for (let index = 0; index < 20; index += 1) await journal.write(`draft-${index}`);
+    expect(slots.values).toHaveLength(2);
+    expect(await new JournalDraftPersistence(slots).read()).toBe('draft-19');
+  });
 });

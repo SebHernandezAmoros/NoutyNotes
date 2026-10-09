@@ -115,6 +115,16 @@ describe('PersistentDraftStore', () => {
     const corrupt = await new PersistentDraftStore(persistence, { now }).list();
     expect(corrupt.ok ? '' : corrupt.issues[0]?.code).toBe('corrupt-store');
   });
+
+  it('rechaza el límite total sin confirmar ni eliminar los borradores protegidos', async () => {
+    const store = new PersistentDraftStore(new MemoryDraftPersistence(), { now, maxSourceBytes: 64, maxTotalBytes: 20 });
+    const first = await store.save(input('1234567890'));
+    expect(first.ok).toBe(true);
+    const second = await store.save({ ...input('abcdefghijk'), key: createDraftKey('workspace-a', 'card-b', 'body') });
+    expect(second.ok ? '' : second.issues[0]?.code).toBe('capacity-exceeded');
+    expect(valueOf(await store.list())).toHaveLength(1);
+    expect(valueOf(await store.read(key))?.source.value).toBe('1234567890');
+  });
 });
 
 describe('EditorialSessionCoordinator', () => {
@@ -127,5 +137,45 @@ describe('EditorialSessionCoordinator', () => {
     if (!first.ok) throw new Error('fixture');
     expect(sessions.transfer(first.value, 'full').ok).toBe(true);
     expect(sessions.release(first.value)).toBe(false);
+  });
+
+  it('transfiere el mismo estado y rechaza callbacks de la autoridad anterior', () => {
+    const sessions = new EditorialSessionCoordinator(() => 'session');
+    const quick = sessions.acquire(key, 'quick', {
+      source: { format: 'legacy-markdown', value: 'A' }, lastValidDocument: null,
+      baseRevision: draftRevision('base'), validation: { status: 'valid' }, persistence: 'editing',
+    });
+    if (!quick.ok) throw new Error('fixture');
+    expect(sessions.update(quick.value, { source: { format: 'legacy-markdown', value: 'B' } })?.version).toBe(1);
+    const full = sessions.transfer(quick.value, 'full');
+    if (!full.ok) throw new Error('fixture');
+    expect(sessions.read(key)?.source).toEqual({ format: 'legacy-markdown', value: 'B' });
+    expect(sessions.update(quick.value, { source: { format: 'legacy-markdown', value: 'stale' } })).toBeNull();
+    expect(sessions.update(full.value, { source: { format: 'legacy-markdown', value: 'C' } })?.source).toEqual({ format: 'legacy-markdown', value: 'C' });
+    const quickAgain = sessions.transfer(full.value, 'quick');
+    if (!quickAgain.ok) throw new Error('fixture');
+    expect(sessions.update(full.value, { persistence: 'saved' })).toBeNull();
+    expect(sessions.read(key)?.source).toEqual({ format: 'legacy-markdown', value: 'C' });
+    expect(sessions.release(quickAgain.value)).toBe(true);
+    expect(sessions.read(key)).toBeNull();
+  });
+
+  it('mantiene título y cuerpo como sesiones independientes', () => {
+    const sessions = new EditorialSessionCoordinator(() => 'session');
+    const titleKey = createDraftKey('workspace-a', 'card-a', 'title');
+    const bodyKey = createDraftKey('workspace-a', 'card-a', 'body');
+    const title = sessions.acquire(titleKey, 'full', {
+      source: { format: 'rich-text', value: { schemaVersion: 1, blocks: [{ type: 'paragraph', content: [{ type: 'text', text: 'Título', marks: ['bold'] }] }] } },
+      lastValidDocument: null, baseRevision: draftRevision('title'), validation: { status: 'valid' }, persistence: 'editing',
+    });
+    const body = sessions.acquire(bodyKey, 'full', {
+      source: { format: 'html', value: '<p>Cuerpo</p>' },
+      lastValidDocument: { schemaVersion: 1, blocks: [{ type: 'paragraph', content: [{ type: 'text', text: 'Cuerpo' }] }] },
+      baseRevision: draftRevision('body'), validation: { status: 'valid' }, persistence: 'protected',
+    });
+    if (!title.ok || !body.ok) throw new Error('fixture');
+    sessions.update(title.value, { persistence: 'save-pending' });
+    expect(sessions.read(bodyKey)?.persistence).toBe('protected');
+    expect(sessions.read(titleKey)?.source.format).toBe('rich-text');
   });
 });

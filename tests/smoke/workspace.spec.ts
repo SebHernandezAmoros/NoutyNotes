@@ -393,10 +393,24 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await button(page, 'Negrita').click();
   await page.keyboard.type('normal');
   await expect(visual.locator('strong')).toHaveText('Texto visible ');
-  await button(page, 'Guardar y cerrar la edición rápida').click();
+  // P18-E3-B1: la transferencia no espera el debounce ni un guardado durable. El editor completo
+  // recibe la misma sesión y un callback tardío de la superficie rápida ya no conserva autoridad.
+  await button(page, 'Abrir el editor completo').first().click();
   await expect(inline).toHaveCount(0);
-  await expect(card(page, 1)).toContainText('Idea editada aquí');
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Idea editada aquí');
+  await expect(page.getByLabel('Contenido visual')).toContainText('Texto visible normal');
+  await page.waitForTimeout(800);
+  await page.getByLabel('Título de la tarjeta').fill('Idea final completa');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+  await expect(card(page, 1)).toContainText('Idea final completa');
   await expect(card(page, 1)).toContainText('Texto visible normal');
+  await card(page, 1).dblclick();
+  await expect(page.getByTestId('inline-card-editor')).toBeVisible();
+  await expect(page.getByTestId('inline-card-title')).toHaveValue('Idea final completa');
+  await expect(page.getByLabel('Contenido visual')).toContainText('Texto visible normal');
+  await button(page, 'Guardar y cerrar la edición rápida').click();
 
   // Regresión P06 (2026-10-05): el editor guarda Markdown canónico, pero la ficha debe
   // representar sus marcas; nunca debe enseñar `**` ni entidades generadas por el serializer.
@@ -414,8 +428,8 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await button(page, 'Vista de lista').click();
 
   await selectCard(page, 1);
-  await openCardActions(page, card(page, 1), 'Idea editada aquí');
-  await button(page, 'Abrir el editor completo de Idea editada aquí').click();
+  await openCardActions(page, card(page, 1), 'Idea final completa');
+  await button(page, 'Abrir el editor completo de Idea final completa').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   await button(page, 'Volver al editor Markdown').click();
   await expect(page.getByLabel('Contenido Markdown')).toHaveValue('**Texto visible&#x20;**&#x6E;ormal');

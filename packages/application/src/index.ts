@@ -47,6 +47,10 @@ export type {
   EditorialDraft,
   EditorialDraftInput,
   EditorialSessionLease,
+  EditorialPersistenceState,
+  EditorialSessionSeed,
+  EditorialSessionState,
+  EditorialSessionUpdate,
 } from './draft-store';
 export type {
   ReactiveDispatch, ReactiveRunOptions, ReactiveSaveStatus, ReactiveWorkspaceAction, ReactiveWorkspaceSnapshot,
