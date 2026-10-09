@@ -25,6 +25,29 @@ export { EMPTY_HISTORY, HISTORY_LIMIT, recordStep, redoStep, sameWorkspace, undo
 export type { HistoryStep, UndoHistory } from './history';
 export { revertWorkspace } from './revert';
 export { ReactiveWorkspaceEditor } from './reactive-workspace';
+export {
+  EditorialSessionCoordinator,
+  MemoryDraftPersistence,
+  PersistentDraftStore,
+  createDraftKey,
+  draftRevision,
+} from './draft-store';
+export type {
+  DraftGeneration,
+  DraftKey,
+  DraftPersistence,
+  DraftRevision,
+  DraftSource,
+  DraftStore,
+  DraftStoreIssue,
+  DraftStoreResult,
+  DraftSurface,
+  DraftValidation,
+  DraftZone,
+  EditorialDraft,
+  EditorialDraftInput,
+  EditorialSessionLease,
+} from './draft-store';
 export type {
   ReactiveDispatch, ReactiveRunOptions, ReactiveSaveStatus, ReactiveWorkspaceAction, ReactiveWorkspaceSnapshot,
 } from './reactive-workspace';

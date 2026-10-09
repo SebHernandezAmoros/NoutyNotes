@@ -40,6 +40,34 @@ async function importZip(page: Page, name: string, buffer: Buffer) {
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 const DOWNLOAD_STARTED = (fileName: string) => `Descarga iniciada: «${fileName}». El navegador no confirma que se haya guardado: comprueba tus descargas y pulsa «Ya lo guardé». Hasta entonces sigue marcado como sin exportar.`;
 
+test('E3-A: el respaldo ZIP exige aceptar que los borradores privados quedan fuera', async ({ page }) => {
+  // Conserva la ventana entre el guardado privado (250 ms) y el autosave durable (700 ms)
+  // para comprobar la advertencia sin convertir el borrador en documento oficial.
+  await page.addInitScript({ content: `{
+    const schedule = window.setTimeout.bind(window);
+    window.setTimeout = (handler, delay, ...args) => schedule(handler, delay === 700 ? 60_000 : delay, ...args);
+  }` });
+  await page.addInitScript({ content: withoutFolderAccess });
+  await page.goto('./');
+  await importZip(page, 'demo.zip', fixtureZip());
+  await insertFromMenu(page, 'Insertar nota');
+  await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
+  await (await openMarkdownEditor(page)).fill('BORRADOR PRIVADO EXCLUIDO');
+  await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO EXCLUIDO');
+
+  // En móvil la edición enfocada oculta el lienzo y su barra; volver al tablero no confirma el texto.
+  const backToBoard = button(page, 'Volver al tablero');
+  if (await backToBoard.count()) await backToBoard.click();
+  await button(page, 'Exportar este espacio como ZIP').click();
+  await expect(page.getByTestId('archive-message')).toContainText('El ZIP incluirá únicamente documentos durables válidos');
+  await expect(button(page, 'Continuar exportando sin los borradores privados')).toBeVisible();
+
+  const download = page.waitForEvent('download');
+  await button(page, 'Continuar exportando sin los borradores privados').click();
+  expect((await download).suggestedFilename()).toBe('demo.zip');
+  await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO EXCLUIDO');
+});
+
 test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras recargar sin pérdidas', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.addInitScript({ content: withoutFolderAccess });
@@ -122,8 +150,13 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   expect(archive.value.files['cards/idea-b.md']).toBe(decoder.decode(source['cards/idea-b.md']));
   expect(archive.value.assets).toEqual({ 'assets/images/pixel.png': binary, 'assets/notes/lista de ideas.txt': source['assets/notes/lista de ideas.txt'] });
   const card = archive.value.workspace.cards.find((candidate) => candidate.id === 'tarjeta-1');
-  expect(card).toMatchObject({ title: 'Nota del ZIP', content: '## Desde el navegador\n\n- conservar **todo**', tags: ['exportable'] });
-  expect(archive.value.files['cards/tarjeta-1.md']).toContain('schemaVersion: 3');
+  expect(card).toMatchObject({
+    titleRichText: [{ type: 'text', text: 'Nota del ZIP' }],
+    content: '## Desde el navegador\n\n- conservar **todo**',
+    tags: ['exportable'],
+  });
+  expect(card?.title).toBeUndefined();
+  expect(archive.value.files['cards/tarjeta-1.md']).toContain('schemaVersion: 11');
   expect(archive.value.workspace.relations.map(({ from, to }) => `${from}→${to}`)).toEqual(['idea-a→idea-b', 'tarjeta-1→idea-a']);
   expect(archive.value.workspace.layouts[0]?.placements.find((placement) => placement.cardId === 'tarjeta-1')?.rect.y).toBe(bornRow);
 

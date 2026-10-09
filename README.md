@@ -6,6 +6,8 @@ NoutyNotes es un proyecto de espacio visual para organizar notas enriquecidas, i
 
 > **En desarrollo inicial.** Hay un prototipo navegable: crear espacios, añadir notas e imágenes de ejemplo, editar su texto, moverlas, redimensionarlas y conectarlas. Puede usar memoria temporal o elegir una carpeta local en un navegador compatible para guardar archivos. El flujo básico de carpetas ya se validó en Chrome; las plantillas aún no tienen interfaz.
 
+**Recuperación editorial privada (ADR 0064):** título y cuerpo pendientes se protegen fuera del workspace en IndexedDB web o almacenamiento privado Android. Al volver, la app ofrece copiar, recuperar o descartar la fuente; una nota eliminada no se recrea. Los borradores nunca viajan en ZIP, carpeta o SAF, y el respaldo ZIP exige aceptar expresamente que exportará solo el último documento durable. El editor Visual/HTML que aprovechará las fuentes HTML inválidas conservadas pertenece a la siguiente subfase.
+
 **Experiencia del workspace (ADR 0013):**
 - **Lienzo y tarjetas:** lienzo de tableros con cabecera, barra lateral de espacios y tableros (desde 1100 px), pestañas de tableros y fichas con cabecera por tipo.
 - **Herramientas reales:** Seleccionar, Mano, Conectar, Buscar, Nota, Enlace, Imagen (importar una real), Ejemplo, zoom 50–200 % con restablecer, Lista, Papelera y Configuración.

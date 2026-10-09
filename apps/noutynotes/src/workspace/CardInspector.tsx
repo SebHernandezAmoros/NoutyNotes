@@ -1,4 +1,4 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editCardContent, editConnectorPath, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
+import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
@@ -31,8 +31,9 @@ interface CardInspectorProps {
   readonly card: Card;
   readonly placement: CardPlacement | undefined;
   readonly run: Run;
-  readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string }) => void;
+  readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
   readonly flushPendingText: () => Promise<boolean>;
+  readonly initialDraft?: { readonly cardId: CardId; readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
   readonly onClose: () => void;
   /** Representación y Papelera (ADR 0014, ADR 0015); los mismos caminos que la barra de la tarjeta. */
   readonly onDisplay: (display: CardDisplayMode) => void;
@@ -109,7 +110,7 @@ function CardIconChoice({ icon, selected, onPress }: { readonly icon: CardIconNa
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, initialDraft, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -123,12 +124,12 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' }, { reactive: true });
   const presentation = cardContentPresentation(card, cardBase);
   const initialContent = editableCardContent(card, cardBase);
-  const [title, setTitle] = useState(card.title ?? '');
-  const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => ({
+  const [title, setTitle] = useState(initialDraft?.title ?? card.title ?? '');
+  const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
     schemaVersion: 1,
-    blocks: [{ type: 'paragraph', content: card.titleRichText ?? (card.title ? [{ type: 'text', text: card.title }] : []) }],
+    blocks: [{ type: 'paragraph', content: card.titleRichText ?? (initialDraft?.title ? [{ type: 'text', text: initialDraft.title }] : card.title ? [{ type: 'text', text: card.title }] : []) }],
   }));
-  const [content, setContent] = useState(initialContent);
+  const [content, setContent] = useState(initialDraft?.content ?? initialContent);
   const supportsVisualEditor = !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
@@ -151,32 +152,32 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     setTitleDocument(document);
     const plain = cardTitleText({ titleRichText: block.content });
     setTitle(plain);
-    void run((storage, id) => editCardContent(storage, id, card.id, { titleRichText: block.content.length > 0 ? block.content : null }), 'action.textSaved', { mergeKey: `title:${card.id}`, reactive: true });
+    onDraftChange({ cardId: card.id, title: plain, content, titleDocument: document });
   };
   const changeContent = (value: string) => {
     if (floatingText) {
       setContent(value);
-      if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: value });
+      onDraftChange({ cardId: card.id, title, content: value, titleDocument });
       return;
     }
     const edit = normalizeListChange(content, value, selectionRef.current);
     const next = edit?.text ?? value;
     setContent(next);
     if (edit) setForcedSelection({ start: edit.caret, end: edit.caret });
-    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
+    onDraftChange({ cardId: card.id, title, content: next, titleDocument });
   };
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
     const encoded = richTextCodec.serialize(document);
     if (!encoded.ok || encoded.value === content) return;
     setContent(encoded.value);
-    onDraftChange({ cardId: card.id, title, content: encoded.value });
+    onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument });
   };
   const insertList = (kind: ListKind) => {
     const edit = applyListCommand(content, selectionRef.current, kind);
     setContent(edit.text);
     selectionRef.current = { start: edit.caret, end: edit.caret };
     setForcedSelection(selectionRef.current);
-    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: edit.text });
+    onDraftChange({ cardId: card.id, title, content: edit.text, titleDocument });
   };
   // UX7-B3: negrita/cursiva envuelven la selección y la mantienen (en vez de colapsar el cursor como
   // las listas), para que escribir reemplace el texto formateado o repetir el atajo lo desenvuelva.
@@ -185,7 +186,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     setContent(edit.text);
     selectionRef.current = edit.selection;
     setForcedSelection(edit.selection);
-    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: edit.text });
+    onDraftChange({ cardId: card.id, title, content: edit.text, titleDocument });
   };
   const onContentKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }>) => {
     const { ctrlKey, metaKey, key } = event.nativeEvent;
@@ -237,7 +238,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // Contenido en orden (ADR 0021): mover, quitar o el texto alternativo cambian el borrador, como escribir.
   const changeBlocks = (next: string) => {
     setContent(next);
-    if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
+    onDraftChange({ cardId: card.id, title, content: next, titleDocument });
   };
   const blocksType = cardBase;
   const withBlocks = blocksType !== 'image' && blocksType !== 'section' && blocksType !== 'text' && blocksType !== 'shape' && blocksType !== 'connector';
@@ -261,7 +262,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: file.name } } : { key: 'action.noteImageReplaced', params: { name: file.name } });
     if (result.ok) {
       setContent(result.value.content);
-      if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: result.value.content });
+      onDraftChange({ cardId: card.id, title, content: result.value.content, titleDocument });
       const parsed = richTextCodec.parse(result.value.content);
       return parsed.ok ? parsed.value.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null : null;
     } else {
@@ -309,15 +310,14 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     const next = toggleChecklistLine(content, line);
     if (next !== null) {
       setContent(next);
-      if (mode === 'folder') onDraftChange({ cardId: card.id, title, content: next });
+      onDraftChange({ cardId: card.id, title, content: next, titleDocument });
     }
   };
   useEffect(() => {
-    if ((mode !== 'folder' && !visualEditing) || !dirty) return;
-    onDraftChange({ cardId: card.id, title, content });
+    if (!dirty) return;
     const timer = setTimeout(() => { void flushPendingText(); }, 700);
     return () => clearTimeout(timer);
-  }, [mode, visualEditing, dirty, card.id, title, content, onDraftChange, flushPendingText]);
+  }, [dirty, card.id, title, content, titleDocument, flushPendingText]);
   useEffect(() => {
     if (Platform.OS !== 'web' || (mode !== 'folder' && !visualEditing) || !dirty) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
@@ -533,7 +533,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
-            onPress={() => { void ((mode === 'folder' || visualEditing) ? flushPendingText() : run((storage, id) => editCardContent(storage, id, card.id, { content }), 'action.textSaved', { mergeKey: `text:${card.id}`, reactive: true })); }}
+            onPress={() => { void flushPendingText(); }}
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
         </View> : null}

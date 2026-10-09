@@ -1,15 +1,15 @@
 import {
-  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, disconnectCards, duplicateSelection, editCardContent, editConnectorPath, importImageCard,
+  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardContent, editConnectorPath, importImageCard,
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
-import type { ClipboardSnapshot, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
-import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, WorkspaceId } from '@noutynotes/domain';
-import { createOrthogonalConnectorPath, frameMembers } from '@noutynotes/domain';
+import type { ClipboardSnapshot, DraftGeneration, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
+import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
+import { cardTitleText, createOrthogonalConnectorPath, frameMembers } from '@noutynotes/domain';
 import { markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '../components/BrandMark';
@@ -217,7 +217,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     return () => { active = false; };
   }, [workspaceIdForFont, customFontRef, session.storage]);
 
-  const { flushPendingText, setPendingText } = usePendingText(run);
+  const {
+    flushPendingText, setPendingText, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText,
+  } = usePendingText(run, workspace, session);
 
   const goHome = async () => {
     if (!await flushPendingText() || !await flushWorkspace()) return;
@@ -962,11 +964,21 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const showArchive = Platform.OS === 'web' && storageMode === 'memory';
   const unexported = workspace ? session.unexported.includes(workspace.id) : false;
   const [awaiting, setAwaiting] = useState<{ fileName: string; revision: number } | null>(null);
-  const exportZip = () => {
+  const [exportDraftWarning, setExportDraftWarning] = useState(false);
+  const performExportZip = () => {
     if (!workspace) return;
     const outcome = session.exportArchive(workspace.id);
+    setExportDraftWarning(false);
     setAwaiting(outcome.ok ? outcome.value : null);
     setArchiveMessage({ tone: outcome.ok ? 'success' : 'error', text: outcome.message });
+  };
+  const exportZip = () => {
+    if (recoverableDrafts.length > 0 && !exportDraftWarning) {
+      setExportDraftWarning(true);
+      setArchiveMessage({ tone: 'error', text: 'Hay borradores privados pendientes. El ZIP incluirá únicamente documentos durables válidos; revisa o descarta los borradores, o pulsa «Exportar solo lo guardado» para continuar expresamente.' });
+      return;
+    }
+    performExportZip();
   };
   const confirmSaved = () => {
     if (!workspace || !awaiting) return;
@@ -1033,6 +1045,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       noteImages={previews.refs}
       noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
       richTextCodec={markdownRichTextCodec}
+      initialDraft={recoveredText?.cardId === selected.id ? recoveredText : undefined}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
       onOpenBoard={(target) => { setEditingId(null); setInlineEditing(false); void chooseBoard(target); }}
@@ -1043,9 +1056,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
   const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setInlineEditing(false); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
   const saveInlineCard = useCallback(async (cardId: CardId, title: string, content: string) => {
-    const result = await run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { title, content }), 'action.textSaved', { mergeKey: `text:${cardId}`, reactive: true });
-    return result.ok;
-  }, [run]);
+    setPendingText({ cardId, title, content }, 'quick');
+    return flushPendingText();
+  }, [flushPendingText, setPendingText]);
   // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor (`toggleChecklistLine`)
   // y el mismo caso de uso de guardado; no abre el editor ni cambia la selección.
   const toggleCheck = (cardId: CardId, lineIndex: number) => {
@@ -1064,7 +1077,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       {unexported ? 'CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.' : 'SIN CAMBIOS PENDIENTES DE EXPORTAR'}
     </Text>
   );
-  const exportButton = <ActionButton label="Exportar ZIP" accessibilityLabel="Exportar este espacio como ZIP" tone={unexported ? 'primary' : 'default'} onPress={exportZip} />;
+  const exportButton = <ActionButton label={exportDraftWarning ? 'Exportar solo lo guardado' : 'Exportar ZIP'} accessibilityLabel={exportDraftWarning ? 'Continuar exportando sin los borradores privados' : 'Exportar este espacio como ZIP'} tone={unexported ? 'primary' : 'default'} onPress={exportZip} />;
   const header = (
     <View style={[styles.header, { borderColor: colors.gridLine, backgroundColor: colors.surface }]}>
       <ActionButton label="←" accessibilityLabel="Volver a mis espacios" onPress={() => void goHome()} />
@@ -1164,6 +1177,35 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       </> : null}
     </View>
   ) : feedbackText;
+
+  const draftCardIds = [...new Set(recoverableDrafts.map((draft) => draft.key.cardId))];
+  const firstDraftCardId = draftCardIds[0] as CardId | undefined;
+  const firstDraft = firstDraftCardId ? recoverableDrafts.find((draft) => draft.key.cardId === firstDraftCardId && draft.key.zone === 'body')
+    ?? recoverableDrafts.find((draft) => draft.key.cardId === firstDraftCardId) : undefined;
+  const draftSource = firstDraft?.source.format === 'rich-text' ? JSON.stringify(firstDraft.source.value, null, 2) : firstDraft?.source.value;
+  const draftBar = workspace && (recoverableDrafts.length > 0 || draftProblem) ? (
+    <View testID="draft-recovery" style={[styles.offer, { borderColor: colors.danger, backgroundColor: colors.surface }]}>
+      <View style={styles.draftCopy}>
+        <Text accessibilityRole="header" style={[styles.eyebrow, { color: colors.textPrimary }]}>BORRADOR PRIVADO RECUPERABLE</Text>
+        <Text accessibilityLiveRegion="polite" style={[styles.offerText, { color: colors.textPrimary }]}>
+          {draftProblem ?? `${draftCardIds.length} ${draftCardIds.length === 1 ? 'nota tiene' : 'notas tienen'} trabajo pendiente fuera del ZIP y de la carpeta SAF.`}
+        </Text>
+        {draftSource ? <Text testID="draft-source" selectable numberOfLines={4} style={[styles.draftSource, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{draftSource}</Text> : null}
+      </View>
+      {firstDraftCardId ? <ActionButton label="Recuperar" accessibilityLabel="Recuperar el primer borrador pendiente" tone="primary" onPress={() => {
+        if (!recoverDraft(firstDraftCardId)) return;
+        setSelectedId(firstDraftCardId);
+        setEditingId(firstDraftCardId);
+        setInlineEditing(false);
+        setFocus(true);
+      }} /> : null}
+      {firstDraftCardId ? <ActionButton label="Descartar" accessibilityLabel="Descartar el primer borrador pendiente" onPress={() => Alert.alert(
+        'Descartar borrador',
+        'Este trabajo privado todavía no está confirmado en el workspace.',
+        [{ text: 'Cancelar', style: 'cancel' }, { text: 'Descartar', style: 'destructive', onPress: () => { void discardDrafts(firstDraftCardId); } }],
+      )} /> : null}
+    </View>
+  ) : null;
 
   const toolbar = workspace ? (
     <Toolbar
@@ -1382,6 +1424,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           {/* Aviso de guardado: una sola instancia, transversal a cualquier vista, no solo al lienzo
               (ADR 0036) — antes vivía dentro de la barra del lienzo, que ahora puede estar oculta. */}
           {workspace ? feedbackLine : null}
+          {draftBar}
           {workspace && visitedViews.has('diary') ? (
             <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'diary' ? styles.hidden : null]}>
               <DiaryView
@@ -1609,9 +1652,103 @@ function NavItem({ icon, label, count, accessibilityLabel, onPress }: {
  * Borrador de texto de la tarjeta en modo carpeta: se guarda antes de cambiar de selección, de
  * tablero o de espacio, y antes de volver al inicio (protección del borrador de fase 8).
  */
-function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run']) {
-  const pendingText = useRef<{ cardId: CardId; title: string; content: string } | null>(null);
+interface PendingEditorialText {
+  readonly cardId: CardId;
+  readonly title: string;
+  readonly content: string;
+  readonly titleDocument?: RichTextDocument;
+  readonly sequence: number;
+  readonly surface: 'quick' | 'full';
+}
+
+function usePendingText(
+  run: ReturnType<typeof useWorkspaceEditor>['run'],
+  workspace: Workspace | null,
+  session: ReturnType<typeof useWorkspaceSession>,
+) {
+  const pendingText = useRef<PendingEditorialText | null>(null);
   const pendingSave = useRef<Promise<boolean> | null>(null);
+  const privateTail = useRef<Promise<void>>(Promise.resolve());
+  const privateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sequence = useRef(0);
+  const persistedSequence = useRef(0);
+  const generations = useRef(new Map<string, DraftGeneration>());
+  const baseRevisions = useRef(new Map<string, ReturnType<typeof draftRevision>>());
+  const leases = useRef(new Map<string, EditorialSessionLease>());
+  const [recoverableDrafts, setRecoverableDrafts] = useState<readonly EditorialDraft[]>([]);
+  const [draftProblem, setDraftProblem] = useState<string | null>(null);
+  const [recoveredText, setRecoveredText] = useState<Omit<PendingEditorialText, 'sequence' | 'surface'> | null>(null);
+
+  const refreshDrafts = useCallback(async () => {
+    if (!workspace) { setRecoverableDrafts([]); return; }
+    const listed = await session.drafts.list(workspace.id);
+    if (listed.ok) setRecoverableDrafts(listed.value);
+    else setDraftProblem(listed.issues[0]?.message ?? 'No se pudieron leer los borradores recuperables.');
+  }, [session.drafts, workspace]);
+
+  useEffect(() => {
+    // Igual que la carga del workspace: se difiere a una microtarea para no encadenar renders dentro del efecto.
+    void Promise.resolve().then(refreshDrafts);
+  }, [refreshDrafts]);
+
+  const keyLabel = (cardId: CardId, zone: 'title' | 'body') => `${cardId}:${zone}`;
+  const durableZoneRevision = useCallback((cardId: CardId, zone: 'title' | 'body') => {
+    const card = workspace?.cards.find((candidate) => candidate.id === cardId);
+    if (!card) return draftRevision('missing-card');
+    return draftRevision(JSON.stringify(zone === 'title' ? (card.titleRichText ?? card.title ?? '') : (card.contentDocument ?? card.content ?? '')));
+  }, [workspace]);
+
+  const ensureLease = useCallback((cardId: CardId, zone: 'title' | 'body', surface: 'quick' | 'full') => {
+    if (!workspace) return;
+    const label = keyLabel(cardId, zone);
+    const current = leases.current.get(label);
+    if (current?.surface === surface && session.editorialSessions.owns(current)) return;
+    const key = createDraftKey(workspace.id, cardId, zone);
+    const acquired = current && session.editorialSessions.owns(current)
+      ? session.editorialSessions.transfer(current, surface)
+      : session.editorialSessions.acquire(key, surface);
+    if (acquired.ok) leases.current.set(label, acquired.value);
+    else setDraftProblem('Otra superficie mantiene la autoridad de edición de esta nota. Cambia de editor de forma explícita.');
+  }, [session.editorialSessions, workspace]);
+
+  const persistPrivate = useCallback((draft: PendingEditorialText): Promise<void> => {
+    if (!workspace || persistedSequence.current >= draft.sequence) return privateTail.current;
+    const task = privateTail.current.then(async () => {
+      if (persistedSequence.current >= draft.sequence) return;
+      const titleLabel = keyLabel(draft.cardId, 'title');
+      const bodyLabel = keyLabel(draft.cardId, 'body');
+      const titleBase = baseRevisions.current.get(titleLabel) ?? durableZoneRevision(draft.cardId, 'title');
+      const bodyBase = baseRevisions.current.get(bodyLabel) ?? durableZoneRevision(draft.cardId, 'body');
+      baseRevisions.current.set(titleLabel, titleBase);
+      baseRevisions.current.set(bodyLabel, bodyBase);
+      const titleDocument = draft.titleDocument ?? { schemaVersion: 1 as const, blocks: [{ type: 'paragraph' as const, content: draft.title ? [{ type: 'text' as const, text: draft.title }] : [] }] };
+      const titleSaved = await session.drafts.save({
+        key: createDraftKey(workspace.id, draft.cardId, 'title'), source: { format: 'rich-text', value: titleDocument },
+        baseRevision: titleBase, validation: { status: 'valid' },
+      });
+      if (!titleSaved.ok) { setDraftProblem(`${titleSaved.issues[0]?.message ?? 'No se pudo proteger el título.'} El texto continúa en memoria mientras esta pantalla permanezca abierta.`); return; }
+      generations.current.set(titleLabel, titleSaved.value.generation);
+      const bodySaved = await session.drafts.save({
+        key: createDraftKey(workspace.id, draft.cardId, 'body'), source: { format: 'legacy-markdown', value: draft.content },
+        baseRevision: bodyBase, validation: { status: 'valid' },
+      });
+      if (!bodySaved.ok) { setDraftProblem(`${bodySaved.issues[0]?.message ?? 'No se pudo proteger el cuerpo.'} El texto continúa en memoria mientras esta pantalla permanezca abierta.`); return; }
+      generations.current.set(bodyLabel, bodySaved.value.generation);
+      persistedSequence.current = draft.sequence;
+      setDraftProblem(null);
+      await refreshDrafts();
+    });
+    privateTail.current = task.catch(() => { setDraftProblem('Falló el almacenamiento privado del borrador. El texto continúa en memoria mientras esta pantalla permanezca abierta.'); });
+    return privateTail.current;
+  }, [durableZoneRevision, refreshDrafts, session.drafts, workspace]);
+
+  const flushPrivate = useCallback(async () => {
+    if (privateTimer.current) { clearTimeout(privateTimer.current); privateTimer.current = null; }
+    const draft = pendingText.current;
+    if (draft) await persistPrivate(draft);
+    await privateTail.current;
+  }, [persistPrivate]);
+
   const flushPendingText = useCallback(async (): Promise<boolean> => {
     while (true) {
       if (pendingSave.current) {
@@ -1620,18 +1757,92 @@ function usePendingText(run: ReturnType<typeof useWorkspaceEditor>['run']) {
       }
       const draft = pendingText.current;
       if (!draft) return true;
+      await flushPrivate();
+      const confirmedGenerations = new Map(generations.current);
+      const block = draft.titleDocument?.blocks.length === 1 ? draft.titleDocument.blocks[0] : undefined;
       const task: Promise<boolean> = run((storage, workspaceId) => editCardContent(storage, workspaceId, draft.cardId, {
-        title: draft.title, content: draft.content,
-      }), 'action.textSaved', { mergeKey: `text:${draft.cardId}`, reactive: true }).then((result) => {
-        if (result.ok && pendingText.current === draft) pendingText.current = null;
+        ...(block?.type === 'paragraph' ? { titleRichText: block.content.length > 0 ? block.content : null } : { title: draft.title }),
+        content: draft.content,
+      }), 'action.textSaved', { mergeKey: `text:${draft.cardId}`, reactive: true }).then(async (result) => {
+        if (result.ok && workspace) {
+          const confirmations: Promise<unknown>[] = [];
+          for (const zone of ['title', 'body'] as const) {
+            const label = keyLabel(draft.cardId, zone);
+            const generation = confirmedGenerations.get(label);
+            if (generation) confirmations.push(session.drafts.confirm(createDraftKey(workspace.id, draft.cardId, zone), generation, durableZoneRevision(draft.cardId, zone)));
+          }
+          await Promise.all(confirmations);
+          if (pendingText.current === draft) {
+            pendingText.current = null;
+            setRecoveredText(null);
+            for (const zone of ['title', 'body'] as const) {
+              const label = keyLabel(draft.cardId, zone);
+              const lease = leases.current.get(label);
+              if (lease) session.editorialSessions.release(lease);
+              leases.current.delete(label);
+              baseRevisions.current.delete(label);
+              generations.current.delete(label);
+            }
+          }
+          await refreshDrafts();
+        }
         return result.ok;
       }).finally(() => { if (pendingSave.current === task) pendingSave.current = null; });
       pendingSave.current = task;
       if (!await task) return false;
     }
-  }, [run]);
-  const setPendingText = useCallback((draft: { cardId: CardId; title: string; content: string }) => { pendingText.current = draft; }, []);
-  return { flushPendingText, setPendingText };
+  }, [durableZoneRevision, flushPrivate, refreshDrafts, run, session.drafts, session.editorialSessions, workspace]);
+
+  const setPendingText = useCallback((draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }, surface: 'quick' | 'full' = 'full') => {
+    ensureLease(draft.cardId, 'title', surface);
+    ensureLease(draft.cardId, 'body', surface);
+    const next: PendingEditorialText = { ...draft, sequence: ++sequence.current, surface };
+    pendingText.current = next;
+    if (privateTimer.current) clearTimeout(privateTimer.current);
+    privateTimer.current = setTimeout(() => { privateTimer.current = null; void persistPrivate(next); }, 250);
+  }, [ensureLease, persistPrivate]);
+
+  useEffect(() => () => {
+    if (privateTimer.current) clearTimeout(privateTimer.current);
+    for (const lease of leases.current.values()) session.editorialSessions.release(lease);
+  }, [session.editorialSessions]);
+
+  const recoverDraft = useCallback((cardId: CardId): boolean => {
+    const card = workspace?.cards.find((candidate) => candidate.id === cardId);
+    const titleDraft = recoverableDrafts.find((draft) => draft.key.cardId === cardId && draft.key.zone === 'title');
+    const bodyDraft = recoverableDrafts.find((draft) => draft.key.cardId === cardId && draft.key.zone === 'body');
+    if (!card) { setDraftProblem('La nota fue eliminada. El borrador se conserva para copiarlo o descartarlo, pero no se recreará automáticamente.'); return false; }
+    if (bodyDraft?.source.format === 'html') { setDraftProblem('Este borrador HTML se conserva como fuente exacta. Su edición corresponde al editor HTML de E3-B; puedes copiarlo o descartarlo ahora.'); return false; }
+    const titleDocument = titleDraft?.source.format === 'rich-text' ? titleDraft.source.value : undefined;
+    const titleBlock = titleDocument?.blocks.length === 1 ? titleDocument.blocks[0] : undefined;
+    const title = titleBlock?.type === 'paragraph' ? cardTitleText({ titleRichText: titleBlock.content }) : cardTitleText(card);
+    let content = card.content ?? '';
+    if (bodyDraft?.source.format === 'legacy-markdown') content = bodyDraft.source.value;
+    else if (bodyDraft?.source.format === 'rich-text') {
+      const encoded = markdownRichTextCodec.serialize(bodyDraft.source.value);
+      if (encoded.ok) content = encoded.value;
+    }
+    for (const draft of [titleDraft, bodyDraft]) {
+      if (!draft) continue;
+      baseRevisions.current.set(keyLabel(cardId, draft.key.zone), draft.baseRevision);
+      generations.current.set(keyLabel(cardId, draft.key.zone), draft.generation);
+      if (session.drafts.conflicts(draft, durableZoneRevision(cardId, draft.key.zone))) setDraftProblem('El documento durable cambió desde que comenzó este borrador. Revísalo antes de guardar; no se fusionará automáticamente.');
+    }
+    const recovered = { cardId, title, content, ...(titleDocument ? { titleDocument } : {}) };
+    setRecoveredText(recovered);
+    setPendingText(recovered, 'full');
+    return true;
+  }, [durableZoneRevision, recoverableDrafts, session.drafts, setPendingText, workspace]);
+
+  const discardDrafts = useCallback(async (cardId?: CardId) => {
+    if (!workspace) return;
+    const targets = recoverableDrafts.filter((draft) => cardId === undefined || draft.key.cardId === cardId);
+    await Promise.all(targets.map((draft) => session.drafts.discard(draft.key, draft.generation)));
+    if (cardId === undefined || pendingText.current?.cardId === cardId) { pendingText.current = null; setRecoveredText(null); }
+    await refreshDrafts();
+  }, [recoverableDrafts, refreshDrafts, session.drafts, workspace]);
+
+  return { flushPendingText, setPendingText, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText };
 }
 
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
@@ -1673,6 +1884,8 @@ const styles = StyleSheet.create({
   feedback: { fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   offer: { borderWidth: 2, padding: 8, gap: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   offerText: { flexBasis: 220, flexGrow: 1, fontSize: 14, lineHeight: 19 },
+  draftCopy: { flex: 1, minWidth: 220, gap: 4 },
+  draftSource: { fontFamily: mono, fontSize: 11, lineHeight: 15, borderWidth: 1, padding: 6 },
   multiCount: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   multiBar: { borderWidth: 2, padding: 6, gap: 6 },
   multiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

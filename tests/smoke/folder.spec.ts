@@ -87,6 +87,32 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.screenshot({ path: testInfo.outputPath('folder-reconnected.png'), fullPage: true });
 });
 
+test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin alterar la nota durable', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Recuperación privada');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  const editor = await openMarkdownEditor(page);
+  await editor.fill('BORRADOR PRIVADO TRAS REINICIO');
+  // Es la confirmación observable de IndexedDB; se recarga antes del autosave posterior del workspace.
+  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO TRAS REINICIO');
+
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.reload();
+  await expect(page.getByTestId('workspace-missing')).toBeVisible();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir Recuperación privada' }).click();
+  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
+  // La nota compatible abre en el editor visual actual; E3-A recupera el documento, no cambia de modo.
+  await expect(page.getByLabel('Contenido visual').locator('p')).toHaveText('BORRADOR PRIVADO TRAS REINICIO');
+});
+
 test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga y la reconexión', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');

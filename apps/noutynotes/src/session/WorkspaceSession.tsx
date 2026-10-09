@@ -1,4 +1,5 @@
-import type { WorkspaceStorage } from '@noutynotes/application';
+import { EditorialSessionCoordinator } from '@noutynotes/application';
+import type { DraftStore, WorkspaceStorage } from '@noutynotes/application';
 import type { WorkspaceId } from '@noutynotes/domain';
 import { ArchiveStorage } from '@noutynotes/storage';
 import type { ArchiveImport, ExportConfirmation } from '@noutynotes/storage';
@@ -14,11 +15,15 @@ import { chooseFolder, supportsFolderAccess } from './folderAccess';
 import { chooseFolderInto, reopenRememberedInto } from './folderSession';
 import type { FolderState } from './folderSession';
 import { describeImport, describeImportFailure } from './messages';
+import { createDeviceDraftStore } from './draftPersistence';
 
 type Outcome<T = null> = { readonly ok: true; readonly value: T; readonly message: string } | { readonly ok: false; readonly message: string };
 
 interface Session {
   readonly storage: WorkspaceStorage;
+  /** Borradores privados del dispositivo; nunca forman parte del workspace ni del ZIP. */
+  readonly drafts: DraftStore;
+  readonly editorialSessions: EditorialSessionCoordinator;
   readonly mode: 'memory' | 'folder';
   readonly folderSupported: boolean;
   /** Importar y exportar ZIP: navegador web, espacios del navegador y app ya hidratada. */
@@ -47,6 +52,8 @@ const StorageContext = createContext<Session | null>(null);
 export function WorkspaceSessionProvider({ children }: { readonly children: ReactNode }) {
   const hydrated = useHydrated();
   const [archive] = useState(() => new ArchiveStorage());
+  const [drafts] = useState(() => createDeviceDraftStore());
+  const [editorialSessions] = useState(() => new EditorialSessionCoordinator(() => 'editorial-session'));
   const [storage, setStorage] = useState<WorkspaceStorage>(archive);
   const [mode, setMode] = useState<'memory' | 'folder'>('memory');
   const [unexported, setUnexported] = useState<readonly WorkspaceId[]>([]);
@@ -136,7 +143,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   const archiveSupported = hydrated && mode === 'memory' && supportsArchiveFiles();
   return (
     <StorageContext.Provider value={{
-      storage, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
+      storage, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
       savedFolder: mode === 'memory' ? savedFolder : null, reconnectFolder,
       unexported: mode === 'memory' ? unexported : [], connectFolder, importArchive, exportArchive, confirmExported,
     }}

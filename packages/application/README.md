@@ -2,6 +2,12 @@
 
 Paquete `@noutynotes/application`: puertos y casos de uso. Solo depende del API público de `@noutynotes/domain`. No importa implementaciones de storage, UI ni plataforma; los adaptadores se inyectan desde la raíz de composición.
 
+## Puerto `DraftStore`
+
+`DraftStore` conserva trabajo editorial privado por `workspaceId/cardId/zone` sin mezclarlo con `WorkspaceStorage`. Cada borrador guarda su fuente exacta, revisión durable de base, generación y validación. La confirmación y el descarte comparan la generación para que una respuesta antigua no borre una edición posterior. `EditorialSessionCoordinator` concede una sola autoridad en memoria por zona entre la edición rápida y la completa.
+
+Los límites predeterminados son 128 borradores, 1 MiB por fuente y 8 MiB totales. Los adaptadores de plataforma viven en la app: IndexedDB en web y un journal verificado de dos archivos privados en Android. Los borradores no pertenecen a ZIP, carpetas, SAF ni assets. Detalle en [ADR 0064](../../Docs/decisions/0064-private-editorial-drafts.md).
+
 ## Puerto `RichTextCodec`
 
 `RichTextCodec` convierte entre Markdown durable y `RichTextDocument` mediante resultados de validación, sin exponer el parser a application ni domain. La implementación CommonMark/GFM vive en `@noutynotes/storage`; los editores de web y Android consumirán el mismo puerto durante la integración UX7.
