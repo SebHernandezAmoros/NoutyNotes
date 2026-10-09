@@ -11,7 +11,7 @@ import type { FieldValue } from './field-values';
 import { collectTagIssues } from './tags';
 import { isArchiveInstant } from './trashed-card';
 import { RICH_TEXT_SCHEMA_VERSION, validateRichTextDocument } from '../rich-text/rich-text';
-import type { RichTextInline } from '../rich-text/rich-text';
+import type { RichTextDocument, RichTextInline } from '../rich-text/rich-text';
 
 /**
  * Unidad de contenido. Pertenece al workspace, no a un board: los boards la referencian por ID
@@ -26,6 +26,8 @@ export interface Card {
   readonly titleRichText?: readonly RichTextInline[];
   /** Markdown opaco para el dominio: no se interpreta ni se reescribe. */
   readonly content?: string;
+  /** Documento semántico cuyo formato durable oficial es HTML seguro v1 (P18-E2). */
+  readonly contentDocument?: RichTextDocument;
   readonly fields: Readonly<Record<string, FieldValue>>;
   readonly assetRefs?: readonly AssetRef[];
   /** Etiquetas `#` normalizadas, únicas y ordenadas (ADR 0019); ausentes si no tiene ninguna. */
@@ -172,6 +174,15 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   }
   if (card.content !== undefined && typeof card.content !== 'string') {
     issues.push(issue('invalid-value', `${path}.content`, 'Debe ser texto Markdown.'));
+  }
+  if (card.content !== undefined && card.contentDocument !== undefined) {
+    issues.push(issue('invalid-value', `${path}.contentDocument`, 'El contenido Markdown y el documento HTML no pueden coexistir.'));
+  }
+  if (card.contentDocument !== undefined) {
+    const checkedContent = validateRichTextDocument(card.contentDocument);
+    if (!checkedContent.ok || checkedContent.value.blocks.some((block) => block.type === 'opaque-markdown')) {
+      issues.push(issue('invalid-value', `${path}.contentDocument`, 'Debe ser un RichTextDocument válido y representable por HTML seguro v1.'));
+    }
   }
   if (type) {
     collectFieldValueIssues(card.fields, type, `${path}.fields`, issues);

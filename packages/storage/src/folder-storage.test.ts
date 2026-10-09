@@ -4,6 +4,7 @@ import { validWorkspace } from '../../domain/src/__fixtures__/workspace';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
 import { FolderStorage } from './folder-storage';
 import type { FolderPort, WorkspaceDirectory } from './folder-storage';
+import { htmlWorkspace } from './__fixtures__/html-workspace';
 
 const encode = (value: string): Uint8Array => new TextEncoder().encode(value);
 const id = (value: string) => value as WorkspaceId;
@@ -39,6 +40,16 @@ const code = (result: { ok: boolean; issues?: readonly { code: string }[] }): st
   result.ok ? undefined : result.issues?.[0]?.code;
 
 describe('FolderStorage: paquetes v1 y cambios externos', () => {
+  it('escribe y reabre HTML v1 mediante el mismo adaptador de carpeta', async () => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    const workspace = htmlWorkspace();
+    expect((await storage.create(workspace)).ok).toBe(true);
+    const folder = port.directories.get('demo') as FakeDirectory;
+    expect(new TextDecoder().decode(folder.files.get('cards/idea-a.md'))).toContain('<h2><strong>Documento HTML</strong></h2>');
+    expect(await new FolderStorage(port).open(id('demo'))).toEqual({ ok: true, value: workspace });
+  });
+
   it('crea, abre y guarda un workspace en archivos; otra instancia lo reabre', async () => {
     const port = new FakePort();
     const storage = new FolderStorage(port);

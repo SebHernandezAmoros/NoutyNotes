@@ -21,6 +21,20 @@ describe('tarjetas', () => {
     expect(result.ok && result.value).toBe(ideaA);
   });
 
+  it('acepta un documento enriquecido HTML y lo mantiene excluyente con Markdown', () => {
+    const { content: _legacy, ...withoutLegacy } = ideaA;
+    const contentDocument = {
+      schemaVersion: 1 as const,
+      blocks: [{ type: 'paragraph' as const, content: [{ type: 'text' as const, text: 'HTML seguro' }] }],
+    };
+    expect(validateCard({ ...withoutLegacy, contentDocument }, noteType).ok).toBe(true);
+    expect(problems(validateCard(unsafe({ ...ideaA, contentDocument }), noteType))).toContain('invalid-value@card.contentDocument');
+    expect(problems(validateCard(unsafe({
+      ...withoutLegacy,
+      contentDocument: { schemaVersion: 1, blocks: [{ type: 'opaque-markdown', source: '**legado**' }] },
+    }), noteType))).toContain('invalid-value@card.contentDocument');
+  });
+
   it('acepta solo iconos del catálogo y un identificador de tablero válido', () => {
     expect(validateCard({ ...ideaA, icon: 'star', boardTargetId: 'research' as NonNullable<Card['boardTargetId']> }, noteType).ok).toBe(true);
     expect(problems(validateCard(unsafe({ ...ideaA, icon: 'emoji-libre' }), noteType))).toContain('invalid-value@card.icon');

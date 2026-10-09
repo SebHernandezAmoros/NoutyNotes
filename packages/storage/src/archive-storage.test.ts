@@ -9,6 +9,7 @@ import { text } from './__fixtures__/zip';
 import { ArchiveStorage } from './archive-storage';
 import { readWorkspaceArchive, writeWorkspaceArchive } from './workspace-archive';
 import { serializeWorkspace } from './workspace-codec';
+import { htmlWorkspace } from './__fixtures__/html-workspace';
 
 const id = (value: string) => value as WorkspaceId;
 const binary = Uint8Array.from({ length: 256 }, (_, index) => 255 - index);
@@ -30,6 +31,17 @@ function demoZip(workspace: Workspace = validWorkspace()): Uint8Array {
 }
 
 describe('ArchiveStorage: importar, editar y exportar (fase 9)', () => {
+  it('importa y exporta HTML v1 conservando el documento semántico y su asset', async () => {
+    const storage = new ArchiveStorage();
+    const workspace = htmlWorkspace();
+    ok(await storage.importArchive(demoZip(workspace)));
+    expect(ok(await storage.open(id('demo')))).toEqual(workspace);
+    const archive = valueOf(readWorkspaceArchive(ok(storage.exportArchive(id('demo'))).bytes));
+    expect(archive.workspace).toEqual(workspace);
+    expect(archive.assets['assets/images/a.png']).toEqual(binary);
+    expect(archive.files['cards/idea-a.md']).toContain('contentVersion: 1');
+  });
+
   it('importa un ZIP, lo abre como workspace y lo exporta sin perder README ni assets', async () => {
     const storage = new ArchiveStorage();
     expect(ok(await storage.importArchive(demoZip()))).toEqual({ summary: { id: 'demo', name: 'Demo' } });

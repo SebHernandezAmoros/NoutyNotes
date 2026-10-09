@@ -25,6 +25,7 @@ export const metadataSchema = z.strictObject({ name: text, description: text.opt
 
 export const cardSchema = z.strictObject({
   id: text, typeId: text, title: text.optional(), content: text.optional(),
+  contentDocument: z.unknown().optional(),
   titleRichText: z.array(z.unknown()).optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
   icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
@@ -78,25 +79,27 @@ export const workspaceManifestSchema = z.strictObject({
  * v1: sin etiquetas ni fecha. v2: con `tags` (ADR 0019). v3: con `createdAt`, con o sin `tags` (ADR 0024).
  * v4: con `icon`/`boardTargetId` (ADR 0046). v5: con `frameOverride` (ADR 0049). v6: con `titleSize`/`bodySize`
  * (ADR 0050). v7: con `captionPosition` (ADR 0051). v8: estilo de texto flotante (ADR 0057).
- * v9: geometría y estilo de formas (UX7 P14). v10: conectores decorativos (UX7 P15).
+ * v9: geometría y estilo de formas. v10: conectores decorativos. v11: nota unificada.
+ * v12: cuerpo `contentFormat: html`, `contentVersion: 1` (P18-E2).
  */
 export const cardFrontmatterSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11)]), id: text, typeId: text, title: text.optional(), titleRichText: z.array(z.unknown()).optional(),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11), z.literal(12)]), id: text, typeId: text, title: text.optional(), titleRichText: z.array(z.unknown()).optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
   icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
   titleSize: text.optional(), bodySize: text.optional(), captionPosition: text.optional(), textAlign: text.optional(), textColor: text.optional(),
   titleVisibility: text.optional(), bodyVisibility: text.optional(), contentLayout: text.optional(),
   shapeKind: text.optional(), shapeFill: text.optional(), shapeStroke: text.optional(), shapeStrokeWidth: text.optional(), contentPresent: z.boolean(),
+  contentFormat: text.optional(), contentVersion: z.number().optional(),
   connectorColor: text.optional(), connectorWidth: text.optional(), connectorDash: text.optional(), connectorArrows: text.optional(),
   connectorDirection: text.optional(), connectorStartCardId: text.optional(), connectorEndCardId: text.optional(),
 });
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),
 });
-export const trashFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]), items: z.array(trashItemSchema) });
+export const trashFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), items: z.array(trashItemSchema) });
 /** v4: con `archivedBoards`, tableros archivados como unidad (ADR 0039). */
 export const archiveFileSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), items: z.array(archiveItemSchema),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]), items: z.array(archiveItemSchema),
   archivedBoards: z.array(archivedBoardSchema).optional(),
 });
 export const templateFileSchema = z.strictObject({

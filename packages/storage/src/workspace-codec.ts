@@ -9,6 +9,7 @@ import { joinFrontmatter, splitFrontmatter } from './frontmatter';
 import { fail, storageIssue, succeed } from './issues';
 import type { StorageIssue, StorageResult } from './issues';
 import { isPortableAssetRef } from './paths';
+import { HTML_CONTENT_FORMAT, HTML_CONTENT_VERSION, parseRichTextHtml, serializeRichTextHtml } from './rich-text-html-codec';
 import { archiveFileSchema, boardFrontmatterSchema, cardFrontmatterSchema, trashFileSchema, workspaceManifestSchema, workspaceSchema } from './schemas';
 import { validateTextFiles } from './text-files';
 import type { TextFiles } from './text-files';
@@ -52,8 +53,10 @@ function cardDocument(card: Card): GeneratedDocument {
   const hasShapeStyle = card.shapeKind !== undefined || card.shapeFill !== undefined || card.shapeStroke !== undefined || card.shapeStrokeWidth !== undefined;
   const hasConnectorStyle = card.connectorColor !== undefined || card.connectorWidth !== undefined || card.connectorDash !== undefined || card.connectorArrows !== undefined || card.connectorDirection !== undefined || card.connectorStartCardId !== undefined || card.connectorEndCardId !== undefined;
   const hasUnifiedContent = card.titleRichText !== undefined || card.titleVisibility !== undefined || card.bodyVisibility !== undefined || card.contentLayout !== undefined;
+  const html = card.contentDocument === undefined ? null : serializeRichTextHtml(card.contentDocument);
+  if (html && !html.ok) throw new Error('Workspace validado con contenido no representable por HTML seguro v1.');
   return markdownDocument(compact({
-    schemaVersion: hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
+    schemaVersion: card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     id: card.id, typeId: card.typeId, title: card.title, titleRichText: card.titleRichText,
     fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
     boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
@@ -62,8 +65,10 @@ function cardDocument(card: Card): GeneratedDocument {
     shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth,
     connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
     connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
-    contentPresent: card.content !== undefined,
-  }), card.content ?? '');
+    contentPresent: card.content !== undefined || card.contentDocument !== undefined,
+    contentFormat: card.contentDocument === undefined ? undefined : HTML_CONTENT_FORMAT,
+    contentVersion: card.contentDocument === undefined ? undefined : HTML_CONTENT_VERSION,
+  }), html?.ok ? html.value : card.content ?? '');
 }
 
 /** Copia canónica de una instantánea de la Papelera, sin claves ausentes ni orden accidental. */
@@ -76,7 +81,8 @@ function trashData(entry: TrashedCard): unknown {
       boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
       titleSize: card.titleSize, bodySize: card.bodySize, captionPosition: card.captionPosition, textAlign: card.textAlign, textColor: card.textColor,
       titleVisibility: card.titleVisibility, bodyVisibility: card.bodyVisibility, contentLayout: card.contentLayout,
-      shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth, content: card.content,
+      shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth,
+      content: card.content, contentDocument: card.contentDocument,
       connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
       connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
     },
@@ -87,14 +93,16 @@ function trashData(entry: TrashedCard): unknown {
   });
 }
 
-function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 {
+function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 | 4 {
+  if (entries.some((entry) => entry.card.contentDocument !== undefined)) return 4;
   if (entries.some((entry) => entry.card.createdAt !== undefined)) return 3;
   return entries.some((entry) => (entry.card.tags?.length ?? 0) > 0
     || entry.placements.some((placement) => placement.rect.x < 0 || placement.rect.y < 0)) ? 2 : 1;
 }
 
 /** v4 solo si hay tableros archivados (ADR 0039); si no, la misma versión selectiva de siempre. */
-function archiveSchemaVersion(entries: readonly TrashedCard[], archivedBoards: readonly ArchivedBoard[]): 1 | 2 | 3 | 4 {
+function archiveSchemaVersion(entries: readonly TrashedCard[], archivedBoards: readonly ArchivedBoard[]): 1 | 2 | 3 | 4 | 5 {
+  if (entries.some((entry) => entry.card.contentDocument !== undefined)) return 5;
   return archivedBoards.length > 0 ? 4 : trashSchemaVersion(entries);
 }
 
@@ -160,6 +168,20 @@ function assetPathIssues(workspace: Workspace, locate: (cardIndex: number, rest:
     }
   });
   return issues;
+}
+
+/** Todo contentDocument, también en Papelera/Archivo, debe poder emitirse como HTML v1 sin pérdida. */
+function contentDocumentIssues(workspace: Workspace): StorageIssue[] {
+  const groups = [
+    ...workspace.cards.map((card, index) => ({ card, path: `cards[${index}].contentDocument` })),
+    ...(workspace.trash ?? []).map((entry, index) => ({ card: entry.card, path: `trash[${index}].card.contentDocument` })),
+    ...(workspace.archive ?? []).map((entry, index) => ({ card: entry.card, path: `archive[${index}].card.contentDocument` })),
+  ];
+  return groups.flatMap(({ card, path }) => {
+    if (card.contentDocument === undefined) return [];
+    const encoded = serializeRichTextHtml(card.contentDocument);
+    return encoded.ok ? [] : encoded.issues.map((found) => storageIssue('invalid-document', `${path}.${found.path}`, found.message));
+  });
 }
 
 /** Sitúa una incidencia de `validateWorkspace` en el archivo que contiene el dato. */
@@ -251,7 +273,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -272,7 +294,25 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     const hasShapeStyle = front.shapeKind !== undefined || front.shapeFill !== undefined || front.shapeStroke !== undefined || front.shapeStrokeWidth !== undefined;
     const hasConnectorStyle = front.connectorColor !== undefined || front.connectorWidth !== undefined || front.connectorDash !== undefined || front.connectorArrows !== undefined || front.connectorDirection !== undefined || front.connectorStartCardId !== undefined || front.connectorEndCardId !== undefined;
     const hasUnifiedContent = front.titleRichText !== undefined || front.titleVisibility !== undefined || front.bodyVisibility !== undefined || front.contentLayout !== undefined;
-    const expected = hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
+    const hasHtml = front.contentFormat !== undefined || front.contentVersion !== undefined;
+    if (hasHtml && front.contentFormat !== HTML_CONTENT_FORMAT) {
+      issues.push(storageIssue('invalid-document', `${file}#contentFormat`, 'Formato de contenido no admitido.'));
+      continue;
+    }
+    if (hasHtml && front.contentVersion !== HTML_CONTENT_VERSION) {
+      issues.push(storageIssue('unsupported-schema-version', `${file}#contentVersion`, `Solo se admite HTML v${HTML_CONTENT_VERSION}.`));
+      continue;
+    }
+    if (hasHtml && !front.contentPresent) {
+      issues.push(storageIssue('invalid-document', `${file}#contentPresent`, 'HTML v1 requiere un cuerpo presente.'));
+      continue;
+    }
+    const parsedHtml = hasHtml ? parseRichTextHtml(body) : null;
+    if (parsedHtml && !parsedHtml.ok) {
+      issues.push(...parsedHtml.issues.map((found) => storageIssue('invalid-document', `${file}#body.${found.path}`, found.message)));
+      continue;
+    }
+    const expected = hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -286,7 +326,8 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       shapeKind: front.shapeKind, shapeFill: front.shapeFill, shapeStroke: front.shapeStroke, shapeStrokeWidth: front.shapeStrokeWidth,
       connectorColor: front.connectorColor, connectorWidth: front.connectorWidth, connectorDash: front.connectorDash, connectorArrows: front.connectorArrows,
       connectorDirection: front.connectorDirection, connectorStartCardId: front.connectorStartCardId, connectorEndCardId: front.connectorEndCardId,
-      content: front.contentPresent ? body : undefined,
+      content: !hasHtml && front.contentPresent ? body : undefined,
+      contentDocument: parsedHtml?.ok ? parsedHtml.value : undefined,
     }) as unknown as Card);
   }
   const boards: Board[] = [];
@@ -310,7 +351,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (!layouts.ok) issues.push(...layouts.issues);
   const relations = parseRelations(files[RELATIONS_FILE] ?? '');
   if (!relations.ok) issues.push(...relations.issues);
-  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2, 3]) : null;
+  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2, 3, 4]) : null;
   if (trash && !trash.ok) issues.push(...trash.issues);
   if (trash?.ok && trash.value.schemaVersion === 1) {
     trash.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -321,7 +362,13 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       }
     }));
   }
-  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4]) : null;
+  if (trash?.ok) {
+    const needsHtmlVersion = trash.value.items.some((entry) => entry.card.contentDocument !== undefined);
+    if ((trash.value.schemaVersion === 4) !== needsHtmlVersion) {
+      issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'La versión 4 corresponde exclusivamente a Papelera con contenido HTML v1.'));
+    }
+  }
+  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4, 5]) : null;
   if (archive && !archive.ok) issues.push(...archive.issues);
   if (archive?.ok && archive.value.schemaVersion === 1) {
     archive.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -345,8 +392,15 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const semantic = validateWorkspace(workspace);
   const located = [
     ...(semantic.ok ? [] : semantic.issues.map((found) => locateWorkspaceIssue(found, workspace))),
+    ...contentDocumentIssues(workspace).map((found) => locateWorkspaceIssue(found, workspace)),
     ...assetPathIssues(workspace, (index, rest) => `${cardPath(cardIds[index] ?? '')}#${rest}`),
   ];
+  if (archive?.ok) {
+    const needsHtmlVersion = archive.value.items.some((entry) => entry.card.contentDocument !== undefined);
+    if ((archive.value.schemaVersion === 5) !== needsHtmlVersion) {
+      located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'La versión 5 corresponde exclusivamente a Archivo con contenido HTML v1.'));
+    }
+  }
   return located.length > 0 ? fail(located) : succeed({ workspace, files, extras });
 }
 
@@ -370,6 +424,8 @@ function checkWorkspaceInput(workspace: unknown): StorageIssue[] {
   const typed = workspace as unknown as Workspace;
   const semantic = validateWorkspace(typed);
   if (!semantic.ok) return [...semantic.issues];
+  const htmlIssues = contentDocumentIssues(typed);
+  if (htmlIssues.length > 0) return htmlIssues;
   return assetPathIssues(typed, (index, rest) => `cards[${index}].${rest}`);
 }
 

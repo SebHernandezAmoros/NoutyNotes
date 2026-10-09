@@ -12,6 +12,19 @@ function ok<T>(result: { ok: true; value: T } | { ok: false; issues: readonly un
 const at = '2026-09-26T10:00:00.000Z';
 
 describe('.nouty/archive.yaml (ADR 0023)', () => {
+  it('conserva el documento HTML semántico de una tarjeta archivada', () => {
+    const source = workspaceFixture();
+    const html = { ...source, cards: source.cards.map((card, index) => {
+      if (index !== 0) return card;
+      const { content: _legacy, ...rest } = card;
+      return { ...rest, contentDocument: { schemaVersion: 1 as const, blocks: [{ type: 'paragraph' as const, content: [{ type: 'text' as const, text: 'Archivo HTML' }] }] } };
+    }) };
+    const archived = ok(archiveCard(html, html.cards[0]!.id as CardId, at));
+    const files = ok(serializeWorkspace(archived));
+    expect(files['.nouty/archive.yaml']).toContain('schemaVersion: 5');
+    expect(ok(parseWorkspace(files)).archive).toEqual(archived.archive);
+  });
+
   it('solo existe con tarjetas archivadas; ida y vuelta con fecha, instantánea y relaciones', () => {
     const source = workspaceFixture();
     const plain = ok(serializeWorkspace(source));
@@ -45,7 +58,7 @@ describe('.nouty/archive.yaml (ADR 0023)', () => {
     expect(filesAfter['.nouty/archive.yaml']).toBeUndefined();
 
     // Una v4 en un lector que solo admite hasta v3 (ya no aplica aquí, pero comprueba el aviso de versión).
-    const tooNew = (files['.nouty/archive.yaml'] ?? '').replace('schemaVersion: 4', 'schemaVersion: 5');
+    const tooNew = (files['.nouty/archive.yaml'] ?? '').replace('schemaVersion: 4', 'schemaVersion: 6');
     const rejected = parseWorkspace({ ...files, '.nouty/archive.yaml': tooNew });
     expect(rejected.ok).toBe(false);
   });

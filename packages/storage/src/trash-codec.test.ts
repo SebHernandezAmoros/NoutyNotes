@@ -11,6 +11,19 @@ function ok<T>(result: { ok: true; value: T } | { ok: false; issues: readonly un
 }
 
 describe('Papelera en el formato v1: .nouty/trash.yaml (ADR 0015)', () => {
+  it('conserva el documento HTML semántico de una tarjeta retirada', () => {
+    const source = workspaceFixture();
+    const html: Workspace = { ...source, cards: source.cards.map((card, index) => {
+      if (index !== 0) return card;
+      const { content: _legacy, ...rest } = card;
+      return { ...rest, contentDocument: { schemaVersion: 1, blocks: [{ type: 'paragraph', content: [{ type: 'text', text: 'Papelera HTML' }] }] } };
+    }) };
+    const trashed = ok(trashCard(html, html.cards[0]?.id as CardId));
+    const files = ok(serializeWorkspace(trashed));
+    expect(files['.nouty/trash.yaml']).toContain('schemaVersion: 4');
+    expect(ok(parseWorkspace(files)).trash).toEqual(trashed.trash);
+  });
+
   it('declara v2 si una tarjeta retirada conserva una posición negativa', () => {
     const source = workspaceFixture();
     const moved: Workspace = { ...source, layouts: source.layouts.map((layout) => ({ ...layout, placements: layout.placements.map((placement, index) => index === 0

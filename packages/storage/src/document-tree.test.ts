@@ -4,6 +4,7 @@ import type { Workspace, WorkspaceId } from '@noutynotes/domain';
 
 import { validWorkspace } from '../../domain/src/__fixtures__/workspace';
 import { MemoryDocumentTree } from './__fixtures__/document-tree';
+import { htmlWorkspace } from './__fixtures__/html-workspace';
 import { DocumentTreeDirectory, DocumentTreeFolderPort } from './document-tree';
 import { FolderStorage } from './folder-storage';
 
@@ -44,6 +45,15 @@ describe('DocumentTreeDirectory: rutas de un paquete sobre un árbol de document
 });
 
 describe('FolderStorage sobre DocumentTreeFolderPort (Android, fase 10)', () => {
+  it('conserva HTML v1 al cerrar y reabrir sobre el árbol SAF simulado', async () => {
+    const tree = new MemoryDocumentTree();
+    const storage = new FolderStorage(new DocumentTreeFolderPort(tree));
+    const source = htmlWorkspace();
+    expect(code(await storage.create(source))).toBe('ok');
+    expect(new TextDecoder().decode(tree.snapshot()['demo/cards/idea-a.md'])).toContain('contentFormat: html');
+    expect(await new FolderStorage(new DocumentTreeFolderPort(tree)).open(id('demo'))).toEqual({ ok: true, value: source });
+  });
+
   it('crea en un subdirectorio, guarda y otra sesión reabre el mismo workspace', async () => {
     const tree = new MemoryDocumentTree();
     const storage = new FolderStorage(new DocumentTreeFolderPort(tree));

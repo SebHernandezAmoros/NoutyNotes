@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { deepFreeze } from '../../domain/src/__fixtures__/grid';
 import { ideaA, ideaB, validWorkspace } from '../../domain/src/__fixtures__/workspace';
-import type { Card, Workspace } from '@noutynotes/domain';
+import type { AssetRef, Card, Workspace } from '@noutynotes/domain';
 import { problems, unsafe, valueOf } from './__fixtures__/helpers';
+import { htmlWorkspace } from './__fixtures__/html-workspace';
 import { MAX_FILES, MAX_TEXT_LENGTH } from './text-files';
 import type { TextFiles } from './text-files';
 import { parseWorkspace, serializeWorkspace } from './workspace-codec';
@@ -138,6 +139,39 @@ describe('workspace ↔ archivos', () => {
     expect(canonical()['cards/idea-b.md']).toContain('schemaVersion: 1');
   });
 
+  it('guarda, reabre y edita HTML seguro v1 sin convertir las notas Markdown', () => {
+    const { content: _markdown, ...withoutMarkdown } = ideaA;
+    const htmlCard: Card = {
+      ...withoutMarkdown,
+      assetRefs: ['assets/images/a.png' as AssetRef],
+      contentDocument: {
+        schemaVersion: 1,
+        blocks: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'Café ', marks: ['bold'] }, { type: 'link', href: 'https://example.com', content: [{ type: 'text', text: 'vivo' }] }] },
+          { type: 'image', assetRef: 'assets/images/a.png' as AssetRef, alt: 'Mapa' },
+        ],
+      },
+    };
+    const files = valueOf(serializeWorkspace(withCard(base(), htmlCard)));
+    expect(files['cards/idea-a.md']).toContain('schemaVersion: 12');
+    expect(files['cards/idea-a.md']).toContain('contentFormat: html');
+    expect(files['cards/idea-a.md']).toContain('contentVersion: 1');
+    expect(files['cards/idea-a.md']).toContain('<p><strong>Café </strong><a href="https://example.com">vivo</a></p>');
+    expect(files['cards/idea-a.md']).toContain('<img alt="Mapa" src="assets/images/a.png">');
+    const reopened = valueOf(parseWorkspace(files));
+    expect(reopened.cards[0]?.contentDocument).toEqual(htmlCard.contentDocument);
+    expect(reopened.cards[1]).toEqual(ideaB);
+    expect(valueOf(serializeWorkspace(reopened, files))).toEqual(files);
+
+    const edited = withCard(reopened, {
+      ...(reopened.cards[0] as Card),
+      contentDocument: { schemaVersion: 1, blocks: [{ type: 'paragraph', content: [{ type: 'text', text: 'Editado' }] }] },
+    });
+    const editedFiles = valueOf(serializeWorkspace(edited, files));
+    expect(editedFiles['cards/idea-a.md']).toContain('<p>Editado</p>');
+    expect(editedFiles['cards/idea-b.md']).toBe(files['cards/idea-b.md']);
+  });
+
   it('conserva descripciones de board ausentes o presentes con Markdown literal', () => {
     const description = '## Board\r\n\r\n- punto\n';
     const workspace = { ...base(), boards: base().boards.map((b, i) => (i === 0 ? { ...b, description } : b)) };
@@ -161,6 +195,18 @@ describe('workspace ↔ archivos', () => {
 });
 
 describe('lectura de paquetes inválidos', () => {
+  it('rechaza formato, versión y cuerpo HTML desconocidos sin reinterpretarlos como Markdown', () => {
+    const files = valueOf(serializeWorkspace(htmlWorkspace()));
+    const card = files['cards/idea-a.md'] ?? '';
+    expect(problems(parseWorkspace(edit(files, 'cards/idea-a.md', card.replace('contentVersion: 1', 'contentVersion: 2')))))
+      .toContain('unsupported-schema-version@cards/idea-a.md#contentVersion');
+    expect(problems(parseWorkspace(edit(files, 'cards/idea-a.md', card.replace('contentFormat: html', 'contentFormat: markdown')))))
+      .toContain('invalid-document@cards/idea-a.md#contentFormat');
+    const unsafeHtml = card.replace('<h2><strong>Documento HTML</strong></h2>', '<script>Documento HTML</script>');
+    expect(problems(parseWorkspace(edit(files, 'cards/idea-a.md', unsafeHtml))))
+      .toContain('invalid-document@cards/idea-a.md#body.html');
+  });
+
   it.each<[string, (files: TextFiles) => TextFiles, string]>([
     ['sin manifiesto', (f) => without(f, '.nouty/workspace.yaml'), 'missing-file@.nouty/workspace.yaml'],
     ['tarjeta declarada ausente', (f) => without(f, 'cards/idea-b.md'), 'missing-file@cards/idea-b.md'],
@@ -178,7 +224,7 @@ describe('lectura de paquetes inválidos', () => {
     ['sin frontmatter', (f) => edit(f, 'cards/idea-b.md', '# Nota\n'), 'invalid-document@cards/idea-b.md'],
     ['contenido con contentPresent false', (f) => edit(f, 'cards/idea-b.md', `${f['cards/idea-b.md'] ?? ''}texto`), 'invalid-document@cards/idea-b.md'],
     ['descripción con descriptionPresent false', (f) => edit(f, 'boards/research.md', `${f['boards/research.md'] ?? ''}texto`), 'invalid-document@boards/research.md'],
-    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 12')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
+    ['versión de tarjeta posterior', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('schemaVersion: 1', 'schemaVersion: 13')), 'unsupported-schema-version@cards/idea-b.md#schemaVersion'],
     ['frameOverride sin la versión 5 (ADR 0049)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\nframeOverride: hidden')), 'invalid-document@cards/idea-b.md#schemaVersion'],
     ['titleSize sin la versión 6 (ADR 0050)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ntitleSize: large')), 'invalid-document@cards/idea-b.md#schemaVersion'],
     ['captionPosition sin la versión 7 (ADR 0051)', (f) => edit(f, 'cards/idea-b.md', (f['cards/idea-b.md'] ?? '').replace('id: idea-b', 'id: idea-b\ncaptionPosition: left')), 'invalid-document@cards/idea-b.md#schemaVersion'],

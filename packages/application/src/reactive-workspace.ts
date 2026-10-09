@@ -47,6 +47,8 @@ interface Capture<T> {
 
 interface PendingOperation<T = unknown> {
   readonly action: ReactiveWorkspaceAction<T>;
+  /** Base visible exacta sobre la que se calculó la operación local. */
+  readonly base: Workspace;
   candidate: Workspace;
   readonly result: WorkspaceStorageResult<T>;
   readonly options: ReactiveRunOptions;
@@ -55,6 +57,66 @@ interface PendingOperation<T = unknown> {
 }
 
 type Listener = (snapshot: ReactiveWorkspaceSnapshot) => void;
+
+function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function arrayIdentity(value: unknown): string | null {
+  if (!isPlainRecord(value)) return null;
+  for (const key of ['id', 'cardId', 'boardId'] as const) {
+    if (typeof value[key] === 'string') return `${key}=${value[key]}`;
+  }
+  return null;
+}
+
+/** Diferencias semánticas conservadoras entre dos instantáneas de datos planos. */
+function changedPaths(before: unknown, after: unknown, path = 'workspace', output = new Set<string>()): Set<string> {
+  if (Object.is(before, after)) return output;
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const beforeKeys = before.map(arrayIdentity);
+    const afterKeys = after.map(arrayIdentity);
+    const keyed = [...beforeKeys, ...afterKeys].every((key) => key !== null)
+      && new Set(beforeKeys).size === beforeKeys.length
+      && new Set(afterKeys).size === afterKeys.length;
+    if (keyed) {
+      const left = new Map(beforeKeys.map((key, index) => [key as string, before[index]]));
+      const right = new Map(afterKeys.map((key, index) => [key as string, after[index]]));
+      for (const key of new Set([...left.keys(), ...right.keys()])) {
+        changedPaths(left.get(key), right.get(key), `${path}[${key}]`, output);
+      }
+      return output;
+    }
+    if (before.length !== after.length) output.add(path);
+    for (let index = 0; index < Math.min(before.length, after.length); index += 1) {
+      changedPaths(before[index], after[index], `${path}[${index}]`, output);
+    }
+    return output;
+  }
+  if (isPlainRecord(before) && isPlainRecord(after)) {
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      changedPaths(before[key], after[key], `${path}.${key}`, output);
+    }
+    return output;
+  }
+  output.add(path);
+  return output;
+}
+
+/** Título y cuerpo son campos atómicos: E1 no intenta fusionar internamente documentos ricos. */
+function conflictUnit(path: string): string {
+  const marker = /\.(titleRichText|contentDocument|content)(?:\.|\[|$)/.exec(path);
+  const unit = marker?.[1];
+  return marker?.index === undefined || unit === undefined ? path : path.slice(0, marker.index + 1 + unit.length);
+}
+
+function overlappingChanges(base: Workspace, local: Workspace, external: Workspace): string[] {
+  const localPaths = [...changedPaths(base, local)].map(conflictUnit);
+  const externalPaths = [...changedPaths(base, external)].map(conflictUnit);
+  return [...new Set(localPaths.filter((localPath) => externalPaths.some((externalPath) =>
+    localPath === externalPath || localPath.startsWith(`${externalPath}.`) || localPath.startsWith(`${externalPath}[`)
+    || externalPath.startsWith(`${localPath}.`) || externalPath.startsWith(`${localPath}[`))))];
+}
 
 function failure<T>(issues: readonly WorkspaceStorageIssue[]): WorkspaceStorageResult<T> {
   return { ok: false, issues };
@@ -163,6 +225,7 @@ export class ReactiveWorkspaceEditor {
       if (options.refreshEditors) this.revision += 1;
       const operation: PendingOperation<T> = {
         action,
+        base: before,
         candidate: captured.candidate,
         result: captured.result,
         options,
@@ -221,11 +284,24 @@ export class ReactiveWorkspaceEditor {
     let rebuilt: UndoHistory = EMPTY_HISTORY;
     for (const operation of this.pending) {
       const before = base;
+      const conflicts = overlappingChanges(operation.base, operation.candidate, base);
+      if (conflicts.length > 0) {
+        this.blockedIssues = [{
+          code: 'external-change',
+          path: conflicts[0] as string,
+          message: 'El mismo contenido cambió fuera de NoutyNotes. La versión externa permanece guardada y el cambio local se conserva en esta sesión para resolverlo manualmente.',
+          details: conflicts.map((path) => ({ code: 'concurrent-change', path, message: 'Cambio local y externo sobre la misma unidad de contenido.' })),
+        }];
+        this.emit();
+        return failure(this.blockedIssues);
+      }
       const captured = await this.capture(operation.action, base);
       if (!captured.result.ok || !captured.candidate) {
-        this.blockedIssues = captured.result.ok
-          ? [{ code: 'external-change', path: 'workspace', message: 'No se pudo reaplicar un cambio local.' }]
-          : captured.result.issues;
+        this.blockedIssues = [{
+          code: 'external-change', path: 'workspace',
+          message: 'La versión externa ya no admite una operación local pendiente. El cambio local se conserva en esta sesión para resolverlo manualmente.',
+          ...(captured.result.ok ? {} : { details: captured.result.issues }),
+        }];
         this.emit();
         return failure(this.blockedIssues);
       }

@@ -9,6 +9,10 @@ export { MemoryStorage } from './memory-storage';
 export { FolderStorage } from './folder-storage';
 export type { FolderPort, WorkspaceDirectory } from './folder-storage';
 export { markdownRichTextCodec, parseRichTextMarkdown, serializeRichTextMarkdown } from './rich-text-codec';
+export {
+  HTML_CONTENT_FORMAT, HTML_CONTENT_VERSION, MAX_HTML_ORDERED_LIST_START,
+  htmlRichTextCodec, parseRichTextHtml, serializeRichTextHtml,
+} from './rich-text-html-codec';
 export { ARCHIVE_LIMITS, readWorkspaceArchive, writeWorkspaceArchive } from './workspace-archive';
 export type { ArchiveLimits, BinaryAssets, WorkspaceArchive } from './workspace-archive';
 export { ArchiveStorage } from './archive-storage';

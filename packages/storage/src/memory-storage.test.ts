@@ -7,6 +7,7 @@ import { problems, unsafe, valueOf } from './__fixtures__/helpers';
 import { MemoryStorage } from './memory-storage';
 import type { TextFiles } from './text-files';
 import { serializeWorkspace } from './workspace-codec';
+import { htmlWorkspace } from './__fixtures__/html-workspace';
 
 const id = (value: string) => value as WorkspaceId;
 const canonical = (): TextFiles => valueOf(serializeWorkspace(validWorkspace()));
@@ -28,6 +29,16 @@ function edited(): TextFiles {
 }
 
 describe('MemoryStorage con paquetes v1', () => {
+  it('crea, guarda y reabre un documento HTML v1 sin convertir las notas Markdown restantes', async () => {
+    const storage = new MemoryStorage();
+    const workspace = htmlWorkspace();
+    expect((await storage.create(workspace)).ok).toBe(true);
+    expect(ok(await storage.open(id('demo')))).toEqual(workspace);
+    const files = ok(storage.exportPackage(id('demo')));
+    expect(files['cards/idea-a.md']).toContain('contentFormat: html');
+    expect(files['cards/idea-b.md']).not.toContain('contentFormat: html');
+  });
+
   it('carga paquetes existentes y los abre con el formato v1', async () => {
     const storage = valueOf(MemoryStorage.fromPackages({ demo: edited() }));
     expect(ok(await storage.list())).toEqual([{ id: 'demo', name: 'Demo' }]);

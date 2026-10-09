@@ -41,6 +41,7 @@ class ControlledStorage implements WorkspaceStorage {
 
 const titleOf = (workspace: Workspace) => workspace.cards.find((card) => card.id === ideaA.id)?.title;
 const titleOfCard = (workspace: Workspace, cardId: string) => workspace.cards.find((card) => card.id === cardId)?.title;
+const contentOf = (workspace: Workspace) => workspace.cards.find((card) => card.id === ideaA.id)?.content;
 
 describe('ReactiveWorkspaceEditor (UX7 P18-E1)', () => {
   it('publica la transformación antes de que termine el guardado y no vuelve a abrir', async () => {
@@ -135,6 +136,26 @@ describe('ReactiveWorkspaceEditor (UX7 P18-E1)', () => {
     expect(titleOfCard(storage.workspace, 'idea-b')).toBe('Otra pendiente');
   });
 
+  it('distingue el pendiente de sesión del estado durable tras una interrupción inesperada', async () => {
+    const storage = new ControlledStorage();
+    storage.nextSave = Promise.resolve({ ok: false, issues: [{ code: 'io-failure', path: 'workspace', message: 'sin escritura' }] });
+    const editor = new ReactiveWorkspaceEditor(storage, storage.workspace.id, storage.workspace);
+    const request = editor.dispatch(
+      (port, id) => editCardContent(port, id, ideaA.id, { content: 'Solo en esta sesión' }),
+      { label: 'Texto' },
+    );
+    await request.persisted;
+    expect(contentOf(editor.snapshot().workspace)).toBe('Solo en esta sesión');
+    expect(editor.snapshot()).toMatchObject({ status: 'error', pendingCount: 1 });
+
+    const reopened = new ReactiveWorkspaceEditor(storage, storage.workspace.id, await storage.open(storage.workspace.id).then((result) => {
+      if (!result.ok) throw new Error('No se pudo reabrir el fixture.');
+      return result.value;
+    }));
+    expect(contentOf(reopened.snapshot().workspace)).toBe(ideaA.content);
+    expect(reopened.snapshot()).toMatchObject({ status: 'saved', pendingCount: 0 });
+  });
+
   it('agrupa texto y rehace sobre la instantánea visible confirmada', async () => {
     const storage = new ControlledStorage();
     const editor = new ReactiveWorkspaceEditor(storage, storage.workspace.id, storage.workspace);
@@ -172,5 +193,51 @@ describe('ReactiveWorkspaceEditor (UX7 P18-E1)', () => {
     expect(undone).not.toBeNull();
     await undone?.applied;
     expect(titleOf(editor.snapshot().workspace)).toBe('Idea A');
+  });
+
+  it('no sobrescribe automáticamente una edición externa del mismo campo', async () => {
+    const storage = new ControlledStorage();
+    storage.nextSave = Promise.resolve({ ok: false, issues: [{ code: 'external-change', path: 'workspace', message: 'cambió fuera' }] });
+    const editor = new ReactiveWorkspaceEditor(storage, storage.workspace.id, storage.workspace);
+    const request = editor.dispatch(
+      (port, id) => editCardContent(port, id, ideaA.id, { content: 'Contenido local recuperable' }),
+      { label: 'Texto', mergeKey: `text:${ideaA.id}` },
+    );
+    await request.persisted;
+    storage.workspace = {
+      ...storage.workspace,
+      cards: storage.workspace.cards.map((card) => card.id === ideaA.id ? { ...card, content: 'Contenido externo' } : card),
+    };
+
+    const recovered = await editor.recoverExternal();
+    expect(recovered.ok).toBe(false);
+    expect(editor.snapshot()).toMatchObject({ status: 'conflict', pendingCount: 1 });
+    expect(contentOf(editor.snapshot().workspace)).toBe('Contenido local recuperable');
+    expect(contentOf(storage.workspace)).toBe('Contenido externo');
+    expect(editor.snapshot().issues[0]?.path).toContain('content');
+  });
+
+  it('mantiene como conflicto recuperable la edición local de una nota eliminada externamente', async () => {
+    const storage = new ControlledStorage();
+    storage.nextSave = Promise.resolve({ ok: false, issues: [{ code: 'external-change', path: 'workspace', message: 'cambió fuera' }] });
+    const editor = new ReactiveWorkspaceEditor(storage, storage.workspace.id, storage.workspace);
+    const request = editor.dispatch(
+      (port, id) => editCardContent(port, id, ideaA.id, { content: 'Texto que no debe perderse' }),
+      { label: 'Texto', mergeKey: `text:${ideaA.id}` },
+    );
+    await request.persisted;
+    storage.workspace = {
+      ...storage.workspace,
+      cards: storage.workspace.cards.filter((card) => card.id !== ideaA.id),
+      boards: storage.workspace.boards.map((board) => ({ ...board, cardIds: board.cardIds.filter((id) => id !== ideaA.id) })),
+      layouts: storage.workspace.layouts.map((layout) => ({ ...layout, placements: layout.placements.filter((placement) => placement.cardId !== ideaA.id) })),
+      relations: storage.workspace.relations.filter((relation) => relation.from !== ideaA.id && relation.to !== ideaA.id),
+    };
+
+    const recovered = await editor.recoverExternal();
+    expect(recovered.ok).toBe(false);
+    expect(editor.snapshot()).toMatchObject({ status: 'conflict', pendingCount: 1 });
+    expect(contentOf(editor.snapshot().workspace)).toBe('Texto que no debe perderse');
+    expect(storage.workspace.cards.some((card) => card.id === ideaA.id)).toBe(false);
   });
 });
