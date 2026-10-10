@@ -510,6 +510,146 @@ test('P18-E3-B2: alterna Visual y HTML, aplica una fuente válida y reabre el do
   expect(runtimeErrors).toEqual([]);
 });
 
+test('P18-E3-B3-A: Visual y HTML conservan encabezados, negrita/cursiva, enlaces, listas y checklist con equivalencia semántica', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Texto enriquecido B3-A');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+
+  // El título es una zona aparte (titleRichText): se fija antes de tocar el cuerpo y debe
+  // sobrevivir intacto a todas las alternancias Visual/HTML que siguen.
+  const title = page.getByLabel('Título de la tarjeta');
+  await title.click();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('Título con **marcas** intacto');
+
+  // Siembra el documento completo (encabezado H1, negrita+cursiva, enlace, viñetas, numerada y
+  // checklist, y un segundo encabezado H3) directamente como HTML seguro v1: en web ya no existe
+  // una vista Markdown (P18-E3-B2 la sustituyó por este conmutador), así que el camino real para
+  // una persona usuaria es exactamente este.
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  const source = page.getByTestId('html-source-input');
+  const seed = '<h1>Plan</h1>\n'
+    + '<p>Texto con <strong>negrita</strong> y <em>cursiva</em> combinadas, además de un <a href="https://example.com/plan">enlace</a>.</p>\n'
+    + '<ul><li>Uno</li><li>Dos</li></ul>\n'
+    + '<ol><li>Primero</li><li>Segundo</li></ol>\n'
+    + '<ul data-nouty-list="checklist"><li data-nouty-checked="false">Pendiente</li><li data-nouty-checked="true">Hecho</li></ul>\n'
+    + '<h3>Cierre</h3>';
+  await source.fill(seed);
+  await expect(page.getByTestId('html-source-status')).toContainText('Fuente modificada');
+  await button(page, 'Validar y aplicar el código HTML').click();
+  await expect(page.getByTestId('html-source-status')).toContainText('Fuente válida aplicada');
+
+  // HTML → Visual: nada de lo sembrado se pierde ni se degrada a párrafo/texto plano.
+  await button(page, 'Editar el cuerpo visualmente').click();
+  const visual = page.getByLabel('Contenido visual');
+  // El título es otra instancia del mismo editor Lexical y repite las mismas etiquetas de
+  // deshacer/rehacer: se acota al editor que de verdad contiene «Contenido visual».
+  const bodyEditor = page.getByTestId('web-rich-text-editor').filter({ has: visual });
+  await expect(visual.locator('h1')).toHaveText('Plan');
+  await expect(visual.locator('strong').first()).toHaveText('negrita');
+  await expect(visual.locator('em')).toHaveText('cursiva');
+  await expect(visual.locator('a')).toHaveAttribute('href', 'https://example.com/plan');
+  await expect(visual.locator('a')).toHaveText('enlace');
+  await expect(visual.locator('ul li').filter({ hasText: 'Uno' })).toBeVisible();
+  await expect(visual.locator('ul li').filter({ hasText: 'Dos' })).toBeVisible();
+  await expect(visual.locator('ol li')).toHaveText(['Primero', 'Segundo']);
+  await expect(visual.locator('li[role="checkbox"]')).toHaveCount(2);
+  const pending = visual.locator('li[role="checkbox"]').filter({ hasText: 'Pendiente' });
+  const done = visual.locator('li[role="checkbox"]').filter({ hasText: 'Hecho' });
+  await expect(pending).toHaveAttribute('aria-checked', 'false');
+  await expect(done).toHaveAttribute('aria-checked', 'true');
+  await expect(visual.locator('h3')).toHaveText('Cierre');
+
+  // Edición real en Visual: marcar la casilla pendiente y aplicar negrita al segundo encabezado,
+  // con deshacer/rehacer sobre esa misma operación (historial interno del editor, no el del Workspace).
+  await pending.click({ position: { x: 4, y: 10 } });
+  await expect(pending).toHaveAttribute('aria-checked', 'true');
+  await visual.locator('h3').selectText();
+  await page.keyboard.press('Control+b');
+  await expect(visual.locator('h3 strong')).toHaveText('Cierre');
+  await bodyEditor.getByRole('button', { name: 'Deshacer en el editor', exact: true }).click();
+  await expect(visual.locator('h3 strong')).toHaveCount(0);
+  await bodyEditor.getByRole('button', { name: 'Rehacer en el editor', exact: true }).click();
+  await expect(visual.locator('h3 strong')).toHaveText('Cierre');
+
+  // Visual → HTML: la representación refleja la casilla marcada y la negrita nuevas; se modifica
+  // ahí mismo una estructura válida (el enlace y la lista numerada) antes de volver a aplicar.
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(source).toHaveValue(/data-nouty-checked="true">Pendiente/);
+  await expect(source).toHaveValue(/<h3><strong>Cierre<\/strong><\/h3>/);
+  const current = await source.inputValue();
+  const updated = current
+    .replace('href="https://example.com/plan"', 'href="https://example.org/plan-final"')
+    .replace('<li>Segundo</li>', '<li>Segundo</li><li>Tercero</li>');
+  await source.fill(updated);
+  await expect(page.getByTestId('html-source-status')).toContainText('Fuente modificada');
+  await button(page, 'Validar y aplicar el código HTML').click();
+  await expect(page.getByTestId('html-source-status')).toContainText('Fuente válida aplicada');
+
+  // HTML → Visual de nuevo: la edición hecha como texto HTML también llega intacta.
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await expect(visual.locator('a')).toHaveAttribute('href', 'https://example.org/plan-final');
+  await expect(visual.locator('ol li')).toHaveText(['Primero', 'Segundo', 'Tercero']);
+
+  // El título no se tocó en ningún momento de la edición del cuerpo.
+  await expect(title).toHaveText('Título con **marcas** intacto');
+
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.', { timeout: 3_000 });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('p18-e3-b3-a-rich-text.png'), fullPage: true });
+
+  // Cerrar y reabrir (misma sesión en memoria): equivalencia completa del documento semántico.
+  await closeEditor(page);
+  await tapCard(page, 1);
+  const reopened = page.getByLabel('Contenido visual');
+  await expect(reopened.locator('h1')).toHaveText('Plan');
+  await expect(reopened.locator('strong').first()).toHaveText('negrita');
+  await expect(reopened.locator('em')).toHaveText('cursiva');
+  await expect(reopened.locator('a')).toHaveAttribute('href', 'https://example.org/plan-final');
+  await expect(reopened.locator('ol li')).toHaveText(['Primero', 'Segundo', 'Tercero']);
+  await expect(reopened.locator('ul li').filter({ hasText: 'Uno' })).toBeVisible();
+  await expect(reopened.locator('li[role="checkbox"]').filter({ hasText: 'Pendiente' })).toHaveAttribute('aria-checked', 'true');
+  await expect(reopened.locator('li[role="checkbox"]').filter({ hasText: 'Hecho' })).toHaveAttribute('aria-checked', 'true');
+  await expect(reopened.locator('h3 strong')).toHaveText('Cierre');
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Título con **marcas** intacto');
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('P18-E3-B3-A: una fuente HTML inválida con listas/encabezados queda recuperable sin alterar el documento válido', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'HTML inválido B3-A');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  const source = page.getByTestId('html-source-input');
+  await source.fill('<h1>Válido</h1><ul><li>Uno</li></ul>');
+  await button(page, 'Validar y aplicar el código HTML').click();
+  await expect(page.getByTestId('html-source-status')).toContainText('Fuente válida aplicada');
+  // «Descartar» vuelve al último documento oficialmente guardado, no al último «Aplicar» en memoria:
+  // se guarda primero para que ese documento válido sea de verdad la base a la que se vuelve.
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.', { timeout: 3_000 });
+  await button(page, 'Editar el código HTML del cuerpo').click();
+
+  // Fuente inválida: una etiqueta fuera de la lista blanca dentro de una lista, por lo demás válida.
+  await source.fill('<h1>Válido</h1><ul><li>Uno</li><li><script>alert(1)</script></li></ul>');
+  await expect(page.getByTestId('html-source-error')).toBeVisible();
+  // El botón «Visual» no cambia de modo mientras la fuente sea inválida (comportamiento esperado:
+  // nunca sustituye el último documento válido por una fuente que no pasó la validación).
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await expect(page.getByTestId('html-source-input')).toBeVisible();
+  await expect(source).toHaveValue(/<script>alert\(1\)<\/script>/);
+
+  // Descartar restaura el documento válido anterior (H1 + lista de un elemento) sin haberlo alterado.
+  await button(page, 'Descartar los cambios del código HTML').click();
+  await expect(page.getByLabel('Contenido visual').locator('h1')).toHaveText('Válido');
+  await expect(page.getByLabel('Contenido visual').locator('li')).toHaveText(['Uno']);
+});
+
 test('P07: formato avanzado visual web conserva encabezados, listas, checklist, enlaces e historial', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');

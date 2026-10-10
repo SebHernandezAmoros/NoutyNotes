@@ -34,7 +34,9 @@ describe('fronteras de storage', () => {
   });
 
   it('no usa filesystem, red, almacenamiento real, reloj ni aleatoriedad', () => {
-    const forbidden = /Date\.now|new Date\b|Math\.random|crypto|require\(|process\.|window\.|document\.|localStorage|fetch\(|indexedDB|\beval\(|new Function/;
+    // `document.blocks`/`document.link` son el parámetro `RichTextDocument` del codec HTML (ADR 0063),
+    // no el `document` global: se excluyen de la detección del DOM, que sigue vigente para el resto.
+    const forbidden = /Date\.now|new Date\b|Math\.random|crypto|require\(|process\.|window\.|document\.(?!blocks|link)|localStorage|fetch\(|indexedDB|\beval\(|new Function/;
     expect(storage.filter(({ source }) => forbidden.test(source)).map(({ path }) => path)).toEqual([]);
   });
 
