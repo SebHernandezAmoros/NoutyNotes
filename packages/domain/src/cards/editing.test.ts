@@ -121,6 +121,26 @@ describe('pegar/duplicar una selección en un tablero (ADR 0052)', () => {
 });
 
 describe('editar título y Markdown de una tarjeta (fase 7)', () => {
+  it('sustituye Markdown por un documento HTML semántico y puede volver al legado explícitamente', () => {
+    const document = { schemaVersion: 1 as const, blocks: [{ type: 'paragraph' as const, content: [{ type: 'text' as const, text: 'HTML' }] }] };
+    const titled = assertValid(updateCard(validWorkspace(), ideaA.id, { titleRichText: [{ type: 'text', text: 'Título', marks: ['bold'] }] }));
+    const html = assertValid(updateCard(titled, ideaA.id, { contentDocument: document }));
+    expect(html.cards.find((card) => card.id === ideaA.id)).toMatchObject({
+      contentDocument: document,
+      titleRichText: [{ type: 'text', text: 'Título', marks: ['bold'] }],
+    });
+    expect(html.cards.find((card) => card.id === ideaA.id)).not.toHaveProperty('content');
+    const legacy = assertValid(updateCard(html, ideaA.id, { content: 'Markdown' }));
+    expect(legacy.cards.find((card) => card.id === ideaA.id)).toMatchObject({ content: 'Markdown' });
+    expect(legacy.cards.find((card) => card.id === ideaA.id)).not.toHaveProperty('contentDocument');
+  });
+
+  it('rechaza cambiar las dos representaciones del cuerpo en una operación', () => {
+    const result = updateCard(validWorkspace(), ideaA.id, {
+      content: 'Markdown', contentDocument: { schemaVersion: 1, blocks: [{ type: 'paragraph', content: [] }] },
+    });
+    expect(problems(result)).toContain('invalid-value@changes.contentDocument');
+  });
   it('cambia solo título y contenido; campos, assets, boards, layouts y relaciones se conservan', () => {
     const base = deepFreeze(validWorkspace());
     const result = assertValid(updateCard(base, ideaA.id, { title: 'Nuevo', content: '## Otro\n\n- punto' }));

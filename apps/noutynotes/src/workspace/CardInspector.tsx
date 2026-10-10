@@ -1,7 +1,7 @@
 import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
-import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
+import type { DraftSource, DraftValidation, RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
-import type { BoardId, Card, CardDisplayMode, CardIconName, CardId, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
+import type { BoardId, Card, CardDisplayMode, CardIconName, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -22,6 +22,7 @@ import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocumen
 import { RichTextEditor } from './RichTextEditor';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
+import type { EditableCardDraft } from './editorialDraft';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
@@ -31,9 +32,10 @@ interface CardInspectorProps {
   readonly card: Card;
   readonly placement: CardPlacement | undefined;
   readonly run: Run;
-  readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
+  readonly onDraftChange: (draft: EditableCardDraft) => void;
+  readonly onBodyModeChange: (mode: 'visual' | 'html') => boolean;
   readonly flushPendingText: () => Promise<boolean>;
-  readonly initialDraft?: { readonly cardId: CardId; readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
+  readonly initialDraft?: EditableCardDraft | undefined;
   readonly onClose: () => void;
   /** Representación y Papelera (ADR 0014, ADR 0015); los mismos caminos que la barra de la tarjeta. */
   readonly onDisplay: (display: CardDisplayMode) => void;
@@ -50,6 +52,7 @@ interface CardInspectorProps {
   readonly noteFontFamily?: string | undefined;
   /** Implementación inyectada en la composición; el componente no conoce storage. */
   readonly richTextCodec: RichTextCodec;
+  readonly htmlCodec: RichTextCodec;
   /** Editor enfocado (ADR 0021): ampliar o volver al tablero. En la hoja móvil lo ofrece su barra. */
   readonly focused?: boolean;
   readonly onToggleFocus?: () => void;
@@ -110,7 +113,7 @@ function CardIconChoice({ icon, selected, onPress }: { readonly icon: CardIconNa
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, flushPendingText, initialDraft, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, onBodyModeChange, flushPendingText, initialDraft, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, htmlCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -123,61 +126,180 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const saveConnectorPath = (path: readonly { readonly x: number; readonly y: number }[]) =>
     run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' }, { reactive: true });
   const presentation = cardContentPresentation(card, cardBase);
-  const initialContent = editableCardContent(card, cardBase);
+  const durableHtml = card.contentDocument ? htmlCodec.serialize(card.contentDocument) : null;
+  const initialContent = initialDraft?.bodySource?.format === 'html' ? initialDraft.bodySource.value
+    : durableHtml?.ok ? durableHtml.value : editableCardContent(card, cardBase);
   const [title, setTitle] = useState(initialDraft?.title ?? card.title ?? '');
   const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
     schemaVersion: 1,
     blocks: [{ type: 'paragraph', content: card.titleRichText ?? (initialDraft?.title ? [{ type: 'text', text: initialDraft.title }] : card.title ? [{ type: 'text', text: card.title }] : []) }],
   }));
   const [content, setContent] = useState(initialDraft?.content ?? initialContent);
+  const initialBodyDocument = initialDraft?.bodyDocument ?? card.contentDocument ?? (() => {
+    const parsed = richTextCodec.parse(editableCardContent(card, cardBase));
+    return parsed.ok ? parsed.value : null;
+  })();
+  const originalBodySource = (() => {
+    const source = initialDraft?.bodySource;
+    // Un borrador HTML pendiente o inválido no puede ser también la base de su propio descarte.
+    // En recuperación, la base segura es la representación durable que seguía vigente.
+    if (source?.format === 'html' && initialDraft?.bodyValidation?.status !== 'valid') {
+      return card.contentDocument && durableHtml?.ok
+        ? { format: 'html' as const, value: durableHtml.value }
+        : { format: 'legacy-markdown' as const, value: editableCardContent(card, cardBase) };
+    }
+    if (source?.format === 'html' || source?.format === 'legacy-markdown') return source;
+    if (source?.format === 'rich-text') {
+      const encoded = richTextCodec.serialize(source.value);
+      return { format: 'legacy-markdown' as const, value: encoded.ok ? encoded.value : '' };
+    }
+    return card.contentDocument && durableHtml?.ok
+      ? { format: 'html' as const, value: durableHtml.value }
+      : { format: 'legacy-markdown' as const, value: editableCardContent(card, cardBase) };
+  })();
+  const [lastValidDocument, setLastValidDocument] = useState<RichTextDocument | null>(initialBodyDocument);
+  const [htmlAuthored, setHtmlAuthored] = useState(originalBodySource.format === 'html');
+  const [bodyMode, setBodyMode] = useState<'visual' | 'html'>(() => initialDraft?.bodySource?.format === 'html' && initialDraft.bodyValidation?.status !== 'valid' ? 'html' : 'visual');
+  const [htmlValidation, setHtmlValidation] = useState<DraftValidation>(initialDraft?.bodyValidation ?? { status: 'valid' });
+  const [htmlErrorPath, setHtmlErrorPath] = useState<string | null>(null);
+  const [htmlModified, setHtmlModified] = useState(initialDraft?.bodySource?.format === 'html' && initialDraft.bodyValidation?.status !== 'valid');
+  const [bodyDirty, setBodyDirty] = useState(false);
   const supportsVisualEditor = !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
     : isNativeRichTextDocument(document);
   const [visualRequested, setVisualRequested] = useState(() => {
     if (!supportsVisualEditor) return false;
-    const parsed = richTextCodec.parse(initialContent);
-    return parsed.ok && supportsVisualDocument(parsed.value);
+    return initialBodyDocument !== null && supportsVisualDocument(initialBodyDocument);
   });
   const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
   const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
-  const dirty = title !== cardTitleText(card) || content !== initialContent;
-  const parsedRichText = supportsVisualEditor ? richTextCodec.parse(content) : null;
-  const visualDocument = parsedRichText?.ok && supportsVisualDocument(parsedRichText.value) ? parsedRichText.value : null;
+  const dirty = title !== cardTitleText(card) || bodyDirty;
+  const parsedRichText = !htmlAuthored && supportsVisualEditor ? richTextCodec.parse(content) : null;
+  const visualDocument = htmlAuthored ? lastValidDocument : parsedRichText?.ok ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
-  const visualEditing = visualRequested && visualAvailable;
+  const nativeHtmlReadOnly = Platform.OS !== 'web' && card.contentDocument !== undefined;
+  const visualEditing = bodyMode === 'visual' && visualRequested && visualAvailable && !nativeHtmlReadOnly;
+  const publishDraft = (next: { readonly title: string; readonly content: string; readonly titleDocument: RichTextDocument }, body?: {
+    readonly source: DraftSource; readonly document: RichTextDocument | null; readonly validation: DraftValidation;
+  }) => {
+    setBodyDirty(true);
+    const htmlBody = body ?? (htmlAuthored ? { source: { format: 'html' as const, value: next.content }, document: lastValidDocument, validation: htmlValidation } : null);
+    onDraftChange({ cardId: card.id, ...next, ...(htmlBody ? {
+      bodySource: htmlBody.source,
+      ...(htmlBody.document ? { bodyDocument: htmlBody.document } : {}),
+      bodyValidation: htmlBody.validation,
+    } : {}) });
+  };
   const changeTitleDocument = (document: RichTextDocument) => {
     const block = document.blocks.length === 1 ? document.blocks[0] : undefined;
     if (block?.type !== 'paragraph') return;
     setTitleDocument(document);
     const plain = cardTitleText({ titleRichText: block.content });
     setTitle(plain);
-    onDraftChange({ cardId: card.id, title: plain, content, titleDocument: document });
+    publishDraft({ title: plain, content, titleDocument: document });
   };
   const changeContent = (value: string) => {
     if (floatingText) {
       setContent(value);
-      onDraftChange({ cardId: card.id, title, content: value, titleDocument });
+      publishDraft({ title, content: value, titleDocument });
       return;
     }
     const edit = normalizeListChange(content, value, selectionRef.current);
     const next = edit?.text ?? value;
     setContent(next);
     if (edit) setForcedSelection({ start: edit.caret, end: edit.caret });
-    onDraftChange({ cardId: card.id, title, content: next, titleDocument });
+    publishDraft({ title, content: next, titleDocument });
   };
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const encoded = richTextCodec.serialize(document);
+    const encoded = (htmlAuthored ? htmlCodec : richTextCodec).serialize(document);
     if (!encoded.ok || encoded.value === content) return;
+    setLastValidDocument(document);
     setContent(encoded.value);
-    onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument });
+    publishDraft({ title, content: encoded.value, titleDocument }, htmlAuthored
+      ? { source: { format: 'html', value: encoded.value }, document, validation: { status: 'valid' } } : undefined);
+  };
+  const htmlIssue = htmlValidation.status === 'invalid' ? htmlValidation.error : null;
+  const validationFor = (source: string): { readonly document: RichTextDocument | null; readonly validation: DraftValidation; readonly path: string | null } => {
+    const parsed = htmlCodec.parse(source);
+    if (parsed.ok) return { document: parsed.value, validation: { status: 'pending' }, path: null };
+    const issue = parsed.issues[0];
+    return { document: null, validation: { status: 'invalid', error: {
+      code: issue?.code ?? 'invalid-html', message: issue?.message ?? 'El HTML no es válido.',
+    } }, path: issue?.path ?? null };
+  };
+  const openHtml = () => {
+    if (Platform.OS !== 'web' || !visualDocument) return;
+    const encoded = htmlCodec.serialize(visualDocument);
+    if (!encoded.ok || !onBodyModeChange('html')) return;
+    setHtmlAuthored(true);
+    setLastValidDocument(visualDocument);
+    setContent(encoded.value);
+    setHtmlValidation({ status: 'valid' });
+    setHtmlErrorPath(null);
+    setHtmlModified(false);
+    setBodyMode('html');
+  };
+  const changeHtml = (source: string) => {
+    const checked = validationFor(source);
+    setContent(source);
+    setHtmlValidation(checked.validation);
+    setHtmlErrorPath(checked.path);
+    setHtmlModified(true);
+    publishDraft({ title, content: source, titleDocument }, {
+      source: { format: 'html', value: source }, document: lastValidDocument, validation: checked.validation,
+    });
+  };
+  const applyHtml = (returnToVisual = false) => {
+    if (!htmlModified) {
+      if (returnToVisual && onBodyModeChange('visual')) {
+        setBodyMode('visual');
+        setVisualRequested(true);
+      }
+      return true;
+    }
+    const parsed = htmlCodec.parse(content);
+    if (!parsed.ok) {
+      const issue = parsed.issues[0];
+      const validation: DraftValidation = { status: 'invalid', error: { code: issue?.code ?? 'invalid-html', message: issue?.message ?? 'El HTML no es válido.' } };
+      setHtmlValidation(validation);
+      setHtmlErrorPath(issue?.path ?? null);
+      publishDraft({ title, content, titleDocument }, { source: { format: 'html', value: content }, document: lastValidDocument, validation });
+      return false;
+    }
+    setLastValidDocument(parsed.value);
+    setHtmlValidation({ status: 'valid' });
+    setHtmlErrorPath(null);
+    publishDraft({ title, content, titleDocument }, { source: { format: 'html', value: content }, document: parsed.value, validation: { status: 'valid' } });
+    setHtmlModified(false);
+    if (returnToVisual && onBodyModeChange('visual')) {
+      setBodyMode('visual');
+      setVisualRequested(true);
+    }
+    return true;
+  };
+  const discardHtml = () => {
+    const restoredDocument = initialBodyDocument;
+    setHtmlAuthored(originalBodySource.format === 'html');
+    setContent(originalBodySource.value);
+    setLastValidDocument(restoredDocument);
+    setHtmlValidation({ status: 'valid' });
+    setHtmlErrorPath(null);
+    setHtmlModified(false);
+    publishDraft({ title, content: originalBodySource.value, titleDocument }, {
+      source: originalBodySource, document: restoredDocument, validation: { status: 'valid' },
+    });
+    if (onBodyModeChange('visual')) {
+      setBodyMode('visual');
+      setVisualRequested(true);
+    }
   };
   const insertList = (kind: ListKind) => {
     const edit = applyListCommand(content, selectionRef.current, kind);
     setContent(edit.text);
     selectionRef.current = { start: edit.caret, end: edit.caret };
     setForcedSelection(selectionRef.current);
-    onDraftChange({ cardId: card.id, title, content: edit.text, titleDocument });
+    publishDraft({ title, content: edit.text, titleDocument });
   };
   // UX7-B3: negrita/cursiva envuelven la selección y la mantienen (en vez de colapsar el cursor como
   // las listas), para que escribir reemplace el texto formateado o repetir el atajo lo desenvuelva.
@@ -186,7 +308,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     setContent(edit.text);
     selectionRef.current = edit.selection;
     setForcedSelection(edit.selection);
-    onDraftChange({ cardId: card.id, title, content: edit.text, titleDocument });
+    publishDraft({ title, content: edit.text, titleDocument });
   };
   const onContentKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }>) => {
     const { ctrlKey, metaKey, key } = event.nativeEvent;
@@ -238,7 +360,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // Contenido en orden (ADR 0021): mover, quitar o el texto alternativo cambian el borrador, como escribir.
   const changeBlocks = (next: string) => {
     setContent(next);
-    onDraftChange({ cardId: card.id, title, content: next, titleDocument });
+    publishDraft({ title, content: next, titleDocument });
   };
   const blocksType = cardBase;
   const withBlocks = blocksType !== 'image' && blocksType !== 'section' && blocksType !== 'text' && blocksType !== 'shape' && blocksType !== 'connector';
@@ -262,7 +384,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: file.name } } : { key: 'action.noteImageReplaced', params: { name: file.name } });
     if (result.ok) {
       setContent(result.value.content);
-      onDraftChange({ cardId: card.id, title, content: result.value.content, titleDocument });
+      publishDraft({ title, content: result.value.content, titleDocument });
       const parsed = richTextCodec.parse(result.value.content);
       return parsed.ok ? parsed.value.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null : null;
     } else {
@@ -310,7 +432,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     const next = toggleChecklistLine(content, line);
     if (next !== null) {
       setContent(next);
-      onDraftChange({ cardId: card.id, title, content: next, titleDocument });
+      publishDraft({ title, content: next, titleDocument });
     }
   };
   useEffect(() => {
@@ -470,13 +592,24 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             </View>
           ) : null}
         </View>
-        {focused && supportsVisualEditor && visualAvailable && !visualEditing ? (
+        {Platform.OS === 'web' && supportsVisualEditor && visualAvailable ? (
+          <View testID="body-mode-switch" style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Modo de edición del cuerpo">
+            <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => {
+              if (bodyMode === 'html') applyHtml(true);
+            }} />
+            <ActionButton label="HTML" accessibilityLabel="Editar el código HTML del cuerpo" pressed={bodyMode === 'html'} onPress={openHtml} />
+          </View>
+        ) : null}
+        {Platform.OS !== 'web' && focused && supportsVisualEditor && visualAvailable && !visualEditing && !nativeHtmlReadOnly ? (
           <ActionButton label={t('inspector.visual.open', locale)} accessibilityLabel={t('inspector.visual.open.accessibilityLabel', locale)} onPress={() => setVisualRequested(true)} />
         ) : null}
-        {visualEditing ? (
+        {Platform.OS !== 'web' && visualEditing ? (
           <ActionButton label={t('inspector.visual.markdown', locale)} accessibilityLabel={t('inspector.visual.markdown.accessibilityLabel', locale)} onPress={() => {
             void flushPendingText().then((saved) => { if (saved) setVisualRequested(false); });
           }} />
+        ) : null}
+        {nativeHtmlReadOnly ? (
+          <Text testID="native-html-read-only" style={[styles.hint, { color: colors.textSecondary }]}>Este cuerpo HTML se conserva en solo lectura en Android. Edítalo en la versión web.</Text>
         ) : null}
         {visualEditing && visualDocument ? (
           <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily}
@@ -484,24 +617,39 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             onInsertImage={(document, afterBlock) => placeVisualImage(document, { kind: 'insert', afterBlock })}
             onReplaceImage={(document, blockIndex) => placeVisualImage(document, { kind: 'replace', blockIndex })} />
         ) : null}
+        {Platform.OS === 'web' && bodyMode === 'html' ? (
+          <View testID="html-source-editor" style={styles.htmlEditor}>
+            <TextField testID="html-source-input" label="Código HTML del cuerpo" value={content} onChangeText={changeHtml} multiline
+              fontFamily={mono} placeholder="<p>Contenido</p>" />
+            {htmlIssue ? <Text testID="html-source-error" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>
+              {htmlErrorPath ? `${htmlErrorPath}: ` : ''}{htmlIssue.message}
+            </Text> : <Text testID="html-source-status" accessibilityLiveRegion="polite" style={[styles.hint, { color: colors.textSecondary }]}>
+              {htmlValidation.status === 'pending' ? 'Fuente modificada. Aplícala para actualizar la vista visual.' : 'Fuente válida aplicada a la sesión.'}
+            </Text>}
+            <View style={styles.row}>
+              <ActionButton label="Aplicar HTML" accessibilityLabel="Validar y aplicar el código HTML" tone="primary" onPress={() => { applyHtml(false); }} />
+              <ActionButton label="Descartar cambios HTML" accessibilityLabel="Descartar los cambios del código HTML" onPress={discardHtml} />
+            </View>
+          </View>
+        ) : null}
         {focused && supportsVisualEditor && !visualAvailable ? (
           <Text testID="visual-editor-fallback" style={[styles.hint, { color: colors.textSecondary }]}>
             {t('inspector.visual.fallback', locale)}
           </Text>
         ) : null}
-        {visualEditing || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
+        {visualEditing || bodyMode === 'html' || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.format.section', locale)}</Text>
           <ActionButton label="B" accessibilityLabel={t('inspector.format.bold.accessibilityLabel', locale)} onPress={() => applyFormat('bold')} style={styles.listButton} />
           <ActionButton label="I" accessibilityLabel={t('inspector.format.italic.accessibilityLabel', locale)} onPress={() => applyFormat('italic')} style={styles.listButton} />
         </View>}
-        {visualEditing || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
+        {visualEditing || bodyMode === 'html' || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.lists.section', locale)}</Text>
           <ActionButton label="−" accessibilityLabel={t('inspector.list.dash.accessibilityLabel', locale)} onPress={() => insertList('dash')} style={styles.listButton} />
           <ActionButton label="•" accessibilityLabel={t('inspector.list.bullet.accessibilityLabel', locale)} onPress={() => insertList('bullet')} style={styles.listButton} />
           <ActionButton label="1." accessibilityLabel={t('inspector.list.number.accessibilityLabel', locale)} onPress={() => insertList('number')} style={styles.listButton} />
           <ActionButton label="☐" accessibilityLabel={t('inspector.list.check.accessibilityLabel', locale)} onPress={() => insertList('check')} style={styles.listButton} />
         </View>}
-        {presentation.body === 'hidden' || visualEditing || shape || connector ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
+        {presentation.body === 'hidden' || visualEditing || bodyMode === 'html' || nativeHtmlReadOnly || shape || connector ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
           onKeyPress={onContentKeyPress}
@@ -509,13 +657,13 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             selectionRef.current = selection;
             if (forcedSelection && selection.start === forcedSelection.start && selection.end === forcedSelection.end) setForcedSelection(undefined);
           }} />}
-        {presentation.body === 'visible' && !visualEditing && withBlocks ? (
+        {presentation.body === 'visible' && !visualEditing && bodyMode !== 'html' && !nativeHtmlReadOnly && withBlocks ? (
           <NoteBlocksEditor content={content} onChange={changeBlocks} images={noteImages} canPickImages={supportsImageImport()}
             onInsert={() => void placeImage({ kind: 'insert', caret: selectionRef.current.start })}
             onReplace={(index) => void placeImage({ kind: 'replace', index })} />
         ) : null}
         {imageProblem ? <Text testID="note-image-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{imageProblem}</Text> : null}
-        {!visualEditing && !floatingText && !shape && content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
+        {!visualEditing && bodyMode !== 'html' && !floatingText && !shape && content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
           <View testID="checklist-preview" style={styles.preview}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.checklist.section', locale)}</Text>
             {content.split('\n').map((line, index) => {
@@ -875,6 +1023,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   );
 }
 
+const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
+
 const styles = StyleSheet.create({
   tagSection: { gap: 6 },
   tagAdd: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
@@ -888,6 +1038,7 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   heading: { fontSize: 20, lineHeight: 25, fontWeight: '800' },
   section: { gap: 10 },
+  htmlEditor: { gap: 8 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   iconChoice: { width: 48, height: 48, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

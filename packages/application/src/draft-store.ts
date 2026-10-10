@@ -2,7 +2,7 @@ import { validateRichTextDocument } from '@noutynotes/domain';
 import type { RichTextDocument, ValidationResult } from '@noutynotes/domain';
 
 export type DraftZone = 'title' | 'body';
-export type DraftSurface = 'quick' | 'full';
+export type DraftSurface = 'quick' | 'full' | 'html';
 export type DraftRevision = string & { readonly __draftRevision: unique symbol };
 export type DraftGeneration = string & { readonly __draftGeneration: unique symbol };
 

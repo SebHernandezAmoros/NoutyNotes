@@ -5,7 +5,7 @@ import {
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
 import { cardTitleText, createOrthogonalConnectorPath, frameMembers } from '@noutynotes/domain';
-import { markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
+import { htmlRichTextCodec, markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -61,6 +61,7 @@ import { saveStatus } from './saveStatus';
 import { useWorkspaceEditor } from './useWorkspaceEditor';
 import type { ActionSuccess } from './useWorkspaceEditor';
 import { composeSavedWithNotes } from './actionFeedback';
+import type { EditableCardDraft } from './editorialDraft';
 
 /** Desde este ancho la navegación de espacios y tableros va en una barra lateral. */
 const SIDEBAR_MIN_WIDTH = 1100;
@@ -218,7 +219,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   }, [workspaceIdForFont, customFontRef, session.storage]);
 
   const {
-    flushPendingText, setPendingText, activateSurface, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText,
+    flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText,
   } = usePendingText(run, workspace, session);
 
   const goHome = async () => {
@@ -292,7 +293,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     // del umbral antiguo, así que «Editar dentro de la ficha» abría el editor completo sin avisarlo.
     const base = workspace?.cardTypes.find((candidate) => candidate.id === card?.typeId)?.base;
     // Formas y conectores no tienen cuerpo de nota: su edición pertenece al inspector de propiedades.
-    const canEditInline = !compact && placement?.display === 'expanded' && base !== 'shape' && base !== 'connector';
+    // Una nota HTML debe entrar por el editor Visual/HTML: el editor rápido heredado todavía
+    // transporta Markdown y no puede adquirir autoridad sin arriesgar una reescritura vacía.
+    const canEditInline = !compact && placement?.display === 'expanded' && base !== 'shape' && base !== 'connector' && card?.contentDocument === undefined;
     if (!activateSurface(cardId, canEditInline ? 'quick' : 'full')) return;
     setSelectedId(cardId);
     setEditingId(cardId);
@@ -1041,6 +1044,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       placement={layout?.placements.find((placement) => placement.cardId === selected.id)}
       run={run}
       onDraftChange={(draft) => { setPendingText(draft, authority); }}
+      onBodyModeChange={transferBodyMode}
       flushPendingText={() => flushPendingText(authority ?? undefined)}
       onClose={() => { setEditingId(null); setInlineEditing(false); setSelectedId(null); }}
       onDisplay={(display) => changeDisplay(selected.id, display)}
@@ -1051,6 +1055,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       noteImages={previews.refs}
       noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
       richTextCodec={markdownRichTextCodec}
+      htmlCodec={htmlRichTextCodec}
       initialDraft={recoveredText?.cardId === selected.id ? recoveredText : undefined}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
@@ -1663,13 +1668,9 @@ function NavItem({ icon, label, count, accessibilityLabel, onPress }: {
  * Borrador de texto de la tarjeta en modo carpeta: se guarda antes de cambiar de selección, de
  * tablero o de espacio, y antes de volver al inicio (protección del borrador de fase 8).
  */
-interface PendingEditorialText {
-  readonly cardId: CardId;
-  readonly title: string;
-  readonly content: string;
-  readonly titleDocument?: RichTextDocument;
+interface PendingEditorialText extends EditableCardDraft {
   readonly sequence: number;
-  readonly surface: 'quick' | 'full';
+  readonly surface: DraftSurface;
   readonly authority: EditorialAuthority;
 }
 
@@ -1737,16 +1738,24 @@ function usePendingText(
       schemaVersion: 1 as const,
       blocks: [{ type: 'paragraph' as const, content: (draft?.title ?? cardTitleText(card)) ? [{ type: 'text' as const, text: draft?.title ?? cardTitleText(card) }] : [] }],
     };
-    const content = draft?.content ?? card.content ?? '';
-    const parsed = markdownRichTextCodec.parse(content);
+    const durableHtml = card.contentDocument ? htmlRichTextCodec.serialize(card.contentDocument) : null;
+    const content = draft?.content ?? (durableHtml?.ok ? durableHtml.value : card.content ?? '');
+    const bodySource = draft?.bodySource ?? (card.contentDocument && durableHtml?.ok
+      ? { format: 'html' as const, value: durableHtml.value }
+      : { format: 'legacy-markdown' as const, value: content });
+    const parsedBody = bodySource.format === 'rich-text' ? bodySource.value
+      : bodySource.format === 'legacy-markdown' ? markdownRichTextCodec.parse(bodySource.value)
+        : htmlRichTextCodec.parse(bodySource.value);
+    const parsed = draft?.bodyDocument ?? card.contentDocument ?? parsedBody;
+    const bodyDocument = 'ok' in parsed ? (parsed.ok ? parsed.value : null) : parsed;
     const acquireZone = (zone: 'title' | 'body') => {
       const key = createDraftKey(workspace.id, cardId, zone);
       const old = previous?.cardId === cardId ? previous[zone] : undefined;
       return old && session.editorialSessions.owns(old)
         ? session.editorialSessions.transfer(old, surface)
         : session.editorialSessions.acquire(key, surface, {
-          source: zone === 'title' ? { format: 'rich-text', value: titleDocument } : { format: 'legacy-markdown', value: content },
-          lastValidDocument: zone === 'title' ? titleDocument : parsed.ok ? parsed.value : null,
+          source: zone === 'title' ? { format: 'rich-text', value: titleDocument } : bodySource,
+          lastValidDocument: zone === 'title' ? titleDocument : bodyDocument,
           baseRevision: durableZoneRevision(cardId, zone), validation: { status: 'valid' }, persistence: 'saved',
         });
     };
@@ -1773,9 +1782,25 @@ function usePendingText(
       title: titleBlock?.type === 'paragraph' ? cardTitleText({ titleRichText: titleBlock.content }) : cardTitleText(card),
       content: bodyState?.source.format === 'legacy-markdown' ? bodyState.source.value : content,
       titleDocument: currentTitleDocument,
+      bodySource: bodyState?.source ?? bodySource,
+      ...(bodyState?.lastValidDocument ? { bodyDocument: bodyState.lastValidDocument } : bodyDocument ? { bodyDocument } : {}),
+      bodyValidation: bodyState?.validation ?? { status: 'valid' },
     });
     return next;
   }, [durableZoneRevision, session.editorialSessions, workspace]);
+
+  const transferBodyMode = useCallback((mode: 'visual' | 'html'): boolean => {
+    const current = authorityRef.current;
+    if (!current || current.surface !== 'full' || !ownsAuthority(current)) return false;
+    const transferred = session.editorialSessions.transfer(current.body, mode === 'html' ? 'html' : 'full');
+    if (!transferred.ok) return false;
+    const next: EditorialAuthority = { ...current, body: transferred.value };
+    authorityRef.current = next;
+    leases.current.set(keyLabel(current.cardId, 'body'), next.body);
+    if (pendingText.current?.cardId === current.cardId) pendingText.current = { ...pendingText.current, authority: next };
+    setAuthority(next);
+    return true;
+  }, [ownsAuthority, session.editorialSessions]);
 
   const persistPrivate = useCallback((draft: PendingEditorialText): Promise<void> => {
     if (!workspace || persistedSequence.current >= draft.sequence) return privateTail.current;
@@ -1796,8 +1821,8 @@ function usePendingText(
       generations.current.set(titleLabel, titleSaved.value.generation);
       session.editorialSessions.update(draft.authority.title, { draftGeneration: titleSaved.value.generation, persistence: 'protected' });
       const bodySaved = await session.drafts.save({
-        key: createDraftKey(workspace.id, draft.cardId, 'body'), source: { format: 'legacy-markdown', value: draft.content },
-        baseRevision: bodyBase, validation: { status: 'valid' },
+        key: createDraftKey(workspace.id, draft.cardId, 'body'), source: draft.bodySource ?? { format: 'legacy-markdown', value: draft.content },
+        baseRevision: bodyBase, validation: draft.bodyValidation ?? { status: 'valid' },
       });
       if (!bodySaved.ok) { session.editorialSessions.update(draft.authority.body, { persistence: 'error' }); setDraftProblem(`${bodySaved.issues[0]?.message ?? 'No se pudo proteger el cuerpo.'} El texto continúa en memoria mientras esta pantalla permanezca abierta.`); return; }
       generations.current.set(bodyLabel, bodySaved.value.generation);
@@ -1828,6 +1853,12 @@ function usePendingText(
       const draft = pendingText.current;
       if (!draft) return true;
       if (!ownsAuthority(draft.authority)) return true;
+      if (draft.bodyValidation && draft.bodyValidation.status !== 'valid') {
+        setDraftProblem(draft.bodyValidation.status === 'invalid'
+          ? draft.bodyValidation.error.message
+          : 'Aplica o descarta la fuente HTML antes de guardar el documento.');
+        return false;
+      }
       if (conflicts.current.has(keyLabel(draft.cardId, 'title')) || conflicts.current.has(keyLabel(draft.cardId, 'body'))) {
         session.editorialSessions.update(draft.authority.title, { persistence: 'conflict' });
         session.editorialSessions.update(draft.authority.body, { persistence: 'conflict' });
@@ -1841,7 +1872,9 @@ function usePendingText(
       const block = draft.titleDocument?.blocks.length === 1 ? draft.titleDocument.blocks[0] : undefined;
       const task: Promise<boolean> = run((storage, workspaceId) => editCardContent(storage, workspaceId, draft.cardId, {
         ...(block?.type === 'paragraph' ? { titleRichText: block.content.length > 0 ? block.content : null } : { title: draft.title }),
-        content: draft.content,
+        ...(draft.bodySource?.format === 'html' && draft.bodyDocument
+          ? { contentDocument: draft.bodyDocument }
+          : { content: draft.content }),
       }), 'action.textSaved', { mergeKey: `text:${draft.cardId}`, reactive: true }).then(async (result) => {
         if (result.ok && workspace) {
           session.editorialSessions.update(draft.authority.title, { persistence: 'saved' });
@@ -1866,11 +1899,18 @@ function usePendingText(
     }
   }, [durableZoneRevision, flushPrivate, ownsAuthority, refreshDrafts, run, session.drafts, session.editorialSessions, workspace]);
 
-  const setPendingText = useCallback((draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }, requestedAuthority: EditorialAuthority | null = authorityRef.current) => {
+  const setPendingText = useCallback((draft: EditableCardDraft, requestedAuthority: EditorialAuthority | null = authorityRef.current) => {
     if (!requestedAuthority || requestedAuthority.cardId !== draft.cardId || !ownsAuthority(requestedAuthority)) return false;
     const titleDocument = draft.titleDocument ?? { schemaVersion: 1 as const, blocks: [{ type: 'paragraph' as const, content: draft.title ? [{ type: 'text' as const, text: draft.title }] : [] }] };
     session.editorialSessions.update(requestedAuthority.title, { source: { format: 'rich-text', value: titleDocument }, lastValidDocument: titleDocument, validation: { status: 'valid' }, persistence: 'protection-pending' });
-    session.editorialSessions.update(requestedAuthority.body, { source: { format: 'legacy-markdown', value: draft.content }, validation: { status: 'valid' }, persistence: 'protection-pending' });
+    const bodySource = draft.bodySource ?? { format: 'legacy-markdown' as const, value: draft.content };
+    const bodyValidation = draft.bodyValidation ?? { status: 'valid' as const };
+    session.editorialSessions.update(requestedAuthority.body, {
+      source: bodySource,
+      ...(draft.bodyDocument ? { lastValidDocument: draft.bodyDocument } : {}),
+      validation: bodyValidation,
+      persistence: 'protection-pending',
+    });
     const next: PendingEditorialText = { ...draft, titleDocument, sequence: ++sequence.current, surface: requestedAuthority.surface, authority: requestedAuthority };
     pendingText.current = next;
     if (privateTimer.current) clearTimeout(privateTimer.current);
@@ -1888,12 +1928,18 @@ function usePendingText(
     const titleDraft = recoverableDrafts.find((draft) => draft.key.cardId === cardId && draft.key.zone === 'title');
     const bodyDraft = recoverableDrafts.find((draft) => draft.key.cardId === cardId && draft.key.zone === 'body');
     if (!card) { setDraftProblem('La nota fue eliminada. El borrador se conserva para copiarlo o descartarlo, pero no se recreará automáticamente.'); return false; }
-    if (bodyDraft?.source.format === 'html') { setDraftProblem('Este borrador HTML se conserva como fuente exacta. Su edición corresponde al editor HTML de E3-B; puedes copiarlo o descartarlo ahora.'); return false; }
+    if (bodyDraft?.source.format === 'html' && Platform.OS !== 'web') { setDraftProblem('Este borrador HTML se conserva como fuente exacta y no se reescribe mediante el editor Android transitorio. Puedes copiarlo o descartarlo.'); return false; }
     const titleDocument = titleDraft?.source.format === 'rich-text' ? titleDraft.source.value : undefined;
     const titleBlock = titleDocument?.blocks.length === 1 ? titleDocument.blocks[0] : undefined;
     const title = titleBlock?.type === 'paragraph' ? cardTitleText({ titleRichText: titleBlock.content }) : cardTitleText(card);
     let content = card.content ?? '';
+    let bodyDocument = card.contentDocument;
     if (bodyDraft?.source.format === 'legacy-markdown') content = bodyDraft.source.value;
+    else if (bodyDraft?.source.format === 'html') {
+      content = bodyDraft.source.value;
+      const parsed = htmlRichTextCodec.parse(content);
+      if (parsed.ok) bodyDocument = parsed.value;
+    }
     else if (bodyDraft?.source.format === 'rich-text') {
       const encoded = markdownRichTextCodec.serialize(bodyDraft.source.value);
       if (encoded.ok) content = encoded.value;
@@ -1907,14 +1953,19 @@ function usePendingText(
         setDraftProblem('El documento durable cambió desde que comenzó este borrador. Revísalo antes de guardar; no se fusionará automáticamente.');
       }
     }
-    const recovered = { cardId, title, content, ...(titleDocument ? { titleDocument } : {}) };
+    const recovered: EditableCardDraft = {
+      cardId, title, content, ...(titleDocument ? { titleDocument } : {}),
+      ...(bodyDraft ? { bodySource: bodyDraft.source, bodyValidation: bodyDraft.validation } : {}),
+      ...(bodyDocument ? { bodyDocument } : {}),
+    };
     const recoveredAuthority = activateSurface(cardId, 'full');
     if (recoveredAuthority) {
+      if (bodyDraft?.source.format === 'html') transferBodyMode('html');
       setRecoveredText(recovered);
-      setPendingText(recovered, recoveredAuthority);
+      setPendingText(recovered);
     }
     return true;
-  }, [activateSurface, durableZoneRevision, recoverableDrafts, session.drafts, setPendingText, workspace]);
+  }, [activateSurface, durableZoneRevision, recoverableDrafts, session.drafts, setPendingText, transferBodyMode, workspace]);
 
   const discardDrafts = useCallback(async (cardId?: CardId) => {
     if (!workspace) return;
@@ -1925,7 +1976,7 @@ function usePendingText(
     await refreshDrafts();
   }, [recoverableDrafts, refreshDrafts, session.drafts, workspace]);
 
-  return { flushPendingText, setPendingText, activateSurface, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText };
+  return { flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText };
 }
 
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });

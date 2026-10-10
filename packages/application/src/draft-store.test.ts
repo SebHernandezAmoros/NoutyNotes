@@ -178,4 +178,27 @@ describe('EditorialSessionCoordinator', () => {
     expect(sessions.read(bodyKey)?.persistence).toBe('protected');
     expect(sessions.read(titleKey)?.source.format).toBe('rich-text');
   });
+
+  it('invalida callbacks al alternar Visual y HTML sin reemplazar el último documento válido', () => {
+    const sessions = new EditorialSessionCoordinator(() => 'mode');
+    const valid = { schemaVersion: 1 as const, blocks: [{ type: 'paragraph' as const, content: [{ type: 'text' as const, text: 'Válido' }] }] };
+    const visual = sessions.acquire(key, 'full', {
+      source: { format: 'rich-text', value: valid }, lastValidDocument: valid,
+      baseRevision: draftRevision('base'), validation: { status: 'valid' }, persistence: 'editing',
+    });
+    if (!visual.ok) throw new Error('fixture');
+    const html = sessions.transfer(visual.value, 'html');
+    if (!html.ok) throw new Error('fixture');
+    expect(sessions.update(visual.value, { source: { format: 'html', value: '<p>antiguo</p>' } })).toBeNull();
+    sessions.update(html.value, {
+      source: { format: 'html', value: '<script>sin cerrar' },
+      validation: { status: 'invalid', error: { code: 'unknown-tag', message: 'Etiqueta no admitida.' } },
+      persistence: 'protected',
+    });
+    expect(sessions.read(key)?.lastValidDocument).toEqual(valid);
+    const visualAgain = sessions.transfer(html.value, 'full');
+    if (!visualAgain.ok) throw new Error('fixture');
+    expect(sessions.update(html.value, { persistence: 'saved' })).toBeNull();
+    expect(sessions.read(key)?.source).toEqual({ format: 'html', value: '<script>sin cerrar' });
+  });
 });

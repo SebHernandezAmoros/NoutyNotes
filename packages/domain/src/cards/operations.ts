@@ -16,7 +16,8 @@ import {
   captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
   floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type ContentLayout, type ContentVisibility, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
 } from './card';
-import type { RichTextInline } from '../rich-text/rich-text';
+import { validateRichTextDocument } from '../rich-text/rich-text';
+import type { RichTextDocument, RichTextInline } from '../rich-text/rich-text';
 
 export interface DeleteCardOptions {
   /** Por defecto no permite borrar una tarjeta conectada; cascade elimina sus vínculos explícitamente. */
@@ -180,7 +181,7 @@ export function pasteCardsOnBoard(workspace: Workspace, input: PasteCardsInput):
   });
 }
 
-/** Cambios editables desde el prototipo: título y cuerpo Markdown. */
+/** Cambios editables de título y de una sola representación corporal. */
 export interface CardContentChanges {
   /** Un título en blanco elimina el título (es opcional); cualquier otro se guarda tal cual. */
   readonly title?: string;
@@ -188,11 +189,13 @@ export interface CardContentChanges {
   readonly titleRichText?: readonly RichTextInline[] | null;
   /** Markdown opaco: se guarda literal, también vacío. */
   readonly content?: string;
+  /** Documento semántico durable como HTML seguro; al establecerlo elimina `content`. */
+  readonly contentDocument?: RichTextDocument;
 }
 
-const editableCardKeys: readonly string[] = ['title', 'titleRichText', 'content'];
+const editableCardKeys: readonly string[] = ['title', 'titleRichText', 'content', 'contentDocument'];
 
-/** Edita título y Markdown sin tocar campos, assets, representación ni relaciones. */
+/** Edita título y cuerpo sin tocar campos, assets, representación ni relaciones. */
 export function updateCard(workspace: Workspace, cardId: CardId, changes: CardContentChanges): ValidationResult<Workspace> {
   const source = validateWorkspace(workspace);
   if (!source.ok) return source;
@@ -215,8 +218,14 @@ export function updateCard(workspace: Workspace, cardId: CardId, changes: CardCo
   if (Object.hasOwn(input, 'title') && Object.hasOwn(input, 'titleRichText')) {
     issues.push(issue('invalid-value', 'changes.titleRichText', 'Cambia una sola representación del título por operación.'));
   }
+  if (Object.hasOwn(input, 'contentDocument') && !validateRichTextDocument(input.contentDocument as RichTextDocument).ok) {
+    issues.push(issue('invalid-value', 'changes.contentDocument', 'Debe ser un documento enriquecido válido.'));
+  }
+  if (Object.hasOwn(input, 'content') && Object.hasOwn(input, 'contentDocument')) {
+    issues.push(issue('invalid-value', 'changes.contentDocument', 'Cambia una sola representación del cuerpo por operación.'));
+  }
   if (issues.length > 0) return failure(issues);
-  const { title, titleRichText, ...untitled } = card;
+  const { title, titleRichText, content, contentDocument, ...untitled } = card;
   const nextTitle = changes.title === undefined ? title : changes.title;
   const edited: Card = {
     ...untitled,
@@ -224,7 +233,10 @@ export function updateCard(workspace: Workspace, cardId: CardId, changes: CardCo
       ? changes.titleRichText === null || changes.titleRichText.length === 0 ? {} : { titleRichText: changes.titleRichText }
       : titleRichText !== undefined ? { titleRichText }
         : isNonBlankString(nextTitle) ? { title: nextTitle } : {}),
-    ...(changes.content === undefined ? {} : { content: changes.content }),
+    ...(changes.contentDocument !== undefined ? { contentDocument: changes.contentDocument }
+      : changes.content !== undefined ? { content: changes.content }
+        : contentDocument !== undefined ? { contentDocument }
+          : content !== undefined ? { content } : {}),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? edited : candidate)) });
 }

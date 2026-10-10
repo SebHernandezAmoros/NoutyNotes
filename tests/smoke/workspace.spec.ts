@@ -471,6 +471,45 @@ test('P06: Visual es predeterminado y alterna con Markdown sobre un solo borrado
   expect(failedResources).toEqual([]);
 });
 
+test('P18-E3-B2: alterna Visual y HTML, aplica una fuente válida y reabre el documento semántico', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Fuente HTML');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const visual = page.getByLabel('Contenido visual');
+  await visual.fill('Visual inicial');
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  const source = page.getByTestId('html-source-input');
+  await expect(source).toHaveValue('<p>Visual inicial</p>');
+  await source.fill('<h2><strong>HTML válido</strong></h2>\n<p>Texto <em>portable</em>.</p>');
+  await expect(page.getByTestId('html-source-status')).toContainText('Fuente modificada');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('visual-html-current.png'), fullPage: true });
+  await button(page, 'Validar y aplicar el código HTML').click();
+  await expect(page.getByTestId('html-source-status')).toContainText('Fuente válida aplicada');
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await expect(visual.locator('h2 strong')).toHaveText('HTML válido');
+  await expect(visual.locator('p em')).toHaveText('portable');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Abrir el editor completo de Nueva nota').click();
+  await expect(page.getByLabel('Contenido visual').locator('h2 strong')).toHaveText('HTML válido');
+  await page.setViewportSize(tabletPortrait);
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toContainText('HTML válido');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('visual-html-tablet-portrait.png'), fullPage: true });
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await page.setViewportSize(tabletLandscape);
+  await expect(page.getByLabel('Contenido visual').locator('h2 strong')).toHaveText('HTML válido');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('visual-html-tablet-landscape.png'), fullPage: true });
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('P07: formato avanzado visual web conserva encabezados, listas, checklist, enlaces e historial', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');

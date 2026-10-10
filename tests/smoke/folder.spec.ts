@@ -113,6 +113,66 @@ test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin al
   await expect(page.getByLabel('Contenido visual').locator('p')).toHaveText('BORRADOR PRIVADO TRAS REINICIO');
 });
 
+test('P18-E3-B2: alternar Visual y HTML sin editar no reescribe el archivo durable', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Alternancia inerte');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  const before = await page.evaluate(() => localStorage.getItem('nouty-test-folder'));
+  await page.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
+  await page.getByRole('button', { name: 'Editar el cuerpo visualmente' }).click();
+  await page.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
+  await page.getByRole('button', { name: 'Editar el cuerpo visualmente' }).click();
+  await page.getByRole('button', { name: 'Guardar texto' }).click();
+  expect(await page.evaluate(() => localStorage.getItem('nouty-test-folder'))).toBe(before);
+  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+});
+
+test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durable y permite descartarlo', async ({ page }) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('HTML inválido');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await page.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
+  const invalid = '<script data-private="exacto">NO DURABLE</script>';
+  await page.getByTestId('html-source-input').fill(invalid);
+  await expect(page.getByTestId('html-source-error')).toBeVisible();
+  await page.getByRole('button', { name: 'Validar y aplicar el código HTML' }).click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(invalid);
+  await expect(page.getByTestId('html-source-error')).toBeVisible();
+  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('draft-source')).toContainText(invalid);
+  await expect.poll(() => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return Object.values(files).map((bytes) => new TextDecoder().decode(new Uint8Array(bytes))).join('\n');
+  })).not.toContain('NO DURABLE');
+
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.reload();
+  await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir HTML inválido' }).click();
+  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(invalid);
+  await expect(page.getByTestId('html-source-error')).toBeVisible();
+  await page.getByRole('button', { name: 'Descartar los cambios del código HTML' }).click();
+  await expect(page.getByTestId('html-source-editor')).toHaveCount(0);
+  await expect(page.getByLabel('Contenido visual')).toBeVisible();
+  await page.getByRole('button', { name: 'Guardar texto' }).click();
+  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
+    return Object.values(files).map((bytes) => new TextDecoder().decode(new Uint8Array(bytes))).join('\n');
+  })).not.toContain('NO DURABLE');
+});
+
 test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga y la reconexión', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');

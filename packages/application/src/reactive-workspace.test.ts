@@ -111,6 +111,25 @@ describe('ReactiveWorkspaceEditor (UX7 P18-E1)', () => {
     expect(editor.snapshot().history.future).toHaveLength(1);
   });
 
+  it('aplica un documento HTML semántico como una operación reversible del historial', async () => {
+    const storage = new ControlledStorage();
+    const editor = new ReactiveWorkspaceEditor(storage, storage.workspace.id, storage.workspace);
+    const document = { schemaVersion: 1 as const, blocks: [{ type: 'heading' as const, level: 2 as const, content: [{ type: 'text' as const, text: 'HTML' }] }] };
+    const changed = editor.dispatch(
+      (port, id) => editCardContent(port, id, ideaA.id, { contentDocument: document }),
+      { label: 'Texto', mergeKey: `text:${ideaA.id}` },
+    );
+    expect((await changed.persisted).ok).toBe(true);
+    expect(editor.snapshot().workspace.cards.find((card) => card.id === ideaA.id)?.contentDocument).toEqual(document);
+    const undone = editor.undo();
+    expect((await undone?.persisted)?.ok).toBe(true);
+    expect(editor.snapshot().workspace.cards.find((card) => card.id === ideaA.id)?.content).toBe(ideaA.content);
+    expect(editor.snapshot().workspace.cards.find((card) => card.id === ideaA.id)).not.toHaveProperty('contentDocument');
+    const redone = editor.redo();
+    expect((await redone?.persisted)?.ok).toBe(true);
+    expect(editor.snapshot().workspace.cards.find((card) => card.id === ideaA.id)?.contentDocument).toEqual(document);
+  });
+
   it('mantiene cambios fallidos de notas distintas y los reintenta en orden', async () => {
     const storage = new ControlledStorage();
     storage.nextSave = Promise.resolve({ ok: false, issues: [{ code: 'io-failure', path: 'workspace', message: 'disco ocupado' }] });
