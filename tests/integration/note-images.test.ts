@@ -139,4 +139,17 @@ describe('imágenes dentro de una nota con cuerpo HTML seguro (ADR 0066)', () =>
     expect(purged.removedAssets).toEqual(['assets/images/tarjeta-1-1.png']);
     expect((await storage.readAsset(id, 'assets/images/tarjeta-1-1.png' as AssetRef)).ok).toBe(false);
   });
+
+  it('quitar el bloque de imagen con `editCardContent` (Lexical, node.remove()) la saca de assetRefs igual que en Markdown', async () => {
+    const { storage, id, card, contentDocument } = await noteWithHtmlText();
+    const inserted = ok(await addNoteImageDocument(storage, storage, id, card, { bytes: PNG, fileName: 'a.png', contentDocument, place: { kind: 'insert' } }));
+    expect((await cardOf(storage, id, card)).assetRefs).toEqual(['assets/images/tarjeta-1-1.png']);
+    const withoutImage: RichTextDocument = { ...inserted.contentDocument, blocks: inserted.contentDocument.blocks.filter((block) => block.type !== 'image') };
+    ok(await editCardContent(storage, id, card, { contentDocument: withoutImage }));
+    // Antes de este arreglo, `editCardContent` solo seguía `assetRefs` para `content` (Markdown):
+    // quitar la imagen del documento HTML seguro dejaba un `assetRefs` obsoleto, impidiendo que la
+    // biblioteca de Assets («eliminar los sin usar») detectara el archivo como libre.
+    expect((await cardOf(storage, id, card)).assetRefs).toBeUndefined();
+    expect((await storage.readAsset(id, 'assets/images/tarjeta-1-1.png' as AssetRef)).ok).toBe(true);
+  });
 });

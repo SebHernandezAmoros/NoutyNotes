@@ -9,7 +9,7 @@ import { htmlRichTextCodec, markdownRichTextCodec, serializeWorkspace, writeWork
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '../components/BrandMark';
@@ -221,6 +221,20 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const {
     flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText,
   } = usePendingText(run, workspace, session);
+
+  // Aviso de borrador compacto por defecto; un problema nuevo (p. ej. «Recuperar» fallido) lo despliega
+  // solo una vez — cerrarlo después no lo vuelve a desplegar mientras el mismo problema siga vigente.
+  const [draftExpanded, setDraftExpanded] = useState(false);
+  const previousDraftProblem = useRef<string | null>(null);
+  useEffect(() => {
+    if (draftProblem && draftProblem !== previousDraftProblem.current) setDraftExpanded(true);
+    previousDraftProblem.current = draftProblem;
+  }, [draftProblem]);
+  // Confirmación en el propio lienzo, no `Alert.alert` (defecto real encontrado y corregido: en web,
+  // `Alert.alert` de react-native-web es un no-op — no muestra nada ni ejecuta `onPress`, así que
+  // «Descartar» no hacía absolutamente nada; el aviso quedaba para siempre sin ninguna forma de
+  // resolverlo). Mismo patrón ya usado en la Papelera (`TrashPanel.tsx`, confirmar/cancelar en línea).
+  const [discardConfirming, setDiscardConfirming] = useState(false);
 
   const goHome = async () => {
     if (!await flushPendingText() || !await flushWorkspace()) return;
@@ -893,6 +907,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (result.ok && result.value.failedAssets.length > 0) {
       setFeedback({ tone: 'error', text: `La tarjeta se eliminó, pero no se pudo borrar ${result.value.failedAssets.join(', ')}; queda como archivo sin usar.` });
     }
+    // Eliminar definitivamente ya es la acción destructiva confirmada (ADR 0015/0023): un borrador
+    // privado de esa misma tarjeta no puede recuperarse hacia ningún sitio a partir de aquí, así que
+    // limpiarlo aquí no es una pérdida nueva — es la causa real del aviso «BORRADOR PRIVADO
+    // RECUPERABLE» que seguía apareciendo para notas ya eliminadas para siempre.
+    if (result.ok) await discardDrafts(cardId);
   };
 
   const importImage = async () => {
@@ -1202,27 +1221,50 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const firstDraft = firstDraftCardId ? recoverableDrafts.find((draft) => draft.key.cardId === firstDraftCardId && draft.key.zone === 'body')
     ?? recoverableDrafts.find((draft) => draft.key.cardId === firstDraftCardId) : undefined;
   const draftSource = firstDraft?.source.format === 'rich-text' ? JSON.stringify(firstDraft.source.value, null, 2) : firstDraft?.source.value;
-  const draftBar = workspace && (recoverableDrafts.length > 0 || draftProblem) ? (
-    <View testID="draft-recovery" style={[styles.offer, { borderColor: colors.danger, backgroundColor: colors.surface }]}>
-      <View style={styles.draftCopy}>
-        <Text accessibilityRole="header" style={[styles.eyebrow, { color: colors.textPrimary }]}>BORRADOR PRIVADO RECUPERABLE</Text>
-        <Text accessibilityLiveRegion="polite" style={[styles.offerText, { color: colors.textPrimary }]}>
-          {draftProblem ?? `${draftCardIds.length} ${draftCardIds.length === 1 ? 'nota tiene' : 'notas tienen'} trabajo pendiente fuera del ZIP y de la carpeta SAF.`}
+  // Compacto por defecto (no debe desplazar ni bloquear el lienzo, hallazgo real de esta sesión): el
+  // detalle (razón completa, fuente exacta, Recuperar/Descartar) solo se despliega con «Revisar», y
+  // «Cerrar» solo contrae la vista — nunca descarta el borrador. Un aviso nuevo (`draftProblem` recién
+  // puesto, p. ej. tras un intento de «Recuperar» fallido) se despliega solo; uno ya visto no se
+  // reabre solo con que el borrador siga ahí.
+  const draftNotice = draftProblem ?? (draftCardIds.length > 0
+    ? `${draftCardIds.length} ${draftCardIds.length === 1 ? 'nota tiene' : 'notas tienen'} trabajo pendiente fuera del ZIP y de la carpeta SAF.` : null);
+  const draftBar = workspace && draftNotice ? (
+    <View testID="draft-recovery" style={[styles.offerCompact, { borderColor: colors.danger, backgroundColor: colors.surface }]}>
+      <View style={styles.offerCompactRow}>
+        <Text accessibilityRole="header" numberOfLines={1} style={[styles.eyebrow, { color: colors.textPrimary, flexShrink: 1 }]}>
+          {draftExpanded ? 'BORRADOR PRIVADO RECUPERABLE' : `BORRADOR PENDIENTE${draftCardIds.length > 1 ? ` (${draftCardIds.length})` : ''}`}
         </Text>
-        {draftSource ? <Text testID="draft-source" selectable numberOfLines={4} style={[styles.draftSource, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{draftSource}</Text> : null}
+        <ActionButton label={draftExpanded ? 'Cerrar' : 'Revisar'}
+          accessibilityLabel={draftExpanded ? 'Cerrar el detalle del borrador pendiente' : 'Revisar el borrador pendiente'}
+          onPress={() => { setDraftExpanded((current) => !current); setDiscardConfirming(false); }} />
       </View>
-      {firstDraftCardId ? <ActionButton label="Recuperar" accessibilityLabel="Recuperar el primer borrador pendiente" tone="primary" onPress={() => {
-        if (!recoverDraft(firstDraftCardId)) return;
-        setSelectedId(firstDraftCardId);
-        setEditingId(firstDraftCardId);
-        setInlineEditing(false);
-        setFocus(true);
-      }} /> : null}
-      {firstDraftCardId ? <ActionButton label="Descartar" accessibilityLabel="Descartar el primer borrador pendiente" onPress={() => Alert.alert(
-        'Descartar borrador',
-        'Este trabajo privado todavía no está confirmado en el workspace.',
-        [{ text: 'Cancelar', style: 'cancel' }, { text: 'Descartar', style: 'destructive', onPress: () => { void discardDrafts(firstDraftCardId); } }],
-      )} /> : null}
+      {draftExpanded ? (
+        <View testID="draft-recovery-detail" style={styles.draftCopy}>
+          <Text accessibilityLiveRegion="polite" style={[styles.offerText, { color: colors.textPrimary }]}>{draftNotice}</Text>
+          {draftSource ? <Text testID="draft-source" selectable numberOfLines={6} style={[styles.draftSource, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{draftSource}</Text> : null}
+          {discardConfirming ? (
+            <View style={styles.draftActions}>
+              <Text accessibilityRole="alert" style={[styles.offerText, { color: colors.danger }]}>Este trabajo privado todavía no está confirmado en el workspace.</Text>
+              <ActionButton label="Descartar" accessibilityLabel="Confirmar descartar el primer borrador pendiente" onPress={() => {
+                setDiscardConfirming(false);
+                if (firstDraftCardId) void discardDrafts(firstDraftCardId);
+              }} />
+              <ActionButton label="Cancelar" accessibilityLabel="Cancelar el descarte del borrador pendiente" onPress={() => setDiscardConfirming(false)} />
+            </View>
+          ) : (
+            <View style={styles.draftActions}>
+              {firstDraftCardId ? <ActionButton label="Recuperar" accessibilityLabel="Recuperar el primer borrador pendiente" tone="primary" onPress={() => {
+                if (!recoverDraft(firstDraftCardId)) return;
+                setSelectedId(firstDraftCardId);
+                setEditingId(firstDraftCardId);
+                setInlineEditing(false);
+                setFocus(true);
+              }} /> : null}
+              {firstDraftCardId ? <ActionButton label="Descartar" accessibilityLabel="Descartar el primer borrador pendiente" onPress={() => setDiscardConfirming(true)} /> : null}
+            </View>
+          )}
+        </View>
+      ) : null}
     </View>
   ) : null;
 
@@ -1708,14 +1750,26 @@ function usePendingText(
   const [authority, setAuthority] = useState<EditorialAuthority | null>(null);
   const [recoverableDrafts, setRecoverableDrafts] = useState<readonly EditorialDraft[]>([]);
   const [draftProblem, setDraftProblem] = useState<string | null>(null);
+  // A qué tarjeta huérfana se refiere `draftProblem` (si a alguna): sin esto, un aviso de «esta nota
+  // ya no existe/está en la Papelera/el Archivo» quedaba pegado para siempre tras resolverlo (ni
+  // recuperar con éxito, ni descartar el borrador señalado, ni que ese borrador deje de listarse lo
+  // limpiaban) — reaparecía como fantasma, sin botones de acción, cada vez que algo ajeno (guardar el
+  // borrador privado de OTRA tarjeta) lo despejaba momentáneamente y la lista se volvía a leer.
+  const draftProblemCardId = useRef<CardId | null>(null);
+  const clearDraftProblem = useCallback(() => { draftProblemCardId.current = null; setDraftProblem(null); }, []);
   const [recoveredText, setRecoveredText] = useState<Omit<PendingEditorialText, 'sequence' | 'surface' | 'authority'> | null>(null);
 
   const refreshDrafts = useCallback(async () => {
     if (!workspace) { setRecoverableDrafts([]); return; }
     const listed = await session.drafts.list(workspace.id);
-    if (listed.ok) setRecoverableDrafts(listed.value);
-    else setDraftProblem(listed.issues[0]?.message ?? 'No se pudieron leer los borradores recuperables.');
-  }, [session.drafts, workspace]);
+    if (!listed.ok) { setDraftProblem(listed.issues[0]?.message ?? 'No se pudieron leer los borradores recuperables.'); return; }
+    setRecoverableDrafts(listed.value);
+    // El borrador que motivó el aviso de tarjeta huérfana ya no está en la lista (se descartó, se
+    // recuperó, o la tarjeta volvió a existir): el aviso ya no describe nada real, se limpia solo.
+    const stillOrphaned = draftProblemCardId.current !== null
+      && listed.value.some((draft) => draft.key.cardId === draftProblemCardId.current);
+    if (draftProblemCardId.current !== null && !stillOrphaned) clearDraftProblem();
+  }, [clearDraftProblem, session.drafts, workspace]);
 
   useEffect(() => {
     // Igual que la carga del workspace: se difiere a una microtarea para no encadenar renders dentro del efecto.
@@ -1836,12 +1890,12 @@ function usePendingText(
       generations.current.set(bodyLabel, bodySaved.value.generation);
       session.editorialSessions.update(draft.authority.body, { draftGeneration: bodySaved.value.generation, persistence: 'protected' });
       persistedSequence.current = draft.sequence;
-      setDraftProblem(null);
+      clearDraftProblem();
       await refreshDrafts();
     });
     privateTail.current = task.catch(() => { setDraftProblem('Falló el almacenamiento privado del borrador. El texto continúa en memoria mientras esta pantalla permanezca abierta.'); });
     return privateTail.current;
-  }, [durableZoneRevision, refreshDrafts, session.drafts, session.editorialSessions, workspace]);
+  }, [clearDraftProblem, durableZoneRevision, refreshDrafts, session.drafts, session.editorialSessions, workspace]);
 
   const flushPrivate = useCallback(async () => {
     if (privateTimer.current) { clearTimeout(privateTimer.current); privateTimer.current = null; }
@@ -1935,8 +1989,28 @@ function usePendingText(
     const card = workspace?.cards.find((candidate) => candidate.id === cardId);
     const titleDraft = recoverableDrafts.find((draft) => draft.key.cardId === cardId && draft.key.zone === 'title');
     const bodyDraft = recoverableDrafts.find((draft) => draft.key.cardId === cardId && draft.key.zone === 'body');
-    if (!card) { setDraftProblem('La nota fue eliminada. El borrador se conserva para copiarlo o descartarlo, pero no se recreará automáticamente.'); return false; }
-    if (bodyDraft?.source.format === 'html' && Platform.OS !== 'web') { setDraftProblem('Este borrador HTML se conserva como fuente exacta y no se reescribe mediante el editor Android transitorio. Puedes copiarlo o descartarlo.'); return false; }
+    if (!card) {
+      // La nota puede estar en la Papelera o el Archivo (recuperable restaurándola primero) en vez de
+      // eliminada para siempre: antes solo se comprobaban las tarjetas activas, así que ambos casos
+      // mostraban el mismo aviso de «eliminada», aunque uno sí tiene solución inmediata.
+      const inTrash = workspace?.trash?.some((entry) => entry.card.id === cardId) ?? false;
+      const inArchive = workspace?.archive?.some((entry) => entry.card.id === cardId) ?? false;
+      draftProblemCardId.current = cardId;
+      setDraftProblem(inTrash
+        ? 'Esta nota está en la Papelera. Restáurala para recuperar el borrador; mientras tanto puedes copiarlo o descartarlo.'
+        : inArchive
+          ? 'Esta nota está en el Archivo. Restáurala para recuperar el borrador; mientras tanto puedes copiarlo o descartarlo.'
+          : 'La nota ya no existe (se eliminó definitivamente). El borrador no puede recrearla; puedes copiarlo o descartarlo.');
+      return false;
+    }
+    if (bodyDraft?.source.format === 'html' && Platform.OS !== 'web') {
+      draftProblemCardId.current = cardId;
+      setDraftProblem('Este borrador HTML se conserva como fuente exacta y no se reescribe mediante el editor Android transitorio. Puedes copiarlo o descartarlo.');
+      return false;
+    }
+    // Esta tarjeta ya no es huérfana (existe y su borrador se va a recuperar): si el aviso visible
+    // era justo sobre ella, deja de aplicar — nunca se limpiaba solo antes de este arreglo.
+    if (draftProblemCardId.current === cardId) clearDraftProblem();
     const titleDocument = titleDraft?.source.format === 'rich-text' ? titleDraft.source.value : undefined;
     const titleBlock = titleDocument?.blocks.length === 1 ? titleDocument.blocks[0] : undefined;
     const title = titleBlock?.type === 'paragraph' ? cardTitleText({ titleRichText: titleBlock.content }) : cardTitleText(card);
@@ -1973,7 +2047,7 @@ function usePendingText(
       setPendingText(recovered);
     }
     return true;
-  }, [activateSurface, durableZoneRevision, recoverableDrafts, session.drafts, setPendingText, transferBodyMode, workspace]);
+  }, [activateSurface, clearDraftProblem, durableZoneRevision, recoverableDrafts, session.drafts, setPendingText, transferBodyMode, workspace]);
 
   const discardDrafts = useCallback(async (cardId?: CardId) => {
     if (!workspace) return;
@@ -1981,8 +2055,11 @@ function usePendingText(
     await Promise.all(targets.map((draft) => session.drafts.discard(draft.key, draft.generation)));
     for (const draft of targets) conflicts.current.delete(keyLabel(draft.key.cardId as CardId, draft.key.zone));
     if (cardId === undefined || pendingText.current?.cardId === cardId) { pendingText.current = null; setRecoveredText(null); }
+    // Descartar es la resolución explícita del aviso: si hablaba de esta tarjeta (o se descartó todo),
+    // debe desaparecer aquí mismo — antes quedaba pegado hasta que algo ajeno lo despejara sin querer.
+    if (cardId === undefined || draftProblemCardId.current === cardId) clearDraftProblem();
     await refreshDrafts();
-  }, [recoverableDrafts, refreshDrafts, session.drafts, workspace]);
+  }, [clearDraftProblem, recoverableDrafts, refreshDrafts, session.drafts, workspace]);
 
   return { flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText };
 }
@@ -2026,8 +2103,13 @@ const styles = StyleSheet.create({
   feedback: { fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   offer: { borderWidth: 2, padding: 8, gap: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   offerText: { flexBasis: 220, flexGrow: 1, fontSize: 14, lineHeight: 19 },
+  // Compacto por defecto (no debe desplazar el lienzo): una sola fila corta; el detalle completo
+  // (`draftCopy`) solo se monta tras pulsar «Revisar».
+  offerCompact: { borderWidth: 2, padding: 8, gap: 8 },
+  offerCompactRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   draftCopy: { flex: 1, minWidth: 220, gap: 4 },
   draftSource: { fontFamily: mono, fontSize: 11, lineHeight: 15, borderWidth: 1, padding: 6 },
+  draftActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   multiCount: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   multiBar: { borderWidth: 2, padding: 6, gap: 6 },
   multiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

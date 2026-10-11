@@ -1541,6 +1541,46 @@ test('P11: pega contenido enriquecido compatible y descarta contenido activo', a
   expect(failedResources).toEqual([]);
 });
 
+test('P18-E3-B3-D: pegar un checklist reconocible conserva su estado marcado/sin marcar', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Pegado de checklist');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+
+  const visual = page.getByLabel('Contenido visual');
+  await visual.fill('');
+  await visual.evaluate((element) => {
+    const clipboard = new DataTransfer();
+    clipboard.setData('text/plain', 'Comprada Pendiente');
+    // Patrón genérico externo (GitHub/Word/Google Docs al copiar una lista de tareas): un <input
+    // type="checkbox"> real dentro de cada <li>, sin ningún atributo propio de NoutyNotes.
+    clipboard.setData('text/html', '<ul><li><input type="checkbox" checked> Comprada</li><li><input type="checkbox"> Pendiente</li></ul>');
+    element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+  });
+
+  const items = visual.locator('li[role="checkbox"]');
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toHaveAttribute('aria-checked', 'true');
+  await expect(items.nth(0)).toContainText('Comprada');
+  await expect(items.nth(1)).toHaveAttribute('aria-checked', 'false');
+  await expect(items.nth(1)).toContainText('Pendiente');
+
+  // Pegar el propio formato canónico de NoutyNotes (copiar un checklist entre tarjetas) tampoco debe
+  // degradarlo a una lista simple sin estado.
+  await visual.fill('');
+  await visual.evaluate((element) => {
+    const clipboard = new DataTransfer();
+    clipboard.setData('text/plain', 'Lista A Lista B');
+    clipboard.setData('text/html', '<ul data-nouty-list="checklist"><li data-nouty-checked="true">Lista A</li><li data-nouty-checked="false">Lista B</li></ul>');
+    element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+  });
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toHaveAttribute('aria-checked', 'true');
+  await expect(items.nth(1)).toHaveAttribute('aria-checked', 'false');
+});
+
 test('edición rápida visual: crea y continúa una lista sin exponer Markdown', async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'En móvil la edición usa la pantalla enfocada completa.');
   await page.goto('./');

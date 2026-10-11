@@ -54,6 +54,8 @@ test('E3-A: el respaldo ZIP exige aceptar que los borradores privados quedan fue
   await insertFromMenu(page, 'Insertar nota');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Contenido visual').fill('BORRADOR PRIVADO EXCLUIDO');
+  // El aviso nace compacto (no debe desplazar el lienzo): «Revisar» despliega la fuente exacta.
+  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
   await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO EXCLUIDO');
 
   // En móvil la edición enfocada oculta el lienzo y su barra; volver al tablero no confirma el texto.

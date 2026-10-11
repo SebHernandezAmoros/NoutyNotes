@@ -56,20 +56,30 @@ function inlinesOf(node: Node, marks = new Set<RichTextMark>()): RichTextInline[
   return Array.from(node.childNodes).flatMap((child) => inlinesOf(child, nested));
 }
 
+/** Ambas vías reconocidas: el formato canónico propio (copiar entre tarjetas) y el patrón genérico de
+ * un `<input type="checkbox">` por ítem (lo que pegan la mayoría de orígenes externos — GitHub, Word,
+ * Google Docs — al copiar una lista de tareas). Sin esto, una checklist pegada degradaba a una lista
+ * simple y perdía su estado marcado/sin marcar (gap identificado en P18-E3-B3-D). */
 function listOf(node: HTMLElement): RichTextList | null {
-  const style: RichTextList['style'] = node.tagName === 'OL' ? 'ordered' : 'bullet';
-  const items: RichTextListItem[] = [];
-  for (const item of Array.from(node.children)) {
-    if (!(item instanceof HTMLElement) || item.tagName !== 'LI') continue;
+  const liElements = Array.from(node.children).filter((child): child is HTMLElement => child instanceof HTMLElement && child.tagName === 'LI');
+  if (liElements.length === 0) return null;
+  const canonicalChecklist = node.tagName === 'UL' && node.getAttribute('data-nouty-list') === 'checklist';
+  const checklist = canonicalChecklist || liElements.some((item) => item.querySelector('input[type="checkbox"]') !== null);
+  const style: RichTextList['style'] = checklist ? 'checklist' : node.tagName === 'OL' ? 'ordered' : 'bullet';
+  const items: RichTextListItem[] = liElements.map((item) => {
     const nestedLists = Array.from(item.children).filter((child): child is HTMLElement =>
       child instanceof HTMLElement && (child.tagName === 'UL' || child.tagName === 'OL'));
+    const checkbox = item.querySelector('input[type="checkbox"]');
     const content = Array.from(item.childNodes)
-      .filter((child) => !(child instanceof HTMLElement && (child.tagName === 'UL' || child.tagName === 'OL')))
+      .filter((child) => child !== checkbox && !(child instanceof HTMLElement && (child.tagName === 'UL' || child.tagName === 'OL')))
       .flatMap((child) => inlinesOf(child));
     const children = nestedLists.map(listOf).filter((child): child is RichTextList => child !== null);
-    items.push({ content, ...(children.length > 0 ? { children } : {}) });
-  }
-  if (items.length === 0) return null;
+    if (!checklist) return { content, ...(children.length > 0 ? { children } : {}) };
+    const canonicalChecked = item.getAttribute('data-nouty-checked');
+    const checked = canonicalChecked === 'true' ? true : canonicalChecked === 'false' ? false
+      : checkbox instanceof HTMLInputElement && (checkbox.checked || checkbox.hasAttribute('checked'));
+    return { content, checked, ...(children.length > 0 ? { children } : {}) };
+  });
   const start = node.tagName === 'OL' ? Number(node.getAttribute('start') ?? '1') : 1;
   return {
     type: 'list', style,

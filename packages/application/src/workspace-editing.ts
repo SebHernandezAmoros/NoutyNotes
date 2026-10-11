@@ -4,7 +4,7 @@ import {
 } from '@noutynotes/domain';
 import type {
   AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, ConnectorRoutePoint, GridConfig, GridPoint, GridSize, RestoreReport,
-  RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, RichTextDocument, ValidationResult, Workspace, WorkspaceId,
+  RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, RichTextDocument, RichTextImage, ValidationResult, Workspace, WorkspaceId,
 } from '@noutynotes/domain';
 
 import { nextSequentialId, workspaceIdFromName } from './ids';
@@ -359,9 +359,18 @@ export function editCardContent(
     const before = workspace.cards.find((card) => card.id === cardId);
     const content = typeof changes?.content === 'string' ? changes.content : undefined;
     const base = workspace.cardTypes.find((type) => type.id === before?.typeId)?.base;
-    if (!updated.ok || !before || content === undefined || base === 'image') return updated;
-    // Imágenes de la nota (ADR 0021): assetRefs sigue al Markdown sin tocar las referencias ajenas.
-    const refs = syncNoteAssetRefs(before.assetRefs, before.content ?? '', content);
+    if (!updated.ok || !before || base === 'image') return updated;
+    const refs = content !== undefined
+      // Imágenes de la nota (ADR 0021): assetRefs sigue al Markdown sin tocar las referencias ajenas.
+      ? syncNoteAssetRefs(before.assetRefs, before.content ?? '', content)
+      // Mismo seguimiento sobre el documento HTML seguro (ADR 0066): sin esto, quitar la última
+      // imagen de un cuerpo HTML (p. ej. `node.remove()` en el editor Visual) dejaba `assetRefs`
+      // obsoleto, impidiendo que la biblioteca de Assets detectara el archivo como libre.
+      : changes?.contentDocument ? [...new Set(changes.contentDocument.blocks
+          .filter((block): block is RichTextImage => block.type === 'image')
+          .map((block) => block.assetRef))]
+        : undefined;
+    if (refs === undefined) return updated;
     return validateWorkspace({ ...updated.value, cards: updated.value.cards.map((card) => {
       if (card.id !== cardId) return card;
       const { assetRefs: _previous, ...rest } = card;
