@@ -55,8 +55,8 @@ export type {
 export type {
   ReactiveDispatch, ReactiveRunOptions, ReactiveSaveStatus, ReactiveWorkspaceAction, ReactiveWorkspaceSnapshot,
 } from './reactive-workspace';
-export { MAX_IMAGE_BYTES, addNoteImage, importImageCard, inspectImage } from './images';
-export type { AddNoteImageInput, ImageKind, ImportImageInput } from './images';
+export { MAX_IMAGE_BYTES, addNoteImage, addNoteImageDocument, importImageCard, inspectImage } from './images';
+export type { AddNoteImageDocumentInput, AddNoteImageInput, ImageKind, ImportImageInput } from './images';
 export {
   insertImageBlock, moveNoteBlock, noteImageRefs, parseNoteBlocks, removeNoteBlock, replaceNoteImage, serializeNoteBlocks, setNoteImageAlt, syncNoteAssetRefs,
 } from './note-blocks';

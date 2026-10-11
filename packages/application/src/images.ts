@@ -1,5 +1,5 @@
 import { addCard, isValidAssetRef, validateWorkspace } from '@noutynotes/domain';
-import type { AssetRef, BoardId, Card, CardId, WorkspaceId } from '@noutynotes/domain';
+import type { AssetRef, BoardId, Card, CardId, RichTextDocument, RichTextImage, WorkspaceId } from '@noutynotes/domain';
 
 import { nextSequentialId } from './ids';
 import { insertImageBlock, replaceNoteImage, syncNoteAssetRefs } from './note-blocks';
@@ -121,13 +121,16 @@ export interface AddNoteImageInput {
  * su línea en el Markdown y guarda contenido y `assetRefs` a la vez. Si la nota no se guarda, retira el
  * asset recién escrito. Reemplazar deja el archivo anterior sin tocar. Devuelve el contenido guardado.
  */
-export async function addNoteImage(
-  storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, input: AddNoteImageInput,
-): Promise<WorkspaceStorageResult<{ readonly content: string; readonly ref: AssetRef }>> {
-  const kind = inspectImage(input.bytes);
+/**
+ * Escribe el archivo de una imagen nueva de nota con el siguiente nombre libre (`tarjeta-N`, sin
+ * extensión): nunca «tarjeta-1-1.png» y «tarjeta-1-1.jpg» a la vez. Comparte numeración entre el
+ * cuerpo Markdown (`addNoteImage`) y el cuerpo HTML seguro (`addNoteImageDocument`, ADR 0066).
+ */
+async function writeNextNoteImageAsset(
+  storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, bytes: Uint8Array,
+): Promise<WorkspaceStorageResult<AssetRef>> {
+  const kind = inspectImage(bytes);
   if (!kind.ok) return { ok: false, issues: kind.issues };
-  if (typeof input.content !== 'string') return storageFailure('invalid-workspace', 'input', 'Falta el contenido de la nota.');
-  // Numeración por nombre sin extensión: nunca «tarjeta-1-1.png» y «tarjeta-1-1.jpg» a la vez.
   const opened = await storage.open(workspaceId);
   if (!opened.ok) return { ok: false, issues: opened.issues };
   const used = new Set([...opened.value.cards, ...(opened.value.trash ?? []).map((entry) => entry.card)]
@@ -139,8 +142,15 @@ export async function addNoteImage(
     }
     return free[attempt - 1];
   };
-  const written = await writeImageAsset(assets, workspaceId, input.bytes, kind.value, (attempt) => `${cardId}-${nth(attempt)}`);
-  if (!written.ok) return { ok: false, issues: written.issues };
+  return writeImageAsset(assets, workspaceId, bytes, kind.value, (attempt) => `${cardId}-${nth(attempt)}`);
+}
+
+export async function addNoteImage(
+  storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, input: AddNoteImageInput,
+): Promise<WorkspaceStorageResult<{ readonly content: string; readonly ref: AssetRef }>> {
+  if (typeof input.content !== 'string') return storageFailure('invalid-workspace', 'input', 'Falta el contenido de la nota.');
+  const written = await writeNextNoteImageAsset(storage, assets, workspaceId, cardId, input.bytes);
+  if (!written.ok) return written;
   const ref = written.value;
   const content = input.place.kind === 'insert'
     ? insertImageBlock(input.content, input.place.caret, ref, titleFrom(input.fileName))
@@ -155,5 +165,47 @@ export async function addNoteImage(
     return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? next : candidate)) });
   });
   if (saved.ok) return { ok: true, value: { content, ref } };
+  return withdraw(assets, workspaceId, ref, saved);
+}
+
+export interface AddNoteImageDocumentInput {
+  readonly bytes: Uint8Array;
+  readonly fileName: string;
+  /** Documento HTML seguro actual del editor (puede tener cambios sin guardar): se guarda con la imagen. */
+  readonly contentDocument: RichTextDocument;
+  /** Insertar tras el bloque `afterBlock` (al final sin él) o reemplazar la imagen del bloque `blockIndex`. */
+  readonly place: { readonly kind: 'insert'; readonly afterBlock?: number } | { readonly kind: 'replace'; readonly blockIndex: number };
+}
+
+/**
+ * Imagen dentro de una nota con cuerpo HTML seguro (ADR 0066): mismo contrato y numeración de archivo
+ * que `addNoteImage`, pero inserta el bloque de imagen directamente en el documento estructurado — el
+ * cuerpo nunca pasa por `content`/Markdown (regla de seguridad: nunca convertir HTML nuevo a Markdown).
+ * Reemplazar conserva el texto alternativo y la leyenda de la imagen anterior, igual que `addNoteImage`.
+ */
+export async function addNoteImageDocument(
+  storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, input: AddNoteImageDocumentInput,
+): Promise<WorkspaceStorageResult<{ readonly contentDocument: RichTextDocument; readonly ref: AssetRef }>> {
+  const written = await writeNextNoteImageAsset(storage, assets, workspaceId, cardId, input.bytes);
+  if (!written.ok) return written;
+  const ref = written.value;
+  const blocks = [...input.contentDocument.blocks];
+  if (input.place.kind === 'replace') {
+    const existing = blocks[input.place.blockIndex];
+    if (existing?.type !== 'image') return withdraw(assets, workspaceId, ref, { ok: false, issues: [{ code: 'invalid-workspace', path: 'place', message: 'Ese bloque no es una imagen de la nota.' }] });
+    blocks[input.place.blockIndex] = { ...existing, assetRef: ref };
+  } else {
+    const image: RichTextImage = { type: 'image', assetRef: ref, alt: titleFrom(input.fileName) };
+    blocks.splice(Math.min(blocks.length, (input.place.afterBlock ?? blocks.length - 1) + 1), 0, image);
+  }
+  const contentDocument = { ...input.contentDocument, blocks };
+  const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
+    const card = workspace.cards.find((candidate) => candidate.id === cardId);
+    if (!card) return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no existe en este proyecto.' }] };
+    const refs = [...new Set(blocks.filter((block): block is RichTextImage => block.type === 'image').map((block) => block.assetRef))];
+    const next = { ...card, contentDocument, ...(refs.length > 0 ? { assetRefs: refs } : {}) };
+    return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? next : candidate)) });
+  });
+  if (saved.ok) return { ok: true, value: { contentDocument, ref } };
   return withdraw(assets, workspaceId, ref, saved);
 }

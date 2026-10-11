@@ -833,6 +833,89 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   // leyendas e imágenes real por carpeta sigue en folder.spec.ts.
 });
 
+test('imágenes reales en una nota HTML segura: el cuerpo sigue siendo `contentDocument`, nunca se convierte a Markdown', async ({ page }, testInfo) => {
+  const png = (name: string) => ({
+    name, mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  });
+  await page.goto('./');
+  await createWorkspace(page, 'Imágenes HTML');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  // El cuerpo nace HTML seguro (ADR 0066) sin ninguna imagen todavía: la regla de seguridad del
+  // proyecto exige que insertar una real no lo convierta a Markdown (antes, `placeVisualImage`
+  // siempre serializaba a Markdown sin importar el origen del cuerpo; defecto real corregido aquí).
+  await seedBodyHtml(page, '<p>Antes de la imagen.</p>');
+  const images = page.locator('[data-testid^="rich-image-"]');
+  const insert = async (name: string) => {
+    const chooser = page.waitForEvent('filechooser');
+    await button(page, 'Insertar una imagen').click();
+    await (await chooser).setFiles(png(name));
+  };
+  await insert('plano.png');
+  await expect(images).toHaveCount(1);
+  await images.first().getByLabel(/^Texto alternativo/).fill('Plano general');
+  await insert('mapa.png');
+  await expect(images).toHaveCount(2);
+  await images.last().getByLabel(/^Texto alternativo/).fill('Mapa inicial');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+
+  // El cuerpo HTML se ve en el lienzo con el visor enriquecido, no vacío ni como Markdown crudo.
+  await closeEditor(page);
+  const preview = page.getByTestId('rich-note-preview-tarjeta-1');
+  await expect(preview).toContainText('Antes de la imagen.');
+  await expect(card(page, 1)).not.toContainText('![');
+
+  // Reemplazar conserva `contentDocument` con su estructura y el texto alternativo anterior: el cuerpo
+  // sigue siendo HTML seguro, no se perdió ni se convirtió a Markdown al tocar las imágenes.
+  await openFullCardEditor(page, card(page, 1));
+  const replace = page.waitForEvent('filechooser');
+  await images.first().getByRole('button', { name: /Reemplazar la imagen/ }).click();
+  await (await replace).setFiles(png('plano-final.png'));
+  await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/<p>Antes de la imagen\.<\/p>/);
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/<img[^>]*alt="Plano general"/);
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+  await expect(page.getByTestId('rich-note-preview-tarjeta-1')).toContainText('Antes de la imagen.');
+  await page.screenshot({ path: testInfo.outputPath('html-note-images.png'), fullPage: true });
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
+test('tabla en una nota HTML segura: insertar y editar celdas es un cambio de Lexical como cualquier otro, sin tocar `content`', async ({ page }) => {
+  // A diferencia de las imágenes (E/S asíncrona fuera de Lexical), insertar/editar una tabla es un
+  // comando interno del editor (`INSERT_TABLE_COMMAND`) que ya pasa por el mismo `onChange` consciente
+  // de `contentDocument`: se verifica aquí que de verdad no necesita el mismo arreglo que las imágenes.
+  await page.goto('./');
+  await createWorkspace(page, 'Tablas HTML');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await seedBodyHtml(page, '<p>Antes de la tabla.</p>');
+  await button(page, 'Insertar una tabla').click();
+  await button(page, 'Insertar tabla').click();
+  const visual = page.getByLabel('Contenido visual');
+  const cells = visual.locator('th, td');
+  await expect(cells).toHaveCount(9);
+  await cells.first().click();
+  await page.keyboard.type('Nombre');
+  await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/<p>Antes de la tabla\.<\/p>/);
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/<table>[\s\S]*Nombre[\s\S]*<\/table>/);
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await closeEditor(page);
+  // Sin imagen, una tabla no necesita el visor «mixto» (ese es solo para cuando el legado perdería
+  // estructura, tabla + imagen a la vez): el visor enriquecido genérico ya sabe pintar tablas.
+  const preview = page.getByTestId('card-rich-text-tarjeta-1');
+  await expect(preview).toContainText('Antes de la tabla.');
+  await expect(preview).toContainText('Nombre');
+  await expect(card(page, 1)).not.toContainText('| Nombre |');
+});
+
 test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');
@@ -1044,7 +1127,10 @@ test('P16: Lista representa texto flotante, forma y conector con su apariencia p
   await createWorkspace(page, 'Lista P16');
   await insertFromMenu(page, 'Insertar texto');
   await openFullCardEditor(page, card(page, 1));
-  await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('*no es viñeta* literal');
+  // Texto libre es hoy una presentación de Nota (ADR 0057/0060): su cuerpo HTML seguro v1 (`contentDocument`)
+  // se edita con el mismo editor Visual que cualquier nota; «Texto flotante» era el campo de texto plano
+  // del tipo histórico `text`, inalcanzable para una tarjeta nueva.
+  await page.getByLabel('Contenido visual').fill('*no es viñeta* literal');
   await button(page, 'Guardar texto').click();
   await page.getByTestId('floating-text-style-picker').getByRole('button', { name: 'Azul', exact: true }).click();
   await closeEditor(page);
@@ -1056,7 +1142,7 @@ test('P16: Lista representa texto flotante, forma y conector con su apariencia p
 
   await insertFromMenu(page, 'Insertar conector');
   await placeConnector(page);
-  await openFullCardEditor(page, card(page, 3));
+  await openConnectorEditor(page);
   await page.getByTestId('connector-style-picker').getByRole('toolbar', { name: 'Color del conector' }).getByRole('button', { name: 'Morado' }).click();
   await closeEditor(page);
 
@@ -1096,7 +1182,10 @@ test('P16: Presentación representa texto flotante, forma, conector y una nota c
 
   await insertFromMenu(page, 'Insertar texto');
   await openFullCardEditor(page, card(page, 2));
-  await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('*no es viñeta* literal');
+  // Texto libre es hoy una presentación de Nota (ADR 0057/0060): su cuerpo HTML seguro v1 (`contentDocument`)
+  // se edita con el mismo editor Visual que cualquier nota; «Texto flotante» era el campo de texto plano
+  // del tipo histórico `text`, inalcanzable para una tarjeta nueva.
+  await page.getByLabel('Contenido visual').fill('*no es viñeta* literal');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
 
@@ -1162,7 +1251,10 @@ test('P17: recorrido de integración — nota con marcas/lista/tabla, texto flot
 
   await insertFromMenu(page, 'Insertar texto');
   await openFullCardEditor(page, card(page, 2));
-  await page.getByRole('textbox', { name: 'Texto flotante', exact: true }).fill('*no es viñeta* literal');
+  // Texto libre es hoy una presentación de Nota (ADR 0057/0060): su cuerpo HTML seguro v1 (`contentDocument`)
+  // se edita con el mismo editor Visual que cualquier nota; «Texto flotante» era el campo de texto plano
+  // del tipo histórico `text`, inalcanzable para una tarjeta nueva.
+  await page.getByLabel('Contenido visual').fill('*no es viñeta* literal');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
 
@@ -1173,9 +1265,11 @@ test('P17: recorrido de integración — nota con marcas/lista/tabla, texto flot
   // Lienzo: sin sintaxis cruda, las cuatro primitivas visibles.
   await expect(card(page, 1)).not.toContainText('##');
   await expect(card(page, 1)).not.toContainText('**');
-  await expect(page.getByTestId('floating-text-tarjeta-2')).toContainText('*no es viñeta* literal');
+  await expect(page.getByTestId('unified-content-tarjeta-2')).toContainText('*no es viñeta* literal');
   await expect(page.getByTestId('shape-tarjeta-3')).toBeVisible();
-  await expect(card(page, 4)).toHaveAttribute('aria-label', 'Tarjeta Conector');
+  // Un conector decorativo sin anclar no dibuja una ficha táctil propia en el lienzo (excluido a
+  // propósito de `cardAt`, Canvas.tsx); su presencia se confirma con el propio trazo, no con `card-*`.
+  await expect(page.getByTestId('connector-tarjeta-4')).toBeVisible();
   expect(await hasHorizontalOverflow(page)).toBe(false);
 
   // Lista: misma equivalencia (UX7 P16).
@@ -1247,9 +1341,9 @@ test('P17: recorrido de integración — nota con marcas/lista/tabla, texto flot
   await expect(page.getByRole('heading', { name: 'Integración P17', exact: true })).toBeVisible();
   await expect(card(page, 1)).not.toContainText('##');
   await expect(card(page, 1)).not.toContainText('**');
-  await expect(page.getByTestId('floating-text-tarjeta-2')).toContainText('*no es viñeta* literal');
+  await expect(page.getByTestId('unified-content-tarjeta-2')).toContainText('*no es viñeta* literal');
   await expect(page.getByTestId('shape-tarjeta-3')).toBeVisible();
-  await expect(card(page, 4)).toHaveAttribute('aria-label', 'Tarjeta Conector');
+  await expect(page.getByTestId('connector-tarjeta-4')).toBeVisible();
   await openFullCardEditor(page, card(page, 1));
   await expect(page.getByLabel('Contenido visual').locator('th, td')).toHaveText(['Nombre', 'Estado', 'Idea', 'Activa']);
   await closeEditor(page);

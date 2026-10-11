@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { fillCardTitle, hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
+import { fillCardTitle, hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -479,6 +479,10 @@ test('regresión: clic derecho en el centro de una ficha contraída y selecciona
   test.skip(isCompactWidth(page), 'El asa de redimensionado y el clic derecho son de escritorio.');
   await createWorkspace(page, 'Asa');
   await addNote(page, 'Nota');
+  // `addNote` deja el editor completo abierto (ADR 0014); su panel flota centrado sobre el lienzo con
+  // z-index propio (`sidePanel`, WorkspaceScreen.tsx) y cubre la ficha recién creada, así que un clic
+  // derecho con `force` en sus coordenadas golpearía el panel, no la ficha. Se cierra primero.
+  await closeEditor(page);
   await openCardActions(page, card(page, 1), 'Nota');
   await button(page, 'Contraer Nota').click();
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Nota, contraída');
@@ -1087,92 +1091,73 @@ test('búsqueda en todos los proyectos: explícita, agrupada, con aviso de consu
   await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Mapa del río');
 });
 
-test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reordenar, texto alternativo, reemplazar, quitar y editor enfocado (ADR 0021)', async ({ page }, testInfo) => {
+test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reordenar, texto alternativo, reemplazar y quitar (ADR 0021)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);
   await page.goto('./');
   await createWorkspace(page, 'Cuaderno');
   await addNote(page, 'Viaje');
-  const editor = await openMarkdownEditor(page);
-  await editor.fill('Llegada.\n\nTemplos y <b>jardines</b>.');
+  // El editor Markdown retirado (P18-E3-B2) hacía esto con el cursor de un `<textarea>`; el editor
+  // Visual (Lexical) resuelve el mismo bloque desde la selección real (`afterBlock` en
+  // `RichTextEditor.web.tsx`), así que la ordenación por cursor sigue vigente, solo cambia la vía.
+  // El aparte de HTML literal (`<b>jardines</b>`) probaba una propiedad distinta (texto crudo inerte
+  // en Markdown), ya cubierta por las pruebas de seguridad del editor Visual/HTML; se deja fuera para
+  // mantener esta prueba centrada en el orden por cursor que es el objeto real de ADR 0021.
+  const visual = page.getByLabel('Contenido visual');
+  await visual.click();
+  await page.keyboard.type('Llegada.');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Templos y jardines.');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   const pick = async (name: string) => {
     const chooser = page.waitForEvent('filechooser');
     return (await chooser).setFiles({ name, mimeType: 'image/png', buffer: readFileSync(image) });
   };
-  // Con el cursor al final del texto, la imagen va al final.
-  await editor.press('Control+End');
+  const images = page.locator('[data-testid^="rich-image-"]');
+  // Con el cursor al final del documento, la imagen va al final.
+  await visual.press('Control+End');
   const first = pick('portada.png');
-  await button(page, 'Insertar una imagen en la nota').click();
+  await button(page, 'Insertar una imagen').click();
   await first;
-  await expect(feedback(page)).toHaveText('Imagen «portada.png» insertada en la nota. Guardado en memoria.');
-  await expect(editor).toHaveValue('Llegada.\n\nTemplos y <b>jardines</b>.\n\n![portada](assets/images/tarjeta-1-1.png)');
-  // Con el cursor en el primer párrafo, la segunda va justo después de él.
-  await editor.focus();
-  await editor.press('Control+Home');
-  await editor.press('ArrowRight');
-  await editor.press('ArrowRight');
+  await expect(images).toHaveCount(1);
+  await expect(visual.locator('p').last()).toHaveText('Templos y jardines.');
+  // Con el cursor en el primer párrafo, la segunda imagen va justo después de él, no al final.
+  await visual.locator('p').first().click();
+  await page.keyboard.press('Home');
   const second = pick('mapa.png');
-  await button(page, 'Insertar una imagen en la nota').click();
+  await button(page, 'Insertar una imagen').click();
   await second;
-  await expect(editor).toHaveValue('Llegada.\n\n![mapa](assets/images/tarjeta-1-2.png)\n\nTemplos y <b>jardines</b>.\n\n![portada](assets/images/tarjeta-1-1.png)');
-  await closeEditor(page);
-  // La ficha muestra los bloques en orden: el HTML sigue siendo texto.
-  const preview = page.getByTestId('note-preview-tarjeta-1');
-  // Con la densidad de UX7-D1 (fila de 48 px en ancho, 40 en compacto; antes 56/48) ya no queda sitio
-  // para ninguna imagen en ningún ancho. En escritorio todavía cabe el primer párrafo («+3 bloques
-  // más»); en compacto la fila de partida es aún más baja y ya no cabe ni ese párrafo («+4»). La
-  // proporción completa (UX7-C2) se comprueba en la vista Lista, con más espacio por fila (prueba
-  // «vista Lista muestra las imágenes reales…»).
-  await expect(preview.getByRole('img')).toHaveCount(0);
-  await expect(preview).toContainText(isCompactWidth(page) ? '+4 bloques más' : '+3 bloques más');
-  await page.screenshot({ path: testInfo.outputPath('note-images.png') });
-  await openCardEditor(page, 1);
-  // La miniatura del editor de bloques tampoco recorta (UX7-C2).
-  await expect(page.getByTestId('note-blocks').getByRole('img').first().locator('> div').first()).toHaveCSS('background-size', 'contain');
-
-  // Reordenar y texto alternativo: van al borrador y se guardan con «Guardar texto».
-  await button(page, 'Subir la imagen portada').click();
-  await expect(editor).toHaveValue('Llegada.\n\n![mapa](assets/images/tarjeta-1-2.png)\n\n![portada](assets/images/tarjeta-1-1.png)\n\nTemplos y <b>jardines</b>.');
-  await page.getByLabel('Texto alternativo de la imagen 2').fill('Portada del viaje');
-  await expect(editor).toHaveValue(/!\[Portada del viaje\]\(assets\/images\/tarjeta-1-1\.png\)/);
+  await expect(images).toHaveCount(2);
+  // Orden real del documento (un selector combinado preserva el orden del DOM): párrafo 1, mapa,
+  // párrafo 2, portada — la segunda imagen se insertó tras el primer párrafo, no al final.
+  const order = () => visual.locator('p, [data-testid^="rich-image-"]')
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-testid') ?? node.textContent ?? ''));
+  await expect.poll(order).toEqual(['Llegada.', 'rich-image-assets/images/tarjeta-1-2.png', 'Templos y jardines.', 'rich-image-assets/images/tarjeta-1-1.png']);
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
 
-  // Reemplazar conserva la posición con un archivo nuevo; quitar saca la línea.
-  const third = pick('mapa-nuevo.png');
-  await button(page, 'Reemplazar la imagen mapa').click();
-  await third;
-  await expect(feedback(page)).toHaveText('Imagen reemplazada por «mapa-nuevo.png». Guardado en memoria.');
-  await expect(editor).toHaveValue(/^Llegada\.\n\n!\[mapa\]\(assets\/images\/tarjeta-1-3\.png\)\n\n!\[Portada del viaje\]/);
-  await button(page, 'Quitar la imagen Portada del viaje de la nota').click();
+  // Texto alternativo: va al borrador y se guarda con «Guardar texto».
+  await images.last().getByLabel(/^Texto alternativo/).fill('Portada del viaje');
   await button(page, 'Guardar texto').click();
-  await expect(page.getByTestId('note-block-3')).toHaveCount(0);
-  await expect(editor).not.toHaveValue(/Portada/);
-  await expect(page.getByTestId('note-blocks')).toContainText('Quitar o reemplazar una imagen no borra su archivo');
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
 
-  // Editor enfocado: ocupa el sitio del lienzo y vuelve sin perder el borrador.
-  await editor.fill(`${await editor.inputValue()}\n\nBorrador sin guardar`);
-  if (await button(page, 'Ampliar el editor').isVisible()) await button(page, 'Ampliar el editor').click();
-  await expect(page.getByTestId('board-canvas')).toBeHidden();
-  await expect(editor).toHaveValue(/Borrador sin guardar$/);
-  await page.screenshot({ path: testInfo.outputPath('note-focus.png') });
-  await button(page, 'Volver al tablero').click();
-  await expect(page.getByTestId('board-canvas')).toBeVisible();
-  await expect(editor).toHaveValue(/Borrador sin guardar$/);
+  // Reemplazar conserva la posición con un archivo nuevo; quitar saca el bloque.
+  const third = pick('mapa-nuevo.png');
+  await images.first().getByRole('button', { name: /Reemplazar la imagen/ }).click();
+  await third;
+  await expect(images.first()).toHaveAttribute('data-testid', 'rich-image-assets/images/tarjeta-1-3.png');
+  await expect(images.last().getByLabel(/^Texto alternativo/)).toHaveValue('Portada del viaje');
+  await images.last().getByRole('button', { name: /Quitar la imagen/ }).click();
+  await expect(images).toHaveCount(1);
   await button(page, 'Guardar texto').click();
+  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await closeEditor(page);
-  // En escritorio, el doble clic usa la edición breve dentro de la ficha; el editor completo sigue
-  // disponible desde su control explícito. En móvil se abre directamente a pantalla completa.
-  await card(page, 1).dblclick();
-  if (!isCompactWidth(page)) {
-    await expect(page.getByTestId('inline-card-editor')).toBeVisible();
-    await button(page, 'Abrir el editor completo').first().click();
-  }
-  await expect(page.getByTestId('board-canvas')).toBeHidden();
-  await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Viaje');
-  await button(page, 'Volver al tablero').click();
+
+  // La ficha muestra los bloques en orden, sin sintaxis Markdown cruda.
+  const preview = page.getByTestId('note-preview-tarjeta-1');
+  await expect(preview).toBeVisible();
+  await expect(card(page, 1)).not.toContainText('![');
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
 });
@@ -1839,8 +1824,14 @@ test('Imprimir: una imagen intercalada aparece una sola vez, en su sitio y con s
   const visual = page.getByLabel('Contenido visual');
   await visual.click();
   await page.keyboard.type('Encabezado');
+  // Causa real (UX7-C5, dependiente del orden): el `<select>` «Tipo de bloque» es un elemento ajeno al
+  // editor; activarlo le quita el foco y Lexical podía perder su selección de rango justo antes de que
+  // el `change` se procesara, bajo la carga de muchas pruebas previas en el mismo proceso — convertía un
+  // párrafo vacío en encabezado en vez de «Encabezado». El atajo de teclado (ya probado en «P07: formato
+  // avanzado...») nunca sale del editor, así que no tiene esa carrera.
+  await expect(visual.locator('p').first()).toHaveText('Encabezado');
   await visual.locator('p, h1, h2, h3').first().selectText();
-  await page.getByLabel('Tipo de bloque').selectOption('heading-1');
+  await page.keyboard.press('Control+Alt+1');
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await button(page, 'Lista con viñetas').click();

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addCardToBoard, addNoteImage, createEmptyWorkspaceNamed, editCardContent, moveCardToTrash, noteImageRefs, purgeCardFromTrash, removeNoteBlock,
+  addCardToBoard, addNoteImage, addNoteImageDocument, createEmptyWorkspaceNamed, editCardContent, moveCardToTrash, noteImageRefs, purgeCardFromTrash, removeNoteBlock,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
-import type { AssetRef, CardId } from '../../packages/domain/src/index';
+import type { AssetRef, CardId, RichTextDocument } from '../../packages/domain/src/index';
 import { ArchiveStorage, readWorkspaceArchive } from '../../packages/storage/src/index';
 
 function ok<T>(result: WorkspaceStorageResult<T>): T {
@@ -23,6 +23,18 @@ async function noteWithText() {
 }
 const cardOf = async (storage: ArchiveStorage, id: Parameters<ArchiveStorage['open']>[0], card: CardId) =>
   ok(await storage.open(id)).cards.find((candidate) => candidate.id === card)!;
+
+function paragraph(text: string): RichTextDocument['blocks'][number] {
+  return { type: 'paragraph', content: [{ type: 'text', text }] };
+}
+async function noteWithHtmlText() {
+  const storage = new ArchiveStorage();
+  const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Viaje HTML'));
+  const card = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Diario' }));
+  const contentDocument: RichTextDocument = { schemaVersion: 1, blocks: [paragraph('Llegada.'), paragraph('Templos y jardines.')] };
+  ok(await editCardContent(storage, id, card, { contentDocument }));
+  return { storage, id, card, contentDocument };
+}
 
 describe('imágenes ordenadas dentro de una nota (ADR 0021)', () => {
   it('insertar escribe el asset, pone la línea tras el párrafo del cursor y la añade a assetRefs; el borrador se respeta', async () => {
@@ -70,6 +82,58 @@ describe('imágenes ordenadas dentro de una nota (ADR 0021)', () => {
   it('purgar la nota desde la Papelera libera y borra sus imágenes', async () => {
     const { storage, id, card } = await noteWithText();
     ok(await addNoteImage(storage, storage, id, card, { bytes: PNG, fileName: 'a.png', content: 'Llegada.', place: { kind: 'insert' } }));
+    ok(await moveCardToTrash(storage, id, card));
+    const purged = ok(await purgeCardFromTrash(storage, storage, id, card));
+    expect(purged.removedAssets).toEqual(['assets/images/tarjeta-1-1.png']);
+    expect((await storage.readAsset(id, 'assets/images/tarjeta-1-1.png' as AssetRef)).ok).toBe(false);
+  });
+});
+
+describe('imágenes dentro de una nota con cuerpo HTML seguro (ADR 0066)', () => {
+  it('insertar tras un bloque escribe el asset en el documento, nunca en `content` (nunca convierte HTML nuevo a Markdown)', async () => {
+    const { storage, id, card, contentDocument } = await noteWithHtmlText();
+    const first = ok(await addNoteImageDocument(storage, storage, id, card, { bytes: PNG, fileName: 'Pagoda.png', contentDocument, place: { kind: 'insert', afterBlock: 0 } }));
+    expect(first.ref).toBe('assets/images/tarjeta-1-1.png');
+    expect(first.contentDocument.blocks.map((block) => block.type)).toEqual(['paragraph', 'image', 'paragraph']);
+    expect(first.contentDocument.blocks[1]).toMatchObject({ type: 'image', assetRef: 'assets/images/tarjeta-1-1.png' });
+    const saved = await cardOf(storage, id, card);
+    expect(saved.contentDocument).toEqual(first.contentDocument);
+    expect(saved.content).toBeUndefined();
+    expect(saved.assetRefs).toEqual(['assets/images/tarjeta-1-1.png']);
+    // Sin `afterBlock`, al final (como `addNoteImage` sin `caret`).
+    const second = ok(await addNoteImageDocument(storage, storage, id, card, { bytes: JPEG, fileName: 'río.jpg', contentDocument: first.contentDocument, place: { kind: 'insert' } }));
+    expect(second.contentDocument.blocks.map((block) => block.type)).toEqual(['paragraph', 'image', 'paragraph', 'image']);
+    expect((await cardOf(storage, id, card)).assetRefs).toEqual(['assets/images/tarjeta-1-1.png', 'assets/images/tarjeta-1-2.jpg']);
+    const archive = readWorkspaceArchive(ok(storage.exportArchive(id)).bytes);
+    if (!archive.ok) throw new Error('ZIP inválido');
+    expect(archive.value.files[`cards/${card}.md`]).toContain('<img');
+    expect(Object.keys(archive.value.assets).sort()).toEqual(['assets/images/tarjeta-1-1.png', 'assets/images/tarjeta-1-2.jpg']);
+  });
+
+  it('reemplazar conserva el texto alternativo y la leyenda de la imagen anterior; el archivo sustituido sigue en disco', async () => {
+    const { storage, id, card, contentDocument } = await noteWithHtmlText();
+    const inserted = ok(await addNoteImageDocument(storage, storage, id, card, { bytes: PNG, fileName: 'a.png', contentDocument, place: { kind: 'insert', afterBlock: 0 } }));
+    const withAlt: RichTextDocument = {
+      ...inserted.contentDocument,
+      blocks: inserted.contentDocument.blocks.map((block) => block.type === 'image' ? { ...block, alt: 'Pagoda dorada', caption: [{ type: 'text', text: 'Leyenda' }] } : block),
+    };
+    const replaced = ok(await addNoteImageDocument(storage, storage, id, card, { bytes: JPEG, fileName: 'b.jpg', contentDocument: withAlt, place: { kind: 'replace', blockIndex: 1 } }));
+    expect(replaced.contentDocument.blocks[1]).toMatchObject({ type: 'image', assetRef: 'assets/images/tarjeta-1-2.jpg', alt: 'Pagoda dorada', caption: [{ type: 'text', text: 'Leyenda' }] });
+    expect((await storage.readAsset(id, 'assets/images/tarjeta-1-1.png' as AssetRef)).ok).toBe(true);
+  });
+
+  it('un formato inválido no escribe nada; si la nota no se guarda, se retira el asset recién escrito', async () => {
+    const { storage, id, card, contentDocument } = await noteWithHtmlText();
+    const invalid = await addNoteImageDocument(storage, storage, id, card, { bytes: new TextEncoder().encode('hola'), fileName: 'x.png', contentDocument, place: { kind: 'insert' } });
+    expect(invalid.ok ? null : invalid.issues[0]?.code).toBe('invalid-asset');
+    const missing = await addNoteImageDocument(storage, storage, id, 'no-existe' as CardId, { bytes: PNG, fileName: 'x.png', contentDocument, place: { kind: 'insert' } });
+    expect(missing.ok).toBe(false);
+    expect((await storage.readAsset(id, 'assets/images/no-existe-1.png' as AssetRef)).ok).toBe(false);
+  });
+
+  it('purgar la nota desde la Papelera libera y borra sus imágenes', async () => {
+    const { storage, id, card, contentDocument } = await noteWithHtmlText();
+    ok(await addNoteImageDocument(storage, storage, id, card, { bytes: PNG, fileName: 'a.png', contentDocument, place: { kind: 'insert' } }));
     ok(await moveCardToTrash(storage, id, card));
     const purged = ok(await purgeCardFromTrash(storage, storage, id, card));
     expect(purged.removedAssets).toEqual(['assets/images/tarjeta-1-1.png']);

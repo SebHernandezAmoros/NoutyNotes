@@ -1,6 +1,6 @@
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { RichTextCodec } from '@noutynotes/application';
-import { cardContentPresentation, cardTitleText } from '@noutynotes/domain';
+import { cardContentPresentation, cardTitleText, isFloatingTextCard, richTextInlineText } from '@noutynotes/domain';
 import type { BaseCardKind, BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
@@ -23,6 +23,15 @@ import { parseWebRichText } from './basicRichText';
 
 const BOARD_BORDER = 2;
 const emptyNoteImages: ReadonlyMap<string, string> = new Map();
+
+/** Texto plano de texto libre (ADR 0057): su `contentDocument` (HTML seguro v1) son párrafos literales,
+ * sin marcas ni bloques especiales; se unen con salto de línea, igual que `content` (Markdown) antes. */
+function floatingTextPlain(card: Card): string {
+  if (card.contentDocument === undefined) return card.content ?? '';
+  return card.contentDocument.blocks
+    .map((block) => block.type === 'paragraph' || block.type === 'heading' ? richTextInlineText(block.content) : '')
+    .join('\n');
+}
 
 /** Etiqueta útil (búsquedas, menús, listas, accesibilidad): localizada, nunca vacía. */
 export function cardTitle(card: Card, locale: Locale): string {
@@ -157,7 +166,7 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
   const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
-  const floatingText = base === 'text';
+  const floatingText = isFloatingTextCard(card, base);
   const shape = base === 'shape';
   const connector = base === 'connector';
   const presentation = cardContentPresentation(card, base);
@@ -207,7 +216,7 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
         // P16: contenido literal (ADR 0057), nunca Markdown; mismo criterio que el lienzo/impresión.
         <Text testID={`list-floating-text-${card.id}`} numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))} style={[styles.cardContent, {
           color: floatingTextColor(card.textColor, textColor), fontSize: bodySize, lineHeight: bodyLine, textAlign: card.textAlign ?? 'left',
-        }]}>{card.content ?? ''}</Text>
+        }]}>{floatingTextPlain(card)}</Text>
       ) : shape ? (
         <View style={styles.shapeBody}>
           <ShapePreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-shape-${card.id}`} />

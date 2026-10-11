@@ -46,7 +46,9 @@ export function PresentationBody({ entry, images, color, fontSize, lineHeight, t
   readonly testID: string;
 }) {
   const position = entry.captionPosition ?? 'bottom';
-  const parsed = parseRichTextMarkdown(entry.content);
+  // Cuerpo HTML seguro (ADR 0066): el documento ya está parseado, no hay `content` Markdown que volver
+  // a interpretar (quedaría vacío y perdería la estructura real, defecto ya corregido en esta intervención).
+  const parsed = entry.contentDocument ? { ok: true as const, value: entry.contentDocument } : parseRichTextMarkdown(entry.content);
   if (parsed.ok) {
     const inline = new Set<string>(parsed.value.blocks.filter((block) => block.type === 'image').map((block) => block.assetRef));
     const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref, index) => imageBlock(ref, '', images, position, color, `standalone-${index}`));

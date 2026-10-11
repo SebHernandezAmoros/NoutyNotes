@@ -1,4 +1,4 @@
-import { cardContentPresentation, linkDisplay, linkUrlField } from '@noutynotes/domain';
+import { cardContentPresentation, isFloatingTextCard, linkDisplay, linkUrlField } from '@noutynotes/domain';
 import type { RichTextCodec } from '@noutynotes/application';
 import type { Card, CardDisplayMode, RichTextDocument, RichTextInline, RichTextList, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
@@ -254,7 +254,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const checklistTexts = richDocument?.blocks.flatMap((block) => block.type === 'list' ? checklistTextsOf(block) : []) ?? [];
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const floatingTitle = card.typeId === 'titulo-flotante';
-  const floatingText = type?.base === 'text';
+  const floatingText = isFloatingTextCard(card, type?.base);
   const presentation = cardContentPresentation(card, type?.base);
   const unifiedFloating = type?.base === 'note' && card.frameOverride === 'hidden'
     && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);

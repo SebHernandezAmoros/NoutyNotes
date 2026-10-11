@@ -10,7 +10,7 @@ export { ASSET_REF_MAX_LENGTH, isValidAssetRef, parseAssetRef } from './assets/a
 export type { AssetRef } from './assets/asset-ref';
 export { validateBoard } from './boards/board';
 export type { Board } from './boards/board';
-export { captionPositions, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, floatingTextAlignments, floatingTextColors, frameOverrides, richTextInlineText, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes, validateCard } from './cards/card';
+export { captionPositions, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, floatingTextAlignments, floatingTextColors, frameOverrides, isFloatingTextCard, richTextInlineText, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes, validateCard } from './cards/card';
 export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export { linkDisplay, linkUrlField, normalizeLinkUrl } from './cards/links';
 export type { CaptionPosition, Card, CardContentPresentation, CardIconName, ConnectorArrows, ConnectorDash, ConnectorDirection, ContentLayout, ContentVisibility, FloatingTextAlign, FloatingTextColor, FrameOverride, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize } from './cards/card';

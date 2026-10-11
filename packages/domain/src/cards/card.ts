@@ -126,6 +126,15 @@ export function cardContentPresentation(
   };
 }
 
+/**
+ * Texto libre (ADR 0057) es una presentación de Nota (ADR 0060), no un tipo propio: lo reconoce esta
+ * combinación de marco/visibilidad, la misma que produce el preset `text` (sin marco, sin título,
+ * cuerpo visible). También reconoce el tipo histórico `text` de tarjetas creadas antes de la unificación.
+ */
+export function isFloatingTextCard(card: Pick<Card, 'frameOverride' | 'titleVisibility' | 'bodyVisibility'>, base: CardTypeDefinition['base'] | undefined): boolean {
+  return base === 'text' || (base === 'note' && card.frameOverride === 'hidden' && card.titleVisibility === 'hidden' && card.bodyVisibility === 'visible');
+}
+
 export const floatingTextAlignments = ['left', 'center', 'right'] as const;
 export type FloatingTextAlign = (typeof floatingTextAlignments)[number];
 

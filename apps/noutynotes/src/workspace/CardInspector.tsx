@@ -1,6 +1,6 @@
-import { addCardTag, addNoteImage, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
+import { addCardTag, addNoteImage, addNoteImageDocument, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { DraftSource, DraftValidation, RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
-import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
+import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, isFloatingTextCard, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -119,7 +119,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const { locale } = useLocale();
   const colors = theme.colors;
   const cardBase = workspace.cardTypes.find((type) => type.id === card.typeId)?.base;
-  const floatingText = cardBase === 'text';
+  const floatingText = isFloatingTextCard(card, cardBase);
   const shape = cardBase === 'shape';
   const connector = cardBase === 'connector';
   const connectorPath = placement?.connectorPath;
@@ -368,17 +368,18 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const withBlocks = blocksType !== 'image' && blocksType !== 'section' && blocksType !== 'text' && blocksType !== 'shape' && blocksType !== 'connector';
   const [imageProblem, setImageProblem] = useState<string | null>(null);
   // Insertar o reemplazar guarda enseguida el contenido del editor con la imagen (y el asset nuevo).
-  const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }, draft = content): Promise<RichTextImage | null> => {
+  const pickImageOrFail = async (): Promise<{ readonly bytes: Uint8Array; readonly name: string } | null> => {
     setImageProblem(null);
     if (!supportsImageImport()) { setImageProblem(t('assets.error.noImagePicker', locale)); return null; }
-    let picked;
     try {
-      picked = await pickImageFile();
+      return await pickImageFile();
     } catch {
       setImageProblem(t('assets.error.imageReadFailed', locale)); return null;
     }
-    if (!picked) return null;
-    const file = picked;
+  };
+  const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }, draft = content): Promise<RichTextImage | null> => {
+    const file = await pickImageOrFail();
+    if (!file) return null;
     const result = await run((storage, id) => {
       const assets = assetsOf(storage);
       if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
@@ -394,7 +395,34 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     }
     return null;
   };
+  /**
+   * Imagen dentro de una nota con cuerpo HTML seguro (ADR 0066): escribe el asset directamente en el
+   * documento estructurado (`addNoteImageDocument`), nunca pasando por `content`/Markdown — regla de
+   * seguridad del proyecto: nunca convertir HTML nuevo a Markdown.
+   */
+  const placeImageDocument = async (place: { kind: 'insert'; afterBlock?: number } | { kind: 'replace'; blockIndex: number }, draft: RichTextDocument): Promise<RichTextImage | null> => {
+    const file = await pickImageOrFail();
+    if (!file) return null;
+    const result = await run((storage, id) => {
+      const assets = assetsOf(storage);
+      if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
+      return addNoteImageDocument(storage, assets, id, card.id, { bytes: file.bytes, fileName: file.name, contentDocument: draft, place });
+    }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: file.name } } : { key: 'action.noteImageReplaced', params: { name: file.name } });
+    if (result.ok) {
+      setLastValidDocument(result.value.contentDocument);
+      setHtmlValidation({ status: 'valid' });
+      const encoded = htmlCodec.serialize(result.value.contentDocument);
+      const nextContent = encoded.ok ? encoded.value : content;
+      setContent(nextContent);
+      publishDraft({ title, content: nextContent, titleDocument }, { source: { format: 'html', value: nextContent }, document: result.value.contentDocument, validation: { status: 'valid' } });
+      return result.value.contentDocument.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null;
+    } else {
+      setImageProblem(describeFailure(result.issues, mode));
+    }
+    return null;
+  };
   const placeVisualImage = async (document: RichTextDocument, place: { readonly kind: 'insert'; readonly afterBlock: number } | { readonly kind: 'replace'; readonly blockIndex: number }) => {
+    if (htmlAuthored) return placeImageDocument(place, document);
     const encoded = richTextCodec.serialize(document);
     if (!encoded.ok) return null;
     const blocks = parseNoteBlocks(encoded.value);

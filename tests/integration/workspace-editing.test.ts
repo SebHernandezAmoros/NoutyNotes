@@ -112,18 +112,24 @@ describe('añadir tarjetas (fase 7)', () => {
     expect(copied).toMatchObject({ shapeKind: 'ellipse', shapeFill: 'transparent', shapeStroke: 'red', shapeStrokeWidth: 'thick' });
   });
 
-  it('crea texto flotante como una nota unificada sin título ni marco, con estilo portable', async () => {
+  it('crea texto flotante como una nota unificada sin título ni marco, con estilo portable, y su contenido es HTML seguro literal (ADR 0057, ADR 0066)', async () => {
     const { storage, workspaceId } = await session();
     const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'text', content: 'Primera\nSegunda' }));
     const created = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id === cardId);
-    expect(created).toMatchObject({ typeId: 'nota', content: 'Primera\nSegunda', fields: {}, frameOverride: 'hidden', titleVisibility: 'hidden', bodyVisibility: 'visible' });
+    // Nunca Markdown: `contentDocument`, no `content` — así «*texto*»/«# idea»/«[enlace]» no se interpretan.
+    expect(created).toMatchObject({
+      typeId: 'nota', fields: {}, frameOverride: 'hidden', titleVisibility: 'hidden', bodyVisibility: 'visible',
+      contentDocument: { blocks: [{ type: 'paragraph', content: [{ type: 'text', text: 'Primera' }] }, { type: 'paragraph', content: [{ type: 'text', text: 'Segunda' }] }] },
+    });
+    expect(created?.content).toBeUndefined();
     expect(created && 'title' in created).toBe(false);
     ok(await editCardAppearance(storage, workspaceId, cardId, { bodySize: 'large', textAlign: 'center', textColor: 'blue' }));
     const snapshot = snapshotSelection(ok(await storage.open(workspaceId)), board, [cardId], 'copy');
     if (!snapshot) throw new Error('sin instantánea');
     ok(await pasteSnapshot(storage, workspaceId, board, snapshot));
     const copied = ok(await storage.open(workspaceId)).cards.find((candidate) => candidate.id !== cardId);
-    expect(copied).toMatchObject({ content: 'Primera\nSegunda', frameOverride: 'hidden', bodySize: 'large', textAlign: 'center', textColor: 'blue' });
+    expect(copied).toMatchObject({ frameOverride: 'hidden', bodySize: 'large', textAlign: 'center', textColor: 'blue',
+      contentDocument: { blocks: [{ type: 'paragraph', content: [{ type: 'text', text: 'Primera' }] }, { type: 'paragraph', content: [{ type: 'text', text: 'Segunda' }] }] } });
   });
   it('P18-C: crea un título flotante como presentación de la nota unificada y con layout propio', async () => {
     const { storage, workspaceId } = await session();

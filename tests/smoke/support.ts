@@ -52,19 +52,6 @@ export async function openSettings(page: Page) {
 }
 
 /**
- * Obtiene el editor Markdown durable desde el inspector completo. Las notas compatibles se abren en
- * el editor visual desde UX7-P05; las pruebas que preparan sintaxis Markdown o comprueban sus bytes
- * deben cambiar de modo de forma explícita, igual que una persona usuaria.
- */
-export async function openMarkdownEditor(page: Page): Promise<Locator> {
-  const editor = page.getByLabel('Contenido Markdown');
-  if (await editor.isVisible().catch(() => false)) return editor;
-  await page.getByRole('button', { name: 'Volver al editor Markdown', exact: true }).click();
-  await editor.waitFor({ state: 'visible' });
-  return editor;
-}
-
-/**
  * Siembra el cuerpo de una nota como HTML seguro v1 (ADR 0066) y vuelve a Visual: en web ya no hay
  * una vista Markdown para teclear estructura rápido, así que esta es la vía real hoy. `html` debe
  * cumplir la lista blanca del codec (p, h1-h6, strong, em, a[href], ul/ol/li, data-nouty-list,

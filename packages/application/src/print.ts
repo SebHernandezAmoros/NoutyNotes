@@ -3,8 +3,8 @@
  * proyección pura, en el orden de lectura de las tarjetas (fila, luego columna, igual que su numeración
  * en el lienzo). Sin reloj ni acceso a archivos: se arma a partir del workspace ya cargado.
  */
-import { cardContentPresentation, cardTitleText, footprint } from '@noutynotes/domain';
-import type { BoardId, CaptionPosition, Card, CardId, ConnectorArrows, ConnectorDash, ConnectorDirection, FloatingTextAlign, FloatingTextColor, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize, Workspace } from '@noutynotes/domain';
+import { cardContentPresentation, cardTitleText, footprint, isFloatingTextCard, richTextInlineText } from '@noutynotes/domain';
+import type { BoardId, CaptionPosition, Card, CardId, ConnectorArrows, ConnectorDash, ConnectorDirection, FloatingTextAlign, FloatingTextColor, RichTextDocument, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize, Workspace } from '@noutynotes/domain';
 
 import { noteImageRefs } from './note-blocks';
 
@@ -22,6 +22,9 @@ export interface PrintEntry {
   readonly typeLabel: string;
   /** Texto completo de la nota (no un extracto): es un documento de lectura. */
   readonly content: string;
+  /** Cuerpo HTML seguro v1 (ADR 0066), cuando la nota lo tiene: evita volver a parsear `content` como
+   * Markdown (que estaría vacío) para conservar su estructura real en impresión/presentación. */
+  readonly contentDocument?: RichTextDocument;
   readonly tags: readonly string[];
   /** La imagen propia (si es una tarjeta de imagen) y las intercaladas de la nota, en orden. */
   readonly imageRefs: readonly string[];
@@ -46,6 +49,12 @@ export interface PrintEntry {
 }
 
 const titleOf = (card: Card | undefined): string => card ? cardTitleText(card) || 'Sin título' : 'Sin título';
+
+/** Texto plano de texto libre (ADR 0057): su `contentDocument` (HTML seguro v1) son párrafos literales,
+ * sin marcas ni bloques especiales; nunca se interpreta como Markdown en impresión/presentación. */
+function floatingTextPlain(richText: RichTextDocument): string {
+  return richText.blocks.map((block) => block.type === 'paragraph' || block.type === 'heading' ? richTextInlineText(block.content) : '').join('\n');
+}
 
 /** Conexiones de una tarjeta como texto: reutiliza `label` de la relación o, si no tiene, el de su tipo. */
 function connectionsOf(workspace: Workspace, cardId: CardId, cards: ReadonlyMap<CardId, Card>): PrintConnection[] {
@@ -79,14 +88,17 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
     if (!card) return [];
     const base = typeBase.get(card.typeId);
     const presentation = cardContentPresentation(card, base);
+    const floating = isFloatingTextCard(card, base);
     const imageRefs = presentation.body === 'hidden' ? [] : base === 'image' ? [...(card.assetRefs ?? [])] : noteImageRefs(card.content ?? '');
+    const body = floating && card.contentDocument !== undefined ? floatingTextPlain(card.contentDocument) : card.content ?? '';
     return [{
       id: card.id, number: index + 1, title: presentation.title === 'visible' ? titleOf(card) : '', typeLabel: typeLabel.get(card.typeId) ?? '',
-      content: presentation.body === 'visible' ? card.content ?? '' : '', tags: card.tags ?? [], imageRefs, connections: connectionsOf(workspace, card.id, cards),
+      content: presentation.body === 'visible' ? body : '', tags: card.tags ?? [], imageRefs, connections: connectionsOf(workspace, card.id, cards),
+      ...(!floating && presentation.body === 'visible' && card.contentDocument !== undefined ? { contentDocument: card.contentDocument } : {}),
       ...(card.titleSize === undefined ? {} : { titleSize: card.titleSize }),
       ...(card.bodySize === undefined ? {} : { bodySize: card.bodySize }),
       ...(card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition }),
-      ...(typeBase.get(card.typeId) === 'text' ? { floatingText: true as const } : {}),
+      ...(floating ? { floatingText: true as const } : {}),
       ...(card.textAlign === undefined ? {} : { textAlign: card.textAlign }),
       ...(card.textColor === undefined ? {} : { textColor: card.textColor }),
       ...(card.shapeKind === undefined ? {} : { shapeKind: card.shapeKind }),

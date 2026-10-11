@@ -1,10 +1,10 @@
 import {
-  WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard,
+  RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard,
   isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateConnectorPath, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
   AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, ConnectorRoutePoint, GridConfig, GridPoint, GridSize, RestoreReport,
-  RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, ValidationResult, Workspace, WorkspaceId,
+  RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, RichTextDocument, ValidationResult, Workspace, WorkspaceId,
 } from '@noutynotes/domain';
 
 import { nextSequentialId, workspaceIdFromName } from './ids';
@@ -40,6 +40,7 @@ interface CardPreset {
   readonly type: CardTypeDefinition;
   readonly title?: string;
   readonly content?: string;
+  readonly contentDocument?: RichTextDocument;
   readonly size?: GridSize;
   /** Apariencia y navegación portable (ADR 0046). */
   readonly icon?: Card['icon'];
@@ -50,10 +51,22 @@ interface CardPreset {
   readonly contentLayout?: Card['contentLayout'];
 }
 
+/**
+ * Documento HTML seguro v1 (ADR 0066) de un único párrafo literal: nunca interpreta `*`, `#`, `[...]`
+ * ni ninguna otra sintaxis Markdown, a diferencia de `content` (texto Markdown). Lo usa el texto libre
+ * (preset `text`, ADR 0057) para que su contenido se vea siempre tal cual se escribió.
+ */
+function literalParagraph(text: string): RichTextDocument {
+  return {
+    schemaVersion: RICH_TEXT_SCHEMA_VERSION,
+    blocks: text.split('\n').map((line) => ({ type: 'paragraph', content: line === '' ? [] : [{ type: 'text', text: line }] })),
+  };
+}
+
 /** Tipos mínimos que la interfaz añade a demanda; texto, título e imagen convergen en una nota. */
 export const PROTOTYPE_CARD_PRESETS: Readonly<Record<PrototypeCardKind, CardPreset>> = {
   note: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nueva nota', content: '' },
-  text: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, content: 'Nuevo texto', size: { w: 4, h: 3 }, frameOverride: 'hidden', titleVisibility: 'hidden', bodyVisibility: 'visible' },
+  text: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, contentDocument: literalParagraph('Nuevo texto'), size: { w: 4, h: 3 }, frameOverride: 'hidden', titleVisibility: 'hidden', bodyVisibility: 'visible' },
   shape: { type: { id: 'forma' as CardTypeId, label: 'Forma', base: 'shape', fields: [] }, size: { w: 4, h: 3 } },
   connector: { type: { id: 'conector' as CardTypeId, label: 'Conector', base: 'connector', fields: [] }, size: { w: 4, h: 3 } },
   image: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Imagen', content: '', size: { w: 6, h: 7 }, contentLayout: 'banner' },
@@ -231,6 +244,9 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       ...(preset.content === undefined ? {} : { content: typeof content === 'string' ? content
         : kind === 'image' && typeof assetRef === 'string' ? insertImageBlock('', undefined, assetRef, title ?? preset.title ?? 'Imagen')
           : preset.content }),
+      // Texto libre (ADR 0057): siempre HTML seguro v1 de un párrafo, nunca Markdown — su contenido
+      // literal (`*texto*`, `# idea`, `[enlace]`) no debe interpretarse nunca como sintaxis.
+      ...(kind === 'text' ? { contentDocument: typeof content === 'string' ? literalParagraph(content) : preset.contentDocument } : {}),
     };
     const result = addCard(target, card, { boardId, size: cardSize, config: CANONICAL_GRID,
       ...(connectorPath === undefined ? {} : { connectorPath: connectorPath as readonly ConnectorRoutePoint[] }) });

@@ -71,7 +71,9 @@ function bodyHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): strin
   const position = entry.captionPosition ?? 'bottom';
   const bodyPx = bodyFontSize(entry.bodySize);
   const bodyLine = bodyLineHeight(bodyPx);
-  const parsed = parseRichTextMarkdown(entry.content);
+  // Cuerpo HTML seguro (ADR 0066): el documento ya está parseado, no hay `content` Markdown que volver
+  // a interpretar (quedaría vacío y perdería la estructura real, defecto ya corregido en esta intervención).
+  const parsed = entry.contentDocument ? { ok: true as const, value: entry.contentDocument } : parseRichTextMarkdown(entry.content);
   if (parsed.ok) {
     const inline = new Set<string>(parsed.value.blocks.filter((block) => block.type === 'image').map((block) => block.assetRef));
     const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images, position));
