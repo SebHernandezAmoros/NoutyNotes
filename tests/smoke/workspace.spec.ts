@@ -1205,14 +1205,27 @@ test('P16: Presentación representa texto flotante, forma, conector y una nota c
   await button(page, 'Diapositiva siguiente').click();
   await expect(page.getByTestId('present-floating-text')).toContainText('*no es viñeta* literal');
 
+  // Forma y conector van en orden de lectura real del tablero (`printableDocument`, por fila y
+  // columna), no en el de creación: en una pantalla estrecha, el punto donde cae el toque que coloca
+  // el conector puede quedar en una fila anterior a la de la forma autoposicionada, invirtiendo cuál
+  // de las dos diapositivas sale primero (hallazgo real de esta sesión: causaba un fallo determinista,
+  // no un flaky, solo en `mobile` — la prueba asumía un orden que el producto nunca prometió). Se
+  // comprueban ambas diapositivas sin asumir cuál es cuál.
   await button(page, 'Diapositiva siguiente').click();
-  await expect(page.getByTestId('present-shape')).toBeVisible();
-  await expect(page.getByTestId('present-shape-preview')).toHaveAttribute('aria-label', 'Rectángulo');
-
-  await button(page, 'Diapositiva siguiente').click();
-  // Antes de P16, esta diapositiva no distinguía un conector de una ficha sin título.
-  await expect(page.getByTestId('present-connector')).toBeVisible();
-  await expect(page.getByTestId('present-connector-preview')).toBeVisible();
+  if (await page.getByTestId('present-shape').count() > 0) {
+    await expect(page.getByTestId('present-shape')).toBeVisible();
+    await expect(page.getByTestId('present-shape-preview')).toHaveAttribute('aria-label', 'Rectángulo');
+    await button(page, 'Diapositiva siguiente').click();
+    await expect(page.getByTestId('present-connector')).toBeVisible();
+    await expect(page.getByTestId('present-connector-preview')).toBeVisible();
+  } else {
+    // Antes de P16, esta diapositiva no distinguía un conector de una ficha sin título.
+    await expect(page.getByTestId('present-connector')).toBeVisible();
+    await expect(page.getByTestId('present-connector-preview')).toBeVisible();
+    await button(page, 'Diapositiva siguiente').click();
+    await expect(page.getByTestId('present-shape')).toBeVisible();
+    await expect(page.getByTestId('present-shape-preview')).toHaveAttribute('aria-label', 'Rectángulo');
+  }
   await expect(page.getByTestId('present-view')).not.toContainText('Sin título');
 
   await page.screenshot({ path: testInfo.outputPath('p16-present-primitives.png'), fullPage: true });

@@ -53,6 +53,7 @@ import { AssetsView } from './AssetsView';
 import { LinkDialog } from './LinkDialog';
 import { InsertMenu } from './InsertMenu';
 import { SearchPanel } from './SearchPanel';
+import { RecoveryCenter } from './RecoveryCenter';
 import { TrashPanel } from './TrashPanel';
 import { useImagePreviews } from './useImagePreviews';
 import { Toolbar } from './Toolbar';
@@ -219,22 +220,18 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   }, [workspaceIdForFont, customFontRef, session.storage]);
 
   const {
-    flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText,
+    flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText, hasPendingEdit,
   } = usePendingText(run, workspace, session);
+  // UX7-SAVE: el banner grande sobre el lienzo se retiró. Un borrador recuperable ya no interrumpe la
+  // edición — solo añade una insignia discreta junto al estado de guardado (§6/§12); el detalle,
+  // las acciones y cualquier aviso real viven en el Centro de recuperación (`RecoveryCenter.tsx`),
+  // que la persona usuaria abre explícitamente. Nunca se abre solo.
+  const recoverableCount = new Set(recoverableDrafts.map((draft) => draft.key.cardId)).size;
 
-  // Aviso de borrador compacto por defecto; un problema nuevo (p. ej. «Recuperar» fallido) lo despliega
-  // solo una vez — cerrarlo después no lo vuelve a desplegar mientras el mismo problema siga vigente.
-  const [draftExpanded, setDraftExpanded] = useState(false);
-  const previousDraftProblem = useRef<string | null>(null);
-  useEffect(() => {
-    if (draftProblem && draftProblem !== previousDraftProblem.current) setDraftExpanded(true);
-    previousDraftProblem.current = draftProblem;
-  }, [draftProblem]);
-  // Confirmación en el propio lienzo, no `Alert.alert` (defecto real encontrado y corregido: en web,
-  // `Alert.alert` de react-native-web es un no-op — no muestra nada ni ejecuta `onPress`, así que
-  // «Descartar» no hacía absolutamente nada; el aviso quedaba para siempre sin ninguna forma de
-  // resolverlo). Mismo patrón ya usado en la Papelera (`TrashPanel.tsx`, confirmar/cancelar en línea).
-  const [discardConfirming, setDiscardConfirming] = useState(false);
+  // Centro de recuperación (UX7-SAVE): nunca se abre solo, ni siquiera ante un problema nuevo — solo
+  // la insignia junto al estado de guardado cambia (§12). Reemplaza el banner que antes vivía sobre
+  // el lienzo (`draftExpanded`/`discardConfirming`), ahora dentro de `RecoveryCenter.tsx`.
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   const goHome = async () => {
     if (!await flushPendingText() || !await flushWorkspace()) return;
@@ -246,6 +243,43 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (target === id || !await flushPendingText() || !await flushWorkspace()) return;
     router.replace({ pathname: '/workspace', params: { id: target } });
   };
+
+  // Guardar ahora (UX7-SAVE): la misma infraestructura real que ya usan `goHome`/`openSpace` —
+  // confirma primero el borrador editorial válido pendiente (nunca descarta una fuente HTML inválida
+  // ni sustituye la última versión válida: `flushPendingText` ya rechaza eso) y después espera a que
+  // la cola reactiva confirme la escritura durable. Nunca afirma éxito antes de esa confirmación real.
+  const [savingNow, setSavingNow] = useState(false);
+  const saveNow = async () => {
+    if (savingNow) return;
+    setSavingNow(true);
+    try {
+      if (!await flushPendingText()) {
+        setFeedback({ tone: 'error', text: 'No se pudo guardar: revisa primero el aviso del borrador en el Centro de recuperación.' });
+        return;
+      }
+      const ok = await flushWorkspace();
+      setFeedback(ok
+        ? { tone: 'success', text: 'Guardado correctamente.' }
+        : { tone: 'error', text: 'No se pudo guardar. Revisa el aviso.', saveFailed: true });
+    } finally {
+      setSavingNow(false);
+    }
+  };
+  const saveNowRef = useRef(saveNow);
+  useLayoutEffect(() => { saveNowRef.current = saveNow; });
+  // Ctrl+S/Cmd+S (web): sustituye el diálogo nativo de «guardar página» por esta acción real: a
+  // diferencia de los atajos de deshacer/copiar de abajo, se mantiene activo incluso con el foco
+  // dentro del editor (no compite con ningún atajo nativo de un campo de texto para esta tecla).
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
+      event.preventDefault();
+      void saveNowRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const select = async (cardId: CardId | null) => {
     if (!await flushPendingText()) return false;
@@ -1027,9 +1061,12 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setArchiveMessage({ tone: 'success', text: 'Sigue sin exportar. Vuelve a exportar cuando quieras.' });
   };
 
-  const { text: status, tone: statusTone } = saveStatus({ mode: storageMode, saving, failed: feedback?.saveFailed === true, native: Platform.OS !== 'web' });
-  // Un error nunca usa el color de «guardado»; guardando es neutro y la memoria volátil, aviso.
-  const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' ? colors.textSecondary : colors.danger;
+  const { text: status, tone: statusTone } = saveStatus({
+    mode: storageMode, saving, failed: feedback?.saveFailed === true, native: Platform.OS !== 'web',
+    conflict: saveState === 'conflict', pending: hasPendingEdit,
+  });
+  // Un error/conflicto nunca usa el color de «guardado»; guardando/pendiente son neutros y la memoria volátil, aviso.
+  const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' || statusTone === 'pending' ? colors.textSecondary : colors.danger;
   const hint = tool === 'pan' ? 'Mano: arrastra el lienzo para desplazarte. Las tarjetas no se mueven con esta herramienta.'
     : tool === 'connector'
       ? connectorStart ? 'Posición 1 marcada. Toca una segunda posición o una tarjeta para terminar el conector.'
@@ -1135,6 +1172,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           <Text testID="workspace-memory" numberOfLines={2} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
         ) : null}
       </View>
+      {/* UX7-SAVE (jerarquía visual final): el guardado cotidiano es discreto; la recuperación
+          permanece disponible pero no interrumpe el lienzo. Ambos controles son ahora lo bastante
+          compactos (una palabra; un icono con contador) para vivir siempre en la cabecera, en
+          cualquier ancho — ya no hace falta esconder ninguno en «Más secciones». */}
+      {workspace ? (
+        <ActionButton label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" disabled={savingNow} onPress={() => void saveNow()} />
+      ) : null}
+      {workspace && recoverableCount > 0 ? (
+        <RecoveryIndicator count={recoverableCount} onPress={() => setRecoveryOpen(true)} />
+      ) : null}
       {compact ? (
         workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null
       ) : (
@@ -1215,58 +1262,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       </> : null}
     </View>
   ) : feedbackText;
-
-  const draftCardIds = [...new Set(recoverableDrafts.map((draft) => draft.key.cardId))];
-  const firstDraftCardId = draftCardIds[0] as CardId | undefined;
-  const firstDraft = firstDraftCardId ? recoverableDrafts.find((draft) => draft.key.cardId === firstDraftCardId && draft.key.zone === 'body')
-    ?? recoverableDrafts.find((draft) => draft.key.cardId === firstDraftCardId) : undefined;
-  const draftSource = firstDraft?.source.format === 'rich-text' ? JSON.stringify(firstDraft.source.value, null, 2) : firstDraft?.source.value;
-  // Compacto por defecto (no debe desplazar ni bloquear el lienzo, hallazgo real de esta sesión): el
-  // detalle (razón completa, fuente exacta, Recuperar/Descartar) solo se despliega con «Revisar», y
-  // «Cerrar» solo contrae la vista — nunca descarta el borrador. Un aviso nuevo (`draftProblem` recién
-  // puesto, p. ej. tras un intento de «Recuperar» fallido) se despliega solo; uno ya visto no se
-  // reabre solo con que el borrador siga ahí.
-  const draftNotice = draftProblem ?? (draftCardIds.length > 0
-    ? `${draftCardIds.length} ${draftCardIds.length === 1 ? 'nota tiene' : 'notas tienen'} trabajo pendiente fuera del ZIP y de la carpeta SAF.` : null);
-  const draftBar = workspace && draftNotice ? (
-    <View testID="draft-recovery" style={[styles.offerCompact, { borderColor: colors.danger, backgroundColor: colors.surface }]}>
-      <View style={styles.offerCompactRow}>
-        <Text accessibilityRole="header" numberOfLines={1} style={[styles.eyebrow, { color: colors.textPrimary, flexShrink: 1 }]}>
-          {draftExpanded ? 'BORRADOR PRIVADO RECUPERABLE' : `BORRADOR PENDIENTE${draftCardIds.length > 1 ? ` (${draftCardIds.length})` : ''}`}
-        </Text>
-        <ActionButton label={draftExpanded ? 'Cerrar' : 'Revisar'}
-          accessibilityLabel={draftExpanded ? 'Cerrar el detalle del borrador pendiente' : 'Revisar el borrador pendiente'}
-          onPress={() => { setDraftExpanded((current) => !current); setDiscardConfirming(false); }} />
-      </View>
-      {draftExpanded ? (
-        <View testID="draft-recovery-detail" style={styles.draftCopy}>
-          <Text accessibilityLiveRegion="polite" style={[styles.offerText, { color: colors.textPrimary }]}>{draftNotice}</Text>
-          {draftSource ? <Text testID="draft-source" selectable numberOfLines={6} style={[styles.draftSource, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{draftSource}</Text> : null}
-          {discardConfirming ? (
-            <View style={styles.draftActions}>
-              <Text accessibilityRole="alert" style={[styles.offerText, { color: colors.danger }]}>Este trabajo privado todavía no está confirmado en el workspace.</Text>
-              <ActionButton label="Descartar" accessibilityLabel="Confirmar descartar el primer borrador pendiente" onPress={() => {
-                setDiscardConfirming(false);
-                if (firstDraftCardId) void discardDrafts(firstDraftCardId);
-              }} />
-              <ActionButton label="Cancelar" accessibilityLabel="Cancelar el descarte del borrador pendiente" onPress={() => setDiscardConfirming(false)} />
-            </View>
-          ) : (
-            <View style={styles.draftActions}>
-              {firstDraftCardId ? <ActionButton label="Recuperar" accessibilityLabel="Recuperar el primer borrador pendiente" tone="primary" onPress={() => {
-                if (!recoverDraft(firstDraftCardId)) return;
-                setSelectedId(firstDraftCardId);
-                setEditingId(firstDraftCardId);
-                setInlineEditing(false);
-                setFocus(true);
-              }} /> : null}
-              {firstDraftCardId ? <ActionButton label="Descartar" accessibilityLabel="Descartar el primer borrador pendiente" onPress={() => setDiscardConfirming(true)} /> : null}
-            </View>
-          )}
-        </View>
-      ) : null}
-    </View>
-  ) : null;
 
   const toolbar = workspace ? (
     <Toolbar
@@ -1490,7 +1485,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           {/* Aviso de guardado: una sola instancia, transversal a cualquier vista, no solo al lienzo
               (ADR 0036) — antes vivía dentro de la barra del lienzo, que ahora puede estar oculta. */}
           {workspace ? feedbackLine : null}
-          {draftBar}
           {workspace && visitedViews.has('diary') ? (
             <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'diary' ? styles.hidden : null]}>
               <DiaryView
@@ -1643,6 +1637,23 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onPurge={(cardId) => void purge(cardId)}
             onClose={() => setTrashOpen(false)}
           />
+          <RecoveryCenter
+            visible={recoveryOpen}
+            compact={compact}
+            workspace={workspace}
+            drafts={recoverableDrafts}
+            problem={draftProblem}
+            onRecover={(cardId) => {
+              if (!recoverDraft(cardId)) return;
+              setRecoveryOpen(false);
+              setSelectedId(cardId);
+              setEditingId(cardId);
+              setInlineEditing(false);
+              setFocus(true);
+            }}
+            onDiscard={(cardId) => void discardDrafts(cardId)}
+            onClose={() => setRecoveryOpen(false)}
+          />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
           <InsertMenu
             visible={insertOpen}
@@ -1684,6 +1695,36 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         </>
       ) : null}
     </SafeAreaView>
+  );
+}
+
+/**
+ * Insignia discreta del Centro de recuperación (UX7-SAVE, jerarquía visual final): icono + contador,
+ * nunca un botón de texto grande — un borrador legítimo no es un error de almacenamiento, así que usa
+ * un color neutro, no `colors.danger` (reservado a D/E: error real de guardado o conflicto). Conserva
+ * 44×44 de área táctil aunque el icono sea pequeño (ADR 0016); etiqueta accesible + `title` (tooltip
+ * web) describen el recuento real, nunca un número inventado.
+ */
+function RecoveryIndicator({ count, onPress }: { readonly count: number; readonly onPress: () => void }) {
+  const { theme } = useTheme();
+  const colors = theme.colors;
+  const [focused, setFocused] = useState(false);
+  const description = `${count} ${count === 1 ? 'borrador recuperable' : 'borradores recuperables'}`;
+  return (
+    <Pressable
+      testID="recovery-badge"
+      accessibilityRole="button"
+      accessibilityLabel={`Centro de recuperación: ${description}`}
+      accessibilityHint="Abre el Centro de recuperación sin descartar nada"
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      {...(Platform.OS === 'web' ? { title: `Centro de recuperación: ${description}` } : {})}
+      style={[styles.recoveryIndicator, { borderColor: focused ? colors.selection : colors.border, backgroundColor: colors.surface }]}
+    >
+      <Text style={[styles.recoveryGlyph, { color: colors.textPrimary }]}>↺</Text>
+      <Text style={[styles.recoveryCount, { color: colors.textPrimary }]}>{count}</Text>
+    </Pressable>
   );
 }
 
@@ -1758,6 +1799,14 @@ function usePendingText(
   const draftProblemCardId = useRef<CardId | null>(null);
   const clearDraftProblem = useCallback(() => { draftProblemCardId.current = null; setDraftProblem(null); }, []);
   const [recoveredText, setRecoveredText] = useState<Omit<PendingEditorialText, 'sequence' | 'surface' | 'authority'> | null>(null);
+  // Proyección reactiva de `pendingText` (UX7-SAVE): no es una segunda autoridad, solo un espejo de
+  // si hay texto escrito todavía sin confirmar en el almacenamiento durable, para el indicador «Cambios
+  // pendientes». `pendingText` sigue siendo la única fuente real; esto nunca se lee para decidir nada.
+  const [hasPendingEdit, setHasPendingEdit] = useState(false);
+  const setPendingRef = useCallback((value: PendingEditorialText | null) => {
+    pendingText.current = value;
+    setHasPendingEdit(value !== null);
+  }, []);
 
   const refreshDrafts = useCallback(async () => {
     if (!workspace) { setRecoverableDrafts([]); return; }
@@ -1834,7 +1883,7 @@ function usePendingText(
     leases.current.set(keyLabel(cardId, 'body'), next.body);
     authorityRef.current = next;
     setAuthority(next);
-    if (draft) pendingText.current = { ...draft, surface, authority: next };
+    if (draft) setPendingRef({ ...draft, surface, authority: next });
     const titleState = session.editorialSessions.read(next.title.key);
     const bodyState = session.editorialSessions.read(next.body.key);
     const currentTitleDocument = titleState?.source.format === 'rich-text' ? titleState.source.value : titleDocument;
@@ -1849,7 +1898,7 @@ function usePendingText(
       bodyValidation: bodyState?.validation ?? { status: 'valid' },
     });
     return next;
-  }, [durableZoneRevision, session.editorialSessions, workspace]);
+  }, [durableZoneRevision, session.editorialSessions, setPendingRef, workspace]);
 
   const transferBodyMode = useCallback((mode: 'visual' | 'html'): boolean => {
     const current = authorityRef.current;
@@ -1859,10 +1908,10 @@ function usePendingText(
     const next: EditorialAuthority = { ...current, body: transferred.value };
     authorityRef.current = next;
     leases.current.set(keyLabel(current.cardId, 'body'), next.body);
-    if (pendingText.current?.cardId === current.cardId) pendingText.current = { ...pendingText.current, authority: next };
+    if (pendingText.current?.cardId === current.cardId) setPendingRef({ ...pendingText.current, authority: next });
     setAuthority(next);
     return true;
-  }, [ownsAuthority, session.editorialSessions]);
+  }, [ownsAuthority, session.editorialSessions, setPendingRef]);
 
   const persistPrivate = useCallback((draft: PendingEditorialText): Promise<void> => {
     if (!workspace || persistedSequence.current >= draft.sequence) return privateTail.current;
@@ -1949,7 +1998,7 @@ function usePendingText(
           }
           await Promise.all(confirmations);
           if (pendingText.current === draft) {
-            pendingText.current = null;
+            setPendingRef(null);
             setRecoveredText(null);
           }
           await refreshDrafts();
@@ -1959,7 +2008,7 @@ function usePendingText(
       pendingSave.current = task;
       if (!await task) return false;
     }
-  }, [durableZoneRevision, flushPrivate, ownsAuthority, refreshDrafts, run, session.drafts, session.editorialSessions, workspace]);
+  }, [durableZoneRevision, flushPrivate, ownsAuthority, refreshDrafts, run, session.drafts, session.editorialSessions, setPendingRef, workspace]);
 
   const setPendingText = useCallback((draft: EditableCardDraft, requestedAuthority: EditorialAuthority | null = authorityRef.current) => {
     if (!requestedAuthority || requestedAuthority.cardId !== draft.cardId || !ownsAuthority(requestedAuthority)) return false;
@@ -1974,11 +2023,11 @@ function usePendingText(
       persistence: 'protection-pending',
     });
     const next: PendingEditorialText = { ...draft, titleDocument, sequence: ++sequence.current, surface: requestedAuthority.surface, authority: requestedAuthority };
-    pendingText.current = next;
+    setPendingRef(next);
     if (privateTimer.current) clearTimeout(privateTimer.current);
     privateTimer.current = setTimeout(() => { privateTimer.current = null; void persistPrivate(next); }, 250);
     return true;
-  }, [ownsAuthority, persistPrivate, session.editorialSessions]);
+  }, [ownsAuthority, persistPrivate, session.editorialSessions, setPendingRef]);
 
   useEffect(() => () => {
     if (privateTimer.current) clearTimeout(privateTimer.current);
@@ -2054,14 +2103,17 @@ function usePendingText(
     const targets = recoverableDrafts.filter((draft) => cardId === undefined || draft.key.cardId === cardId);
     await Promise.all(targets.map((draft) => session.drafts.discard(draft.key, draft.generation)));
     for (const draft of targets) conflicts.current.delete(keyLabel(draft.key.cardId as CardId, draft.key.zone));
-    if (cardId === undefined || pendingText.current?.cardId === cardId) { pendingText.current = null; setRecoveredText(null); }
+    if (cardId === undefined || pendingText.current?.cardId === cardId) { setPendingRef(null); setRecoveredText(null); }
     // Descartar es la resolución explícita del aviso: si hablaba de esta tarjeta (o se descartó todo),
     // debe desaparecer aquí mismo — antes quedaba pegado hasta que algo ajeno lo despejara sin querer.
     if (cardId === undefined || draftProblemCardId.current === cardId) clearDraftProblem();
     await refreshDrafts();
-  }, [clearDraftProblem, recoverableDrafts, refreshDrafts, session.drafts, workspace]);
+  }, [clearDraftProblem, recoverableDrafts, refreshDrafts, session.drafts, setPendingRef, workspace]);
 
-  return { flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText };
+  return {
+    flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts,
+    draftProblem, recoveredText, hasPendingEdit,
+  };
 }
 
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
@@ -2080,6 +2132,11 @@ const styles = StyleSheet.create({
   navGlyph: { width: 22, fontSize: 17, textAlign: 'center' },
   navLabel: { flex: 1, fontSize: 16, fontWeight: '800' },
   navCount: { fontSize: 13, fontWeight: '800' },
+  // Icono + contador, nunca un botón de texto largo (UX7-SAVE): 44×44 de área táctil mínima aunque el
+  // contenido visible sea pequeño.
+  recoveryIndicator: { minWidth: 44, minHeight: 44, paddingHorizontal: 10, borderWidth: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  recoveryGlyph: { fontSize: 18, lineHeight: 20 },
+  recoveryCount: { fontSize: 13, fontWeight: '800' },
   main: { flex: 1, minWidth: 0 },
   // Solo propiedades largas (columnGap/rowGap): mezclar `gap` con `rowGap` daba otro resultado en el export estático.
   header: { flexDirection: 'row', alignItems: 'center', columnGap: 10, rowGap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1 },
@@ -2103,13 +2160,6 @@ const styles = StyleSheet.create({
   feedback: { fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   offer: { borderWidth: 2, padding: 8, gap: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   offerText: { flexBasis: 220, flexGrow: 1, fontSize: 14, lineHeight: 19 },
-  // Compacto por defecto (no debe desplazar el lienzo): una sola fila corta; el detalle completo
-  // (`draftCopy`) solo se monta tras pulsar «Revisar».
-  offerCompact: { borderWidth: 2, padding: 8, gap: 8 },
-  offerCompactRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  draftCopy: { flex: 1, minWidth: 220, gap: 4 },
-  draftSource: { fontFamily: mono, fontSize: 11, lineHeight: 15, borderWidth: 1, padding: 6 },
-  draftActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   multiCount: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   multiBar: { borderWidth: 2, padding: 6, gap: 6 },
   multiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

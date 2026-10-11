@@ -52,7 +52,7 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
             <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
             <ActionButton label={t('dialog.close', locale)} accessibilityLabel={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
           </View>
-          <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>
       </View>
     </Modal>
@@ -65,10 +65,20 @@ const styles = StyleSheet.create({
   // y Firefox medía 43,99 px un botón de 44 (auditoría de 7a).
   backdropWide: { alignItems: 'center', justifyContent: 'flex-start', padding: 24, paddingTop: 48 },
   backdropCompact: { justifyContent: 'flex-end' },
-  panel: { width: '100%', maxWidth: 560, maxHeight: '85%', borderWidth: 2 },
-  sheet: { width: '100%', maxHeight: '62%', borderTopWidth: 3 },
+  // `overflow: hidden` es necesario (defecto real encontrado al añadir el Centro de recuperación,
+  // UX7-SAVE: primer contenido de este diálogo compartido lo bastante alto como para exponerlo): sin
+  // él, `maxHeight` acota la caja pero no recorta el contenido — este se derramaba en silencio más
+  // allá del propio diálogo y, en móvil, incluso más allá de la ventana visible, porque el
+  // `ScrollView` nunca llegaba a activar su desplazamiento (su altura dependía de que el padre
+  // realmente recortara, no solo declarara un máximo).
+  panel: { width: '100%', maxWidth: 560, maxHeight: '85%', borderWidth: 2, overflow: 'hidden' },
+  sheet: { width: '100%', maxHeight: '62%', borderTopWidth: 3, overflow: 'hidden' },
   sheetTyping: { maxHeight: '100%' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 16, paddingBottom: 8 },
   title: { flex: 1, fontSize: 22, fontWeight: '900' },
-  content: { padding: 16, paddingTop: 8, gap: 16 },
+  scroll: { flex: 1, minHeight: 0 },
+  // `paddingBottom` extra: el último control desplazado hasta el borde exacto del recorte (sin aire
+  // debajo) quedaba en una zona límite donde un pulsador automatizado medía su posición de layout
+  // correctamente pero el punto de clic cae justo en el borde del área realmente recortada/visible.
+  content: { padding: 16, paddingTop: 8, paddingBottom: 64, gap: 16 },
 });

@@ -15,6 +15,26 @@ describe('estado de guardado visible en la cabecera (P4)', () => {
   });
 });
 
+describe('UX7-SAVE: conflicto y cambios pendientes, sin tocar los estados ya existentes', () => {
+  it('conflicto es un tono y texto propios, no el mismo que un error genérico de guardado', () => {
+    expect(saveStatus({ mode: 'folder', saving: false, failed: false, native: false, conflict: true }))
+      .toEqual({ text: 'CONFLICTO DE CAMBIOS · REVISA EL AVISO', tone: 'conflict' });
+  });
+
+  it('cambios pendientes (borrador privado activo, sin estar ya guardando) tiene su propio tono discreto', () => {
+    expect(saveStatus({ mode: 'folder', saving: false, failed: false, native: false, pending: true }))
+      .toEqual({ text: 'CAMBIOS PENDIENTES', tone: 'pending' });
+  });
+
+  it('prioridad visual: memoria > conflicto > guardando > error > pendiente > guardado; ninguno nuevo cambia los textos ya probados', () => {
+    expect(saveStatus({ mode: 'memory', saving: true, failed: true, native: false, conflict: true, pending: true }).tone).toBe('volatile');
+    expect(saveStatus({ mode: 'folder', saving: true, failed: true, native: false, conflict: true, pending: true }).tone).toBe('conflict');
+    expect(saveStatus({ mode: 'folder', saving: true, failed: true, native: false, conflict: false, pending: true }).tone).toBe('saving');
+    expect(saveStatus({ mode: 'folder', saving: false, failed: true, native: false, conflict: false, pending: true }).tone).toBe('error');
+    expect(saveStatus({ mode: 'folder', saving: false, failed: false, native: false, conflict: false, pending: false })).toEqual({ text: 'CARPETA LOCAL · CAMBIOS GUARDADOS', tone: 'saved' });
+  });
+});
+
 describe('qué cuenta como error al guardar', () => {
   it('solo un fallo de la carpeta; una edición rechazada no escribió nada y no es un error de guardado', () => {
     const issue = (code: Parameters<typeof isSaveFailure>[0][number]['code']) => [{ code, path: 'x', message: '' }];

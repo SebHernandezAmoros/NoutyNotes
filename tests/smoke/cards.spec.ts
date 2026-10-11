@@ -850,7 +850,12 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await button(page, 'Mover abajo').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
   await closeEditor(page);
-  await card(page, 1).click();
+  // Un título flotante (sin marco) solo muestra sus controles de cabecera cuando está seleccionado
+  // (Canvas.tsx) — y ya lo está, tras cerrar su editor. Un `.click()` directo en su centro puede
+  // «pulsar» uno de esos controles ya visibles en vez de limitarse a reconfirmar la selección (el
+  // mismo riesgo que ya documenta `tapCard`, hallazgo real de esta sesión: P3 solo falla en `mobile`,
+  // donde estos controles por tarjeta existen — en escritorio ni siquiera se renderizan, Canvas.tsx).
+  await tapCard(page, 1, false);
   await openCardActions(page, card(page, 1), 'Proyecto Solace');
   await button(page, 'Minimizar Proyecto Solace').click();
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Proyecto Solace, minimizada');

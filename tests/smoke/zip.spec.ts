@@ -54,9 +54,11 @@ test('E3-A: el respaldo ZIP exige aceptar que los borradores privados quedan fue
   await insertFromMenu(page, 'Insertar nota');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByLabel('Contenido visual').fill('BORRADOR PRIVADO EXCLUIDO');
-  // El aviso nace compacto (no debe desplazar el lienzo): «Revisar» despliega la fuente exacta.
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO EXCLUIDO');
+  // UX7-SAVE: el aviso ya no vive sobre el lienzo — una insignia junto al estado de guardado abre el
+  // Centro de recuperación, donde se ve la fuente exacta (nunca un banner permanente).
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR PRIVADO EXCLUIDO');
+  await page.getByRole('button', { name: 'Cerrar centro de recuperación' }).click();
 
   // En móvil la edición enfocada oculta el lienzo y su barra; volver al tablero no confirma el texto.
   const backToBoard = button(page, 'Volver al tablero');
@@ -68,7 +70,8 @@ test('E3-A: el respaldo ZIP exige aceptar que los borradores privados quedan fue
   const download = page.waitForEvent('download');
   await button(page, 'Continuar exportando sin los borradores privados').click();
   expect((await download).suggestedFilename()).toBe('demo.zip');
-  await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO EXCLUIDO');
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR PRIVADO EXCLUIDO');
 });
 
 test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras recargar sin pérdidas', async ({ page }, testInfo) => {

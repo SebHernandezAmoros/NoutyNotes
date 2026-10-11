@@ -87,6 +87,47 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.screenshot({ path: testInfo.outputPath('folder-reconnected.png'), fullPage: true });
 });
 
+test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y Ctrl+S confirman persistencia real', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'Guardar ahora vive en «Más secciones» en compacto; este caso prueba el botón de cabecera.');
+  const button = (name: string) => page.getByRole('button', { name, exact: true });
+  const status = page.getByTestId('workspace-memory');
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await button('Abrir una carpeta').click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Estado de guardado');
+  await button('Crear un espacio').click();
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await expect(status).toContainText('CAMBIOS GUARDADOS');
+
+  // Escribir dispara el borrador privado (DraftStore) de inmediato: «cambios pendientes» es una
+  // operación normal, nunca una advertencia — nada se abre ni bloquea el lienzo.
+  await page.getByLabel('Contenido visual').fill('Texto sin confirmar todavía');
+  await expect(status).toContainText('CAMBIOS PENDIENTES');
+
+  // «Guardar ahora» confirma la persistencia real (la misma cola que ya usa «Volver a mis espacios»),
+  // nunca afirma éxito antes de la confirmación durable.
+  await button('Guardar ahora (Ctrl+S)').click();
+  await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado correctamente.');
+  await expect(status).toContainText('CAMBIOS GUARDADOS');
+
+  // Ctrl+S hace lo mismo que el botón, sin abrir el diálogo nativo de «guardar página».
+  await page.getByLabel('Contenido visual').fill('Texto sin confirmar todavía\nSegunda línea por Ctrl+S');
+  await expect(status).toContainText('CAMBIOS PENDIENTES');
+  await page.keyboard.press('Control+s');
+  await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado correctamente.');
+  await expect(status).toContainText('CAMBIOS GUARDADOS');
+  await expect(page.getByLabel('Contenido visual')).toContainText('Segunda línea por Ctrl+S');
+
+  await page.reload();
+  await button('Volver a mis espacios').click();
+  await button('Abrir una carpeta').click();
+  await button('Abrir Estado de guardado').click();
+  await openCardEditor(page, 1);
+  await expect(page.getByLabel('Contenido visual')).toContainText('Segunda línea por Ctrl+S');
+  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
+});
+
 test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin alterar la nota durable', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -97,10 +138,11 @@ test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin al
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR PRIVADO TRAS REINICIO');
   // Es la confirmación observable de IndexedDB; se recarga antes del autosave posterior del workspace.
-  // El aviso nace compacto (no debe desplazar el lienzo): «Revisar» despliega la fuente exacta.
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO TRAS REINICIO');
+  // UX7-SAVE: el aviso ya no vive sobre el lienzo — solo una insignia junto al estado de guardado,
+  // que abre el Centro de recuperación (nunca se abre solo).
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR PRIVADO TRAS REINICIO');
 
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
@@ -108,9 +150,9 @@ test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin al
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
   await page.getByRole('button', { name: 'Abrir Recuperación privada' }).click();
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await page.getByRole('button', { name: 'Recuperar el borrador de Nueva nota' }).click();
   // La nota compatible abre en el editor visual actual; E3-A recupera el documento, no cambia de modo.
   await expect(page.getByLabel('Contenido visual').locator('p')).toHaveText('BORRADOR PRIVADO TRAS REINICIO');
 });
@@ -130,7 +172,7 @@ test('P18-E3-B2: alternar Visual y HTML sin editar no reescribe el archivo durab
   await page.getByRole('button', { name: 'Editar el cuerpo visualmente' }).click();
   await page.getByRole('button', { name: 'Guardar texto' }).click();
   expect(await page.evaluate(() => localStorage.getItem('nouty-test-folder'))).toBe(before);
-  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
 });
 
 test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durable y permite descartarlo', async ({ page }) => {
@@ -148,9 +190,10 @@ test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durabl
   await page.getByRole('button', { name: 'Validar y aplicar el código HTML' }).click();
   await expect(page.getByTestId('html-source-input')).toHaveValue(invalid);
   await expect(page.getByTestId('html-source-error')).toBeVisible();
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-source')).toContainText(invalid);
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText(invalid);
+  await page.getByRole('button', { name: 'Cerrar centro de recuperación' }).click();
   await expect.poll(() => page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     return Object.values(files).map((bytes) => new TextDecoder().decode(new Uint8Array(bytes))).join('\n');
@@ -161,23 +204,23 @@ test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durabl
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
   await page.getByRole('button', { name: 'Abrir HTML inválido' }).click();
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await page.getByRole('button', { name: 'Recuperar el borrador de Nueva nota' }).click();
   await expect(page.getByTestId('html-source-input')).toHaveValue(invalid);
   await expect(page.getByTestId('html-source-error')).toBeVisible();
   await page.getByRole('button', { name: 'Descartar los cambios del código HTML' }).click();
   await expect(page.getByTestId('html-source-editor')).toHaveCount(0);
   await expect(page.getByLabel('Contenido visual')).toBeVisible();
   await page.getByRole('button', { name: 'Guardar texto' }).click();
-  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     return Object.values(files).map((bytes) => new TextDecoder().decode(new Uint8Array(bytes))).join('\n');
   })).not.toContain('NO DURABLE');
 });
 
-test('P18-E0: borrador de una nota archivada explica el Archivo y no la recupera sola', async ({ page }) => {
+test('P18-E0/UX7-SAVE: borrador de una nota archivada explica el Archivo y no ofrece «Recuperar»', async ({ page }) => {
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -187,26 +230,27 @@ test('P18-E0: borrador de una nota archivada explica el Archivo y no la recupera
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR DE NOTA ARCHIVADA');
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
   // Recargar antes del autoguardado durable deja solo el borrador privado en IndexedDB, sin confirmarlo.
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
   await button('Abrir una carpeta').click();
   await button('Abrir Archivo con borrador').click();
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Archivar Nueva nota').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta archivada. Guardado en la carpeta.');
-  // El borrador no se pierde al archivar, pero «Recuperar» ya no puede reabrir una tarjeta fuera de los tableros.
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-recovery-detail')).toContainText('Archivo');
+  // El borrador no se pierde al archivar: el Centro lo muestra de inmediato, sin necesitar que
+  // «Recuperar» falle primero (UX7-SAVE §14: nunca se ofrece una acción que no puede ejecutarse).
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-status-tarjeta-1')).toContainText('Archivo');
+  await expect(page.getByRole('button', { name: 'Recuperar el borrador de Nueva nota' })).toHaveCount(0);
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
 });
 
-test('P18-E0: borrador de una nota en la Papelera explica la Papelera; restaurarla permite recuperarlo', async ({ page }) => {
+test('P18-E0/UX7-SAVE: borrador de una nota en la Papelera explica la Papelera; restaurarla permite recuperarlo', async ({ page }) => {
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -216,7 +260,7 @@ test('P18-E0: borrador de una nota en la Papelera explica la Papelera; restaurar
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR DE NOTA EN PAPELERA');
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
@@ -225,24 +269,24 @@ test('P18-E0: borrador de una nota en la Papelera explica la Papelera; restaurar
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Enviar Nueva nota a la Papelera').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta enviada a la Papelera. Guardado en la carpeta.');
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-recovery-detail')).toContainText('Papelera');
-  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-status-tarjeta-1')).toContainText('Papelera');
+  await expect(page.getByRole('button', { name: 'Recuperar el borrador de Nueva nota' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cerrar centro de recuperación' }).click();
 
   // Restaurar desde la Papelera devuelve la tarjeta a los tableros; el borrador ya se puede recuperar entero.
   await button('Abrir la Papelera (1)').click();
   await button('Restaurar Nueva nota').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta restaurada. Guardado en la carpeta.');
   await button('Cerrar papelera').click();
-  // El intento anterior ya dejó el detalle desplegado («Revisar» pasó a «Cerrar»); sigue así.
-  await expect(page.getByTestId('draft-recovery-detail')).toBeVisible();
-  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-status-tarjeta-1')).toContainText('se puede recuperar entero');
+  await page.getByRole('button', { name: 'Recuperar el borrador de Nueva nota' }).click();
   await expect(page.getByLabel('Contenido visual').locator('p')).toHaveText('BORRADOR DE NOTA EN PAPELERA');
 });
 
-test('P18-E0: descartar un borrador huérfano cierra el aviso para siempre; editar otra tarjeta no lo reactiva', async ({ page }) => {
+test('P18-E0/UX7-SAVE: descartar un borrador huérfano cierra la insignia para siempre; editar otra tarjeta no la reactiva', async ({ page }) => {
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -252,7 +296,7 @@ test('P18-E0: descartar un borrador huérfano cierra el aviso para siempre; edit
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR QUE SE VA A DESCARTAR');
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
@@ -260,30 +304,29 @@ test('P18-E0: descartar un borrador huérfano cierra el aviso para siempre; edit
   await button('Abrir Descarte sin fantasma').click();
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Enviar Nueva nota a la Papelera').click();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  // «Recuperar» falla (la tarjeta está en la Papelera) y deja fijado el aviso con esa explicación —
-  // justo el estado que, antes de este arreglo, «Descartar» no lograba cerrar de verdad.
-  await page.getByRole('button', { name: 'Recuperar el primer borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-recovery-detail')).toContainText('Papelera');
-  // Confirmación en el propio lienzo (defecto real corregido: `Alert.alert` no hace nada en web, así
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-status-tarjeta-1')).toContainText('Papelera');
+  // Confirmación en el propio panel (defecto real corregido: `Alert.alert` no hace nada en web, así
   // que «Descartar» no llegaba a ejecutar nada antes de este arreglo).
-  await page.getByRole('button', { name: 'Descartar el primer borrador pendiente' }).click();
-  await page.getByRole('button', { name: 'Confirmar descartar el primer borrador pendiente' }).click();
-  // Antes de este arreglo, `discardDrafts` nunca limpiaba `draftProblem`: el aviso seguía ahí para
-  // siempre (sin botones, porque ya no hay ningún borrador) hasta recargar la página.
-  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Descartar el borrador de Nueva nota' }).click();
+  await page.getByRole('button', { name: 'Confirmar descartar el borrador de Nueva nota' }).click();
+  await expect(page.getByTestId('recovery-empty')).toBeVisible();
+  await button('Cerrar centro de recuperación').click();
+  // Antes de este arreglo, `discardDrafts` nunca limpiaba `draftProblem`: la insignia seguía mostrando
+  // el mismo problema para siempre, sin ninguna forma de resolverlo, hasta recargar la página.
+  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
 
-  // Editar una tarjeta totalmente distinta no debe resucitar el aviso ya resuelto («reactivarse
+  // Editar una tarjeta totalmente distinta no debe resucitar la insignia ya resuelta («reactivarse
   // después de modificar otras tarjetas», el síntoma real reportado).
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 2);
   await page.getByLabel('Contenido visual').fill('Tarjeta ajena, sin relación con el borrador descartado');
   await button('Guardar texto').click();
   await expect(page.getByTestId('workspace-feedback')).toContainText('Texto guardado');
-  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
 });
 
-test('P18-E0: eliminar definitivamente una nota desde la Papelera descarta también su borrador privado', async ({ page }) => {
+test('P18-E0/UX7-SAVE: eliminar definitivamente una nota desde la Papelera descarta también su borrador privado', async ({ page }) => {
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
@@ -293,7 +336,7 @@ test('P18-E0: eliminar definitivamente una nota desde la Papelera descarta tambi
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR QUE DEBE DESAPARECER');
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
@@ -301,17 +344,17 @@ test('P18-E0: eliminar definitivamente una nota desde la Papelera descarta tambi
   await button('Abrir Purga con borrador').click();
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Enviar Nueva nota a la Papelera').click();
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
   await button('Abrir la Papelera (1)').click();
   await button('Eliminar definitivamente Nueva nota').click();
   await button('Confirmar eliminar definitivamente Nueva nota').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta eliminada definitivamente. Guardado en la carpeta.');
   await button('Cerrar papelera').click();
   // La purga ya es destructiva y confirmada: limpia también el borrador huérfano, sin dejarlo flotando para siempre.
-  await expect(page.getByTestId('draft-recovery')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
 });
 
-test('P18-E0: cerrar temporalmente el aviso no descarta el borrador y no se reabre solo; «Revisar» lo recupera', async ({ page }) => {
+test('P18-E0/UX7-SAVE: cerrar el Centro de recuperación no descarta el borrador y no se reabre solo', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
@@ -320,16 +363,16 @@ test('P18-E0: cerrar temporalmente el aviso no descarta el borrador y no se reab
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR TRAS CIERRE TEMPORAL');
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-recovery-detail')).toBeVisible();
-  await page.getByRole('button', { name: 'Cerrar el detalle del borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-recovery-detail')).toHaveCount(0);
-  // Seguir en el mismo editor sin recargar ni cambiar nada relevante no debe reabrir el detalle por sí solo.
-  await expect(page.getByTestId('draft-recovery')).toBeVisible();
-  await expect(page.getByTestId('draft-recovery-detail')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Revisar el borrador pendiente' }).click();
-  await expect(page.getByTestId('draft-source')).toContainText('BORRADOR TRAS CIERRE TEMPORAL');
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-center')).toBeVisible();
+  await page.getByRole('button', { name: 'Cerrar centro de recuperación' }).click();
+  await expect(page.getByTestId('recovery-center')).toHaveCount(0);
+  // Cerrar el Centro (UX7-SAVE §12/§15) nunca descarta el borrador ni se reabre solo: la insignia
+  // sigue ahí, con el mismo contenido, hasta que la persona usuaria vuelva a pedirlo explícitamente.
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await page.getByTestId('recovery-badge').click();
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR TRAS CIERRE TEMPORAL');
 });
 
 test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga y la reconexión', async ({ page }) => {
