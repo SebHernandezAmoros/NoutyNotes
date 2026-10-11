@@ -1,5 +1,6 @@
 import { activeDays, dailyLog, dailyLogRange, diaryExportText, editCardContent, fold, isDay, localDay, openDiaryEntry, shiftDay } from '@noutynotes/application';
 import type { RangeLogItem, TimedCard, WorkspaceStorageResult } from '@noutynotes/application';
+import { cardTitleText } from '@noutynotes/domain';
 import type { BoardId, Card, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
 import type { Locale } from '@noutynotes/ui';
 import { useLocale, useTheme } from '@noutynotes/ui';
@@ -81,7 +82,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const filteredItems = rangeItems.filter((item) => (searchTypeId === null || item.card.typeId === searchTypeId)
     && (searchTag === null || (item.card.tags ?? []).includes(searchTag))
     && (searchBoardId === null || item.boardIds.includes(searchBoardId))
-    && (searchFold === '' || fold([item.card.title ?? '', item.card.content ?? '', (item.card.tags ?? []).join(' ')].join('\n')).includes(searchFold)));
+    && (searchFold === '' || fold([cardTitleText(item.card), item.card.content ?? '', (item.card.tags ?? []).join(' ')].join('\n')).includes(searchFold)));
   const rangeVerb: Readonly<Record<RangeLogItem['kind'], string>> = {
     entry: t('diary.verb.entry', locale), created: t('diary.verb.created', locale), archived: t('diary.verb.archived', locale),
   };
@@ -121,10 +122,10 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const timeline = (items: readonly TimedCard[], verb: string, testID: string) => items.map(({ card, time }) => (
     <View key={`${testID}-${card.id}`} testID={`${testID}-${card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${time} · ${verb} · ${typeLabel(card).toUpperCase()}`}</Text>
-      <Text style={[styles.title, { color: colors.textPrimary }]}>{card.title ?? t('trash.item.untitled', locale)}</Text>
+      <Text style={[styles.title, { color: colors.textPrimary }]}>{cardTitleText(card) || t('trash.item.untitled', locale)}</Text>
       {(card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
       {card.content ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(card.content).replace(/\s+/g, ' ').trim()}</Text> : null}
-      {testID === 'log-created' && onBoard(card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: card.title ?? t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(card.id); }} /> : null}
+      {testID === 'log-created' && onBoard(card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: cardTitleText(card) || t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(card.id); }} /> : null}
     </View>
   ));
 
@@ -191,10 +192,10 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
           {filteredItems.map((item) => (
             <View key={`${item.kind}-${item.card.id}`} testID={`diary-search-result-${item.card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${item.day} ${item.time} · ${rangeVerb[item.kind]} · ${typeLabel(item.card).toUpperCase()}`}</Text>
-              <Text style={[styles.title, { color: colors.textPrimary }]}>{item.card.title ?? t('trash.item.untitled', locale)}</Text>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>{cardTitleText(item.card) || t('trash.item.untitled', locale)}</Text>
               {(item.card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(item.card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
               {item.card.content ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(item.card.content).replace(/\s+/g, ' ').trim()}</Text> : null}
-              {item.kind === 'created' && onBoard(item.card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: item.card.title ?? t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(item.card.id); }} /> : null}
+              {item.kind === 'created' && onBoard(item.card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: cardTitleText(item.card) || t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(item.card.id); }} /> : null}
             </View>
           ))}
         </ScrollView>

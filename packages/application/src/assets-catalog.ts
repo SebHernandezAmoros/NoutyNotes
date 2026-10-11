@@ -2,6 +2,7 @@
  * Catálogo de assets del proyecto (ADR 0022). Puro: se deriva de los archivos que hay bajo `assets/` y
  * de las referencias de las tarjetas (activas y de la Papelera). No hay registro aparte que pueda divergir.
  */
+import { cardTitleText } from '@noutynotes/domain';
 import type { AssetRef, BoardId, Card, CardId, Workspace } from '@noutynotes/domain';
 
 import { fold } from './search';
@@ -57,7 +58,7 @@ export function buildAssetCatalog(workspace: Workspace, onDisk: readonly string[
   const note = (card: Card, where: 'active' | 'trash' | 'archive') => {
     const boards = where !== 'active' ? [] : workspace.boards.filter((board) => board.cardIds.includes(card.id)).map((board) => ({ boardId: board.id, title: board.title }));
     for (const ref of cardAssetRefs(workspace, card)) {
-      uses.set(ref, [...(uses.get(ref) ?? []), { cardId: card.id, title: card.title ?? 'Sin título', inTrash: where === 'trash', inArchive: where === 'archive', boards }]);
+      uses.set(ref, [...(uses.get(ref) ?? []), { cardId: card.id, title: cardTitleText(card) || 'Sin título', inTrash: where === 'trash', inArchive: where === 'archive', boards }]);
     }
   };
   workspace.cards.forEach((card) => note(card, 'active'));

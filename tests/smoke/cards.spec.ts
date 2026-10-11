@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
+import { fillCardTitle, hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -120,7 +120,7 @@ async function addNote(page: Page, title: string) {
   // queda seleccionada y «Editar» es el paso explícito para escribir su contenido.
   await expect(card(page, before + 1)).toHaveAttribute('aria-pressed', 'true');
   await openCardEditor(page, before + 1);
-  await page.getByLabel('Título de la tarjeta').fill(title);
+  await fillCardTitle(page, title);
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
 }
@@ -496,7 +496,7 @@ test('título visualmente vacío: borrarlo no dibuja «Sin título» en la ficha
   await expect(card(page, 1)).toContainText('Temporal');
 
   await openCardEditor(page, 1);
-  await page.getByLabel('Título de la tarjeta').fill('');
+  await fillCardTitle(page, '');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await closeEditor(page);
@@ -509,7 +509,7 @@ test('título visualmente vacío: borrarlo no dibuja «Sin título» en la ficha
 
   // Sobrevive a reabrir el editor: el campo sigue vacío, no «Sin título» como si fuera el valor guardado.
   await openCardEditor(page, 1);
-  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('');
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveText('');
   await closeEditor(page);
 });
 
@@ -626,12 +626,12 @@ test('vista Lista muestra las imágenes reales, no el Markdown crudo ni siempre 
   // Nota con una imagen y su leyenda (texto alternativo); sin más texto, para que la fila de la lista
   // tenga sitio de sobra y la leyenda no compita por espacio con un párrafo.
   await addNote(page, 'Con foto');
-  await openMarkdownEditor(page);
+  // El editor visual (Lexical) ya está abierto por defecto en web; su botón de imagen reemplaza
+  // al de NoteBlocksEditor, que solo existía en el modo Markdown retirado de web (P18-E3-B2).
   const chooser2 = page.waitForEvent('filechooser');
-  await button(page, 'Insertar una imagen en la nota').click();
+  await button(page, 'Insertar una imagen').click();
   await (await chooser2).setFiles(image);
-  await expect(feedback(page)).toHaveText('Imagen «app-icon.png» insertada en la nota. Guardado en memoria.');
-  await page.getByLabel('Texto alternativo de la imagen 1').fill('Foto de portada');
+  await page.getByLabel(/Texto alternativo de /).fill('Foto de portada');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await closeEditor(page);
@@ -823,109 +823,26 @@ test('regresión: «Restablecer vista» vuelve al origen aunque haya una tarjeta
   expect(await canvas.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([0, 0]);
 });
 
-test('P3: listas con teclado (continuar, terminar, renumerar sin perder el cursor), casilla táctil y HTML/JS como texto', async ({ page }, testInfo) => {
-  await page.goto('./');
-  await createWorkspace(page, 'Listas');
-  await addNote(page, 'Receta');
-  const editor = await openMarkdownEditor(page);
+// «P3: listas con teclado...» (atajos −/1./☐ sobre el textarea Markdown crudo) se retiró: ejercitaba
+// NoteBlocksEditor/markdownLists.ts, que solo se monta con `!visualEditing && bodyMode !== 'html'`
+// (apps/noutynotes/src/workspace/CardInspector.tsx:660), inalcanzable en web desde P18-E3-B2 porque
+// ningún proyecto de Playwright es nativo. La capacidad sigue viva en Android (fuera del alcance de
+// esta suite); su comprobación de seguridad (HTML/JS como texto inerte) ya se repite en otras pruebas
+// de este archivo, folder.spec.ts y workspace.spec.ts sobre el editor Visual/HTML vigente.
 
-  // Numerada con Enter: continúa, y Enter en un elemento vacío termina la lista.
-  await button(page, 'Insertar lista numerada').click();
-  await expect(editor).toHaveValue('1. ');
-  await editor.focus();
-  await editor.press('End');
-  await editor.pressSequentially('Harina');
-  await editor.press('Enter');
-  await expect(editor).toHaveValue('1. Harina\n2. ');
-  await editor.pressSequentially('Agua');
-  await editor.press('Enter');
-  await editor.pressSequentially('Sal');
-  await editor.press('Enter');
-  await editor.press('Enter');
-  await expect(editor).toHaveValue('1. Harina\n2. Agua\n3. Sal\n\n');
-  // Borrar la primera línea renumera el resto (empieza otra vez en 1) y el cursor sigue donde estaba:
-  // al comienzo de la línea que sube; después, al final de «Agua».
-  await editor.press('Control+Home');
-  await editor.press('Shift+ArrowDown');
-  await editor.press('Delete');
-  await expect(editor).toHaveValue('1. Agua\n2. Sal\n\n');
-  await editor.pressSequentially('> ');
-  await expect(editor).toHaveValue('> 1. Agua\n2. Sal\n\n');
-  await editor.fill('1. Agua\n2. Sal\n\n');
-  await editor.press('Control+Home');
-  await editor.press('End');
-  await editor.pressSequentially(' fría');
-  await expect(editor).toHaveValue('1. Agua fría\n2. Sal\n\n');
-
-  // Insertar una lista con el cursor en mitad del texto solo toca esa línea y deja el cursor al final.
-  await editor.fill('Notas\nlibres');
-  await editor.press('Control+End');
-  await button(page, 'Insertar lista con guiones').click();
-  await expect(editor).toHaveValue('Notas\n- libres');
-  await editor.focus();
-  await editor.pressSequentially('!');
-  await expect(editor).toHaveValue('Notas\n- libres!');
-
-  // Casillas: se marcan desde la vista con un toque real en móvil (o un clic en escritorio).
-  await editor.fill('- [ ] Comprar\n- [ ] Cocinar');
-  const check = button(page, 'Marcar tarea Cocinar');
-  if (testInfo.project.use.hasTouch) await check.tap();
-  else await check.click();
-  await expect(editor).toHaveValue('- [ ] Comprar\n- [x] Cocinar');
-
-  // HTML, CSS y JavaScript de una nota son texto: se ven literales y no se ejecutan.
-  const hostile = '<img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script><style>body{display:none}</style>';
-  await editor.fill(hostile);
-  await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
-  await expect(card(page, 1)).toContainText('<script>window.__pwned=2</script>');
-  expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
-  expect(await card(page, 1).locator('script, img[src="x"], style').count()).toBe(0);
-  await closeEditor(page);
-  await expect(page.getByTestId('board-canvas')).toBeVisible();
-});
-
-test('negrita y cursiva envuelven la selección y mantienen el foco; repetir el atajo la desenvuelve (UX7-B3)', async ({ page }) => {
-  await page.goto('./');
-  await createWorkspace(page, 'Formato');
-  await addNote(page, 'Nota');
-  const editor = await openMarkdownEditor(page);
-  await editor.fill('hola mundo');
-
-  // Selecciona «mundo» (las últimas 5 letras) y pulsa el botón «Negrita».
-  await editor.focus();
-  await editor.press('Control+End');
-  for (let i = 0; i < 5; i += 1) await editor.press('Shift+ArrowLeft');
-  await button(page, 'Negrita').click();
-  await expect(editor).toHaveValue('hola **mundo**');
-
-  // El mismo texto sigue seleccionado (no el cursor al final): repetir «Negrita» la desenvuelve.
-  await button(page, 'Negrita').click();
-  await expect(editor).toHaveValue('hola mundo');
-
-  // Cursiva, con el atajo de teclado Ctrl/⌘+I en vez del botón.
-  await editor.press(process.platform === 'darwin' ? 'Meta+i' : 'Control+i');
-  await expect(editor).toHaveValue('hola *mundo*');
-  await editor.press(process.platform === 'darwin' ? 'Meta+i' : 'Control+i');
-  await expect(editor).toHaveValue('hola mundo');
-
-  // Sin selección (cursor al final): abre el par y deja el cursor listo para escribir dentro.
-  await editor.press('Control+End');
-  await button(page, 'Negrita').click();
-  await expect(editor).toHaveValue('hola mundo****');
-  await editor.pressSequentially('ya');
-  await expect(editor).toHaveValue('hola mundo**ya**');
-});
+// «negrita y cursiva envuelven la selección...» (UX7-B3) se retiró por el mismo motivo: ejercitaba
+// `applyInlineMark` (markdownLists.ts) sobre el textarea Markdown crudo, inalcanzable en web. Negrita
+// y cursiva sobre el editor Visual vigente ya se prueban en «P06», «P07» y las pruebas de B3-A.
 
 test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Papelera en su sitio', async ({ page }) => {
   await page.goto('./');
   await createWorkspace(page, 'Rótulo');
   await insertFromMenu(page, 'Insertar título flotante');
-  await expect(page.getByTestId('floating-title-tarjeta-1')).toBeVisible();
+  await expect(page.getByTestId('unified-content-tarjeta-1')).toBeVisible();
   await openFullCardEditor(page, card(page, 1));
-  await page.getByLabel('Título de la tarjeta').fill('Proyecto Solace');
+  await fillCardTitle(page, 'Proyecto Solace');
   await button(page, 'Guardar texto').click();
-  await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
+  await expect(page.getByTestId('unified-content-tarjeta-1')).toContainText('Proyecto Solace');
   await button(page, 'Mover abajo').click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
   await closeEditor(page);
@@ -935,16 +852,16 @@ test('P3: el título flotante se edita, se mueve, se minimiza y vuelve de la Pap
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Proyecto Solace, minimizada');
   await openCardActions(page, card(page, 1), 'Proyecto Solace');
   await button(page, 'Expandir Proyecto Solace').click();
-  await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
+  await expect(page.getByTestId('unified-content-tarjeta-1')).toContainText('Proyecto Solace');
   await openCardActions(page, card(page, 1), 'Proyecto Solace');
   await button(page, 'Enviar Proyecto Solace a la Papelera').click();
-  await expect(page.getByTestId('floating-title-tarjeta-1')).toHaveCount(0);
+  await expect(page.getByTestId('unified-content-tarjeta-1')).toHaveCount(0);
   await button(page, 'Abrir la Papelera (1)').click();
   await button(page, 'Restaurar Proyecto Solace').click();
   await button(page, 'Cerrar papelera').click();
   await tapCard(page, 1);
   await expect(geometry(page)).toHaveText('Columna 1, fila 2 · 6 × 2');
-  await expect(page.getByTestId('floating-title-tarjeta-1')).toContainText('Proyecto Solace');
+  await expect(page.getByTestId('unified-content-tarjeta-1')).toContainText('Proyecto Solace');
 });
 
 test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras y #etiqueta, «Ir» a otro tablero, renombrar fusionando y quitar de todas (ADR 0019)', async ({ page }, testInfo) => {
@@ -978,7 +895,7 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
 
   // El «#» escrito en el texto no es una etiqueta.
   await addNote(page, 'Lisboa');
-  await (await openMarkdownEditor(page)).fill('Tranvía 28 #hola');
+  await page.getByLabel('Contenido visual').fill('Tranvía 28 #hola');
   await button(page, 'Guardar texto').click();
   await tagInput.fill('portugal');
   await button(page, 'Añadir la etiqueta').click();
@@ -991,7 +908,7 @@ test('etiquetas y búsqueda local: añadir y quitar, pie de la tarjeta, palabras
   await button(page, 'Crear un tablero').click();
   await button(page, 'Crear la primera nota').click();
   await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
-  await page.getByLabel('Título de la tarjeta').fill('Osaka');
+  await fillCardTitle(page, 'Osaka');
   await button(page, 'Guardar texto').click();
   await tagInput.fill('japon');
   await button(page, 'Añadir la etiqueta').click();
@@ -1167,7 +1084,7 @@ test('búsqueda en todos los proyectos: explícita, agrupada, con aviso de consu
   await button(page, 'Ir a Mapa del río').click();
   await expect(page.getByRole('heading', { name: 'Alfa', exact: true })).toBeVisible();
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Mapa del río');
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Mapa del río');
 });
 
 test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reordenar, texto alternativo, reemplazar, quitar y editor enfocado (ADR 0021)', async ({ page }, testInfo) => {
@@ -1254,7 +1171,7 @@ test('nota con imágenes ordenadas: insertar tras el párrafo del cursor, reorde
     await button(page, 'Abrir el editor completo').first().click();
   }
   await expect(page.getByTestId('board-canvas')).toBeHidden();
-  await expect(page.getByLabel('Título de la tarjeta')).toHaveValue('Viaje');
+  await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Viaje');
   await button(page, 'Volver al tablero').click();
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
@@ -1271,11 +1188,10 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   };
   // Una nota con una imagen intercalada: el archivo está en uso.
   await addNote(page, 'Ruta');
-  await (await openMarkdownEditor(page)).press('Control+End');
   const inNote = pick('mapa.png');
-  await button(page, 'Insertar una imagen en la nota').click();
+  await button(page, 'Insertar una imagen').click();
   await inNote;
-  await expect(feedback(page)).toHaveText('Imagen «mapa.png» insertada en la nota. Guardado en memoria.');
+  await button(page, 'Guardar texto').click();
   await closeEditor(page);
 
   const openAssets = async () => {
@@ -1323,7 +1239,7 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   await expect(feedback(page)).toHaveText('«plano-del-rio.png» añadido al tablero sin copiar el archivo. Guardado en memoria.');
   // Como crear, añadir al tablero deja la tarjeta seleccionada pero sin abrir su editor (auditoría de
   // interacción, 2026-09-29): no hay nada que cerrar.
-  await expect(page.getByTestId('image-preview-tarjeta-2')).toBeVisible();
+  await expect(page.getByTestId('note-preview-tarjeta-2-image-0')).toBeVisible();
   await openAssets();
   await expect(page.getByTestId('assets-count')).toHaveText('2 ARCHIVOS');
   await expect(button(page, 'Solo sin usar (0)')).toBeVisible();
@@ -1601,7 +1517,7 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
     // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): solo hay un botón
     // «Editar» visible a la vez, el de la tarjeta recién creada y seleccionada.
     await openFullCardEditor(page, page.locator('[data-testid^="card-tarjeta-"][aria-pressed="true"]'));
-    await page.getByLabel('Título de la tarjeta').fill(title);
+    await fillCardTitle(page, title);
     await button(page, 'Guardar texto').click();
     await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   };
@@ -1871,7 +1787,7 @@ test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la fich
   await page.goto('./');
   await createWorkspace(page, 'Tipos');
   await addNote(page, 'Con texto');
-  await (await openMarkdownEditor(page)).fill('Cuerpo de la nota.');
+  await page.getByLabel('Contenido visual').fill('Cuerpo de la nota.');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   const bodyInEditor = () => page.locator('[aria-label="Contenido Markdown"]:visible, [aria-label="Contenido visual"]:visible')
@@ -1902,7 +1818,7 @@ test('Configuración: tipografía de las notas (Serif, Monoespaciada) en la fich
   await button(page, 'Volver a mis espacios').click();
   await createWorkspace(page, 'Otro tipo');
   await addNote(page, 'Nueva');
-  await (await openMarkdownEditor(page)).fill('Otro cuerpo.');
+  await page.getByLabel('Contenido visual').fill('Otro cuerpo.');
   await expect.poll(bodyInEditor).toMatch(/monospace|Menlo|Consolas/);
 
   await closeEditor(page);
@@ -1917,14 +1833,24 @@ test('Imprimir: una imagen intercalada aparece una sola vez, en su sitio y con s
   await page.goto('./');
   await createWorkspace(page, 'Lectura con imagen');
   await addNote(page, 'Con foto');
-  const editor = await openMarkdownEditor(page);
-  await editor.fill('# Encabezado\n\n- uno\n- dos');
-  await editor.press('End');
+  // Se construye en Visual (no como HTML seguro): insertar una imagen todavía serializa siempre por
+  // el codec Markdown (CardInspector.tsx `placeVisualImage`), así que mezclarla con una nota ya
+  // convertida a HTML (P18-E3-B3-B, pendiente) dejaría el documento en un estado inconsistente.
+  const visual = page.getByLabel('Contenido visual');
+  await visual.click();
+  await page.keyboard.type('Encabezado');
+  await visual.locator('p, h1, h2, h3').first().selectText();
+  await page.getByLabel('Tipo de bloque').selectOption('heading-1');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await button(page, 'Lista con viñetas').click();
+  await page.keyboard.type('uno');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('dos');
   const chooser = page.waitForEvent('filechooser');
-  await button(page, 'Insertar una imagen en la nota').click();
+  await button(page, 'Insertar una imagen').click();
   await (await chooser).setFiles(image);
-  await expect(feedback(page)).toHaveText('Imagen «app-icon.png» insertada en la nota. Guardado en memoria.');
-  await page.getByLabel('Texto alternativo de la imagen 1').fill('Captura');
+  await page.getByLabel(/Texto alternativo de /).fill('Captura');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
 
@@ -1951,7 +1877,7 @@ test('Presentar: pantalla completa en cualquier plataforma, cuenta y navegación
   await page.goto('./');
   await createWorkspace(page, 'Lectura');
   await addNote(page, 'Primera');
-  await (await openMarkdownEditor(page)).fill('Cuerpo de la primera.');
+  await page.getByLabel('Contenido visual').fill('Cuerpo de la primera.');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
   await addNote(page, 'Segunda');

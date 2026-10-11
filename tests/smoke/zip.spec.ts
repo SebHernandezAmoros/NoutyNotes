@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+import { cardTitleText } from '../../packages/domain/src/index';
 import { buildZip, text } from '../../packages/storage/src/__fixtures__/zip';
 import { readWorkspaceArchive } from '../../packages/storage/src/workspace-archive';
-import { hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, openMarkdownEditor, trackProblems } from './support';
+import { fillCardTitle, hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, seedBodyHtml, trackProblems } from './support';
 
 /** Navegador sin File System Access: `showDirectoryPicker` no existe. */
 const withoutFolderAccess = `Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true });`;
@@ -52,7 +53,7 @@ test('E3-A: el respaldo ZIP exige aceptar que los borradores privados quedan fue
   await importZip(page, 'demo.zip', fixtureZip());
   await insertFromMenu(page, 'Insertar nota');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
-  await (await openMarkdownEditor(page)).fill('BORRADOR PRIVADO EXCLUIDO');
+  await page.getByLabel('Contenido visual').fill('BORRADOR PRIVADO EXCLUIDO');
   await expect(page.getByTestId('draft-source')).toContainText('BORRADOR PRIVADO EXCLUIDO');
 
   // En móvil la edición enfocada oculta el lienzo y su barra; volver al tablero no confirma el texto.
@@ -93,11 +94,11 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await expect(page.getByTestId('export-status')).toHaveText('CAMBIOS SIN EXPORTAR · Exporta un ZIP para conservarlos al recargar o cerrar.');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
-  await page.getByLabel('Título de la tarjeta').fill('Nota del ZIP');
-  await (await openMarkdownEditor(page)).fill('## Desde el navegador\n\n- conservar **todo**');
+  await fillCardTitle(page, 'Nota del ZIP');
+  await seedBodyHtml(page, '<h2>Desde el navegador</h2>\n<ul><li>conservar <strong>todo</strong></li></ul>');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota del ZIP');
-  // Etiqueta (ADR 0019): la tarjeta viaja como v2; las demás, byte a byte.
+  // Etiqueta (ADR 0019); el resto de tarjetas del fixture viaja sin cambios, byte a byte.
   await page.getByTestId('tag-input').fill('#Exportable');
   await button(page, 'Añadir la etiqueta').click();
   await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveText('#exportable');
@@ -150,13 +151,17 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   expect(archive.value.files['cards/idea-b.md']).toBe(decoder.decode(source['cards/idea-b.md']));
   expect(archive.value.assets).toEqual({ 'assets/images/pixel.png': binary, 'assets/notes/lista de ideas.txt': source['assets/notes/lista de ideas.txt'] });
   const card = archive.value.workspace.cards.find((candidate) => candidate.id === 'tarjeta-1');
+  // El cuerpo se sembró como HTML seguro v1 (ADR 0063), no como Markdown: `contentDocument`, no `content`.
   expect(card).toMatchObject({
     titleRichText: [{ type: 'text', text: 'Nota del ZIP' }],
-    content: '## Desde el navegador\n\n- conservar **todo**',
+    contentDocument: { blocks: [{ type: 'heading', level: 2 }, { type: 'list', style: 'bullet' }] },
     tags: ['exportable'],
   });
   expect(card?.title).toBeUndefined();
-  expect(archive.value.files['cards/tarjeta-1.md']).toContain('schemaVersion: 11');
+  expect(card?.content).toBeUndefined();
+  // v12: el cuerpo HTML (`contentDocument`) exige la versión más alta del esquema selectivo (ADR 0066),
+  // por encima de cualquier otro campo presente (título enriquecido, etiqueta...).
+  expect(archive.value.files['cards/tarjeta-1.md']).toContain('schemaVersion: 12');
   expect(archive.value.workspace.relations.map(({ from, to }) => `${from}→${to}`)).toEqual(['idea-a→idea-b', 'tarjeta-1→idea-a']);
   expect(archive.value.workspace.layouts[0]?.placements.find((placement) => placement.cardId === 'tarjeta-1')?.rect.y).toBe(bornRow);
 
@@ -172,7 +177,9 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await page.getByTestId('card-tarjeta-1').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
-  await expect(await openMarkdownEditor(page)).toHaveValue('## Desde el navegador\n\n- conservar **todo**');
+  const visual = page.getByLabel('Contenido visual');
+  await expect(visual.locator('h2')).toHaveText('Desde el navegador');
+  await expect(visual.locator('li strong')).toHaveText('todo');
   // La lista de conexiones ya no vive en el editor de escritorio (ADR 0048): sus líneas en el lienzo
   // bastan para confirmar que sobrevivieron a reimportar el ZIP (la del fixture más la nueva).
   await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(2);
@@ -191,7 +198,7 @@ test('una importación inválida explica el motivo y no sobrescribe ni deja esta
   await page.getByTestId('card-idea-a').click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-idea-a'));
-  await page.getByLabel('Título de la tarjeta').fill('Editada antes del error');
+  await fillCardTitle(page, 'Editada antes del error');
   await button(page, 'Guardar texto').click();
   await expect(page.getByTestId('card-idea-a')).toContainText('Editada antes del error');
   await button(page, 'Volver a mis espacios').click();
@@ -399,11 +406,11 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   const chooser = page.waitForEvent('filechooser');
   await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).setFiles(icon);
-  await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
+  await expect(page.getByTestId('note-preview-tarjeta-1-image-0')).toBeVisible();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
-  await page.getByLabel('Título de la tarjeta').fill('Descartada');
+  await fillCardTitle(page, 'Descartada');
   await button(page, 'Guardar texto').click();
   if (isCompactWidth(page)) {
     await button(page, 'Enviar la tarjeta Descartada a la Papelera').click();
@@ -423,13 +430,13 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   expect(archive.ok).toBe(true);
   if (!archive.ok) return;
   expect(archive.value.assets['assets/images/tarjeta-1.png']).toEqual(new Uint8Array(readFileSync(icon)));
-  expect(archive.value.workspace.trash?.map((entry) => entry.card.title)).toEqual(['Descartada']);
+  expect(archive.value.workspace.trash?.map((entry) => cardTitleText(entry.card))).toEqual(['Descartada']);
 
   // Otra sesión: reimportar trae la vista previa (sin red) y la Papelera.
   await page.reload();
   await button(page, 'Volver a mis espacios').click();
   await importZip(page, 'viaje.zip', readFileSync(zipPath));
-  await expect(page.getByTestId('image-preview-tarjeta-1')).toBeVisible();
+  await expect(page.getByTestId('note-preview-tarjeta-1-image-0')).toBeVisible();
   await button(page, 'Abrir la Papelera (1)').click();
   await expect(page.getByTestId('trash-item-tarjeta-2')).toContainText('Descartada');
 });

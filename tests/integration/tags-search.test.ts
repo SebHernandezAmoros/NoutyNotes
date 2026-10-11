@@ -21,7 +21,8 @@ async function project() {
   const second = ok(await addBoardToWorkspace(storage, id, { title: 'Ideas' }));
   const tokio = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Tokio', boardId: second }));
   const foto = ok(await addCardToBoard(storage, id, { kind: 'image', title: 'Foto del río', boardId: second }));
-  return { storage, id, kioto, tokio, foto, second };
+  const forma = ok(await addCardToBoard(storage, id, { kind: 'shape', boardId: second }));
+  return { storage, id, kioto, tokio, foto, forma, second };
 }
 
 describe('etiquetas # por proyecto (ADR 0019)', () => {
@@ -58,13 +59,16 @@ describe('etiquetas # por proyecto (ADR 0019)', () => {
 
 describe('búsqueda dentro del proyecto (ADR 0019)', () => {
   it('busca en título, texto, etiquetas y tipo sin distinguir mayúsculas ni acentos, e indica dónde está cada tarjeta', async () => {
-    const { storage, id, kioto, tokio, foto, second } = await project();
+    const { storage, id, kioto, tokio, foto, forma, second } = await project();
     ok(await addCardTag(storage, id, tokio, 'japón'));
     const workspace = ok(await storage.open(id));
     expect(searchWorkspace(workspace, 'OTONO').map((result) => result.cardId)).toEqual([kioto]);
     expect(searchWorkspace(workspace, 'jardines')[0]).toMatchObject({ cardId: kioto, excerpt: expect.stringContaining('<script>alert(1)</script>') });
     expect(searchWorkspace(workspace, '#japon').map((result) => result.cardId)).toEqual([tokio]);
-    expect(searchWorkspace(workspace, 'imagen').map((result) => result.cardId)).toEqual([foto]);
+    // Desde la nota unificada (ADR 0060), «imagen» ya no es un tipo propio: texto/título/imagen
+    // convergen en «nota», así que el tipo buscable que sigue siendo distinto es «forma»/«conector».
+    expect(searchWorkspace(workspace, 'forma').map((result) => result.cardId)).toEqual([forma]);
+    expect(searchWorkspace(workspace, 'río').map((result) => result.cardId)).toEqual([foto]);
     expect(searchWorkspace(workspace, 'tokio #japón')[0]?.boards).toEqual([{ boardId: second, title: 'Ideas' }]);
     // Todas las palabras deben aparecer; el Markdown «#» del texto no es una etiqueta.
     expect(searchWorkspace(workspace, 'kioto tokio')).toEqual([]);

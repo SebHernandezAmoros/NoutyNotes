@@ -167,10 +167,15 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
   // P16: texto flotante, forma y conector tampoco son Markdown; interpretarlos como nota (defecto real
   // de esta fase) podía mostrar `*` o `**` de un texto literal como lista o negrita no pedidas.
   const bodyHeight = Math.max(0, box.height - 56);
-  const blocks = image || floatingText || shape || connector ? [] : parseNoteBlocks(card.content ?? '');
-  const mixed = blocks.some((block) => block.kind === 'image');
-  const richDocument = image || floatingText || shape || connector ? null : parseWebRichText(richTextCodec, card.content ?? '');
-  const mixedRich = mixed && (richDocument?.blocks.some((block) => block.type === 'table') ?? false);
+  // Un cuerpo HTML seguro (ADR 0066) sustituye `content` de forma excluyente (dominio): sin él no hay
+  // nada que parsear como Markdown, así que `blocks` (NotePreview) solo aplica a notas aún no migradas.
+  const htmlAuthored = card.contentDocument !== undefined;
+  const blocks = image || floatingText || shape || connector || htmlAuthored ? [] : parseNoteBlocks(card.content ?? '');
+  const mixedLegacy = blocks.some((block) => block.kind === 'image');
+  const richDocument = image || floatingText || shape || connector ? null : (card.contentDocument ?? parseWebRichText(richTextCodec, card.content ?? ''));
+  const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => block.type === 'image') ?? false);
+  const mixed = mixedLegacy || hasImageBlock;
+  const mixedRich = (mixedLegacy && (richDocument?.blocks.some((block) => block.type === 'table') ?? false)) || hasImageBlock;
   // Tamaño semántico por ficha (ADR 0050): mismo mapa que el lienzo y la impresión.
   const titleSize = titleFontSize(card.titleSize);
   const bodySize = bodyFontSize(card.bodySize);

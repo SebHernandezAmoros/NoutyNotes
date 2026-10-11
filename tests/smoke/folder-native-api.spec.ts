@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { insertFromMenu, openFullCardEditor } from './support';
+import { fillCardTitle, insertFromMenu, openFullCardEditor } from './support';
 
 test('los handles reales de Chromium guardan y reabren un workspace v1', async ({ page, browserName }) => {
   // Firefox no ofrece showDirectoryPicker y sus handles OPFS no tienen queryPermission: la app desactiva
@@ -16,7 +16,7 @@ test('los handles reales de Chromium guardan y reabren un workspace v1', async (
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
-  await page.getByLabel('Título de la tarjeta').fill('Persistió');
+  await fillCardTitle(page, 'Persistió');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
   const files = await page.evaluate(async () => {

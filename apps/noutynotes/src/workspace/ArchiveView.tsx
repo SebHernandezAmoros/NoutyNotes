@@ -1,4 +1,5 @@
 import { fold } from '@noutynotes/application';
+import { cardTitleText } from '@noutynotes/domain';
 import type { ArchivedBoard, ArchivedCard, BoardId, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
@@ -53,7 +54,7 @@ export function ArchiveView({
   const [confirmingSelection, setConfirmingSelection] = useState(false);
   const archivedBoards = workspace.archivedBoards ?? [];
   const archive = workspace.archive ?? [];
-  const titleOf = (entry: ArchivedCard) => entry.card.title ?? t('trash.item.untitled', locale);
+  const titleOf = (entry: ArchivedCard) => cardTitleText(entry.card) || t('trash.item.untitled', locale);
   const cardsUnit = (count: number) => t(count === 1 ? 'unit.card.one' : 'unit.card.many', locale, { count: String(count) });
   const countUnit = (base: 'archive.count' | 'archive.selected', count: number) => t(count === 1 ? `${base}.one` : `${base}.many`, locale, { count: String(count) });
   const toggleSelected = (cardId: CardId) => setSelected((current) => {

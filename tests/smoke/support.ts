@@ -1,3 +1,4 @@
+import { expect } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 /** P10: todas las creaciones del tablero entran por el mismo menú en móvil y escritorio. */
@@ -61,6 +62,40 @@ export async function openMarkdownEditor(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: 'Volver al editor Markdown', exact: true }).click();
   await editor.waitFor({ state: 'visible' });
   return editor;
+}
+
+/**
+ * Siembra el cuerpo de una nota como HTML seguro v1 (ADR 0066) y vuelve a Visual: en web ya no hay
+ * una vista Markdown para teclear estructura rápido, así que esta es la vía real hoy. `html` debe
+ * cumplir la lista blanca del codec (p, h1-h6, strong, em, a[href], ul/ol/li, data-nouty-list,
+ * figure/img/figcaption, table...), no sintaxis Markdown.
+ */
+export async function seedBodyHtml(page: Page, html: string): Promise<void> {
+  await page.getByRole('button', { name: 'Editar el código HTML del cuerpo', exact: true }).click();
+  await page.getByTestId('html-source-input').fill(html);
+  await page.getByRole('button', { name: 'Validar y aplicar el código HTML', exact: true }).click();
+  await page.getByRole('button', { name: 'Editar el cuerpo visualmente', exact: true }).click();
+  // «Aplicar» solo actualiza la sesión editorial (borrador); sin guardar, la ficha del lienzo sigue
+  // mostrando el documento anterior hasta el autoguardado (700 ms) o un «Guardar texto» explícito.
+  await page.getByRole('button', { name: 'Guardar texto', exact: true }).click();
+  await page.getByTestId('workspace-feedback').filter({ hasText: 'Texto guardado' }).waitFor({ state: 'visible' });
+}
+
+/**
+ * El título es un editor Lexical (`titleRichText`, ADR 0060), no un `<textarea>`: `.fill()` muta el
+ * DOM directamente y Lexical no siempre reconcilia ese cambio con su propio estado (carrera con su
+ * reconciliador), dejando el título sin guardar de forma intermitente. Clic + seleccionar todo +
+ * teclear pasa por el mismo camino de eventos que una persona usuaria y no tiene esa carrera.
+ */
+export async function fillCardTitle(page: Page, text: string): Promise<void> {
+  const title = page.getByLabel('Título de la tarjeta');
+  await title.selectText();
+  if (text === '') await page.keyboard.press('Delete');
+  else await page.keyboard.type(text);
+  // Lexical reconcilia tras el evento `input`; el siguiente paso (p. ej. «Guardar texto») puede
+  // adelantarse a esa reconciliación si no se espera a que el DOM visible ya refleje el cambio.
+  if (text === '') await expect(title).toHaveText('');
+  else await expect(title).toContainText(text);
 }
 
 /**

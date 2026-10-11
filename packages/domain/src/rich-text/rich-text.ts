@@ -392,3 +392,31 @@ export function normalizeRichTextDocument(richText: RichTextDocument): Validatio
   };
   return validateRichTextDocument(normalized);
 }
+
+/**
+ * Marca o desmarca la casilla en la posición `index` entre todas las casillas del documento, en el
+ * mismo orden visible que el editor Visual (de arriba abajo, anidadas incluidas). Reutiliza la misma
+ * noción de «posición entre casillas» que ya usa la ficha del lienzo para resumir listas de tareas
+ * (UX7-B2) sobre cuerpos HTML seguros (ADR 0066); el equivalente para cuerpos Markdown es
+ * `toggleChecklistLine` en la aplicación web. Devuelve `null` si el índice no corresponde a ninguna
+ * casilla real.
+ */
+export function toggleRichTextChecklistItem(richText: RichTextDocument, index: number): RichTextDocument | null {
+  if (index < 0) return null;
+  let cursor = 0;
+  let found = false;
+  const toggleList = (list: RichTextList): RichTextList => ({
+    ...list,
+    items: list.items.map((item) => {
+      let next = item;
+      if (list.style === 'checklist') {
+        if (cursor === index) { next = { ...item, checked: !(item.checked ?? false) }; found = true; }
+        cursor += 1;
+      }
+      if (item.children) next = { ...next, children: item.children.map(toggleList) };
+      return next;
+    }),
+  });
+  const blocks = richText.blocks.map((block) => block.type === 'list' ? toggleList(block) : block);
+  return found ? { ...richText, blocks } : null;
+}

@@ -164,6 +164,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const [htmlErrorPath, setHtmlErrorPath] = useState<string | null>(null);
   const [htmlModified, setHtmlModified] = useState(initialDraft?.bodySource?.format === 'html' && initialDraft.bodyValidation?.status !== 'valid');
   const [bodyDirty, setBodyDirty] = useState(false);
+  // El texto flotante es una primitiva propia (P13-P16), no una nota: conserva su campo de texto simple
+  // y nunca adopta el editor Visual/HTML (ADR 0066), que es del cuerpo de una nota.
   const supportsVisualEditor = !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
@@ -553,8 +555,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         {!shape && !connector && presentation.title === 'visible' ? (
           <View testID="rich-title-editor">
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.title.label', locale)}</Text>
+            {/* ADR 0030: la tipografía elegida para las notas no afecta al título, que mantiene la del sistema. */}
             <RichTextEditor cardId={`${card.id}-title`} document={titleDocument} codec={richTextCodec} onChange={changeTitleDocument}
-              fontFamily={noteFontFamily} compact titleOnly />
+              compact titleOnly />
           </View>
         ) : null}
         {linkKey ? (
@@ -774,6 +777,30 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         ) : null}
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.frame.hint', locale)}</Text>
       </View>
+
+      {/* UX7-D4 (ADR 0050): se perdió al unificar notas/tablas/banners (P18-C) sin que ningún ADR
+          retirara el tamaño por ficha; el lienzo y Lista siguen leyendo `titleSize`/`bodySize». */}
+      {!shape && !connector ? <View testID="card-text-size-picker" style={styles.section}>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.textSize.section', locale)}</Text>
+        <View style={styles.row}>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.titleRow', locale)}</Text>
+          {(['small', 'medium', 'large'] as const).map((size) => (
+            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
+              accessibilityLabel={t(`inspector.textSize.title.${size}.accessibilityLabel`, locale)}
+              pressed={(card.titleSize ?? 'medium') === size}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleSize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+          ))}
+        </View>
+        <View style={styles.row}>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.bodyRow', locale)}</Text>
+          {(['small', 'medium', 'large'] as const).map((size) => (
+            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
+              accessibilityLabel={t(`inspector.textSize.body.${size}.accessibilityLabel`, locale)}
+              pressed={(card.bodySize ?? 'medium') === size}
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodySize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+          ))}
+        </View>
+      </View> : null}
 
       {shape ? (
         <View testID="shape-style-picker" style={styles.section}>

@@ -2,6 +2,7 @@
  * Exportación del Diario (ADR 0037): documento Markdown de un día o rango, no un ZIP de workspace.
  * Texto completo, como «Imprimir» (ADR 0031): es una exportación explícita, no un extracto.
  */
+import { cardTitleText } from '@noutynotes/domain';
 import type { Workspace } from '@noutynotes/domain';
 
 import { type DailyLogRangeResult, type RangeLogItem, dailyLogRange } from './daily-log';
@@ -12,7 +13,7 @@ const verb: Readonly<Record<RangeLogItem['kind'], string>> = { entry: 'Entrada',
 
 function line(workspace: Workspace, item: RangeLogItem): readonly string[] {
   const typeLabel = workspace.cardTypes.find((type) => type.id === item.card.typeId)?.label ?? 'Tarjeta';
-  const title = item.card.title ?? 'Sin título';
+  const title = cardTitleText(item.card) || 'Sin título';
   const out = [`- ${item.time} · ${verb[item.kind]} · ${typeLabel.toUpperCase()} · ${title}`];
   const tags = item.card.tags ?? [];
   if (tags.length > 0) out.push(`  Etiquetas: ${tags.map((tag) => `#${tag}`).join(' ')}`);

@@ -4,7 +4,7 @@ import { isAbsolute, join, relative as relativePath, resolve, sep } from 'node:p
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-import { insertFromMenu, openFullCardEditor } from './support';
+import { fillCardTitle, insertFromMenu, openFullCardEditor } from './support';
 
 /**
  * Bytes reales en disco, sin handles de Chrome. Esta prueba sustituye `showDirectoryPicker` y crea
@@ -129,14 +129,15 @@ test('carpeta física en disco: nota, edición rápida, cierre inmediato, recarg
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
-  await page.getByLabel('Título de la tarjeta').fill('Nota en disco');
+  await fillCardTitle(page, 'Nota en disco');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta', exact: true }).click();
   await expect(page.getByTestId('card-inspector')).toHaveCount(0);
   await expect(page.getByTestId('workspace-memory')).toHaveText('CARPETA LOCAL · CAMBIOS GUARDADOS');
 
   // Bytes reales: documento de la tarjeta con el título editado y sin temporales ni marcadores.
   const card = join(notes, 'prueba', 'cards', 'tarjeta-1.md');
-  expect(readFileSync(card, 'utf8')).toContain('title: Nota en disco');
+  // El título se escribe hoy como `titleRichText` (ADR 0060), no como el campo `title` heredado.
+  expect(readFileSync(card, 'utf8')).toMatch(/titleRichText:\s*\n\s*- text: Nota en disco/);
   expect(filesUnder(notes)).toEqual([
     'prueba/.nouty/layout.yaml', 'prueba/.nouty/relations.yaml', 'prueba/.nouty/workspace.yaml',
     'prueba/boards/principal.md', 'prueba/cards/tarjeta-1.md',

@@ -1,3 +1,4 @@
+import { cardTitleText } from '@noutynotes/domain';
 import type { CardId, TrashedCard, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
@@ -27,7 +28,7 @@ export function TrashPanel({ visible, compact, workspace, busy, onRestore, onPur
   const colors = theme.colors;
   const [confirming, setConfirming] = useState<CardId | null>(null);
   const trash = [...(workspace.trash ?? [])].reverse();
-  const titleOf = (entry: TrashedCard) => entry.card.title ?? t('trash.item.untitled', locale);
+  const titleOf = (entry: TrashedCard) => cardTitleText(entry.card) || t('trash.item.untitled', locale);
   const typeLabel = (entry: TrashedCard) => workspace.cardTypes.find((type) => type.id === entry.card.typeId)?.label ?? t('trash.item.type.fallback', locale);
   const close = () => { setConfirming(null); onClose(); };
 

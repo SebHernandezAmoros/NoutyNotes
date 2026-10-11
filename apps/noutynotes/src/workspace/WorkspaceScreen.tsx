@@ -3,8 +3,8 @@ import {
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
-import type { AssetRef, BoardId, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
-import { cardTitleText, createOrthogonalConnectorPath, frameMembers } from '@noutynotes/domain';
+import type { AssetRef, BoardId, Card, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
+import { cardTitleText, createOrthogonalConnectorPath, frameMembers, toggleRichTextChecklistItem } from '@noutynotes/domain';
 import { htmlRichTextCodec, markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -317,7 +317,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const closedBoardList = workspace ? workspace.boards.filter((candidate) => !openBoards.includes(candidate.id)) : [];
   const layout = board ? workspace?.layouts.find((candidate) => candidate.boardId === board.id) : undefined;
   const visibleIds = new Set(layout?.placements.map((placement) => placement.cardId) ?? []);
-  const unplaced = unplacedCardIds(board, layout).map((cardId) => workspace?.cards.find((card) => card.id === cardId)?.title ?? t('card.untitled', locale));
+  const titleOrUntitled = (found: Card | undefined) => (found ? cardTitleText(found) : '') || t('card.untitled', locale);
+  const unplaced = unplacedCardIds(board, layout).map((cardId) => titleOrUntitled(workspace?.cards.find((card) => card.id === cardId)));
   const boardCount = board?.cardIds.length ?? 0;
   // El editor se muestra por `editingId`, no por `selectedId` (auditoría de interacción, 2026-09-29):
   // seleccionar una tarjeta ya no implica editarla.
@@ -472,7 +473,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const containing = workspace.boards.filter((candidate) => candidate.cardIds.includes(cardId));
     const target = board && containing.some((candidate) => candidate.id === board.id) ? board : containing[0];
     if (!target) {
-      setFeedback({ tone: 'error', text: `«${card.title ?? t('card.untitled', locale)}» no está en ningún tablero.` });
+      setFeedback({ tone: 'error', text: `«${cardTitleText(card) || t('card.untitled', locale)}» no está en ningún tablero.` });
       return;
     }
     if (target.id !== board?.id) {
@@ -481,7 +482,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       setPan(START_PAN);
     }
     const placed = workspace.layouts.find((candidate) => candidate.boardId === target.id)?.placements.some((placement) => placement.cardId === cardId) ?? false;
-    setPlaceOffer(placed ? null : { cardId, boardId: target.id, title: card.title ?? t('card.untitled', locale) });
+    setPlaceOffer(placed ? null : { cardId, boardId: target.id, title: cardTitleText(card) || t('card.untitled', locale) });
     // «Ir a» desde la búsqueda es una navegación directa a esa tarjeta: sigue abriendo su editor, a
     // diferencia de seleccionar en el lienzo (auditoría de interacción, 2026-09-29).
     setSelectedId(placed ? cardId : null);
@@ -1015,7 +1016,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       ? connectorStart ? 'Posición 1 marcada. Toca una segunda posición o una tarjeta para terminar el conector.'
         : 'Conector: toca una posición libre o una tarjeta para marcar la posición 1.'
     : tool === 'connect'
-      ? connectSource ? `Origen: «${workspace?.cards.find((card) => card.id === connectSource)?.title ?? t('card.untitled', locale)}». Toca otra tarjeta para conectar o desconectar; toca el origen para cancelar.`
+      ? connectSource ? `Origen: «${titleOrUntitled(workspace?.cards.find((card) => card.id === connectSource))}». Toca otra tarjeta para conectar o desconectar; toca el origen para cancelar.`
         : 'Conectar: toca la tarjeta de origen.'
       : (layout?.placements.length ?? 0) === 0
         ? 'Tablero vacío: crea la primera nota desde el lienzo o con «Nota» en la barra.'
@@ -1070,11 +1071,18 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!setPendingText({ cardId, title, content, titleDocument }, authority)) return true;
     return flushPendingText(authority ?? undefined);
   }, [authority, flushPendingText, setPendingText]);
-  // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor (`toggleChecklistLine`)
-  // y el mismo caso de uso de guardado; no abre el editor ni cambia la selección.
+  // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor y el mismo caso de
+  // uso de guardado; no abre el editor ni cambia la selección. Un cuerpo HTML seguro (ADR 0066) marca la
+  // posición entre casillas del documento (`toggleRichTextChecklistItem`), no una línea de Markdown.
   const toggleCheck = (cardId: CardId, lineIndex: number) => {
     const target = workspace?.cards.find((candidate) => candidate.id === cardId);
     if (!target) return;
+    if (target.contentDocument !== undefined) {
+      const next = toggleRichTextChecklistItem(target.contentDocument, lineIndex);
+      if (next === null) return;
+      void run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { contentDocument: next }), 'action.textSaved', { reactive: true });
+      return;
+    }
     const next = toggleChecklistLine(target.content ?? '', lineIndex);
     if (next === null) return;
     void run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { content: next }), 'action.textSaved', { reactive: true });
@@ -1510,7 +1518,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <View testID="inspector-sheet" style={[styles.sheet, typing ? styles.sheetTyping : null, focusing ? styles.sheetFocus : null, { backgroundColor: colors.background, borderColor: colors.border }]}>
                   <View style={styles.sheetBar}>
                     {/* Una sola barra: título, mostrar/ocultar y cerrar (sin repetir la cabecera del inspector). */}
-                    <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{frame ? frame.title : selected?.title ?? t('trash.item.untitled', locale)}</Text>
+                    <Text accessibilityRole="header" numberOfLines={1} style={[styles.sheetTitle, { color: colors.textPrimary }]}>{frame ? frame.title : titleOrUntitled(selected)}</Text>
                     {focusing ? (
                       <ActionButton label={t('inspector.sheet.back', locale)} accessibilityLabel={t('workview.back', locale)} onPress={() => setFocus(false)} />
                     ) : (

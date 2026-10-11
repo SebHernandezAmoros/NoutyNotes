@@ -1,4 +1,5 @@
 import type { RichTextCodec } from '@noutynotes/application';
+import { cardTitleText } from '@noutynotes/domain';
 import type { Card, CardId, RichTextDocument } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -25,10 +26,10 @@ interface InlineCardEditorProps {
 export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const [title, setTitle] = useState(initialDraft?.title ?? card.title ?? '');
+  const [title, setTitle] = useState(initialDraft?.title ?? cardTitleText(card));
   const [content, setContent] = useState(initialDraft?.content ?? card.content ?? '');
   const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
-    schemaVersion: 1, blocks: [{ type: 'paragraph', content: (initialDraft?.title ?? card.title) ? [{ type: 'text', text: initialDraft?.title ?? card.title ?? '' }] : [] }],
+    schemaVersion: 1, blocks: [{ type: 'paragraph', content: (initialDraft?.title ?? cardTitleText(card)) ? [{ type: 'text', text: initialDraft?.title ?? cardTitleText(card) }] : [] }],
   }));
   const floatingText = card.typeId === 'texto-flotante';
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
@@ -50,7 +51,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
     }
   };
   const current = useRef({ title, content });
-  const saved = useRef({ title: initialDraft?.title ?? card.title ?? '', content: initialDraft?.content ?? card.content ?? '' });
+  const saved = useRef({ title: initialDraft?.title ?? cardTitleText(card), content: initialDraft?.content ?? card.content ?? '' });
   const queued = useRef<{ title: string; content: string } | null>(null);
   const queue = useRef<Promise<boolean>>(Promise.resolve(true));
   useEffect(() => { current.current = { title, content }; }, [title, content]);

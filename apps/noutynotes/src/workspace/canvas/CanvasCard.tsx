@@ -1,6 +1,6 @@
 import { cardContentPresentation, linkDisplay, linkUrlField } from '@noutynotes/domain';
 import type { RichTextCodec } from '@noutynotes/application';
-import type { Card, CardDisplayMode, RichTextInline, RichTextList, Workspace } from '@noutynotes/domain';
+import type { Card, CardDisplayMode, RichTextDocument, RichTextInline, RichTextList, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -46,6 +46,55 @@ function checklistTextsOf(list: RichTextList): readonly string[] {
     ...(list.style === 'checklist' ? [inlinePlainText(item.content)] : []),
     ...(item.children?.flatMap(checklistTextsOf) ?? []),
   ]);
+}
+
+type PreviewBodyBlock =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'check'; readonly lineIndex: number; readonly checked: boolean; readonly indent: string; readonly text: string };
+
+/** Texto plano de un documento HTML seguro (ADR 0066), una línea aproximada por bloque/elemento: base
+ * para estimar desbordamiento y para el resumen de texto plano de la ficha, igual que se hace con las
+ * líneas de Markdown en el resto de este archivo. */
+function richDocumentPlainText(document: RichTextDocument): string {
+  const lines: string[] = [];
+  const walkList = (list: RichTextList) => {
+    for (const item of list.items) {
+      lines.push(inlinePlainText(item.content));
+      for (const child of item.children ?? []) walkList(child);
+    }
+  };
+  for (const block of document.blocks) {
+    if (block.type === 'paragraph' || block.type === 'heading') lines.push(inlinePlainText(block.content));
+    else if (block.type === 'list') walkList(block);
+    else if (block.type === 'table') {
+      for (const row of block.header ? [block.header, ...block.rows] : block.rows) {
+        for (const cell of row.cells) lines.push(inlinePlainText(cell.content));
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+/** Bloques de resumen (texto o casilla) de un documento HTML seguro, en el mismo orden visible que el
+ * editor Visual. `lineIndex` de una casilla es su posición entre casillas (orden de documento), no una
+ * línea de texto: el único consumidor (`onToggleCheck`) resuelve el índice según la fuente de la nota. */
+function richDocumentBodyBlocks(document: RichTextDocument, limit: number): readonly PreviewBodyBlock[] {
+  const out: PreviewBodyBlock[] = [];
+  let checklistIndex = 0;
+  const pushList = (list: RichTextList) => {
+    for (const item of list.items) {
+      if (list.style === 'checklist') {
+        out.push({ kind: 'check', lineIndex: checklistIndex, checked: item.checked ?? false, indent: '', text: inlinePlainText(item.content) });
+        checklistIndex += 1;
+      } else out.push({ kind: 'text', text: inlinePlainText(item.content) });
+      for (const child of item.children ?? []) pushList(child);
+    }
+  };
+  for (const block of document.blocks) {
+    if (block.type === 'paragraph' || block.type === 'heading') out.push({ kind: 'text', text: inlinePlainText(block.content) });
+    else if (block.type === 'list') pushList(block);
+  }
+  return out.slice(0, limit);
 }
 
 interface CanvasCardProps {
@@ -186,13 +235,20 @@ export function CanvasCard(props: CanvasCardProps) {
   const titleSize = lowZoom ? Math.min(titleBase * MAX_SUMMARY_SCALE, titleBase / zoomFactor) : titleBase;
   const contentSize = lowZoom ? Math.min(bodyBase * MAX_SUMMARY_SCALE, bodyBase / zoomFactor) : bodyBase;
   const contentLine = bodyLineHeight(contentSize);
-  // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden.
-  const blocks = image ? [] : parseNoteBlocks(card.content ?? '');
-  const mixed = blocks.some((block) => block.kind === 'image');
-  const richDocument = image ? null : parseWebRichText(props.richTextCodec, card.content ?? '');
+  // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden. El cuerpo HTML
+  // seguro (ADR 0066) sustituye `content` de forma excluyente (dominio): sin él no hay nada que
+  // parsear como Markdown, así que estos bloques heredados solo aplican a notas aún no migradas.
+  const htmlAuthored = card.contentDocument !== undefined;
+  const blocks = image || htmlAuthored ? [] : parseNoteBlocks(card.content ?? '');
+  const mixedLegacy = blocks.some((block) => block.kind === 'image');
+  const richDocument = image ? null : (card.contentDocument ?? parseWebRichText(props.richTextCodec, card.content ?? ''));
+  const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => block.type === 'image') ?? false);
+  const mixed = mixedLegacy || hasImageBlock;
   // El visor enriquecido es necesario cuando el legado perdería estructura (tabla + imagen). Para
-  // imagen + texto se conserva NotePreview, que ya cubre las cuatro posiciones de leyenda.
-  const mixedRich = mixed && (richDocument?.blocks.some((block) => block.type === 'table') ?? false);
+  // imagen + texto Markdown se conserva NotePreview, que ya cubre las cuatro posiciones de leyenda;
+  // una nota HTML con imagen no tiene bloques de NotePreview que mostrar (arriba quedan vacíos), así
+  // que siempre usa el visor enriquecido.
+  const mixedRich = (mixedLegacy && (richDocument?.blocks.some((block) => block.type === 'table') ?? false)) || hasImageBlock;
   const hasChecklist = richDocument?.blocks.some((block) => block.type === 'list' && listContainsChecklist(block)) ?? false;
   const previewDocument = hasChecklist ? null : richDocument;
   const checklistTexts = richDocument?.blocks.flatMap((block) => block.type === 'list' ? checklistTextsOf(block) : []) ?? [];
@@ -221,26 +277,28 @@ export function CanvasCard(props: CanvasCardProps) {
   const linkValue = linkKey ? card.fields[linkKey] : undefined;
   const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
-  const overflow = previewOverflow(card.content ?? '', box.width, contentSize, bodyLines);
+  const overflow = previewOverflow(htmlAuthored ? (richDocument ? richDocumentPlainText(richDocument) : '') : (card.content ?? ''), box.width, contentSize, bodyLines);
   // UX7-B2: cada línea mostrada es texto agrupado o una fila de checklist propia (marcable sin abrir
   // el editor). El recorte por `bodyLines` es el mismo que el bloque único anterior.
-  type BodyBlock = { readonly kind: 'text'; readonly text: string }
-    | { readonly kind: 'check'; readonly lineIndex: number; readonly checked: boolean; readonly indent: string; readonly text: string };
-  const bodyBlocks: BodyBlock[] = [];
+  const bodyBlocks: PreviewBodyBlock[] = [];
   if (!image && !mixed && previewDocument === null) {
-    const shown = (card.content ?? '').split('\n').slice(0, overflow.shownLines);
-    let checklistIndex = 0;
-    for (const [lineIndex, line] of shown.entries()) {
-      const check = parseChecklistLine(line);
-      if (check) {
-        bodyBlocks.push({ kind: 'check', lineIndex, checked: check.checked, indent: check.indent, text: checklistTexts[checklistIndex] ?? markdownExcerpt(check.text) });
-        checklistIndex += 1;
-        continue;
+    if (htmlAuthored && richDocument) {
+      bodyBlocks.push(...richDocumentBodyBlocks(richDocument, overflow.shownLines));
+    } else {
+      const shown = (card.content ?? '').split('\n').slice(0, overflow.shownLines);
+      let checklistIndex = 0;
+      for (const [lineIndex, line] of shown.entries()) {
+        const check = parseChecklistLine(line);
+        if (check) {
+          bodyBlocks.push({ kind: 'check', lineIndex, checked: check.checked, indent: check.indent, text: checklistTexts[checklistIndex] ?? markdownExcerpt(check.text) });
+          checklistIndex += 1;
+          continue;
+        }
+        const last = bodyBlocks[bodyBlocks.length - 1];
+        const text = markdownExcerpt(line);
+        if (last?.kind === 'text') bodyBlocks[bodyBlocks.length - 1] = { kind: 'text', text: `${last.text}\n${text}` };
+        else bodyBlocks.push({ kind: 'text', text });
       }
-      const last = bodyBlocks[bodyBlocks.length - 1];
-      const text = markdownExcerpt(line);
-      if (last?.kind === 'text') bodyBlocks[bodyBlocks.length - 1] = { kind: 'text', text: `${last.text}\n${text}` };
-      else bodyBlocks.push({ kind: 'text', text });
     }
   }
   // Mide cada fila de checklist en pantalla tras pintar: su posición real no depende de lo que haya
@@ -307,8 +365,9 @@ export function CanvasCard(props: CanvasCardProps) {
           <View testID={`unified-content-${card.id}`} style={[styles.floatingTextWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             {presentation.title === 'visible' && cardDisplayTitle(card) ? (
               card.titleRichText ? (
+                // ADR 0030: el título mantiene la tipografía del sistema, no la elegida para las notas.
                 <BasicRichTextPreview document={{ schemaVersion: 1, blocks: [{ type: 'paragraph', content: card.titleRichText }] }} numberOfLines={3}
-                  color={colors.textPrimary} fontSize={28} lineHeight={34} fontFamily={props.noteFontFamily} testID={`card-rich-title-${card.id}`} />
+                  color={colors.textPrimary} fontSize={28} lineHeight={34} testID={`card-rich-title-${card.id}`} />
               ) : <Text numberOfLines={3} style={[styles.floatingTitle, { color: colors.textPrimary }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
             {presentation.body === 'visible' && previewDocument ? (

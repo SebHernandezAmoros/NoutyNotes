@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { activeLabel, borderColor, borderWidth, expandPosition, fontSize, hasHorizontalOverflow, insertFromMenu, openCardActions, openFullCardEditor, openMarkdownEditor, rgb, trackProblems, openSettings } from './support';
+import { activeLabel, borderColor, borderWidth, expandPosition, fillCardTitle, fontSize, hasHorizontalOverflow, insertFromMenu, openCardActions, openFullCardEditor, rgb, seedBodyHtml, trackProblems, openSettings } from './support';
 
 // Experiencia del workspace (ADR 0013). Por debajo de 800 px: barra abajo, editor en hoja y celdas de
 // 56 × 56 px; desde 800 px: barra sobre el lienzo, editor contextual y celdas cuadradas de 64 × 64 px;
@@ -104,6 +104,33 @@ async function box(locator: Locator) {
   const found = await locator.boundingBox();
   if (!found) throw new Error('Elemento sin geometría medible');
   return found;
+}
+
+/** P18-D: «Insertar conector» entra en modo de marcar dos posiciones (no coloca al insertar, a
+ * diferencia del resto de primitivas); este ayudante marca dos puntos libres del lienzo para dejarlo
+ * decorativo, sin anclarlo a ninguna tarjeta. Los puntos reproducen el espaciado ya probado en
+ * `cards.spec.ts` (P18-D): demasiado cerca, sus dos tramos se superponen y tapan el toque del otro. */
+async function placeConnector(page: Page) {
+  await expect(page.getByText('Conector: toca una posición libre o una tarjeta para marcar la posición 1.')).toBeVisible();
+  const background = page.getByTestId('canvas-background');
+  const canvas = await box(background);
+  const tap = async (x: number, y: number) => {
+    if (isCompact(page)) await background.tap({ position: { x, y } });
+    else await background.click({ position: { x, y } });
+  };
+  await tap(Math.min(90, canvas.width / 4), Math.min(110, canvas.height / 3));
+  await tap(Math.min(280, canvas.width - 55), Math.min(260, canvas.height - 80));
+}
+
+/**
+ * Un conector decorativo (sin anclar) no dibuja una ficha táctil propia en el lienzo —`cardAt`
+ * (Canvas.tsx) lo excluye a propósito para no bloquear el toque de lo que tenga detrás— así que su
+ * editor completo (estilo, anclaje, ruta) se abre con doble clic sobre uno de sus tramos, nunca con
+ * `openFullCardEditor`. Solo existe como ficha normal (`card-tarjeta-N`) en la vista de Lista.
+ */
+async function openConnectorEditor(page: Page) {
+  await page.locator('[data-testid^="connector-segment-"]').first().dblclick();
+  await page.getByTestId('card-inspector').waitFor({ state: 'visible' });
 }
 
 /** Arrastre con ratón en pasos, desde la cabecera de la tarjeta (o el centro del elemento). */
@@ -286,13 +313,16 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await openFullCardEditor(page, card(page, 3));
   await expect(page.getByTestId('card-inspector')).toBeVisible();
 
-  // 3. Editar título y Markdown.
+  // 3. Editar título y cuerpo (encabezado + lista) como HTML seguro v1 (ADR 0066): en web ya no
+  // hay una vista Markdown; esta es la vía real para teclear estructura en vez de la barra rica.
   await tapCard(page, 1);
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
-  await page.getByLabel('Título de la tarjeta').fill('Escena inicial');
-  await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('# Plano\n\n- abierto');
+  await fillCardTitle(page, 'Escena inicial');
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await page.getByTestId('html-source-input').fill('<h1>Plano</h1>\n<ul><li>abierto</li></ul>');
   await expect(page.getByText('Cambios sin guardar')).toBeVisible();
+  await button(page, 'Validar y aplicar el código HTML').click();
+  await button(page, 'Editar el cuerpo visualmente').click();
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await expect(card(page, 1)).toContainText('Escena inicial');
@@ -357,7 +387,9 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   // La lista de conexiones ya no vive en el editor de escritorio (ADR 0048): su línea en el lienzo
   // basta para confirmar que la conexión sobrevivió a reabrir con el tema cambiado.
   await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(1);
-  await expect(await openMarkdownEditor(page)).toHaveValue('# Plano\n\n- abierto');
+  await tapCard(page, 1);
+  await expect(page.getByLabel('Contenido visual').locator('h1')).toHaveText('Plano');
+  await expect(page.getByLabel('Contenido visual').locator('li')).toHaveText('abierto');
   await page.screenshot({ path: testInfo.outputPath('workspace-reopened-dark.png') });
 
   expect(runtimeErrors).toEqual([]);
@@ -401,7 +433,7 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Idea editada aquí');
   await expect(page.getByLabel('Contenido visual')).toContainText('Texto visible normal');
   await page.waitForTimeout(800);
-  await page.getByLabel('Título de la tarjeta').fill('Idea final completa');
+  await fillCardTitle(page, 'Idea final completa');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
   await expect(card(page, 1)).toContainText('Idea final completa');
@@ -431,12 +463,13 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await openCardActions(page, card(page, 1), 'Idea final completa');
   await button(page, 'Abrir el editor completo de Idea final completa').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
-  await button(page, 'Volver al editor Markdown').click();
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('**Texto visible&#x20;**&#x6E;ormal');
+  // La comprobación de los bytes Markdown exactos (escape de entidad en el límite de «negrita») ya
+  // no es alcanzable desde aquí: esa vista se retiró en web (P18-E3-B2). Queda pendiente como caso
+  // dedicado en packages/storage/src/rich-text-codec.test.ts; ver Docs/AI_HANDOFF.md.
   expect(runtimeErrors).toEqual([]);
 });
 
-test('P06: Visual es predeterminado y alterna con Markdown sobre un solo borrador', async ({ page }) => {
+test('P06: Visual es predeterminado y alterna con HTML sobre un solo borrador', async ({ page }) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');
   await createWorkspace(page, 'Editor visual');
@@ -446,20 +479,27 @@ test('P06: Visual es predeterminado y alterna con Markdown sobre un solo borrado
   if (await expandEditor.count() > 0) await expandEditor.click();
 
   const visual = page.getByLabel('Contenido visual');
-  await expect(page.getByTestId('web-rich-text-editor')).toBeVisible();
+  // El título es otra instancia del mismo editor Lexical (ADR 0060): se acota al que de verdad
+  // contiene «Contenido visual» para no resolver a dos elementos con el mismo testID/etiqueta.
+  const bodyEditor = page.getByTestId('web-rich-text-editor').filter({ has: visual });
+  await expect(bodyEditor).toBeVisible();
   await expect(page.getByLabel('Contenido Markdown')).toHaveCount(0);
   await visual.fill('Texto fuerte');
   await visual.selectText();
-  await button(page, 'Negrita').click();
+  await bodyEditor.getByRole('button', { name: 'Negrita', exact: true }).click();
   await expect(visual.locator('strong')).toHaveText('Texto fuerte');
-  await expect(button(page, 'Deshacer en el editor')).toBeEnabled();
-  await button(page, 'Deshacer en el editor').click();
+  const undoBody = bodyEditor.getByRole('button', { name: 'Deshacer en el editor', exact: true });
+  const redoBody = bodyEditor.getByRole('button', { name: 'Rehacer en el editor', exact: true });
+  await expect(undoBody).toBeEnabled();
+  await undoBody.click();
   await expect(visual.locator('strong')).toHaveCount(0);
-  await button(page, 'Rehacer en el editor').click();
+  await redoBody.click();
   await expect(visual.locator('strong')).toHaveText('Texto fuerte');
-  await button(page, 'Volver al editor Markdown').click();
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue('**Texto fuerte**');
-  await button(page, 'Abrir editor visual').click();
+  // P18-E3-B2 sustituyó la vista Markdown por HTML como fuente de texto en web (ADR 0066);
+  // este es el camino real hoy para inspeccionar/editar el cuerpo como texto en vez de visualmente.
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue('<p><strong>Texto fuerte</strong></p>');
+  await button(page, 'Editar el cuerpo visualmente').click();
   await expect(page.getByLabel('Contenido visual').locator('strong')).toHaveText('Texto fuerte');
 
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.', { timeout: 3_000 });
@@ -659,10 +699,10 @@ test('P07: formato avanzado visual web conserva encabezados, listas, checklist, 
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
 
-  await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('## Plan [sitio](https://example.com)\n\n- Uno\n- Dos\n\n- [ ] Pendiente\n- [x] Lista');
-  await button(page, 'Abrir editor visual').click();
+  await seedBodyHtml(page, '<h2>Plan <a href="https://example.com">sitio</a></h2>\n<ul><li>Uno</li><li>Dos</li></ul>\n'
+    + '<ul data-nouty-list="checklist"><li data-nouty-checked="false">Pendiente</li><li data-nouty-checked="true">Lista</li></ul>');
   const visual = page.getByLabel('Contenido visual');
+  const bodyEditor = page.getByTestId('web-rich-text-editor').filter({ has: visual });
   await expect(visual.locator('h2')).toContainText('Plan sitio');
   await expect(visual.locator('a')).toHaveAttribute('href', 'https://example.com');
   await expect(visual.locator('li')).toContainText(['Uno', 'Dos', 'Pendiente', 'Lista']);
@@ -671,9 +711,9 @@ test('P07: formato avanzado visual web conserva encabezados, listas, checklist, 
   await visual.locator('h2').selectText();
   await page.keyboard.press('Control+Alt+3');
   await expect(visual.locator('h3')).toContainText('Plan sitio');
-  await button(page, 'Deshacer en el editor').click();
+  await bodyEditor.getByRole('button', { name: 'Deshacer en el editor', exact: true }).click();
   await expect(visual.locator('h2')).toContainText('Plan sitio');
-  await button(page, 'Rehacer en el editor').click();
+  await bodyEditor.getByRole('button', { name: 'Rehacer en el editor', exact: true }).click();
   await expect(visual.locator('h3')).toContainText('Plan sitio');
 
   await visual.locator('a').selectText();
@@ -694,13 +734,11 @@ test('P07: formato avanzado visual web conserva encabezados, listas, checklist, 
   await closeEditor(page);
   await tapCard(page, 1);
   if (await expandEditor.count() > 0) await expandEditor.click();
-  await button(page, 'Volver al editor Markdown').click();
-  const markdown = page.getByLabel('Contenido Markdown');
-  await expect(markdown).toHaveValue(/### Plan \[sitio\]\(https:\/\/example\.org\/nuevo\)/);
-  await expect(markdown).toHaveValue(/1\. Uno\n2\. Dos/);
-  await expect(markdown).toHaveValue(/[*-] \[x\] Pendiente/);
-  await button(page, 'Abrir editor visual').click();
-  await expect(page.getByLabel('Contenido visual').locator('h3')).toContainText('Plan sitio');
+  const reopened = page.getByLabel('Contenido visual');
+  await expect(reopened.locator('h3')).toContainText('Plan sitio');
+  await expect(reopened.locator('a')).toHaveAttribute('href', 'https://example.org/nuevo');
+  await expect(reopened.locator('ol li')).toHaveText(['Uno', 'Dos']);
+  await expect(reopened.locator('li[role="checkbox"]').first()).toHaveAttribute('aria-checked', 'true');
   await page.screenshot({ path: testInfo.outputPath('p07-advanced-rich-text.png'), fullPage: true });
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
@@ -714,9 +752,7 @@ test('P07: convertir una checklist en encabezado se guarda y no reaparece como c
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
 
-  await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('- [ ] \\*KNKNLK\n\nTexto normal');
-  await button(page, 'Abrir editor visual').click();
+  await seedBodyHtml(page, '<ul data-nouty-list="checklist"><li data-nouty-checked="false">*KNKNLK</li></ul>\n<p>Texto normal</p>');
   const visual = page.getByLabel('Contenido visual');
   await visual.locator('li').selectText();
   await page.getByLabel('Tipo de bloque').selectOption('heading-1');
@@ -792,9 +828,9 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await expect(reopenedImage).toHaveCount(1);
   await expect(reopenedImage.getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
   await expect(reopenedImage.getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
-  await button(page, 'Volver al editor Markdown').click();
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/!\[Plano general\]\(assets\/images\/tarjeta-1-1\.png\)/);
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/nouty-caption:v1/);
+  // La comprobación de los bytes Markdown exactos (línea de imagen y comentario de leyenda) ya no
+  // es alcanzable desde aquí: esa vista se retiró en web (P18-E3-B2); la cobertura de persistencia de
+  // leyendas e imágenes real por carpeta sigue en folder.spec.ts.
 });
 
 test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista', async ({ page }, testInfo) => {
@@ -816,11 +852,12 @@ test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista',
   await button(page, 'Insertar tabla').click();
 
   const visual = page.getByLabel('Contenido visual');
+  const bodyEditor = page.getByTestId('web-rich-text-editor').filter({ has: visual });
   const cells = visual.locator('th, td');
   await expect(cells).toHaveCount(8);
-  await button(page, 'Deshacer en el editor').click();
+  await bodyEditor.getByRole('button', { name: 'Deshacer en el editor', exact: true }).click();
   await expect(cells).toHaveCount(0);
-  await button(page, 'Rehacer en el editor').click();
+  await bodyEditor.getByRole('button', { name: 'Rehacer en el editor', exact: true }).click();
   await expect(cells).toHaveCount(8);
 
   await cells.first().click();
@@ -838,10 +875,6 @@ test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista',
 
   await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
   await page.screenshot({ path: testInfo.outputPath('p09-rich-table.png'), fullPage: true });
-  await button(page, 'Volver al editor Markdown').click();
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/\| Nombre \| Estado \|/);
-  await expect(page.getByLabel('Contenido Markdown')).toHaveValue(/\|\s*Idea\s*\|\s*Activa\s*\|/);
-  await button(page, 'Abrir editor visual').click();
   await closeEditor(page);
 
   await button(page, 'Vista de lista').click();
@@ -919,7 +952,7 @@ test('P18-C: texto y título flotantes usan una nota rica con zonas y marco inde
   await expect(titleEditor).toBeVisible();
   await expect(titleEditor.getByRole('button', { name: 'Insertar tabla', exact: true })).toHaveCount(0);
   await expect(titleEditor.getByLabel('Tipo de bloque')).toHaveCount(0);
-  await titleEditor.getByLabel('Título de la tarjeta').fill('Título rico');
+  await fillCardTitle(page, 'Título rico');
   await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
   await button(page, 'Mostrar u ocultar el cuerpo de la nota').click();
   await closeEditor(page);
@@ -979,13 +1012,16 @@ test('P15: crea y configura un conector decorativo sin convertirlo en relación'
   await createWorkspace(page, 'Conectores decorativos');
   await addCards(page, ['nota']);
   await insertFromMenu(page, 'Insertar conector');
+  await placeConnector(page);
 
   await expect(page.getByTestId('connector-tarjeta-2')).toBeVisible();
-  await openFullCardEditor(page, card(page, 2));
+  await openConnectorEditor(page);
   await expect(page.getByLabel('Título de la tarjeta')).toHaveCount(0);
   await expect(page.getByLabel('Contenido')).toHaveCount(0);
   const styles = page.getByTestId('connector-style-picker');
-  await styles.getByRole('toolbar', { name: 'Dirección del conector' }).getByRole('button', { name: 'Ascendente' }).click();
+  // «Dirección» (Ascendente/Descendente) es del modelo diagonal anterior a P18-D (`connector-legacy-editor`,
+  // solo para conectores creados antes de la ruta ortogonal); uno nuevo, de dos clics, ya tiene una ruta
+  // (`connector-route-editor`) y no tiene ese control. Color/grosor/trazo/puntas y anclaje sí son comunes.
   await styles.getByRole('toolbar', { name: 'Color del conector' }).getByRole('button', { name: 'Morado' }).click();
   await styles.getByRole('toolbar', { name: 'Grosor del conector' }).getByRole('button', { name: 'Grueso' }).click();
   await styles.getByRole('toolbar', { name: 'Trazo del conector' }).getByRole('button', { name: 'Discontinuo' }).click();
@@ -1019,6 +1055,7 @@ test('P16: Lista representa texto flotante, forma y conector con su apariencia p
   await closeEditor(page);
 
   await insertFromMenu(page, 'Insertar conector');
+  await placeConnector(page);
   await openFullCardEditor(page, card(page, 3));
   await page.getByTestId('connector-style-picker').getByRole('toolbar', { name: 'Color del conector' }).getByRole('button', { name: 'Morado' }).click();
   await closeEditor(page);
@@ -1053,7 +1090,7 @@ test('P16: Presentación representa texto flotante, forma, conector y una nota c
   await createWorkspace(page, 'Presentación P16');
   await addCards(page, ['nota']);
   await openFullCardEditor(page, card(page, 1));
-  await (await openMarkdownEditor(page)).fill('Texto con **negrita** normal.');
+  await seedBodyHtml(page, '<p>Texto con <strong>negrita</strong> normal.</p>');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
 
@@ -1066,6 +1103,7 @@ test('P16: Presentación representa texto flotante, forma, conector y una nota c
   // Forma y conector quedan con su estilo por defecto: no hace falta abrir su editor para esta prueba.
   await insertFromMenu(page, 'Insertar forma');
   await insertFromMenu(page, 'Insertar conector');
+  await placeConnector(page);
 
   await openPresent(page);
   await expect(page.getByTestId('present-count')).toHaveText('1 / 4');
@@ -1108,8 +1146,8 @@ test('P17: recorrido de integración — nota con marcas/lista/tabla, texto flot
   await openFullCardEditor(page, card(page, 1));
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
-  await (await openMarkdownEditor(page)).fill('## Plan\n\nTexto con **negrita** y lista:\n\n- Uno\n- Dos\n\n| Nombre | Estado |\n| --- | --- |\n| Idea | Activa |\n');
-  await button(page, 'Abrir editor visual').click();
+  await seedBodyHtml(page, '<h2>Plan</h2>\n<p>Texto con <strong>negrita</strong> y lista:</p>\n<ul><li>Uno</li><li>Dos</li></ul>\n'
+    + '<table><thead><tr><th>Nombre</th><th>Estado</th></tr></thead><tbody><tr><td>Idea</td><td>Activa</td></tr></tbody></table>');
   const visual = page.getByLabel('Contenido visual');
   await expect(visual.locator('h2')).toHaveText('Plan');
   await expect(visual.locator('strong')).toHaveText('negrita');
@@ -1130,6 +1168,7 @@ test('P17: recorrido de integración — nota con marcas/lista/tabla, texto flot
 
   await insertFromMenu(page, 'Insertar forma');
   await insertFromMenu(page, 'Insertar conector');
+  await placeConnector(page);
 
   // Lienzo: sin sintaxis cruda, las cuatro primitivas visibles.
   await expect(card(page, 1)).not.toContainText('##');
@@ -1229,8 +1268,8 @@ test('P18-A: imagen y tabla se representan juntas sin Markdown crudo y con cabec
   await openFullCardEditor(page, card(page, 1));
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
-  await (await openMarkdownEditor(page)).fill('![Mapa](assets/images/mapa.png)\n\n| Nombre | Estado |\n| --- | --- |\n| Idea | Activa |\n');
-  await button(page, 'Abrir editor visual').click();
+  await seedBodyHtml(page, '<figure><img src="assets/images/mapa.png" alt="Mapa"></figure>\n'
+    + '<table><thead><tr><th>Nombre</th><th>Estado</th></tr></thead><tbody><tr><td>Idea</td><td>Activa</td></tr></tbody></table>');
   for (let i = 0; i < 5; i += 1) await button(page, 'Más alta').click();
   await closeEditor(page);
 
@@ -1268,13 +1307,16 @@ test('P18-A: formas y conectores omiten la edición rápida y respetan el marco 
   // RN Web mide el contenido hasta el borde inferior inclusive; toleramos el borde de 2 px de la ficha.
   expect(shapeBox.y + shapeBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 3);
 
+  // Un conector decorativo no dibuja una ficha táctil propia en el lienzo (excluido a propósito de
+  // `cardAt`, Canvas.tsx, para no bloquear el toque de lo que tenga detrás): «doble clic abre el editor
+  // completo directamente» se comprueba con doble clic sobre su tramo, como el resto de esta suite.
   await insertFromMenu(page, 'Insertar conector');
-  await card(page, 2).dblclick();
+  await placeConnector(page);
+  await openConnectorEditor(page);
   await expect(page.getByTestId('inline-card-editor')).toHaveCount(0);
-  await expect(page.getByTestId('card-inspector')).toBeVisible();
   await button(page, 'Mostrar siempre').click();
+  await expect(button(page, 'Mostrar siempre')).toHaveAttribute('aria-pressed', 'true');
   await closeEditor(page);
-  await expect.poll(() => borderWidth(card(page, 2))).toBe(2);
   await page.screenshot({ path: testInfo.outputPath('p18-a-shape-connector.png'), fullPage: true });
 });
 
@@ -1285,8 +1327,7 @@ test('P18-A: una nota con texto oculto lo anuncia en la ficha', async ({ page })
   await openFullCardEditor(page, card(page, 1));
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
-  await (await openMarkdownEditor(page)).fill(Array.from({ length: 20 }, (_, index) => `Línea ${index + 1}`).join('\n'));
-  await button(page, 'Abrir editor visual').click();
+  await seedBodyHtml(page, Array.from({ length: 20 }, (_, index) => `<p>Línea ${index + 1}</p>`).join('\n'));
   await closeEditor(page);
   await expect(page.getByTestId('card-overflow-tarjeta-1')).toContainText(/líneas más/);
 });
@@ -1348,7 +1389,7 @@ test('P18-B: Supr envía una selección simple o múltiple a la Papelera y respe
   await page.getByLabel('Título de la tarjeta').focus();
   await page.keyboard.press('Delete');
   await expect(card(page, 2)).toBeAttached();
-  await page.getByLabel('Título de la tarjeta').fill('Nueva nota');
+  await fillCardTitle(page, 'Nueva nota');
   await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
   await closeEditor(page);
 
@@ -1399,15 +1440,9 @@ test('P11: pega contenido enriquecido compatible y descarta contenido activo', a
   await page.screenshot({ path: testInfo.outputPath('p11-safe-paste.png'), fullPage: true });
 
   await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
-  await button(page, 'Volver al editor Markdown').click();
-  const markdown = page.getByLabel('Contenido Markdown');
-  await expect(markdown).toHaveValue(/## Plan \*\*seguro\*\*/);
-  await expect(markdown).toHaveValue(/\* Uno[\s\S]*\* \*Dos\*/);
-  await expect(markdown).toHaveValue(/\[Sitio\]\(https:\/\/example\.com\)/);
-  await expect(markdown).toHaveValue(/JavaScript visible/);
-  await expect(markdown).toHaveValue(/Contenido desconocido visible/);
-  await expect(markdown).toHaveValue(/\| Nombre \| Estado \|/);
-  await expect(markdown).not.toHaveValue(/<script|onclick|javascript:|tracker\.invalid|iframe|window\.__pwned/i);
+  // La comprobación de los bytes Markdown exactos ya no es alcanzable desde aquí (vista retirada en
+  // web, P18-E3-B2); la propiedad de seguridad que de verdad importa (nada peligroso ejecuta ni queda
+  // en el DOM) ya quedó probada arriba sobre el documento visual renderizado.
   expect(runtimeErrors).toEqual([]);
   expect(failedResources).toEqual([]);
 });
@@ -1463,8 +1498,7 @@ test('checklist en el lienzo: un toque marca la línea sin abrir el editor ni ar
   // cambia).
   await button(page, 'Más alta').click();
   await button(page, 'Más alta').click();
-  await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('- [ ] Harina\n- [ ] Agua');
+  await seedBodyHtml(page, '<ul data-nouty-list="checklist"><li data-nouty-checked="false">Harina</li><li data-nouty-checked="false">Agua</li></ul>');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await closeEditor(page);
@@ -1508,8 +1542,7 @@ test('checklist en el lienzo sobrevive a exportar ZIP, recargar y reimportar (ci
   // líneas de checklist a la vez, y esta prueba necesita las dos (misma razón que la de UX7-B2).
   await button(page, 'Más alta').click();
   await button(page, 'Más alta').click();
-  await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('- [ ] Harina\n- [ ] Agua');
+  await seedBodyHtml(page, '<ul data-nouty-list="checklist"><li data-nouty-checked="false">Harina</li><li data-nouty-checked="false">Agua</li></ul>');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await closeEditor(page);
@@ -1552,14 +1585,14 @@ test('posición de la leyenda de imagen: debajo, arriba, izquierda y derecha, ig
   await button(page, 'Más alta').click();
   // Sin asset real: la imagen cae al marcador «no disponible», pero la leyenda se dibuja igual (no
   // depende de que la imagen se resuelva, UX7-C4).
-  await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('![Vista del lago](assets/images/x.png)');
+  await seedBodyHtml(page, '<figure><img src="assets/images/x.png" alt="Vista del lago"></figure>');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText('Texto guardado. Guardado en memoria.');
   await closeEditor(page);
 
-  const image = page.getByTestId('note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
-  const caption = page.getByTestId('note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
+  // Nota HTML con imagen (ADR 0066): se previsualiza con RichNotePreview, no con NotePreview.
+  const image = page.getByTestId('rich-note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
+  const caption = page.getByTestId('rich-note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
   await expect(image).toBeVisible();
   await expect(caption).toBeVisible();
 
@@ -1589,8 +1622,8 @@ test('posición de la leyenda de imagen: debajo, arriba, izquierda y derecha, ig
 
   // Lista representa la misma posición elegida, no una disposición distinta por superficie.
   await button(page, 'Vista de lista').click();
-  const listImage = page.getByTestId('list-note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
-  const listCaption = page.getByTestId('list-note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
+  const listImage = page.getByTestId('list-rich-note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
+  const listCaption = page.getByTestId('list-rich-note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
   expect((await box(listCaption)).x).toBeGreaterThan((await box(listImage)).x);
   await button(page, 'Vista de lista').click();
 
@@ -1619,7 +1652,7 @@ test('portapapeles: copiar y pegar conserva la relación interna (no la externa)
   await addCards(page, ['nota', 'nota', 'nota']);
   const rename = async (id: number, title: string) => {
     await openCardEditor(page, id);
-    await page.getByLabel('Título de la tarjeta').fill(title);
+    await fillCardTitle(page, title);
     await button(page, 'Guardar texto').click();
     await closeEditor(page);
   };
@@ -1674,7 +1707,7 @@ test('portapapeles: duplicar en un solo paso; cortar envía a la Papelera de inm
   await createWorkspace(page, 'Duplicar y cortar');
   await addCards(page, ['nota']);
   await openCardEditor(page, 1);
-  await page.getByLabel('Título de la tarjeta').fill('Original');
+  await fillCardTitle(page, 'Original');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
 
@@ -1688,7 +1721,7 @@ test('portapapeles: duplicar en un solo paso; cortar envía a la Papelera de inm
 
   // Título único antes de volver a entrar en selección múltiple (la duplicada también se llama «Original»).
   await openCardEditor(page, 1);
-  await page.getByLabel('Título de la tarjeta').fill('Para cortar');
+  await fillCardTitle(page, 'Para cortar');
   await button(page, 'Guardar texto').click();
   await closeEditor(page);
 
@@ -2016,9 +2049,8 @@ test('tamaño semántico de título y cuerpo por ficha, igual en el lienzo y en 
   await createWorkspace(page, 'Medidas');
   await addCards(page, ['nota']);
   await openFullCardEditor(page, card(page, 1));
-  await page.getByLabel('Título de la tarjeta').fill('Medidas');
-  await button(page, 'Volver al editor Markdown').click();
-  await page.getByLabel('Contenido Markdown').fill('Cuerpo de prueba.');
+  await fillCardTitle(page, 'Medidas');
+  await page.getByLabel('Contenido visual').fill('Cuerpo de prueba.');
   await button(page, 'Guardar texto').click();
   await expect(feedback(page)).toHaveText(/Guardado/);
 
@@ -2041,6 +2073,39 @@ test('tamaño semántico de título y cuerpo por ficha, igual en el lienzo y en 
   await button(page, 'Vista de lista').click();
   await expect.poll(() => fontSize(cardTitleNode())).toBe(20);
   await expect.poll(() => fontSize(cardBodyNode())).toBe(11);
+  await button(page, 'Vista de lista').click();
+});
+
+test('nota HTML sin imagen: el lienzo y la Lista muestran su texto real, y el tamaño de título/cuerpo se le aplica igual que a una Markdown (ADR 0050, ADR 0066)', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'HTML sin imagen');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await fillCardTitle(page, 'Resumen');
+  await seedBodyHtml(page, '<h2>Encabezado</h2>\n<p>Cuerpo de prueba.</p>');
+  await button(page, 'Título grande').click();
+  await expect(button(page, 'Título grande')).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Cuerpo pequeño').click();
+  await expect(button(page, 'Cuerpo pequeño')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+
+  // Lienzo: el cuerpo HTML seguro (ADR 0066) se ve de verdad, no una ficha vacía (CanvasCard ignoraba
+  // `contentDocument` para toda nota sin imagen; defecto real corregido en esta intervención), y al
+  // tamaño de título/cuerpo elegido (UX7-D4, ADR 0050; su control se restauró en esta misma intervención).
+  const canvasPreview = page.getByTestId('card-rich-text-tarjeta-1');
+  await expect(canvasPreview).toContainText('Encabezado');
+  await expect(canvasPreview).toContainText('Cuerpo de prueba.');
+  await expect.poll(() => fontSize(card(page, 1).getByText('Resumen'))).toBe(20);
+  await expect.poll(() => fontSize(canvasPreview.getByText('Cuerpo de prueba.'))).toBe(11);
+
+  // Lista: mismo documento, mismo tamaño (Board.tsx tenía el mismo defecto que CanvasCard).
+  await button(page, 'Vista de lista').click();
+  const listPreview = page.getByTestId('list-rich-text-tarjeta-1');
+  await expect(listPreview).toContainText('Encabezado');
+  await expect(listPreview).toContainText('Cuerpo de prueba.');
+  await expect.poll(() => fontSize(card(page, 1).getByText('Resumen'))).toBe(20);
+  await expect.poll(() => fontSize(listPreview.getByText('Cuerpo de prueba.'))).toBe(11);
   await button(page, 'Vista de lista').click();
 });
 
