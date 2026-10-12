@@ -162,7 +162,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     notice !== '' ? { tone: 'success', text: notice } : null,
   );
   const {
-    view, feedback, saving, saveState, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal,
+    view, feedback, saving, saveState, run, setFeedback, undo, redo, retry, recoverExternal,
     flush: flushWorkspace, revision, undoLabel, redoLabel,
   } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
@@ -258,9 +258,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         return;
       }
       const ok = await flushWorkspace();
-      setFeedback(ok
-        ? { tone: 'success', text: 'Guardado correctamente.' }
-        : { tone: 'error', text: 'No se pudo guardar. Revisa el aviso.', saveFailed: true });
+      // UX7-LAYOUT-CORRECTION: un guardado manual correcto no anuncia nada — el guardado normal es
+      // silencioso (el estado ya refleja «guardado» por sí solo); solo un error real se notifica.
+      if (!ok) setFeedback({ tone: 'error', text: 'No se pudo guardar. Revisa el aviso.', saveFailed: true });
     } finally {
       setSavingNow(false);
     }
@@ -367,7 +367,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const visibleIds = new Set(layout?.placements.map((placement) => placement.cardId) ?? []);
   const titleOrUntitled = (found: Card | undefined) => (found ? cardTitleText(found) : '') || t('card.untitled', locale);
   const unplaced = unplacedCardIds(board, layout).map((cardId) => titleOrUntitled(workspace?.cards.find((card) => card.id === cardId)));
-  const boardCount = board?.cardIds.length ?? 0;
   // El editor se muestra por `editingId`, no por `selectedId` (auditoría de interacción, 2026-09-29):
   // seleccionar una tarjeta ya no implica editarla.
   const selected = workspace?.cards.find((card) => card.id === editingId && visibleIds.has(card.id));
@@ -1161,31 +1160,43 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
    * fuera otro): «Volver a mis espacios» (navegación básica, probada en toda la suite por su nombre
    * accesible) y la insignia de recuperación (su presencia/ausencia es la señal, no solo la acción
    * de abrirla). Guardar y Proyectos —acciones puntuales, no señales continuas— se trasladan de
-   * verdad a la navegación: barra lateral (≥1100 px), final de la barra de herramientas (800-1099
-   * px) o «Más secciones» (compacto). Ningún texto/aviso de guardado se declara antes de que
-   * `saveStatus()` confirme que corresponde (ver `saveStatus.ts`).
+   * verdad a la navegación: barra lateral (≥1100 px) o barra de herramientas del lienzo —su
+   * `trailing`, ya existente sin usar— en los demás anchos. **Ninguna fila vive ya encima del
+   * lienzo**: la barra de herramientas es el primer elemento del área de trabajo (sin barra
+   * lateral) o el lienzo lo es (con ella, donde identidad/estado viven en la propia barra
+   * lateral). Ningún texto/aviso de guardado se declara antes de que `saveStatus()` confirme que
+   * corresponde (ver `saveStatus.ts`).
    */
-  const identityBar = (
-    <View style={styles.identityBar}>
-      <ActionButton label="←" accessibilityLabel="Volver a mis espacios" onPress={() => void goHome()} />
-      {workspace ? (
-        <Text accessibilityRole="header" numberOfLines={1} style={[styles.identityTitle, { color: colors.textPrimary }]}>
-          {workspace.metadata.name}
-        </Text>
-      ) : null}
-      {workspace ? (
-        <Text testID="workspace-memory" numberOfLines={1} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
-      ) : null}
-      {workspace && recoverableCount > 0 ? (
-        <RecoveryIndicator count={recoverableCount} onPress={() => setRecoveryOpen(true)} />
-      ) : null}
-      {/* UX7-LAYOUT: Proyectos se queda aquí, no en «Más secciones» — cambiar de proyecto debe
-          funcionar también con el editor de tarjeta a pantalla completa abierto en móvil (guarda
-          antes el texto pendiente, ADR 0016), y la barra de herramientas compacta —donde vive
-          «Más»— se oculta mientras ese editor está enfocado. */}
-      {workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null}
-    </View>
-  );
+  const backButton = <ActionButton label="←" accessibilityLabel="Volver a mis espacios" onPress={() => void goHome()} />;
+  const identityHeading = workspace ? (
+    <Text accessibilityRole="header" numberOfLines={1} style={[styles.identityTitle, { color: colors.textPrimary }]}>
+      {workspace.metadata.name}
+    </Text>
+  ) : null;
+  const identityStatus = workspace ? (
+    <Text testID="workspace-memory" numberOfLines={1} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
+  ) : null;
+  /**
+   * UX7-SIDEBAR: «Recuperación» es ahora una opción estable de la navegación (siempre presente,
+   * nunca aparece/desaparece por sí sola) — no un indicador que solo existe cuando hay algo que
+   * recuperar. El número de borradores recuperables deja de mostrarse en el funcionamiento normal
+   * (un borrador privado intacto en una tarjeta que sigue existiendo no es una incidencia); solo
+   * una señal discreta (punto de color, sin número) marca una incidencia real: un borrador huérfano
+   * cuya tarjeta está en la Papelera/Archivo/eliminada (`draftProblem`, con riesgo real de perderse)
+   * o un fallo/conflicto de guardado real. Cerrar el Centro nunca descarta nada; cuando no hay
+   * incidencias, sigue abriéndose igual, solo sin la señal.
+   */
+  const draftAttention = draftProblem !== null || saveState === 'error' || saveState === 'conflict';
+  const identityRecovery = workspace ? (
+    <NavItem
+      testID="recovery-badge"
+      icon="recover"
+      label="Recuperación"
+      attention={draftAttention ? colors.danger : undefined}
+      accessibilityLabel={recoverableCount > 0 ? `Centro de recuperación: ${recoverableCount} ${recoverableCount === 1 ? 'borrador recuperable' : 'borradores recuperables'}` : 'Centro de recuperación'}
+      onPress={() => setRecoveryOpen(true)}
+    />
+  ) : null;
 
   const exportBar = showArchive && workspace ? (
     <View testID="export-bar" style={[styles.exportBar, compact ? styles.exportBarCompact : null, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
@@ -1211,7 +1222,18 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     </View>
   ) : null;
 
-  const feedbackText = workspace ? (
+  // UX7-MASTER: la franja ya no anuncia NADA rutinario — ni confirmaciones de éxito («Texto
+  // guardado», «Tarjeta movida», «Tamaño cambiado», «Guardado en la carpeta»...) ni «N cambios
+  // pendientes» (ese estado ya lo refleja, de forma discreta y sin franja propia, el indicador de
+  // guardado de la navegación — `identityStatus`/`saveStatus()` — duplicarlo aquí era exactamente
+  // la franja dinámica que se pidió retirar). Lo único que sigue viviendo aquí es información que
+  // de verdad exige al usuario hacer algo: guía de una herramienta activa en uso (mano/conector/
+  // conectar) o un error real de guardado/conflicto. Un éxito rutinario (`feedback?.tone ===
+  // 'success'`) nunca llega aquí.
+  const feedbackContent = tool === 'pan' || tool === 'connector' || tool === 'connect' || connectSource !== null ? hint
+    : feedback?.tone === 'error' ? feedback.text
+    : null;
+  const feedbackText = workspace && feedbackContent ? (
     <Text
       testID="workspace-feedback"
       accessibilityLiveRegion="polite"
@@ -1223,40 +1245,53 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         borderColor: feedback?.tone === 'error' && connectSource === null ? colors.danger : colors.gridLine,
       }]}
     >
-      {tool === 'connector' || connectSource !== null ? hint : feedback ? feedback.text
-        : pendingCount > 0 ? `${pendingCount} ${pendingCount === 1 ? 'cambio pendiente' : 'cambios pendientes'}` : hint}
+      {feedbackContent}
     </Text>
   ) : null;
   const recoveryPending = saveState === 'error' || saveState === 'conflict';
-  const feedbackLine = workspace && (compact || recoveryPending) ? (
+  // UX7-LAYOUT-CORRECTION: deshacer/rehacer/pegar ya no viven sueltos aquí (ADR 0026/0052
+  // superada) — son un grupo más de la propia barra de herramientas del lienzo, en cualquier
+  // ancho (ver `Toolbar.tsx`). Esta línea ahora solo existe cuando hay algo real que decir.
+  const feedbackLine = workspace && recoveryPending ? (
     <View style={styles.feedbackRow}>
       <View style={styles.feedbackGrow}>{feedbackText}</View>
-      {recoveryPending ? <ActionButton label={saveState === 'conflict' ? 'Recargar y reaplicar' : 'Reintentar'}
+      <ActionButton label={saveState === 'conflict' ? 'Recargar y reaplicar' : 'Reintentar'}
         accessibilityLabel={saveState === 'conflict' ? 'Recargar el proyecto y reaplicar los cambios pendientes' : 'Reintentar los cambios pendientes'}
-        onPress={() => void (saveState === 'conflict' ? recoverExternal() : retry())} /> : null}
-      {compact ? <>
-        <ActionButton label="↶" accessibilityLabel={undoLabel ? `${t('undo', locale)}: ${undoLabel}` : t('undo', locale)} disabled={undoLabel === null} onPress={() => void undoLast()} />
-        <ActionButton label="↷" accessibilityLabel={redoLabel ? `${t('redo', locale)}: ${redoLabel}` : t('redo', locale)} disabled={redoLabel === null} onPress={() => void redoLast()} />
-        <ActionButton label={t('paste', locale)} accessibilityLabel={clipboard ? t('paste', locale) : t('paste.empty', locale)} disabled={clipboard === null} onPress={() => void pasteClipboard()} />
-      </> : null}
+        onPress={() => void (saveState === 'conflict' ? recoverExternal() : retry())} />
     </View>
   ) : feedbackText;
 
-  // UX7-LAYOUT: entre 800 y 1099 px no hay barra lateral; Guardar vive al final de la barra de
-  // herramientas ya existente (`trailing`, antes sin usar) en vez de en una cabecera. Proyectos no
-  // se duplica aquí: ya es persistente en `identityBar` (ver su comentario).
-  const toolbarExtras = workspace ? (
+  // UX7-LAYOUT-CORRECTION: sin barra lateral (< 1100 px), no hay ninguna fila encima del lienzo.
+  // En compacto (< 800 px), identidad/estado/recuperación caben al final de la propia barra de
+  // herramientas (`trailing`, ya existente sin usar) porque esa barra vive bajo el lienzo, no
+  // encima: añadirlos ahí no crea ninguna fila nueva sobre el contenido. Entre 800 y 1099 px la
+  // barra de herramientas SÍ vive sobre el lienzo (como exige el encargo) y ya está muy ocupada
+  // con las secciones que no caben en una barra lateral que no existe a este ancho: meter aquí
+  // también identidad/Proyectos/Guardar la desbordaba a una fila propia que, aunque técnicamente
+  // formara parte del componente, se veía exactamente como la cabecera retirada. Por eso, a este
+  // ancho, todo vive en «Más secciones» (nuevo botón «menú» en esta misma barra), igual que en
+  // compacto — nunca como una fila nueva.
+  // «Volver a mis espacios» no depende de `workspace` (debe funcionar también en la vista «Espacio
+  // no disponible»); el resto de la identidad sí necesita un workspace cargado.
+  const toolbarIdentity = compact ? (
     <View style={styles.toolbarExtras}>
-      <ActionButton label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" disabled={savingNow} onPress={() => void saveNow()} />
+      {backButton}
+      {workspace ? (
+        <>
+          {identityHeading}
+          {identityStatus}
+          {identityRecovery}
+        </>
+      ) : null}
     </View>
   ) : null;
-
   const toolbar = workspace ? (
     <Toolbar
       compact={compact}
       tool={tool}
       onTool={changeTool}
       onOpenInsert={() => setInsertOpen(true)}
+      onInsertShortcut={() => setShortcutOpen(true)}
       zoom={zoom}
       onZoomIn={() => setZoom(zoomIn)}
       onZoomOut={() => setZoom(zoomOut)}
@@ -1282,7 +1317,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       canPaste={clipboard !== null}
       onPaste={() => void pasteClipboard()}
       navInSidebar={sidebar}
-      trailing={!sidebar ? toolbarExtras : undefined}
+      trailing={toolbarIdentity}
     />
   ) : null;
 
@@ -1440,14 +1475,32 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   return (
     <SafeAreaView testID="workspace-screen" style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.frame, compact ? null : styles.frameRow, typing ? { paddingBottom: Math.max(0, keyboard - insets.bottom) } : null]}>
+        {/*
+          UX7-SIDEBAR: tres regiones — superior fija (identidad), central desplazable (secciones)
+          e inferior fija (Proyectos/Recuperación/Guardar). Antes, un único `ScrollView` envolvía
+          todo: desplazar la lista central se llevaba consigo el logo y las acciones. Ahora el
+          scroll solo afecta a la región B; A y C son `View` normales fuera de cualquier
+          `ScrollView`, así que nunca se mueven.
+        */}
         {sidebar ? (
-          <ScrollView testID="workspace-sidebar" style={[styles.sidebar, { backgroundColor: colors.surface, borderColor: colors.gridLine }]} contentContainerStyle={styles.sidebarContent}>
-            <View style={styles.brandRow}>
-              <BrandMark size={44} />
-              <Text style={[styles.brandName, { color: colors.brand }]}>NoutyNotes</Text>
+          <View testID="workspace-sidebar" style={[styles.sidebar, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
+            <View style={styles.sidebarTop}>
+              <View style={styles.brandRow}>
+                <BrandMark size={44} />
+                <Text style={[styles.brandName, { color: colors.brand }]}>NoutyNotes</Text>
+              </View>
+              {/* «Volver a mis espacios» es navegación básica: debe seguir disponible incluso sin
+                  workspace cargado (p. ej. tras recargar un espacio en memoria/carpeta reconectable,
+                  vista «Espacio no disponible») — regresión real encontrada al reestructurar esta
+                  región, corregida sacando el botón de la condición `workspace`. */}
+              <View style={styles.sidebarIdentity}>
+                {backButton}
+                {identityHeading}
+              </View>
+              {identityStatus}
             </View>
             {workspace ? (
-              <>
+              <ScrollView testID="workspace-sidebar-nav" style={styles.sidebarNav} contentContainerStyle={styles.sidebarNavContent}>
                 <NavItem icon="trash" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
                 <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => openView('diary')} />
                 <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
@@ -1458,19 +1511,26 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                   <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => void archiveCurrentBoard()} />
                 ) : null}
                 <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
-                {/* UX7-LAYOUT: debajo de Configuración, solo Guardar (acción puntual; el guardado
-                    cotidiano ya es automático y silencioso) — lo que antes vivía en la cabecera
-                    retirada. Proyectos y la recuperación se quedan en `identityBar`, no se
-                    duplican aquí: deben seguir funcionando con el editor de tarjeta enfocado en
-                    móvil, que oculta la barra de herramientas (y «Más secciones» con ella). */}
-                <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
-                <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => void saveNow()} />
-              </>
+              </ScrollView>
             ) : null}
-          </ScrollView>
+            {workspace ? (
+              <View style={styles.sidebarBottom}>
+                <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
+                <NavItem icon="folder" label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} />
+                {identityRecovery}
+                <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => void saveNow()} />
+              </View>
+            ) : null}
+          </View>
         ) : null}
         <View style={styles.main}>
-          {identityBar}
+          {/* Sin barra lateral (< 1100 px) y sin workspace cargado (cargando o «no disponible»),
+              «Volver a mis espacios» no vive en ningún otro sitio todavía —la barra de herramientas,
+              donde vive el resto del ancho, necesita un workspace real para existir—. Regresión real
+              encontrada al mover la identidad a la barra de herramientas: antes vivía en una fila
+              siempre presente, independiente de si había workspace. Con workspace cargado, ya está
+              en la barra lateral o en la propia barra de herramientas; no se duplica aquí. */}
+          {!sidebar && !workspace ? <View style={styles.sidebarIdentity}>{backButton}</View> : null}
           {view.kind === 'loading' ? <Text style={[styles.body, styles.pad, { color: colors.textSecondary }]}>Abriendo el espacio…</Text> : null}
           {view.kind === 'missing' ? (
             <View testID="workspace-missing" style={[styles.missing, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -1530,13 +1590,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'board' ? styles.hidden : null]}>
               {/* Enfocado en móvil: el editor usa todo el alto (sin pestañas ni barra del ZIP). */}
               {compact && focusing ? null : tabs}
-              {/* UX7-LAYOUT: el tablero y su número de tarjetas ya no viven en la cabecera retirada;
-                  en compacto, la propia pestaña del tablero ya muestra el recuento (`tabs`, arriba). */}
-              {!compact ? (
-                <Text numberOfLines={1} style={[styles.boardEyebrow, { color: colors.textSecondary }]}>
-                  {(board?.title ?? 'Sin tableros').toUpperCase()} · {boardCount === 1 ? '1 TARJETA' : `${boardCount} TARJETAS`}
-                </Text>
-              ) : null}
+              {/* UX7-LAYOUT-CORRECTION: ninguna fila nueva reemplaza al tablero/recuento que vivían
+                  en la cabecera retirada — ya es información del tablero, no del lienzo: `tabs`
+                  (pestañas, con el número de tarjetas por tablero) cubre 800-1099 px y compacto; en
+                  ≥1100 px vive en la barra lateral derecha (`BoardRail`, conservada). */}
               {compact && focusing ? null : exportBar}
               {compact ? null : toolbar}
               {multiBar}
@@ -1576,13 +1633,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                   <ScrollView ref={sheetScroll} onScroll={onSheetScroll} scrollEventThrottle={32} style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>
                 </View>
               ) : null}
-              {compact && !typing && !focusing ? toolbar : null}
+              {/* UX7-LAYOUT-CORRECTION: la barra ya no se oculta al enfocar una tarjeta — es la única
+                  vía compacta hacia «Más secciones» (Proyectos/Guardar/Recuperación no viven en
+                  ninguna fila permanente encima; deben seguir alcanzables incluso editando). */}
+              {compact && !typing ? toolbar : null}
             </View>
           ) : null}
         </View>
-        {/* Una sola franja vertical (ADR 0048): tableros a la derecha; proyectos usan el selector
-            compacto de cabecera («Proyectos» arriba) en vez de una segunda franja permanente. */}
-        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onInsertShortcut={() => setShortcutOpen(true)} onActions={setBoardActionsId} /> : null}
+        {/* Barra lateral derecha de tableros (ADR 0048): conservada tal como funcionaba antes de
+            UX7-CLEANUP, por instrucción explícita — no se sustituye por un botón en la barra de
+            herramientas. */}
+        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onActions={setBoardActionsId} /> : null}
       </View>
       {workspace ? (
         <>
@@ -1613,18 +1674,35 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           />
           {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
           <Dialog visible={moreOpen} title={t('more', locale)} compact={compact} onClose={() => setMoreOpen(false)} testID="more-sheet">
-            <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); openView('diary'); }} />
-            <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
-            <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
-            <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
-            {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
-            {board && board.cardIds.length > 0 ? (
-              <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
+            {/* UX7-LAYOUT-CORRECTION: entre 800 y 1099 px no hay barra lateral y la barra de
+                herramientas ya inlinea Papelera/Diario/Archivo/Assets/Presentar/Imprimir/
+                Configuración (no caben en una barra lateral que no existe a este ancho) — así que
+                aquí solo viven identidad/estado/recuperación, para no duplicar nada. */}
+            {!sidebar && !compact ? (
+              <View style={styles.toolbarExtras}>
+                {backButton}
+                {identityHeading}
+                {identityStatus}
+                {identityRecovery}
+              </View>
             ) : null}
-            <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
-            {/* UX7-LAYOUT: en compacto no hay barra lateral ni final de barra de herramientas;
-                Guardar vive aquí. Proyectos no se duplica: ya es persistente en `identityBar`
-                (debe seguir disponible con el editor de tarjeta enfocado, que oculta esta hoja). */}
+            {compact ? (
+              <>
+                <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); openView('diary'); }} />
+                <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
+                <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
+                <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
+                {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
+                {board && board.cardIds.length > 0 ? (
+                  <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
+                ) : null}
+                <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
+              </>
+            ) : null}
+            {/* Proyectos y Guardar: acciones puntuales, nunca una fila nueva sobre el lienzo —
+                la barra de herramientas ya no se oculta al enfocar una tarjeta, así que «Más»
+                sigue alcanzable incluso editando. */}
+            <NavItem icon="folder" label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => { setMoreOpen(false); setProjectsOpen(true); }} />
             <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => { setMoreOpen(false); void saveNow(); }} />
           </Dialog>
           {presentOpen ? (
@@ -1705,41 +1783,18 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   );
 }
 
-/**
- * Insignia discreta del Centro de recuperación (UX7-SAVE, jerarquía visual final): icono + contador,
- * nunca un botón de texto grande — un borrador legítimo no es un error de almacenamiento, así que usa
- * un color neutro, no `colors.danger` (reservado a D/E: error real de guardado o conflicto). Conserva
- * 44×44 de área táctil aunque el icono sea pequeño (ADR 0016); etiqueta accesible + `title` (tooltip
- * web) describen el recuento real, nunca un número inventado.
- */
-function RecoveryIndicator({ count, onPress }: { readonly count: number; readonly onPress: () => void }) {
-  const { theme } = useTheme();
-  const colors = theme.colors;
-  const [focused, setFocused] = useState(false);
-  const description = `${count} ${count === 1 ? 'borrador recuperable' : 'borradores recuperables'}`;
-  return (
-    <Pressable
-      testID="recovery-badge"
-      accessibilityRole="button"
-      accessibilityLabel={`Centro de recuperación: ${description}`}
-      accessibilityHint="Abre el Centro de recuperación sin descartar nada"
-      onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      {...(Platform.OS === 'web' ? { title: `Centro de recuperación: ${description}` } : {})}
-      style={[styles.recoveryIndicator, { borderColor: focused ? colors.selection : colors.border, backgroundColor: colors.surface }]}
-    >
-      <Text style={[styles.recoveryGlyph, { color: colors.textPrimary }]}>↺</Text>
-      <Text style={[styles.recoveryCount, { color: colors.textPrimary }]}>{count}</Text>
-    </Pressable>
-  );
-}
-
 /** Entrada de la barra lateral: solo secciones que funcionan (ADR 0016). */
-function NavItem({ icon, label, count, accessibilityLabel, onPress }: {
+function NavItem({ icon, label, count, attention, testID, accessibilityLabel, onPress }: {
   readonly icon: AppIconName;
   readonly label: string;
   readonly count?: number;
+  /**
+   * UX7-SIDEBAR: señal discreta de atención (punto de color), no un número — para distinguir una
+   * incidencia real (fallo de guardado, conflicto, borrador huérfano con problema real) de un
+   * simple recuento informativo. Nunca ambos a la vez en el mismo ítem.
+   */
+  readonly attention?: string | undefined;
+  readonly testID?: string;
   readonly accessibilityLabel: string;
   readonly onPress: () => void;
 }) {
@@ -1748,6 +1803,7 @@ function NavItem({ icon, label, count, accessibilityLabel, onPress }: {
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
@@ -1758,6 +1814,7 @@ function NavItem({ icon, label, count, accessibilityLabel, onPress }: {
       <View style={styles.navGlyph}><AppIcon name={icon} size={20} color={colors.textPrimary} /></View>
       <Text numberOfLines={1} style={[styles.navLabel, { color: colors.textPrimary }]}>{label}</Text>
       {count !== undefined && count > 0 ? <Text style={[styles.navCount, { color: colors.textSecondary }]}>{count}</Text> : null}
+      {attention ? <View testID={testID ? `${testID}-attention` : undefined} accessibilityElementsHidden style={[styles.navAttention, { backgroundColor: attention }]} /> : null}
     </Pressable>
   );
 }
@@ -2129,9 +2186,16 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   frame: { flex: 1 },
   frameRow: { flexDirection: 'row' },
-  sidebar: { width: 220, flexGrow: 0, borderRightWidth: 1 },
-  sidebarContent: { padding: 16, gap: 12 },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  // UX7-SIDEBAR: columna de tres regiones — superior fija, central desplazable, inferior fija.
+  sidebar: { width: 220, flexGrow: 0, flexDirection: 'column', borderRightWidth: 1 },
+  sidebarTop: { flexShrink: 0, padding: 16, paddingBottom: 8, gap: 8 },
+  // `minHeight: 0` (lección ya conocida de `Dialog.tsx` esta misma fase): sin esto, un `ScrollView`
+  // dentro de una columna flex no se recorta a su espacio disponible y no llega a desplazarse.
+  sidebarNav: { flex: 1, minHeight: 0 },
+  sidebarNavContent: { paddingHorizontal: 16, paddingVertical: 8, gap: 12 },
+  sidebarBottom: { flexShrink: 0, paddingHorizontal: 16, paddingBottom: 16, gap: 12 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sidebarIdentity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 2 },
   brandName: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
   sectionLabel: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 8 },
   navRule: { height: 2, marginVertical: 8 },
@@ -2139,24 +2203,18 @@ const styles = StyleSheet.create({
   navGlyph: { width: 22, fontSize: 17, textAlign: 'center' },
   navLabel: { flex: 1, fontSize: 16, fontWeight: '800' },
   navCount: { fontSize: 13, fontWeight: '800' },
-  // Icono + contador, nunca un botón de texto largo (UX7-SAVE): 44×44 de área táctil mínima aunque el
-  // contenido visible sea pequeño.
-  recoveryIndicator: { minWidth: 44, minHeight: 44, paddingHorizontal: 10, borderWidth: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
-  recoveryGlyph: { fontSize: 18, lineHeight: 20 },
-  recoveryCount: { fontSize: 13, fontWeight: '800' },
+  navAttention: { width: 9, height: 9, borderRadius: 5 },
   main: { flex: 1, minWidth: 0 },
   // UX7-LAYOUT: ya no es una cabecera (sin fondo ni borde propios, sin botones de acción) — solo
   // identidad (volver + nombre) y dos señales de estado persistentes (guardado, recuperación).
-  // `flexWrap` (no una sola línea rígida): en móvil, «←» + título + estado + Proyectos no caben
-  // siempre en 390 px; sin ajuste, el título (único elemento con `flexGrow`) se comprimía a 0 px
-  // de ancho — invisible para Playwright aunque el nodo existiera — en vez de que el estado
-  // pasara a una segunda línea.
-  identityBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 2, paddingHorizontal: 8, paddingVertical: 4 },
   identityTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '700' },
   title: { fontWeight: '900', letterSpacing: -0.5 },
   memoryText: { flexShrink: 1, fontFamily: mono, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
-  toolbarExtras: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  boardEyebrow: { fontFamily: mono, fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
+  // `flexWrap` (no una sola línea rígida): «←» + título + estado + Proyectos/Guardar no siempre
+  // caben en una fila; sin esto, el título (único elemento con `flexGrow`) se comprimía a 0 px de
+  // ancho —invisible para Playwright aunque el nodo existiera— en vez de que el resto pasara a una
+  // segunda línea (mismo defecto real ya encontrado y corregido una vez en `identityBar`).
+  toolbarExtras: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6, rowGap: 4, flexShrink: 1, minWidth: 0 },
   body: { fontSize: 15, lineHeight: 22 },
   pad: { padding: 16 },
   missing: { borderWidth: 2, padding: 20, gap: 12, margin: 16 },

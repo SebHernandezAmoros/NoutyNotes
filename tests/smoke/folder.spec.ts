@@ -106,16 +106,16 @@ test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y 
   await expect(status).toContainText('CAMBIOS PENDIENTES');
 
   // «Guardar ahora» confirma la persistencia real (la misma cola que ya usa «Volver a mis espacios»),
-  // nunca afirma éxito antes de la confirmación durable.
+  // nunca afirma éxito antes de la confirmación durable. UX7-LAYOUT-CORRECTION: un guardado manual
+  // correcto ya no anuncia nada (el guardado normal es silencioso) — el único testigo real es el
+  // propio estado, pendiente→guardado.
   await button('Guardar ahora (Ctrl+S)').click();
-  await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado correctamente.');
   await expect(status).toContainText('CAMBIOS GUARDADOS');
 
   // Ctrl+S hace lo mismo que el botón, sin abrir el diálogo nativo de «guardar página».
   await page.getByLabel('Contenido visual').fill('Texto sin confirmar todavía\nSegunda línea por Ctrl+S');
   await expect(status).toContainText('CAMBIOS PENDIENTES');
   await page.keyboard.press('Control+s');
-  await expect(page.getByTestId('workspace-feedback')).toContainText('Guardado correctamente.');
   await expect(status).toContainText('CAMBIOS GUARDADOS');
   await expect(page.getByLabel('Contenido visual')).toContainText('Segunda línea por Ctrl+S');
 
@@ -125,7 +125,10 @@ test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y 
   await button('Abrir Estado de guardado').click();
   await openCardEditor(page, 1);
   await expect(page.getByLabel('Contenido visual')).toContainText('Segunda línea por Ctrl+S');
-  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
+  // UX7-SIDEBAR: «Recuperación» es ahora una opción estable, siempre presente — ya no indica por
+  // su mera existencia que hay algo recuperable. Sin incidencia real, no lleva señal de atención.
+  await expect(page.getByTestId('recovery-badge')).toBeVisible();
+  await expect(page.getByTestId('recovery-badge-attention')).toHaveCount(0);
 });
 
 test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin alterar la nota durable', async ({ page }) => {
@@ -172,7 +175,9 @@ test('P18-E3-B2: alternar Visual y HTML sin editar no reescribe el archivo durab
   await page.getByRole('button', { name: 'Editar el cuerpo visualmente' }).click();
   await page.getByRole('button', { name: 'Guardar texto' }).click();
   expect(await page.evaluate(() => localStorage.getItem('nouty-test-folder'))).toBe(before);
-  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
+  // UX7-SIDEBAR: «Recuperación» es ahora una opción estable (siempre presente); que no exista
+  // ningún borrador real se verifica por su nombre accesible (sin recuento), no por su ausencia.
+  await expect(page.getByTestId('recovery-badge')).toHaveAccessibleName('Centro de recuperación');
 });
 
 test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durable y permite descartarlo', async ({ page }) => {
@@ -213,7 +218,7 @@ test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durabl
   await expect(page.getByTestId('html-source-editor')).toHaveCount(0);
   await expect(page.getByLabel('Contenido visual')).toBeVisible();
   await page.getByRole('button', { name: 'Guardar texto' }).click();
-  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge')).toHaveAccessibleName('Centro de recuperación');
   await expect.poll(() => page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     return Object.values(files).map((bytes) => new TextDecoder().decode(new Uint8Array(bytes))).join('\n');
@@ -314,7 +319,9 @@ test('P18-E0/UX7-SAVE: descartar un borrador huérfano cierra la insignia para s
   await button('Cerrar centro de recuperación').click();
   // Antes de este arreglo, `discardDrafts` nunca limpiaba `draftProblem`: la insignia seguía mostrando
   // el mismo problema para siempre, sin ninguna forma de resolverlo, hasta recargar la página.
-  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
+  // UX7-SIDEBAR: «Recuperación» ya es una opción estable (siempre presente); lo que debe desaparecer
+  // es la señal de atención, no la opción en sí.
+  await expect(page.getByTestId('recovery-badge-attention')).toHaveCount(0);
 
   // Editar una tarjeta totalmente distinta no debe resucitar la insignia ya resuelta («reactivarse
   // después de modificar otras tarjetas», el síntoma real reportado).
@@ -323,7 +330,7 @@ test('P18-E0/UX7-SAVE: descartar un borrador huérfano cierra la insignia para s
   await page.getByLabel('Contenido visual').fill('Tarjeta ajena, sin relación con el borrador descartado');
   await button('Guardar texto').click();
   await expect(page.getByTestId('workspace-feedback')).toContainText('Texto guardado');
-  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge-attention')).toHaveCount(0);
 });
 
 test('P18-E0/UX7-SAVE: eliminar definitivamente una nota desde la Papelera descarta también su borrador privado', async ({ page }) => {
@@ -351,7 +358,7 @@ test('P18-E0/UX7-SAVE: eliminar definitivamente una nota desde la Papelera desca
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta eliminada definitivamente. Guardado en la carpeta.');
   await button('Cerrar papelera').click();
   // La purga ya es destructiva y confirmada: limpia también el borrador huérfano, sin dejarlo flotando para siempre.
-  await expect(page.getByTestId('recovery-badge')).toHaveCount(0);
+  await expect(page.getByTestId('recovery-badge-attention')).toHaveCount(0);
 });
 
 test('P18-E0/UX7-SAVE: cerrar el Centro de recuperación no descarta el borrador y no se reabre solo', async ({ page }) => {
@@ -686,9 +693,11 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await fillCardTitle(page, 'Borrador sin guardar');
-  // Sin pulsar «Guardar texto»: cambiar de proyecto desde la navegación (UX7-LAYOUT: persistente en
-  // cualquier ancho, igual que «Volver a mis espacios» — debe funcionar con el editor de tarjeta
-  // enfocado, que oculta «Más secciones»; ya no hay franja de proyectos aparte en ningún ancho).
+  // Sin pulsar «Guardar texto»: cambiar de proyecto desde la navegación (UX7-LAYOUT-CORRECTION: en
+  // compacto vive en «Más secciones», alcanzable incluso con el editor de tarjeta enfocado, porque
+  // la barra de herramientas ya no se oculta al enfocar una tarjeta; ya no hay franja de proyectos
+  // aparte en ningún ancho).
+  await openMore(page);
   await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
   await page.getByRole('button', { name: 'Ir al proyecto Uno', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Uno', exact: true })).toBeVisible();

@@ -14,6 +14,9 @@ interface ToolbarProps {
   readonly tool: CanvasTool;
   readonly onTool: (tool: CanvasTool) => void;
   readonly onOpenInsert: () => void;
+  /** UX7-CLEANUP: antes solo en la barra lateral derecha (icono de cuadrícula); misma acción real
+      (abre el diálogo «Acceso a tablero» sobre el tablero actual), ahora aquí, junto a «Insertar». */
+  readonly onInsertShortcut: () => void;
   readonly zoom: number;
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
@@ -88,12 +91,17 @@ export function Toolbar(props: ToolbarProps) {
   const create = (
     group('toolbar-group-create', t('toolbar.group.create', locale), <>
       <ToolButton testID="open-insert" icon="plus" label={t('insert.title', locale)} accessibilityLabel={t('insert.open', locale)} accessibilityHint={t('insert.open.hint', locale)} onPress={props.onOpenInsert} style={cell} />
+      <ToolButton testID="insert-board-shortcut" icon="board" label="Acceso" accessibilityLabel="Crear acceso rápido a un tablero" onPress={props.onInsertShortcut} style={cell} />
       {props.compact ? (
         <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
       ) : null}
     </>)
   );
-  const history = props.compact ? null : (
+  // UX7-LAYOUT-CORRECTION: en compacto vivían en la línea de aviso (ADR 0026/0052) — sin texto que
+  // las acompañe (el guardado silencioso ya no deja casi nunca algo que avisar), quedaban como
+  // botones sueltos sin agrupar sobre el lienzo. Ahora son un grupo más de esta misma barra, igual
+  // que en el resto de anchos.
+  const history = (
     group('toolbar-group-history', t('toolbar.group.history', locale), <>
       <ToolButton icon="undo" label={t('undo', locale)} accessibilityLabel={props.undoLabel ? `${t('undo', locale)}: ${props.undoLabel}` : t('undo', locale)}
         accessibilityHint={t('undo.hint', locale)} disabled={props.undoLabel === null} onPress={props.onUndo} style={cell} />
@@ -119,6 +127,10 @@ export function Toolbar(props: ToolbarProps) {
           <ToolButton icon="present" label={t('nav.present', locale)} accessibilityLabel={t('nav.present.open', locale)} onPress={props.onOpenPresent} style={cell} />
           {props.canPrint ? <ToolButton icon="print" label={t('nav.print', locale)} accessibilityLabel={t('nav.print.open', locale)} onPress={props.onOpenPrint} style={cell} /> : null}
           <ToolButton icon="settings" label={t('nav.settings', locale)} accessibilityLabel={t('nav.settings.open', locale)} onPress={props.onOpenSettings} style={cell} />
+          {/* UX7-LAYOUT-CORRECTION: sin barra lateral (800-1099 px) no hay sitio para identidad,
+              Proyectos ni Guardar sin crear una fila nueva que compita visualmente con la propia
+              barra — así que, igual que en compacto, viven en «Más secciones». */}
+          <ToolButton icon="menu" label={t('more', locale)} accessibilityLabel={t('more.label', locale)} accessibilityHint={t('more.hint', locale)} onPress={props.onOpenMore} style={cell} />
         </>
       )}
     </>)
@@ -134,6 +146,8 @@ export function Toolbar(props: ToolbarProps) {
         <>
           {tools}
           {create}
+          {history}
+          {props.trailing ? <View style={styles.trailingCompact}>{props.trailing}</View> : null}
         </>
       ) : (
         <>
@@ -164,4 +178,6 @@ const styles = StyleSheet.create({
   zoomCell: { minWidth: 64 },
   divider: { width: 1, alignSelf: 'stretch', marginHorizontal: 2 },
   trailing: { flexGrow: 1, flexShrink: 1, flexBasis: 240, minWidth: 220, alignSelf: 'stretch', justifyContent: 'center' },
+  // Columna (compacto): nunca una altura mínima fija como en `trailing` (pensado para fila ancha).
+  trailingCompact: { alignSelf: 'stretch' },
 });

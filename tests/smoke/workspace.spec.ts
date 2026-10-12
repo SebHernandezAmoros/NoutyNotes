@@ -2370,9 +2370,9 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
   await expect(card(page, 2)).toBeVisible();
   await expect(card(page, 1)).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Guion', exact: true })).toBeVisible();
-  // El tablero y su número de tarjetas: en la cabecera desde 800 px; en móvil, en su pestaña.
-  if (isCompact(page)) await expect(tab('Tablero Tablero 2')).toContainText('1');
-  else await expect(page.getByText('TABLERO 2 · 1 TARJETA')).toBeVisible();
+  // El tablero y su número de tarjetas (UX7-LAYOUT-CORRECTION: ya no hay cabecera que los repita;
+  // es información del tablero, no del lienzo): la propia pestaña ya lo muestra en cualquier ancho.
+  await expect(tab('Tablero Tablero 2')).toContainText('1');
   await tab('Tablero Tablero 1').click();
   await expect(card(page, 1)).toBeVisible();
   await expect(card(page, 2)).toHaveCount(0);
@@ -2392,12 +2392,13 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
     await expect(page.getByRole('button', { name: 'Cerrar la pestaña de Tablero 2' })).toHaveCount(0);
   }
 
-  // Proyectos (UX7-LAYOUT): ya no hay una segunda franja vertical para proyectos, solo la de
-  // tableros (`BoardRail`), en ninguna anchura. Son los espacios reales de la sesión y cambiar de
-  // uno a otro es navegación real. Sin cabecera, «Cambiar de proyecto» sigue siendo persistente en
-  // cualquier ancho (igual que «Volver a mis espacios»): debe funcionar incluso con el editor de
-  // tarjeta enfocado en móvil, que oculta «Más secciones».
+  // Proyectos (UX7-LAYOUT-CORRECTION): ya no hay una segunda franja vertical para proyectos, solo
+  // la de tableros (`BoardRail`), en ninguna anchura, ni ninguna fila de cabecera. En compacto vive
+  // en «Más secciones» —alcanzable incluso con el editor de tarjeta enfocado, porque la barra de
+  // herramientas ya no se oculta al enfocar—; desde 800 px, al final de la barra de herramientas o
+  // en la barra lateral, sin pasos previos.
   await expect(page.getByTestId('project-tabs')).toHaveCount(0);
+  if (isCompact(page)) await button(page, 'Más secciones').click();
   await button(page, 'Cambiar de proyecto').click();
   await expect(page.getByTestId('project-sheet')).toBeVisible();
   await expect(button(page, 'Guion, proyecto actual')).toBeVisible();
@@ -2406,6 +2407,83 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
   await expect(page.getByRole('heading', { name: 'Primero', exact: true })).toBeVisible();
   await expect(page.getByTestId('board-empty')).toBeVisible();
   await expect(page.getByTestId('workspace-sidebar')).toHaveCount((page.viewportSize()?.width ?? 0) >= 1100 ? 1 : 0);
+});
+
+/**
+ * UX7-LAYOUT-CORRECTION: la cabecera superior (volver/nombre/estado/Proyectos, el aviso «Guardado
+ * correctamente» y el recuento de tarjetas) desapareció por completo como región permanente — no
+ * una versión más pequeña. La barra de herramientas del lienzo es el primer bloque del área de
+ * trabajo; Proyectos, Guardar, Ctrl+S y Recuperación siguen accesibles desde la navegación real.
+ */
+test('UX7-LAYOUT-CORRECTION: ninguna fila de cabecera vive sobre el lienzo; la barra de herramientas es el primer bloque', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'SinCabecera');
+  await addCards(page, ['nota']);
+
+  // 6-7: la barra de herramientas (o, con barra lateral, el propio lienzo) es lo primero del área
+  // de trabajo, y el lienzo recupera una altura real, no solo «sin desbordamiento».
+  const toolbarBox = await page.getByTestId('workspace-toolbar').boundingBox();
+  const canvasBox = await page.getByTestId('board-canvas').boundingBox();
+  if (!toolbarBox || !canvasBox) throw new Error('falta la barra o el lienzo');
+  const viewportHeight = page.viewportSize()?.height ?? 0;
+  expect(canvasBox.height).toBeGreaterThan(viewportHeight * 0.5);
+  if (isCompact(page)) {
+    // Compacto: la barra vive bajo el lienzo (patrón ya existente, ADR 0013); nada de identidad
+    // vive sobre él salvo las pestañas de tablero, ajenas a esta corrección.
+    expect(toolbarBox.y).toBeGreaterThanOrEqual(canvasBox.y + canvasBox.height - 1);
+  } else {
+    // Ancho/escritorio: nada por encima de la barra salvo, a lo sumo, el aviso de ZIP sin exportar
+    // (ADR de memoria del navegador, ajeno a esta corrección) — nunca una fila de identidad.
+    expect(toolbarBox.y).toBeLessThan(canvasBox.y);
+  }
+
+  // 1-3: no existe ya ningún «Volver a mis espacios»/nombre/Proyectos como fila fija sobre el
+  // lienzo — existen, pero reubicados en la navegación real (barra lateral o, en compacto, tras
+  // abrir «Más secciones»; aquí solo se comprueba su alcanzabilidad, no una posición concreta).
+  if (isCompact(page)) {
+    await button(page, 'Más secciones').click();
+    await expect(page.getByTestId('more-sheet').getByRole('button', { name: 'Cambiar de proyecto' })).toBeVisible();
+    await button(page, 'Cerrar más').click();
+  } else {
+    await expect(button(page, 'Cambiar de proyecto')).toBeVisible();
+  }
+  await expect(button(page, 'Volver a mis espacios')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'SinCabecera', exact: true })).toBeVisible();
+
+  // 4: un guardado manual correcto no anuncia nada (el guardado normal es silencioso).
+  const saveNow = isCompact(page)
+    ? async () => { await button(page, 'Más secciones').click(); await page.getByTestId('more-sheet').getByRole('button', { name: 'Guardar ahora (Ctrl+S)' }).click(); }
+    : async () => { await button(page, 'Guardar ahora (Ctrl+S)').click(); };
+  await saveNow();
+  await expect(page.getByText('Guardado correctamente')).toHaveCount(0);
+
+  // 9-10: Ctrl+S funciona igual, sin diálogo nativo, sin anunciar éxito.
+  await page.keyboard.press('Control+s');
+  await expect(page.getByText('Guardado correctamente')).toHaveCount(0);
+
+  // 5: ningún texto de recuento de tarjetas vive ya sobre el lienzo como franja propia (la pestaña
+  // del tablero, ajena a esta corrección, puede seguir mostrándolo).
+  await expect(page.getByText(/· \d+ TARJETAS?$/)).toHaveCount(0);
+
+  // Entre 800 y 1099 px no hay barra lateral: identidad/Proyectos/Guardar deben vivir dentro de
+  // «Más secciones» (vía el nuevo botón «Más» al final de la barra), nunca en una fila propia que,
+  // aunque formara parte del componente, se viera igual que la cabecera retirada (defecto real
+  // encontrado y corregido: antes desbordaban a esa tercera fila con `flexWrap`).
+  await page.setViewportSize({ width: 900, height: 844 });
+  await expect(page.getByRole('heading', { name: 'SinCabecera', exact: true })).toHaveCount(0);
+  await expect(button(page, 'Cambiar de proyecto')).toHaveCount(0);
+  const toolbarTablet = page.getByTestId('workspace-toolbar');
+  await expect(toolbarTablet.getByRole('button', { name: 'Más' })).toBeVisible();
+  // Nada entre el final de la barra y el lienzo: la propia barra es el último bloque antes de él.
+  const toolbarTabletBox = await toolbarTablet.boundingBox();
+  const canvasTabletBox = await page.getByTestId('board-canvas').boundingBox();
+  if (!toolbarTabletBox || !canvasTabletBox) throw new Error('falta la barra o el lienzo (tablet)');
+  // Tolera el espaciado normal entre bloques (`gap` del área de trabajo, bordes): una fila de
+  // cabecera añadiría bastante más que eso (40+ px), no unos pocos píxeles de separación.
+  expect(canvasTabletBox.y).toBeLessThan(toolbarTabletBox.y + toolbarTabletBox.height + 20);
+  await toolbarTablet.getByRole('button', { name: 'Más' }).click();
+  await expect(page.getByTestId('more-sheet').getByRole('heading', { name: 'SinCabecera', exact: true })).toBeVisible();
+  await expect(page.getByTestId('more-sheet').getByRole('button', { name: 'Cambiar de proyecto' })).toBeVisible();
 });
 
 test('las pestañas permiten renombrar y archivar un tablero con botón o menú contextual', async ({ page }, testInfo) => {

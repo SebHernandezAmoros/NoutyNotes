@@ -7,7 +7,7 @@ export type AppIconName =
   | 'trash' | 'undo' | 'redo' | 'minus' | 'plus'
   | 'diary' | 'archive' | 'assets' | 'present' | 'print' | 'settings'
   | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star' | 'frame'
-  | 'copy' | 'cut' | 'paste' | 'duplicate';
+  | 'copy' | 'cut' | 'paste' | 'duplicate' | 'recover';
 
 /**
  * Catálogo de línea portable para la interfaz (ADR 0047). Usa primitivas de React Native y evita
@@ -23,7 +23,10 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
 
   if (name === 'plus' || name === 'minus' || name === 'close') return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.root, box]}>
-      <View style={[styles.centerLine, fill, { height: line }]} />
+      {/* Defecto real corregido (UX7-CLEANUP): «close» dibujaba 3 trazos (0°, 45°, -45°, una
+          estrella) en vez de una X real de 2 trazos — la línea horizontal sin rotar solo
+          corresponde a plus/minus. */}
+      {name !== 'close' ? <View style={[styles.centerLine, fill, { height: line }]} /> : null}
       {name !== 'minus' ? <View style={[styles.centerLine, fill, { height: line, transform: [{ rotate: name === 'close' ? '45deg' : '90deg' }] }]} /> : null}
       {name === 'close' ? <View style={[styles.centerLine, fill, { height: line, transform: [{ rotate: '-45deg' }] }]} /> : null}
     </View>
@@ -59,6 +62,7 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
     </View>
   );
   if (name === 'undo' || name === 'redo') return <Text accessibilityElementsHidden style={{ color: ink, fontSize: size, lineHeight: size, fontWeight: '700' }}>{name === 'undo' ? '↶' : '↷'}</Text>;
+  if (name === 'recover') return <Text accessibilityElementsHidden style={{ color: ink, fontSize: size, lineHeight: size, fontWeight: '700' }}>↺</Text>;
   if (name === 'text') return <Text accessibilityElementsHidden style={{ color: ink, fontSize: size, lineHeight: size, fontWeight: '900' }}>T</Text>;
   if (name === 'select') return <Text accessibilityElementsHidden style={{ color: ink, fontSize: size, lineHeight: size, fontWeight: '900' }}>↖</Text>;
   if (name === 'pan') return (

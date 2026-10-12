@@ -1,10 +1,10 @@
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppIcon } from './AppIcon';
 import { t } from '../i18n';
-import { ActionButton } from './controls';
 import { useKeyboardInset, useRevealFocusedInput } from './useKeyboardInset';
 
 interface DialogProps {
@@ -50,7 +50,7 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
         >
           <View style={styles.header}>
             <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-            <ActionButton label={t('dialog.close', locale)} accessibilityLabel={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
+            <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
           </View>
           <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>
@@ -59,8 +59,34 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
   );
 }
 
+/**
+ * UX7-CLEANUP: «Cerrar» pasa de botón de texto a X — misma posición (arriba a la derecha, dentro
+ * de la cabecera del diálogo), mismo nombre accesible, mismo cierre por Escape/fondo (sin tocar).
+ * Acento rojo discreto solo en el trazo del icono, no en un fondo lleno (cerrar no es destructivo:
+ * no debe leerse como un botón de peligro).
+ */
+function DialogCloseButton({ label, onPress }: { readonly label: string; readonly onPress: () => void }) {
+  const { theme } = useTheme();
+  const colors = theme.colors;
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={[styles.closeButton, { borderColor: focused ? colors.selection : colors.border, backgroundColor: colors.surface }]}
+    >
+      <AppIcon name="close" size={16} color={colors.danger} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(20, 22, 18, 0.35)' },
+  // 44×44 de área táctil mínima (ADR 0016) aunque el icono visible sea pequeño.
+  closeButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   // Arriba y a distancia fija, no centrado: centrar un panel de alto variable lo dejaba en medios píxeles
   // y Firefox medía 43,99 px un botón de 44 (auditoría de 7a).
   backdropWide: { alignItems: 'center', justifyContent: 'flex-start', padding: 24, paddingTop: 48 },
