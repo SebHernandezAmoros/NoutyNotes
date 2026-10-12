@@ -120,12 +120,16 @@ export function Toolbar(props: ToolbarProps) {
       <ToolButton icon="list" label={t('view.list', locale)} accessibilityLabel={t('view.list.label', locale)} active={!onCanvas} onPress={props.onToggleView} style={cell} />
       {props.navInSidebar ? null : (
         <>
-          <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
+          {/* UX7-CONSOLIDATION (Hito C): mismo orden que la barra lateral de escritorio — Diario,
+              Assets, Archivo, Presentar, Imprimir, Papelera. Configuración sigue inline aquí mismo
+              (no en «Más secciones»): a este ancho no hay barra lateral que la aloje en su región
+              inferior fija, así que se queda junto al resto de secciones, como ya ocurría. */}
           <ToolButton icon="diary" label={t('nav.diary', locale)} accessibilityLabel={t('nav.diary.open', locale)} onPress={props.onOpenDiary} style={cell} />
-          <ToolButton icon="archive" label={archiveLabel} accessibilityLabel={archiveOpenLabel} onPress={props.onOpenArchive} style={cell} />
           <ToolButton icon="assets" label={t('nav.assets', locale)} accessibilityLabel={t('nav.assets.open', locale)} onPress={props.onOpenAssets} style={cell} />
+          <ToolButton icon="archive" label={archiveLabel} accessibilityLabel={archiveOpenLabel} onPress={props.onOpenArchive} style={cell} />
           <ToolButton icon="present" label={t('nav.present', locale)} accessibilityLabel={t('nav.present.open', locale)} onPress={props.onOpenPresent} style={cell} />
           {props.canPrint ? <ToolButton icon="print" label={t('nav.print', locale)} accessibilityLabel={t('nav.print.open', locale)} onPress={props.onOpenPrint} style={cell} /> : null}
+          <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
           <ToolButton icon="settings" label={t('nav.settings', locale)} accessibilityLabel={t('nav.settings.open', locale)} onPress={props.onOpenSettings} style={cell} />
           {/* UX7-LAYOUT-CORRECTION: sin barra lateral (800-1099 px) no hay sitio para identidad,
               Proyectos ni Guardar sin crear una fila nueva que compita visualmente con la propia

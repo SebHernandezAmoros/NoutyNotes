@@ -22,10 +22,24 @@ import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text';
 import { $setBlocksType } from '@lexical/selection';
-import { $isTableCellNode, $isTableNode, INSERT_TABLE_COMMAND, TableCellNode, TableNode, TableRowNode } from '@lexical/table';
+import {
+  $deleteTableColumnAtSelection,
+  $deleteTableRowAtSelection,
+  $insertTableColumnAtNode,
+  $insertTableRowAtNode,
+  $isTableCellNode,
+  $isTableNode,
+  $isTableRowNode,
+  $setTableRowIsHeader,
+  INSERT_TABLE_COMMAND,
+  TableCellNode,
+  TableNode,
+  TableRowNode,
+} from '@lexical/table';
 import {
   $createParagraphNode,
   $createTextNode,
+  $getNodeByKey,
   $getRoot,
   $getSelection,
   $insertNodes,
@@ -47,7 +61,6 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { isLinkUrl } from '@noutynotes/domain';
-import type { RichTextTable, RichTextTableRow } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 
 import { t } from '../i18n';
@@ -70,7 +83,14 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
   const [italic, setItalic] = useState(false);
   const [block, setBlock] = useState<BlockKind>('paragraph');
   const [inTable, setInTable] = useState(false);
-  const [tableBlockIndex, setTableBlockIndex] = useState<number | null>(null);
+  // UX7-CONSOLIDATION (Hito B): la celda activa se recuerda por clave de nodo, no por selección en
+  // vivo — pulsar el botón «Opciones de tabla» saca momentáneamente el foco del contenido (mismo
+  // tránsito que ya hacía inestable la selección en vivo para `inTable` más abajo), y las acciones de
+  // la tabla deben seguir apuntando a la celda donde estaba el cursor, no a una selección nula.
+  const [tableCellKey, setTableCellKey] = useState<string | null>(null);
+  const [tableRowCount, setTableRowCount] = useState(0);
+  const [tableColumnCount, setTableColumnCount] = useState(0);
+  const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const [selectionLink, setSelectionLink] = useState('');
   const [linkHref, setLinkHref] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
@@ -96,16 +116,20 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     let selectionNode = selection.anchor.getNode();
     let insideTable = false;
     let selectedTable: TableNode | null = null;
+    let selectedCell: TableCellNode | null = null;
     while (selectionNode.getParent() !== null) {
-      if ($isTableCellNode(selectionNode)) insideTable = true;
+      if ($isTableCellNode(selectionNode)) { insideTable = true; selectedCell = selectionNode; }
       if ($isTableNode(selectionNode)) selectedTable = selectionNode;
       selectionNode = selectionNode.getParent() ?? selectionNode;
     }
     setInTable(insideTable);
+    setTableCellKey(selectedCell ? selectedCell.getKey() : null);
+    setTableRowCount(selectedTable ? selectedTable.getChildrenSize() : 0);
+    const firstRow = selectedTable?.getFirstChild();
+    setTableColumnCount($isTableRowNode(firstRow) ? firstRow.getChildrenSize() : 0);
     const top = selectedTable ?? selection.anchor.getNode().getTopLevelElement();
     // Los controles de una imagen decorada pueden dejar el ancla temporalmente en la raíz.
-    if (!top) { setTableBlockIndex(null); return false; }
-    setTableBlockIndex(insideTable ? $getRoot().getChildren().indexOf(top) : null);
+    if (!top) return false;
     if ($isHeadingNode(top)) setBlock(`heading-${Number(top.getTag().slice(1)) as HeadingLevel}`);
     else if ($isListNode(top)) setBlock(top.getListType() === 'number' ? 'ordered' : top.getListType() === 'check' ? 'checklist' : 'bullet');
     else setBlock('paragraph');
@@ -124,6 +148,9 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     editor.registerCommand(CAN_UNDO_COMMAND, (value) => { setCanUndo(value); return false; }, COMMAND_PRIORITY_LOW),
     editor.registerCommand(CAN_REDO_COMMAND, (value) => { setCanRedo(value); return false; }, COMMAND_PRIORITY_LOW),
   ), [editor, readSelection]);
+  // El menú de tabla solo tiene sentido con el cursor dentro de una tabla; si la selección sale de
+  // ella (nueva selección de rango en otro bloque) se cierra para no quedar huérfano sin ancla visible.
+  useEffect(() => { if (!inTable) setTableMenuOpen(false); }, [inTable]);
 
   const chooseBlock = useCallback((next: BlockKind) => {
     if (inTable) return;
@@ -190,17 +217,51 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     });
     setTableOpen(false);
   };
-  const editSelectedTable = (change: (table: RichTextTable) => RichTextTable) => {
-    if (tableBlockIndex === null) return;
+  // UX7-CONSOLIDATION (Hito B): las acciones de tabla ya no reescriben todo el documento por índice
+  // de bloque (eso perdía la celda/columna real donde estaba el cursor y siempre operaba al final de
+  // la tabla). Ahora usan las utilidades nativas de `@lexical/table` sobre la celda recordada
+  // (`tableCellKey`), que sí saben insertar/eliminar la fila o columna exacta de la selección y
+  // conservan el resto del árbol Lexical intacto (deshacer/rehacer y manejo de foco de Lexical siguen
+  // aplicando sin cambios).
+  const withSelectedCell = (action: (cellNode: TableCellNode) => void) => {
+    if (!tableCellKey) return;
     editor.update(() => {
-      const document = $readWebRichTextDocument();
-      const table = document?.blocks[tableBlockIndex];
-      if (!document || table?.type !== 'table') return;
-      $loadWebRichTextDocument({ ...document, blocks: document.blocks.map((block, index) => index === tableBlockIndex ? change(table) : block) });
+      const cellNode = $getNodeByKey(tableCellKey);
+      if (!cellNode || !$isTableCellNode(cellNode)) return;
+      action(cellNode);
     });
   };
-  const emptyRow = (columns: number): RichTextTableRow => ({ cells: Array.from({ length: columns }, () => ({ content: [] })) });
-  const tableWidth = (table: RichTextTable) => table.header?.cells.length ?? table.rows[0]?.cells.length ?? 1;
+  const insertTableRow = (insertAfter: boolean) => withSelectedCell((cellNode) => { $insertTableRowAtNode(cellNode, insertAfter); });
+  const insertTableColumn = (insertAfter: boolean) => {
+    if (tableColumnCount >= MAX_TABLE_COLUMNS) return;
+    withSelectedCell((cellNode) => { $insertTableColumnAtNode(cellNode, insertAfter); });
+  };
+  const deleteTableRow = () => {
+    if (tableRowCount <= 1) return;
+    withSelectedCell((cellNode) => { cellNode.selectStart(); $deleteTableRowAtSelection(); });
+  };
+  const deleteTableColumn = () => {
+    if (tableColumnCount <= 1) return;
+    withSelectedCell((cellNode) => { cellNode.selectStart(); $deleteTableColumnAtSelection(); });
+  };
+  const toggleTableHeader = () => withSelectedCell((cellNode) => {
+    const rowNode = cellNode.getParent();
+    const tableNode = rowNode?.getParent();
+    if (!$isTableNode(tableNode)) return;
+    const firstRow = tableNode.getFirstChild();
+    const firstCell = $isTableRowNode(firstRow) ? firstRow.getFirstChild() : null;
+    const isHeader = $isTableCellNode(firstCell) ? firstCell.hasHeader() : false;
+    $setTableRowIsHeader(tableNode, 0, !isHeader);
+  });
+  const tableMenuActions: ReadonlyArray<{ readonly label: string; readonly action: () => void; readonly disabled?: boolean; readonly key: string }> = [
+    { key: 'row-above', label: t('editor.visual.table.addRowAbove', locale), action: () => insertTableRow(false) },
+    { key: 'row-below', label: t('editor.visual.table.addRowBelow', locale), action: () => insertTableRow(true) },
+    { key: 'column-left', label: t('editor.visual.table.addColumnLeft', locale), action: () => insertTableColumn(false), disabled: tableColumnCount >= MAX_TABLE_COLUMNS },
+    { key: 'column-right', label: t('editor.visual.table.addColumnRight', locale), action: () => insertTableColumn(true), disabled: tableColumnCount >= MAX_TABLE_COLUMNS },
+    { key: 'remove-row', label: t('editor.visual.table.removeRow', locale), action: deleteTableRow, disabled: tableRowCount <= 1 },
+    { key: 'remove-column', label: t('editor.visual.table.removeColumn', locale), action: deleteTableColumn, disabled: tableColumnCount <= 1 },
+    { key: 'toggle-header', label: t('editor.visual.table.toggleHeader', locale), action: toggleTableHeader },
+  ];
   const insertImage = async () => {
     if (!onInsertImage) return;
     const snapshot = editor.getEditorState().read(() => {
@@ -250,40 +311,56 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
   // `compactFormat` afecta únicamente a la representación de la toolbar: no cambia comandos,
   // documento, selección ni sesión editorial.
   const compactFormat = compact && !titleOnly;
-  const tableControls = !titleOnly && inTable ? [
-    button('+F', t('editor.visual.table.addRow', locale), false, false, () => editSelectedTable((table) => ({ ...table, rows: [...table.rows, emptyRow(tableWidth(table))] })), 'table-add-row'),
-    button('−F', t('editor.visual.table.removeRow', locale), false, false, () => editSelectedTable((table) => table.rows.length <= 1 ? table : ({ ...table, rows: table.rows.slice(0, -1) })), 'table-remove-row'),
-    button('+C', t('editor.visual.table.addColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) >= MAX_TABLE_COLUMNS ? table : ({
-      ...table,
-      ...(table.header ? { header: { cells: [...table.header.cells, { content: [] }] } } : {}),
-      rows: table.rows.map((row) => ({ cells: [...row.cells, { content: [] }] })),
-    })), 'table-add-column'),
-    button('−C', t('editor.visual.table.removeColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) <= 1 ? table : ({
-      ...table,
-      ...(table.header ? { header: { cells: table.header.cells.slice(0, -1) } } : {}),
-      rows: table.rows.map((row) => ({ cells: row.cells.slice(0, -1) })),
-    })), 'table-remove-column'),
-    button('H', t('editor.visual.table.toggleHeader', locale), false, false, () => editSelectedTable((table) => table.header
-      ? { type: 'table', rows: [table.header, ...table.rows] }
-      : { type: 'table', header: table.rows[0] as RichTextTableRow, rows: table.rows.length > 1 ? table.rows.slice(1) : [emptyRow(tableWidth(table))] }), 'table-toggle-header'),
-  ] : [];
   const linkImageTableControls = [
     button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink, 'link'),
     !titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }, 'image') : null,
     titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open), 'table'),
   ];
-  // UX7-CONSOLIDATION: los controles de fila/columna ya no viven mezclados dentro de «Más formato» —
-  // son su propia fila contextual, visible solo con el cursor dentro de una tabla, en cualquier ancho
-  // (compacto o Inspector completo). No son un menú flotante anclado al DOM de la tabla (fuera de
-  // alcance seguro en esta ronda), pero sí dejan de competir visualmente con enlace/imagen/listas.
-  const tableContextRow = !titleOnly && inTable ? (
-    <View testID="editor-table-controls" accessibilityRole="toolbar" accessibilityLabel="Controles de la tabla" style={[styles.toolbar, styles.tableContextToolbar, { borderTopColor: colors.gridLine }]}>
-      <Text style={[styles.tableContextLabel, { color: colors.textSecondary }]}>TABLA</Text>
-      {tableControls}
+  // UX7-CONSOLIDATION (Hito B): un único control contextual «Opciones de tabla» sustituye la fila fija
+  // de 5 iconos abreviados (D28) — esa fila ocupaba espacio permanente mientras el cursor seguía dentro
+  // de la tabla, incluso sin usarla, y en la edición rápida (tarjeta pequeña) llegaba a tapar casi todo
+  // el contenido (ver captura `hito-a-03-tras-reabrir.png`). El menú solo aparece con el cursor dentro
+  // de una tabla, usa etiquetas legibles en vez de abreviaturas y se cierra tras cada acción o al salir
+  // de la tabla.
+  const tableMenuAnchor = !titleOnly && inTable ? (
+    <View style={styles.tableMenuWrap}>
+      <Pressable
+        testID="editor-table-menu-toggle"
+        accessibilityRole="button"
+        accessibilityLabel={tableMenuOpen ? t('editor.visual.table.menu.hide', locale) : t('editor.visual.table.menu.show', locale)}
+        accessibilityState={{ selected: tableMenuOpen }}
+        onPress={() => setTableMenuOpen((open) => !open)}
+        style={({ pressed }) => [styles.tableMenuButton, {
+          borderColor: tableMenuOpen ? colors.selection : colors.border,
+          backgroundColor: tableMenuOpen ? colors.accent : colors.surface,
+          opacity: pressed ? 0.7 : 1,
+        }]}
+      >
+        <Text style={[styles.toolText, { color: colors.textPrimary }]}>{t('editor.visual.table.menu.show', locale)}</Text>
+      </Pressable>
+      {tableMenuOpen ? (
+        <View testID="editor-table-menu" accessibilityRole="menu" style={[styles.tableMenu, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          {tableMenuActions.map((item) => (
+            <Pressable
+              key={item.key}
+              testID={`editor-table-menu-${item.key}`}
+              accessibilityRole="menuitem"
+              disabled={item.disabled}
+              onPress={() => { item.action(); setTableMenuOpen(false); }}
+              style={({ pressed }) => [styles.tableMenuItem, { opacity: item.disabled ? 0.4 : pressed ? 0.7 : 1 }]}
+            >
+              <Text style={[styles.tableMenuItemText, { color: colors.textPrimary }]}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   ) : null;
   return (
-    <View>
+    // El menú de tabla es un descendiente posicionado en términos absolutos de esta vista; sin un
+    // `zIndex` explícito aquí, React Native Web deja esta fila en el mismo nivel de apilado que
+    // `editArea` (su hermano) y el menú queda detrás del cuerpo desplazable, interceptando clics.
+    <View style={tableMenuOpen ? styles.toolbarShellRaised : undefined}>
       <View accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)} style={styles.toolbar}>
         {titleOnly ? null : <select
           aria-label={t('editor.visual.block', locale)}
@@ -295,6 +372,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
           <option value="paragraph">{t('editor.visual.paragraph', locale)}</option>
           {([1, 2, 3, 4, 5, 6] as const).map((level) => <option key={level} value={`heading-${level}`}>{`${t('editor.visual.heading', locale)} ${level}`}</option>)}
         </select>}
+        {tableMenuAnchor}
         {button('B', t('editor.visual.bold', locale), bold, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold'); })}
         {button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
         {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
@@ -333,7 +411,6 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
           {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
         </View>
       ) : null}
-      {tableContextRow}
       {linkOpen ? (
         <View style={[styles.linkEditor, { borderColor: linkProblem ? colors.danger : colors.gridLine, backgroundColor: colors.surface }]}>
           <TextInput
@@ -538,8 +615,12 @@ const styles = StyleSheet.create({
   shellCompact: { flex: 1, flexBasis: 0, minHeight: 0, overflow: 'hidden' },
   toolbar: { minHeight: 52, padding: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   compactMoreToolbar: { minHeight: 48, padding: 4, gap: 4 },
-  tableContextToolbar: { minHeight: 44, padding: 4, borderTopWidth: 1 },
-  tableContextLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginRight: 2 },
+  toolbarShellRaised: { position: 'relative', zIndex: 20 },
+  tableMenuWrap: { position: 'relative' },
+  tableMenuButton: { height: 44, paddingHorizontal: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  tableMenu: { position: 'absolute', top: 46, left: 0, zIndex: 50, minWidth: 220, borderWidth: 2, paddingVertical: 4 },
+  tableMenuItem: { paddingHorizontal: 10, paddingVertical: 10, minHeight: 40, justifyContent: 'center' },
+  tableMenuItemText: { fontSize: 13, fontWeight: '700' },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   toolText: { fontSize: 17 },
   bold: { fontWeight: '900' },

@@ -1564,12 +1564,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             </View>
             {workspace ? (
               <ScrollView testID="workspace-sidebar-nav" style={styles.sidebarNav} contentContainerStyle={styles.sidebarNavContent}>
-                <NavItem icon="trash" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
+                {/* UX7-CONSOLIDATION (Hito C): orden definitivo de la región central por frecuencia de
+                    uso (decisión de producto explícita) — Diario, Assets, Archivo, Presentar, Imprimir,
+                    Papelera. Papelera pasa al final: es la sección de menor frecuencia de uso cotidiano,
+                    no la primera que alguien busca al abrir la barra. */}
                 <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => openView('diary')} />
-                <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
                 <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
+                <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
                 <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
                 {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
+                <NavItem icon="trash" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
                 {/* UX7-CONSOLIDATION: «Archivar tablero» ya vive en la barra lateral derecha (Opciones
                     del tablero → BoardActionsDialog) a este mismo ancho — repetirlo aquí era un
                     duplicado real, no dos superficies con propósitos distintos. En compacto/tablet
@@ -1580,14 +1584,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             {workspace ? (
               <View style={styles.sidebarBottom}>
                 <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
-                {/* UX7-CONSOLIDATION: Configuración se usa con poca frecuencia pero debe seguir siendo
-                    fácil de encontrar sin desplazar la lista — vive en la región inferior fija, junto a
-                    Proyectos/Guardar, no al final de la lista con scroll. «Recuperación» ya no es una
+                {/* UX7-CONSOLIDATION (Hito C): orden definitivo de la región inferior — Proyectos,
+                    Guardar, Configuración (última entrada; se usa con poca frecuencia pero debe seguir
+                    siendo fácil de encontrar sin desplazar la lista central). «Recuperación» no es una
                     entrada de navegación propia (ver `identityStatus` arriba y «Centro de recuperación»
                     dentro de Configuración, siempre disponible). */}
-                <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
                 <NavItem icon="folder" label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} />
                 <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => void saveNow()} />
+                <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
               </View>
             ) : null}
           </View>
@@ -1758,17 +1762,22 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 {identityStatus}
               </View>
             ) : null}
+            {/* UX7-CONSOLIDATION (Hito C): mismo orden que la barra lateral de escritorio — Diario,
+                Assets, Archivo, Presentar, Imprimir; «Archivar este tablero» es una acción puntual del
+                tablero actual, no una sección de navegación, y se conserva junto a las demás acciones
+                de tablero. Configuración pasa al final, después de Proyectos/Guardar, igual que en la
+                región inferior fija de escritorio — antes aparecía antes de Proyectos/Guardar aquí, un
+                orden distinto al de escritorio sin motivo. */}
             {compact ? (
               <>
                 <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); openView('diary'); }} />
-                <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
                 <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
+                <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
                 <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
                 {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
                 {board && board.cardIds.length > 0 ? (
                   <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
                 ) : null}
-                <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
               </>
             ) : null}
             {/* Proyectos y Guardar: acciones puntuales, nunca una fila nueva sobre el lienzo —
@@ -1776,6 +1785,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 sigue alcanzable incluso editando. */}
             <NavItem icon="folder" label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => { setMoreOpen(false); setProjectsOpen(true); }} />
             <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => { setMoreOpen(false); void saveNow(); }} />
+            {compact ? (
+              <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
+            ) : null}
           </Dialog>
           {presentOpen ? (
             <PresentView

@@ -338,6 +338,106 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   }
 });
 
+test('UX7 Hito D parcial: Contraída y Minimizada indican una expansión accesible', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'El caso focalizado usa el menú contextual de escritorio y el teclado físico.');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('./');
+  await createWorkspace(page, 'Estados de Nota');
+  await insertFromMenu(page, 'Insertar nota');
+  await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
+  await openCardEditor(page, 1);
+  await page.getByLabel('Contenido visual').fill('Primera línea visible\nSegunda línea del extracto');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+  await expect(card(page, 1)).toContainText('Primera línea visible');
+
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Contraer Nueva nota').click();
+  await expect(card(page, 1)).toContainText('⌄');
+  await page.screenshot({ path: testInfo.outputPath('collapsed-dark.png') });
+
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  const expand = button(page, 'Expandir Nueva nota');
+  await expand.focus();
+  await expect(expand).toBeFocused();
+  await expand.press('Enter');
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Nueva nota');
+
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Minimizar Nueva nota').click();
+  await expect(page.getByTestId('minimized-tarjeta-1')).toContainText('⌄');
+  await page.screenshot({ path: testInfo.outputPath('minimized-dark.png') });
+});
+
+test('UX7 Hito G: el menú de Nota conserva accesos únicos y sus destinos contextuales', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: testInfo.project.name === 'mobile' ? 'dark' : 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Menú de Nota');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  const menu = page.getByTestId('card-menu');
+  const compact = (page.viewportSize()?.width ?? 0) < 800;
+  await expect(menu.getByRole('button', { name: 'Editar Nueva nota dentro de la ficha', exact: true })).toHaveCount(compact ? 0 : 1);
+  await expect(menu.getByRole('button', { name: 'Abrir el editor completo de Nueva nota', exact: true })).toHaveCount(1);
+  await expect(menu.getByRole('button', { name: 'Editar etiquetas de Nueva nota', exact: true })).toHaveCount(1);
+  await expect(menu.getByRole('button', { name: 'Archivar Nueva nota', exact: true })).toHaveCount(1);
+  await expect(menu.getByRole('button', { name: 'Enviar Nueva nota a la Papelera', exact: true })).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath('note-menu.png') });
+
+  await menu.getByRole('button', { name: 'Editar etiquetas de Nueva nota', exact: true }).click();
+  await expect(page.getByTestId('card-tags')).toBeVisible();
+  await expect(button(page, 'Mostrar el contenido de la tarjeta')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  if (compact) {
+    await menu.getByRole('button', { name: 'Abrir el editor completo de Nueva nota', exact: true }).click();
+  } else {
+    await menu.getByRole('button', { name: 'Editar Nueva nota dentro de la ficha', exact: true }).click();
+    await expect(page.getByTestId('inline-card-editor')).toBeVisible();
+    await button(page, 'Abrir el editor completo').click();
+  }
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(button(page, 'Mostrar apariencia y propiedades')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('note-full-editor.png') });
+});
+
+test('UX7 Hito H: revisión visual integrada en móvil, tablet y escritorio', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Un único contexto aislado recorre los tres anchos sin duplicar la matriz.');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Revisión integrada');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await page.getByLabel('Contenido visual').fill('Contenido de control para revisar el editor y la tarjeta.');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+  await expect(card(page, 1)).toContainText('Contenido de control');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('mobile-light.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 950, height: 820 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(button(page, 'Abrir menú Insertar')).toBeVisible();
+  await expect(card(page, 1)).toContainText('Contenido de control');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('tablet-dark.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.getByText('Diario', { exact: true })).toBeVisible();
+  await expect(page.getByText('Configuración', { exact: true })).toBeVisible();
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('desktop-light.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(button(page, 'Abrir menú Insertar')).toBeVisible();
+  await expect(card(page, 1)).toContainText('Contenido de control');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
 test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú «⋯» si no caben; 44 px con cualquier zoom (ADR 0016)', async ({ page }, testInfo) => {
   const compact = (page.viewportSize()?.width ?? 0) < 800;
   await page.emulateMedia({ colorScheme: 'light' });

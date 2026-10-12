@@ -366,6 +366,13 @@ export function CanvasCard(props: CanvasCardProps) {
             {cardDisplayTitle(card) ? (
               <Text numberOfLines={icon ? (box.height >= 56 ? 2 : 1) : 3} style={[styles.miniTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
+            {/* UX7-CONSOLIDATION (Hito D): pista visual de que hay más contenido al expandir — el
+                nombre accesible ya anuncia «, minimizada», pero no había ninguna señal visible en la
+                propia tarjeta. Puramente decorativa (oculta a lectores de pantalla, que ya tienen el
+                anuncio real). */}
+            {box.height >= 40 ? (
+              <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText }]}>⌄</Text>
+            ) : null}
           </View>
         ) : unifiedFloating && display === 'expanded' ? (
           <View testID={`unified-content-${card.id}`} style={[styles.floatingTextWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
@@ -405,12 +412,14 @@ export function CanvasCard(props: CanvasCardProps) {
         ) : connector && display === 'expanded' ? (
           <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
         ) : display === 'collapsed' ? (
-          // Contraída: una barra de título con los controles a la derecha.
           <View style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
             <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>{number3}</Text>
             {cardDisplayTitle(card) ? (
               <Text numberOfLines={1} style={[styles.collapsedTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
+            {/* La acción real continúa en el menú contextual y por teclado; este glifo no crea un
+                segundo control ni entra en el árbol accesible. */}
+            <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText }]}>⌄</Text>
           </View>
         ) : (
           <>
@@ -579,11 +588,12 @@ const styles = StyleSheet.create({
   handles: { position: 'absolute', zIndex: 20 },
   mini: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 3 },
   miniTitle: { fontSize: 11, lineHeight: 13, fontWeight: '800', textAlign: 'center' },
+  expandHint: { fontSize: 12, lineHeight: 12, fontWeight: '900', opacity: 0.7 },
   photo: { flex: 1, minHeight: 40, borderWidth: 1 },
   lifted: { zIndex: 10 },
   card: { flex: 1, overflow: 'hidden' },
   header: { height: HEADER, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 0, borderBottomWidth: 2 },
-  headerCollapsed: { flex: 1, height: undefined, alignItems: 'center', gap: 8, paddingLeft: 8, borderBottomWidth: 0 },
+  headerCollapsed: { flex: 1, alignItems: 'center', gap: 8, paddingLeft: 8 },
   tab: { height: 30, justifyContent: 'center', paddingHorizontal: 8, borderRightWidth: 2, borderTopWidth: 0, maxWidth: '100%' },
   collapsedTitle: { flexShrink: 1, fontSize: 15, fontWeight: '800' },
   headerText: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
