@@ -314,7 +314,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
         ) : null}
       </View>
       {compactFormat && moreOpen ? (
-        <View testID="editor-more-format-row" accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.more.show', locale)} style={styles.toolbar}>
+        <View testID="editor-more-format-row" accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.more.show', locale)} style={[styles.toolbar, styles.compactMoreToolbar]}>
           {button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
           {button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
           {button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
@@ -491,6 +491,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
                   color: colors.cardText,
                   fontFamily: fontFamily ?? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
                   fontSize: 16, lineHeight: 1.55, whiteSpace: 'pre-wrap',
+                  ...(compact ? { height: '100%', overflowY: 'auto' } : {}),
                 }}
               />
             )}
@@ -517,8 +518,11 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
 
 const styles = StyleSheet.create({
   shell: { width: '100%', borderWidth: 2, minHeight: 0 },
-  shellCompact: { flex: 1 },
+  // En edición rápida la altura la impone la tarjeta. `flexBasis: 0` evita que el contenido de
+  // Lexical agrande este contenedor y desplace su principio fuera del marco; sólo `editArea` desplaza.
+  shellCompact: { flex: 1, flexBasis: 0, minHeight: 0, overflow: 'hidden' },
   toolbar: { minHeight: 52, padding: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  compactMoreToolbar: { minHeight: 48, padding: 4, gap: 4 },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   toolText: { fontSize: 17 },
   bold: { fontWeight: '900' },
@@ -533,6 +537,6 @@ const styles = StyleSheet.create({
   tableInput: { width: 64, height: 44, borderWidth: 2, paddingHorizontal: 10 },
   tableHint: { flexBasis: '100%', fontSize: 12 },
   editArea: { position: 'relative', minHeight: 220, maxHeight: 420, overflow: 'scroll' },
-  editAreaCompact: { flex: 1, minHeight: 0, maxHeight: undefined },
+  editAreaCompact: { flex: 1, flexBasis: 0, minHeight: 0, maxHeight: undefined, overflow: 'hidden' },
   status: { minHeight: 30, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12 },
 });

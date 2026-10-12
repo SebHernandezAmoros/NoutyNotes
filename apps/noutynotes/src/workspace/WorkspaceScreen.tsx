@@ -1006,6 +1006,34 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged', { reactive: true }));
   };
 
+  // Alternativa accesible a arrastrar y usar las asas. `Pressable` consume flechas en web, por eso el
+  // listener global usa captura y se restringe a la ficha seleccionada que conserva el foco.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || multi !== null || !selectedOnBoard) return;
+    const placement = layout?.placements.find((candidate) => candidate.cardId === selectedOnBoard.id);
+    if (!placement) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const selectedElement = target?.closest(`[data-testid="card-${selectedOnBoard.id}"]`);
+      if (!selectedElement || event.ctrlKey || event.metaKey || event.altKey) return;
+      const delta = event.key === 'ArrowLeft' ? { x: -1, y: 0 }
+        : event.key === 'ArrowRight' ? { x: 1, y: 0 }
+        : event.key === 'ArrowUp' ? { x: 0, y: -1 }
+        : event.key === 'ArrowDown' ? { x: 0, y: 1 }
+        : null;
+      if (!delta) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.shiftKey) move(selectedOnBoard.id, { x: placement.rect.x + delta.x, y: placement.rect.y + delta.y });
+      else {
+        const size = { w: placement.rect.w + delta.x, h: placement.rect.h + delta.y };
+        if (size.w >= 1 && size.h >= 1) resize(selectedOnBoard.id, size);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [layout, multi, selectedOnBoard]);
+
   // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
   const printEntries = workspace && board ? printableDocument(workspace, board.id) : [];
   const printBoard = () => {

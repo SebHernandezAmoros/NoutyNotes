@@ -1,4 +1,4 @@
-import { addCardTag, addNoteImage, addNoteImageDocument, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, nudgeCardOnBoard, parseNoteBlocks, removeCardTag, resizeCardOnBoard, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
+import { addCardTag, addNoteImage, addNoteImageDocument, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, parseNoteBlocks, removeCardTag, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { DraftSource, DraftValidation, RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, isFloatingTextCard, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
 import type { BoardId, Card, CardDisplayMode, CardIconName, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
@@ -71,20 +71,6 @@ const displayKeys: readonly { display: CardDisplayMode; labelKey: 'inspector.dis
   { display: 'collapsed', labelKey: 'inspector.display.collapsed' },
   { display: 'minimized', labelKey: 'inspector.display.minimized' },
 ];
-
-const moveKeys = [
-  { label: '←', nameKey: 'inspector.move.left', dx: -1, dy: 0 },
-  { label: '→', nameKey: 'inspector.move.right', dx: 1, dy: 0 },
-  { label: '↑', nameKey: 'inspector.move.up', dx: 0, dy: -1 },
-  { label: '↓', nameKey: 'inspector.move.down', dx: 0, dy: 1 },
-] as const;
-
-const resizeKeys = [
-  { labelKey: 'inspector.resize.width.label', nameKey: 'inspector.resize.width.name', dw: -1, dh: 0 },
-  { labelKey: 'inspector.resize.widthPlus.label', nameKey: 'inspector.resize.widthPlus.name', dw: 1, dh: 0 },
-  { labelKey: 'inspector.resize.height.label', nameKey: 'inspector.resize.height.name', dw: 0, dh: -1 },
-  { labelKey: 'inspector.resize.heightPlus.label', nameKey: 'inspector.resize.heightPlus.name', dw: 0, dh: 1 },
-] as const;
 
 /** Catálogo ampliado de iconos de ficha (UX7-D5): mismo nombre que en `AppIcon`, con su etiqueta en español (ADR 0032: el editor de tarjeta no se traduce). */
 const iconLabels: Record<CardIconName, string> = {
@@ -516,10 +502,6 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       ...(label.trim() === '' ? {} : { label: label.trim() }),
     }), 'action.connectionUpdated').then((result) => { if (result.ok) setEditingRelation(null); });
   };
-  const rect = placement?.rect;
-  // Posición y tamaño por teclado (ADR 0048): en escritorio el ratón y las asas ya resuelven mover y
-  // redimensionar, así que esta sección no es fija; se ofrece agrupada y cerrada por defecto para quien
-  // la necesite por teclado o accesibilidad, sin dominar el editor. En la hoja móvil sigue siempre visible.
   // UX7-REFINEMENT-C: icono/marco/tamaño de texto/posición de leyenda son apariencia, no contenido — se
   // mostraban siempre en escritorio, compitiendo por espacio con el editor cada vez que se abría una
   // nota. Mismo patrón ya probado en `advancedOpen` (posición/tamaño): agrupados detrás de un único
@@ -531,45 +513,6 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // cuentan como vacíos para decidir el estado inicial del control. El lienzo no lo repite como encabezado.
   const initialTitle = (initialDraft?.title ?? card.title ?? '').trim();
   const [titleEditorOpen, setTitleEditorOpen] = useState(() => initialTitle !== '' && !PLACEHOLDER_TITLES.has(initialTitle));
-  const geometryBlock = (
-    <>
-      <Text testID="card-geometry" style={[styles.body, { color: colors.textPrimary }]}>
-        {rect ? rect.x < 0 || rect.y < 0
-          ? t('inspector.geometry.negative', locale, { x: String(rect.x), y: String(rect.y), w: String(rect.w), h: String(rect.h) })
-          : t('inspector.geometry.cell', locale, { col: String(rect.x + 1), row: String(rect.y + 1), w: String(rect.w), h: String(rect.h) })
-          : t('inspector.geometry.none', locale)}
-      </Text>
-      {rect ? (
-        <>
-          <View style={styles.row}>
-            {moveKeys.map((move) => (
-              <ActionButton
-                key={move.nameKey}
-                label={move.label}
-                accessibilityLabel={t(move.nameKey, locale)}
-                onPress={() => void run((storage, id) => nudgeCardOnBoard(storage, id, {
-                  boardId, cardId: card.id, delta: { x: move.dx, y: move.dy },
-                }), 'action.cardMoved', { reactive: true })}
-              />
-            ))}
-          </View>
-          <View style={styles.row}>
-            {resizeKeys.map((resize) => (
-              <ActionButton
-                key={resize.nameKey}
-                label={t(resize.labelKey, locale)}
-                accessibilityLabel={t(resize.nameKey, locale)}
-                onPress={() => void run((storage, id) => resizeCardOnBoard(storage, id, {
-                  boardId, cardId: card.id, size: { w: rect.w + resize.dw, h: rect.h + resize.dh },
-                }), 'action.sizeChanged', { reactive: true })}
-              />
-            ))}
-          </View>
-        </>
-      ) : null}
-    </>
-  );
-
   return (
     <View testID="card-inspector" style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       {inSheet ? null : (
@@ -765,13 +708,6 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View> : null}
         </> : null}
       </View>
-
-      {section === 'more' ? (
-        <View style={styles.section}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.position.section', locale)}</Text>
-          {geometryBlock}
-        </View>
-      ) : null}
 
       {section === 'appearance' && placement ? (
         <View testID="card-display" style={styles.section}>

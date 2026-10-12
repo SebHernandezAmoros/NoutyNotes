@@ -327,6 +327,61 @@ test('UX7: el Inspector separa contenido, apariencia y más opciones; Etiquetas 
   }
 });
 
+test('UX7 visual: la Nota larga conserva su toolbar y la geometría cotidiana usa teclado', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida vive en escritorio; móvil usa el editor enfocado.');
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Nota larga');
+  await addCards(page, ['nota']);
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+
+  const inline = page.getByTestId('inline-card-editor');
+  const visual = page.getByLabel('Contenido visual');
+  const scroll = visual;
+  const more = page.getByTestId('editor-more-format-toggle');
+  await expect(inline).toBeVisible();
+  await expect(page.getByTestId('inline-card-title')).toHaveCount(0);
+  await expect(more).toBeVisible();
+  await visual.fill('Línea editorial 1');
+  for (let index = 2; index <= 36; index += 1) {
+    await page.keyboard.press('Enter');
+    await page.keyboard.type(`Línea editorial ${index}`);
+  }
+  await scroll.evaluate((element) => { element.scrollTop = 0; });
+  await page.screenshot({ path: testInfo.outputPath('nota-larga-antes-scroll.png') });
+  await expect.poll(() => scroll.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  const toolbarY = (await box(more)).y;
+  await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(Math.abs((await box(more)).y - toolbarY)).toBeLessThanOrEqual(1);
+  await more.click();
+  await expect(page.getByTestId('editor-more-format-row')).toBeVisible();
+  await expect(button(page, 'Editar enlace')).toBeVisible();
+  await expect(button(page, 'Insertar una tabla')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('nota-larga-toolbar.png') });
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+
+  await selectCard(page, 1);
+  const before = await box(card(page, 1));
+  await card(page, 1).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => Math.round((await box(card(page, 1))).x - before.x)).toBe(cellSize(page).x);
+  const moved = await box(card(page, 1));
+  await card(page, 1).focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(async () => Math.round((await box(card(page, 1))).width - moved.width)).toBe(cellSize(page).x);
+
+  await openCardEditor(page, 1);
+  await page.getByTestId('card-inspector-section-more').click();
+  await expect(page.getByTestId('card-geometry')).toHaveCount(0);
+  await expect(button(page, 'Mover a la izquierda')).toHaveCount(0);
+  await expect(button(page, 'Reducir ancho')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('inspector-sin-geometria.png') });
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('flujo principal: estado vacío, crear, editar, conectar, mover con botones y reabrir en la sesión', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.emulateMedia({ colorScheme: 'light' });

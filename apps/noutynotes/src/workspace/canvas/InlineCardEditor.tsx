@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppIcon } from '../../components/AppIcon';
+import { DialogCloseButton } from '../../components/Dialog';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
@@ -103,8 +104,10 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
       accessibilityViewIsModal
       style={[styles.editor, {
         left: box.left, top: box.top,
-        width: visualAvailable ? Math.max(box.width, 320) : box.width,
-        height: visualAvailable ? Math.max(box.height, 300) : box.height,
+        // La toolbar secundaria conserva una sola fila y deja un viewport editorial útil incluso
+        // sobre una ficha pequeña; el lienzo sigue visible alrededor y el editor continúa compacto.
+        width: visualAvailable ? Math.max(box.width, 380) : box.width,
+        height: visualAvailable ? Math.max(box.height, 340) : box.height,
         backgroundColor: colors.cardSurface, borderColor: colors.selection,
       }]}
     >
@@ -113,9 +116,7 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
         <Pressable accessibilityRole="button" accessibilityLabel="Abrir el editor completo" onPress={advanced} style={[styles.iconButton, { borderColor: colors.border }]}>
           <AppIcon name="expand" size={18} color={colors.headerText} />
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Guardar y cerrar la edición rápida" onPress={close} style={[styles.iconButton, { borderColor: colors.border }]}>
-          <AppIcon name="close" size={18} color={colors.headerText} />
-        </Pressable>
+        <DialogCloseButton label="Guardar y cerrar la edición rápida" onPress={close} />
       </View>
       {floatingText ? (
         <TextInput
