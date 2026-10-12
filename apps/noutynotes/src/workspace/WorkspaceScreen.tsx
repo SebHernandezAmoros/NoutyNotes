@@ -1144,8 +1144,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     void run((storage, workspaceId) => editCardContent(storage, workspaceId, cardId, { content: next }), 'action.textSaved', { reactive: true });
   };
 
-  // Estado de exportación del ZIP y su botón. Desde 800 px van en la cabecera, junto al estado de guardado,
-  // y el lienzo recupera la fila de la barra; en móvil siguen en su barra compacta.
+  // Estado de exportación del ZIP y su botón: siempre en su propia franja (`exportBar`), nunca
+  // dentro de una cabecera (UX7-LAYOUT), en cualquier ancho.
   const exportStatus = (
     <Text testID="export-status" accessibilityLiveRegion="polite" numberOfLines={3}
       style={[styles.exportStatus, compact ? styles.exportStatusCompact : styles.exportStatusHeader, { color: unexported ? colors.textPrimary : colors.textSecondary }]}>
@@ -1153,67 +1153,46 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     </Text>
   );
   const exportButton = <ActionButton label={exportDraftWarning ? 'Exportar solo lo guardado' : 'Exportar ZIP'} accessibilityLabel={exportDraftWarning ? 'Continuar exportando sin los borradores privados' : 'Exportar este espacio como ZIP'} tone={unexported ? 'primary' : 'default'} onPress={exportZip} />;
-  const header = (
-    <View style={[styles.header, { borderColor: colors.gridLine, backgroundColor: colors.surface }]}>
+
+  /**
+   * UX7-LAYOUT: la cabecera superior desaparece como región de interfaz permanente (sin borde ni
+   * fondo propios, sin botones de acción). Solo queda identidad + dos señales persistentes que un
+   * menú cerrado volvería engañosas si se escondieran (irían a 0/invisible aunque el estado real
+   * fuera otro): «Volver a mis espacios» (navegación básica, probada en toda la suite por su nombre
+   * accesible) y la insignia de recuperación (su presencia/ausencia es la señal, no solo la acción
+   * de abrirla). Guardar y Proyectos —acciones puntuales, no señales continuas— se trasladan de
+   * verdad a la navegación: barra lateral (≥1100 px), final de la barra de herramientas (800-1099
+   * px) o «Más secciones» (compacto). Ningún texto/aviso de guardado se declara antes de que
+   * `saveStatus()` confirme que corresponde (ver `saveStatus.ts`).
+   */
+  const identityBar = (
+    <View style={styles.identityBar}>
       <ActionButton label="←" accessibilityLabel="Volver a mis espacios" onPress={() => void goHome()} />
-      {sidebar ? null : <BrandMark size={32} />}
-      <View style={styles.headerTitle}>
-        {workspace ? (
-          <Text accessibilityRole="header" numberOfLines={1} style={[styles.title, { color: colors.textPrimary, fontSize: compact ? 20 : 26 }]}>
-            {workspace.metadata.name}
-          </Text>
-        ) : null}
-        {workspace && !compact ? (
-          <Text numberOfLines={1} style={[styles.eyebrow, { color: colors.textSecondary }]}>
-            {(board?.title ?? 'Sin tableros').toUpperCase()} · {boardCount === 1 ? '1 TARJETA' : `${boardCount} TARJETAS`}
-          </Text>
-        ) : null}
-        {!sidebar ? (
-          <Text testID="workspace-memory" numberOfLines={2} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
-        ) : null}
-      </View>
-      {/* UX7-SAVE (jerarquía visual final): el guardado cotidiano es discreto; la recuperación
-          permanece disponible pero no interrumpe el lienzo. Ambos controles son ahora lo bastante
-          compactos (una palabra; un icono con contador) para vivir siempre en la cabecera, en
-          cualquier ancho — ya no hace falta esconder ninguno en «Más secciones». */}
       {workspace ? (
-        <ActionButton label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" disabled={savingNow} onPress={() => void saveNow()} />
+        <Text accessibilityRole="header" numberOfLines={1} style={[styles.identityTitle, { color: colors.textPrimary }]}>
+          {workspace.metadata.name}
+        </Text>
+      ) : null}
+      {workspace ? (
+        <Text testID="workspace-memory" numberOfLines={1} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
       ) : null}
       {workspace && recoverableCount > 0 ? (
         <RecoveryIndicator count={recoverableCount} onPress={() => setRecoveryOpen(true)} />
       ) : null}
-      {compact ? (
-        workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null
-      ) : (
-        <>
-          {/* Proyectos ya no tiene su propia franja vertical (ADR 0048): el selector compacto de
-              cabecera, antes solo de 800–1099 px, cubre también el escritorio con barra lateral. */}
-          {workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null}
-          {showArchive && workspace ? (
-            <View testID="export-bar" style={styles.headerExport}>
-              {exportStatus}
-              {exportButton}
-            </View>
-          ) : null}
-          {sidebar ? (
-            <View testID="workspace-memory" style={[styles.memoryChip, { backgroundColor: colors.surfaceRaised }]}>
-              <Text style={[styles.memoryText, { color: statusTone === 'error' ? colors.danger : colors.textPrimary }]}>{status}</Text>
-            </View>
-          ) : null}
-        </>
-      )}
+      {/* UX7-LAYOUT: Proyectos se queda aquí, no en «Más secciones» — cambiar de proyecto debe
+          funcionar también con el editor de tarjeta a pantalla completa abierto en móvil (guarda
+          antes el texto pendiente, ADR 0016), y la barra de herramientas compacta —donde vive
+          «Más»— se oculta mientras ese editor está enfocado. */}
+      {workspace ? <ActionButton label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} /> : null}
     </View>
   );
 
-  const exportExtras = Boolean(archiveMessage) || Boolean(awaiting && unexported);
-  const exportBar = showArchive && workspace && (compact || exportExtras) ? (
-    <View testID={compact ? 'export-bar' : 'export-notice'} style={[styles.exportBar, compact ? styles.exportBarCompact : null, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
-      {compact ? (
-        <View style={styles.exportRow}>
-          {exportStatus}
-          {exportButton}
-        </View>
-      ) : null}
+  const exportBar = showArchive && workspace ? (
+    <View testID="export-bar" style={[styles.exportBar, compact ? styles.exportBarCompact : null, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
+      <View style={styles.exportRow}>
+        {exportStatus}
+        {exportButton}
+      </View>
       {archiveMessage ? (
         <Text
           testID="archive-message"
@@ -1263,6 +1242,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     </View>
   ) : feedbackText;
 
+  // UX7-LAYOUT: entre 800 y 1099 px no hay barra lateral; Guardar vive al final de la barra de
+  // herramientas ya existente (`trailing`, antes sin usar) en vez de en una cabecera. Proyectos no
+  // se duplica aquí: ya es persistente en `identityBar` (ver su comentario).
+  const toolbarExtras = workspace ? (
+    <View style={styles.toolbarExtras}>
+      <ActionButton label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" disabled={savingNow} onPress={() => void saveNow()} />
+    </View>
+  ) : null;
+
   const toolbar = workspace ? (
     <Toolbar
       compact={compact}
@@ -1294,6 +1282,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       canPaste={clipboard !== null}
       onPaste={() => void pasteClipboard()}
       navInSidebar={sidebar}
+      trailing={!sidebar ? toolbarExtras : undefined}
     />
   ) : null;
 
@@ -1469,12 +1458,19 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                   <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => void archiveCurrentBoard()} />
                 ) : null}
                 <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
+                {/* UX7-LAYOUT: debajo de Configuración, solo Guardar (acción puntual; el guardado
+                    cotidiano ya es automático y silencioso) — lo que antes vivía en la cabecera
+                    retirada. Proyectos y la recuperación se quedan en `identityBar`, no se
+                    duplican aquí: deben seguir funcionando con el editor de tarjeta enfocado en
+                    móvil, que oculta la barra de herramientas (y «Más secciones» con ella). */}
+                <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
+                <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => void saveNow()} />
               </>
             ) : null}
           </ScrollView>
         ) : null}
         <View style={styles.main}>
-          {header}
+          {identityBar}
           {view.kind === 'loading' ? <Text style={[styles.body, styles.pad, { color: colors.textSecondary }]}>Abriendo el espacio…</Text> : null}
           {view.kind === 'missing' ? (
             <View testID="workspace-missing" style={[styles.missing, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -1534,6 +1530,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'board' ? styles.hidden : null]}>
               {/* Enfocado en móvil: el editor usa todo el alto (sin pestañas ni barra del ZIP). */}
               {compact && focusing ? null : tabs}
+              {/* UX7-LAYOUT: el tablero y su número de tarjetas ya no viven en la cabecera retirada;
+                  en compacto, la propia pestaña del tablero ya muestra el recuento (`tabs`, arriba). */}
+              {!compact ? (
+                <Text numberOfLines={1} style={[styles.boardEyebrow, { color: colors.textSecondary }]}>
+                  {(board?.title ?? 'Sin tableros').toUpperCase()} · {boardCount === 1 ? '1 TARJETA' : `${boardCount} TARJETAS`}
+                </Text>
+              ) : null}
               {compact && focusing ? null : exportBar}
               {compact ? null : toolbar}
               {multiBar}
@@ -1619,6 +1622,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
             ) : null}
             <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
+            {/* UX7-LAYOUT: en compacto no hay barra lateral ni final de barra de herramientas;
+                Guardar vive aquí. Proyectos no se duplica: ya es persistente en `identityBar`
+                (debe seguir disponible con el editor de tarjeta enfocado, que oculta esta hoja). */}
+            <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => { setMoreOpen(false); void saveNow(); }} />
           </Dialog>
           {presentOpen ? (
             <PresentView
@@ -2138,13 +2145,18 @@ const styles = StyleSheet.create({
   recoveryGlyph: { fontSize: 18, lineHeight: 20 },
   recoveryCount: { fontSize: 13, fontWeight: '800' },
   main: { flex: 1, minWidth: 0 },
-  // Solo propiedades largas (columnGap/rowGap): mezclar `gap` con `rowGap` daba otro resultado en el export estático.
-  header: { flexDirection: 'row', alignItems: 'center', columnGap: 10, rowGap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1 },
-  headerTitle: { flex: 1, minWidth: 0 },
+  // UX7-LAYOUT: ya no es una cabecera (sin fondo ni borde propios, sin botones de acción) — solo
+  // identidad (volver + nombre) y dos señales de estado persistentes (guardado, recuperación).
+  // `flexWrap` (no una sola línea rígida): en móvil, «←» + título + estado + Proyectos no caben
+  // siempre en 390 px; sin ajuste, el título (único elemento con `flexGrow`) se comprimía a 0 px
+  // de ancho — invisible para Playwright aunque el nodo existiera — en vez de que el estado
+  // pasara a una segunda línea.
+  identityBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 2, paddingHorizontal: 8, paddingVertical: 4 },
+  identityTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '700' },
   title: { fontWeight: '900', letterSpacing: -0.5 },
-  eyebrow: { fontFamily: mono, fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
-  memoryChip: { paddingHorizontal: 8, paddingVertical: 6, maxWidth: 200 },
-  memoryText: { fontFamily: mono, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  memoryText: { flexShrink: 1, fontFamily: mono, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  toolbarExtras: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  boardEyebrow: { fontFamily: mono, fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
   body: { fontSize: 15, lineHeight: 22 },
   pad: { padding: 16 },
   missing: { borderWidth: 2, padding: 20, gap: 12, margin: 16 },
@@ -2156,7 +2168,6 @@ const styles = StyleSheet.create({
   exportStatus: { flex: 1, minWidth: 180, fontFamily: mono, fontSize: 12, fontWeight: '700', lineHeight: 18 },
   // En la cabecera: bloque estrecho de dos líneas junto al botón.
   exportStatusHeader: { flex: 0, flexShrink: 1, minWidth: 170, maxWidth: 270, fontSize: 10, lineHeight: 13 },
-  headerExport: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   feedback: { fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   offer: { borderWidth: 2, padding: 8, gap: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   offerText: { flexBasis: 220, flexGrow: 1, fontSize: 14, lineHeight: 19 },

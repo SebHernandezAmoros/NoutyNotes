@@ -2392,9 +2392,11 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
     await expect(page.getByRole('button', { name: 'Cerrar la pestaña de Tablero 2' })).toHaveCount(0);
   }
 
-  // Proyectos (ADR 0048): el selector compacto de cabecera cubre todas las anchuras; ya no hay una
-  // segunda franja vertical para proyectos, solo la de tableros (`BoardRail`), en ninguna de ellas.
-  // Son los espacios reales de la sesión y cambiar de uno a otro es navegación real.
+  // Proyectos (UX7-LAYOUT): ya no hay una segunda franja vertical para proyectos, solo la de
+  // tableros (`BoardRail`), en ninguna anchura. Son los espacios reales de la sesión y cambiar de
+  // uno a otro es navegación real. Sin cabecera, «Cambiar de proyecto» sigue siendo persistente en
+  // cualquier ancho (igual que «Volver a mis espacios»): debe funcionar incluso con el editor de
+  // tarjeta enfocado en móvil, que oculta «Más secciones».
   await expect(page.getByTestId('project-tabs')).toHaveCount(0);
   await button(page, 'Cambiar de proyecto').click();
   await expect(page.getByTestId('project-sheet')).toBeVisible();

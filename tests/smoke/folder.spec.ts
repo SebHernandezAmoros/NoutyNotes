@@ -88,7 +88,7 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
 });
 
 test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y Ctrl+S confirman persistencia real', async ({ page }) => {
-  test.skip((page.viewportSize()?.width ?? 0) < 800, 'Guardar ahora vive en «Más secciones» en compacto; este caso prueba el botón de cabecera.');
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'Guardar ahora vive en «Más secciones» en compacto (UX7-LAYOUT); este caso prueba la navegación de ancho ≥ 800 px (barra lateral o barra de herramientas).');
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   const status = page.getByTestId('workspace-memory');
   await page.addInitScript({ content: fakeFolder });
@@ -686,8 +686,9 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await fillCardTitle(page, 'Borrador sin guardar');
-  // Sin pulsar «Guardar texto»: cambiar de proyecto desde el selector de cabecera (ADR 0048, ya no hay
-  // franja de proyectos aparte en ningún ancho).
+  // Sin pulsar «Guardar texto»: cambiar de proyecto desde la navegación (UX7-LAYOUT: persistente en
+  // cualquier ancho, igual que «Volver a mis espacios» — debe funcionar con el editor de tarjeta
+  // enfocado, que oculta «Más secciones»; ya no hay franja de proyectos aparte en ningún ancho).
   await page.getByRole('button', { name: 'Cambiar de proyecto', exact: true }).click();
   await page.getByRole('button', { name: 'Ir al proyecto Uno', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Uno', exact: true })).toBeVisible();
