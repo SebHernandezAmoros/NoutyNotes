@@ -14,7 +14,6 @@ interface InsertMenuProps {
   readonly onClose: () => void;
   readonly onNote: () => void;
   readonly onText: () => void;
-  readonly onTitle: () => void;
   readonly onImage: () => void;
   readonly onLink: () => void;
   readonly onTable: (rows: number, columns: number) => void;
@@ -39,7 +38,6 @@ export function InsertMenu(props: InsertMenuProps) {
         <InsertGroup testID="insert-group-content" label={t('insert.group.content', locale)}>
           <InsertOption icon="note" label={t('insert.note', locale)} hint={t('insert.note.hint', locale)} onPress={props.onNote} />
           <InsertOption icon="text" label={t('insert.text', locale)} hint={t('insert.text.hint', locale)} onPress={props.onText} />
-          <InsertOption icon="text" label={t('insert.heading', locale)} hint={t('insert.heading.hint', locale)} onPress={props.onTitle} />
           <InsertOption icon="upload" label={t('insert.image', locale)} hint={t('insert.image.hint', locale)} onPress={props.onImage} />
           <InsertOption icon="link" label={t('insert.link', locale)} hint={t('insert.link.hint', locale)} onPress={props.onLink} />
           <InsertOption icon="board" label={t('insert.table', locale)} hint={t('insert.table.hint', locale)} onPress={() => setTableOpen((open) => !open)} />

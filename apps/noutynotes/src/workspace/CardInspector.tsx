@@ -9,6 +9,7 @@ import type { NativeSyntheticEvent, TextInputKeyPressEventData } from 'react-nat
 
 import { ActionButton, TextField } from '../components/controls';
 import { AppIcon } from '../components/AppIcon';
+import { DialogCloseButton } from '../components/Dialog';
 import { t } from '../i18n';
 import { formatCreated } from './dates';
 import { describeFailure } from '../session/messages';
@@ -20,11 +21,14 @@ import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
 import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
 import { RichTextEditor } from './RichTextEditor';
+import { PLACEHOLDER_TITLES } from './titlePlaceholders';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 import type { EditableCardDraft } from './editorialDraft';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
+
+export type CardInspectorSection = 'content' | 'appearance' | 'more';
 
 interface CardInspectorProps {
   readonly workspace: Workspace;
@@ -36,6 +40,9 @@ interface CardInspectorProps {
   readonly onBodyModeChange: (mode: 'visual' | 'html') => boolean;
   readonly flushPendingText: () => Promise<boolean>;
   readonly initialDraft?: EditableCardDraft | undefined;
+  /** Contexto activo. Vive en la pantalla para sobrevivir a las revisiones reactivas del workspace. */
+  readonly section: CardInspectorSection;
+  readonly onSectionChange: (section: CardInspectorSection) => void;
   readonly onClose: () => void;
   /** Representación y Papelera (ADR 0014, ADR 0015); los mismos caminos que la barra de la tarjeta. */
   readonly onDisplay: (display: CardDisplayMode) => void;
@@ -113,7 +120,7 @@ function CardIconChoice({ icon, selected, onPress }: { readonly icon: CardIconNa
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, onBodyModeChange, flushPendingText, initialDraft, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, htmlCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, onBodyModeChange, flushPendingText, initialDraft, section: requestedSection, onSectionChange, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, htmlCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -122,6 +129,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const floatingText = isFloatingTextCard(card, cardBase);
   const shape = cardBase === 'shape';
   const connector = cardBase === 'connector';
+  const section = requestedSection === 'content' && (shape || connector) ? 'appearance' : requestedSection;
   const connectorPath = placement?.connectorPath;
   const saveConnectorPath = (path: readonly { readonly x: number; readonly y: number }[]) =>
     run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' }, { reactive: true });
@@ -193,13 +201,14 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       bodyValidation: htmlBody.validation,
     } : {}) });
   };
-  const changeTitleDocument = (document: RichTextDocument) => {
-    const block = document.blocks.length === 1 ? document.blocks[0] : undefined;
-    if (block?.type !== 'paragraph') return;
+  // UX7-REFINEMENT-CORRECTION: el título es texto plano en la interfaz (sin negrita/cursiva/H1-H6/
+  // enlaces); el contrato de guardado no cambia — sigue viajando como `titleDocument` de un único
+  // párrafo (persistido como `titleRichText`, igual que antes), solo que ahora nunca lleva marcas.
+  const changeTitlePlain = (value: string) => {
+    const document: RichTextDocument = { schemaVersion: 1, blocks: [{ type: 'paragraph', content: value === '' ? [] : [{ type: 'text', text: value }] }] };
     setTitleDocument(document);
-    const plain = cardTitleText({ titleRichText: block.content });
-    setTitle(plain);
-    publishDraft({ title: plain, content, titleDocument: document });
+    setTitle(value);
+    publishDraft({ title: value, content, titleDocument: document });
   };
   const changeContent = (value: string) => {
     if (floatingText) {
@@ -511,7 +520,18 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // Posición y tamaño por teclado (ADR 0048): en escritorio el ratón y las asas ya resuelven mover y
   // redimensionar, así que esta sección no es fija; se ofrece agrupada y cerrada por defecto para quien
   // la necesite por teclado o accesibilidad, sin dominar el editor. En la hoja móvil sigue siempre visible.
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // UX7-REFINEMENT-C: icono/marco/tamaño de texto/posición de leyenda son apariencia, no contenido — se
+  // mostraban siempre en escritorio, compitiendo por espacio con el editor cada vez que se abría una
+  // nota. Mismo patrón ya probado en `advancedOpen` (posición/tamaño): agrupados detrás de un único
+  // interruptor, cerrado por defecto en escritorio; en la hoja móvil se mantienen siempre visibles
+  // (igual que `advancedOpen`/`geometryBlock`), porque ahí no compiten con un panel lateral aparte.
+  // UX7-REFINEMENT-A: el título es una propiedad identificadora, no una segunda superficie editorial
+  // obligatoria — el cuerpo es donde se compone. Una Nota nueva empieza con el título colapsado, detrás
+  // de una acción contextual compacta; una Nota con un título real ya escrito lo conserva visible (no se
+  // oculta contenido existente). Los títulos de marcador de posición de los presets («Nueva nota», «Nuevo
+  // título»…) cuentan como «sin título real» para esta decisión visual — nadie los escribió a propósito.
+  const initialTitle = (initialDraft?.title ?? card.title ?? '').trim();
+  const [titleEditorOpen, setTitleEditorOpen] = useState(() => initialTitle !== '' && !PLACEHOLDER_TITLES.has(initialTitle));
   const geometryBlock = (
     <>
       <Text testID="card-geometry" style={[styles.body, { color: colors.textPrimary }]}>
@@ -566,7 +586,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {onToggleFocus ? (
               <ActionButton label={focused ? t('workview.back', locale) : t('inspector.expand', locale)} accessibilityLabel={focused ? t('workview.back', locale) : t('inspector.expand.accessibilityLabel', locale)} onPress={onToggleFocus} />
             ) : null}
-            <ActionButton label={t('inspector.close', locale)} accessibilityLabel={t('inspector.close.accessibilityLabel', locale)} onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
+            <DialogCloseButton label={t('inspector.close.accessibilityLabel', locale)} onPress={() => { void flushPendingText().then((saved) => { if (saved) onClose(); }); }} />
           </View>
         </View>
       )}
@@ -574,21 +594,48 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       <Text testID="card-created" style={[styles.hint, { color: colors.textSecondary }]}>
         {formatCreated(card.createdAt, new Date(card.createdAt ?? 0).getTimezoneOffset(), locale)}
       </Text>
-      {onSelectMany ? (
+      <View testID="card-inspector-sections" style={styles.sectionTabs} accessibilityRole="tablist" accessibilityLabel={t('inspector.sections.accessibilityLabel', locale)}>
+        {(['content', 'appearance', 'more'] as const).map((candidate) => (
+          <ActionButton
+            key={candidate}
+            testID={`card-inspector-section-${candidate}`}
+            label={candidate === 'more' ? t('inspector.sections.more.short', locale) : t(`inspector.sections.${candidate}`, locale)}
+            accessibilityLabel={t(`inspector.sections.${candidate}.accessibilityLabel`, locale)}
+            pressed={section === candidate}
+            onPress={() => onSectionChange(candidate)}
+            style={styles.sectionTab}
+          />
+        ))}
+      </View>
+      {section === 'more' && onSelectMany ? (
         <View style={styles.row}>
           <ActionButton label={t('inspector.selectMany', locale)} accessibilityLabel={t('inspector.selectMany.accessibilityLabel', locale)} onPress={onSelectMany} />
         </View>
       ) : null}
       <View style={styles.section}>
-        {!shape && !connector && presentation.title === 'visible' ? (
-          <View testID="rich-title-editor">
-            <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.title.label', locale)}</Text>
-            {/* ADR 0030: la tipografía elegida para las notas no afecta al título, que mantiene la del sistema. */}
-            <RichTextEditor cardId={`${card.id}-title`} document={titleDocument} codec={richTextCodec} onChange={changeTitleDocument}
-              compact titleOnly />
+        {section === 'more' && !shape && !connector ? (
+          <View testID="rich-title-editor" style={styles.section}>
+            {titleEditorOpen ? (
+              <>
+                {/* UX7-REFINEMENT-CORRECTION: el título es un identificador de texto plano, no una
+                    segunda superficie de autoría enriquecida — sin negrita/cursiva/H1-H6/enlaces. Se
+                    conserva `titleDocument`/`titleRichText` en el contrato de guardado sin cambios (un
+                    único párrafo de texto plano, igual que produce este campo desde siempre), solo
+                    cambia el control de edición. */}
+                <TextField label={t('inspector.title.label', locale)} value={title} onChangeText={changeTitlePlain} placeholder={t('inspector.title.placeholder', locale)} />
+                <View style={styles.row}>
+                  <ActionButton testID="title-editor-toggle" label={t('inspector.title.toggle.hide', locale)} accessibilityLabel={t('inspector.title.toggle.hide.accessibilityLabel', locale)} onPress={() => setTitleEditorOpen(false)} />
+                </View>
+              </>
+            ) : (
+              <ActionButton testID="title-editor-toggle"
+                label={title.trim() ? (title.trim().length > 40 ? `${title.trim().slice(0, 40)}…` : title.trim()) : t('inspector.title.toggle.show', locale)}
+                accessibilityLabel={title.trim() ? `${t('inspector.title.toggle.show.accessibilityLabel', locale)}: ${title.trim()}` : t('inspector.title.toggle.show.accessibilityLabel', locale)}
+                onPress={() => setTitleEditorOpen(true)} />
+            )}
           </View>
         ) : null}
-        {linkKey ? (
+        {section === 'content' && linkKey ? (
           <View testID="card-link" style={styles.tagSection}>
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.section', locale)}</Text>
             <TextField label={t('inspector.link.address.label', locale)} value={linkDraft} onChangeText={setLinkDraft} placeholder={t('link.url.placeholder', locale)} onSubmitEditing={saveLink} testID="link-input" />
@@ -600,7 +647,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.hint', locale)}</Text>
           </View>
         ) : null}
-        <View testID="card-tags" style={styles.tagSection}>
+        {section === 'more' ? <View testID="card-tags" style={styles.tagSection}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.tags.section', locale)}</Text>
           {(card.tags ?? []).length > 0 ? (
             <View style={styles.row} accessibilityLabel={t('inspector.tags.accessibilityLabel', locale)}>
@@ -622,7 +669,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               ))}
             </View>
           ) : null}
-        </View>
+        </View> : null}
+        {section === 'content' ? <>
         {Platform.OS === 'web' && supportsVisualEditor && visualAvailable ? (
           <View testID="body-mode-switch" style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Modo de edición del cuerpo">
             <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => {
@@ -716,27 +764,17 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           />
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{dirty ? t('inspector.unsaved', locale) : t('inspector.saved', locale)}</Text>
         </View> : null}
+        </> : null}
       </View>
 
-      {inSheet ? (
+      {section === 'more' ? (
         <View style={styles.section}>
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.position.section', locale)}</Text>
           {geometryBlock}
         </View>
-      ) : (
-        <View style={styles.section}>
-          <ActionButton
-            testID="card-position-toggle"
-            label={advancedOpen ? t('inspector.position.toggle.hide', locale) : t('inspector.position.toggle.show', locale)}
-            accessibilityLabel={advancedOpen ? t('inspector.position.toggle.hide.accessibilityLabel', locale) : t('inspector.position.toggle.show.accessibilityLabel', locale)}
-            pressed={advancedOpen}
-            onPress={() => setAdvancedOpen((open) => !open)}
-          />
-          {advancedOpen ? geometryBlock : null}
-        </View>
-      )}
+      ) : null}
 
-      {placement && inSheet ? (
+      {section === 'appearance' && placement ? (
         <View testID="card-display" style={styles.section}>
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.display.section', locale)}</Text>
           <View style={styles.row}>
@@ -754,6 +792,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       ) : null}
 
+      {section === 'appearance' ? (
+      <>
       <View testID="card-icon-picker" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>ICONO</Text>
         <View style={styles.row}>
@@ -976,15 +1016,17 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.captionPosition.hint', locale)}</Text>
       </View> : null}
+      </>
+      ) : null}
 
-      {(card.assetRefs?.length ?? 0) > 0 ? (
+      {section === 'more' && (card.assetRefs?.length ?? 0) > 0 ? (
         <View style={styles.section}>
           <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.files.section', locale)}</Text>
           <Text testID="card-asset" style={[styles.body, { color: colors.textPrimary }]}>{card.assetRefs?.join(', ')}</Text>
         </View>
       ) : null}
 
-      {inSheet ? <View testID="card-connections" style={styles.section}>
+      {section === 'more' ? <View testID="card-connections" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.connections.section', locale)}</Text>
         {connected.length === 0 ? (
           <Text style={[styles.body, { color: colors.textSecondary }]}>{t('inspector.connections.empty', locale)}</Text>
@@ -1068,7 +1110,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           </Text>
         ) : null}
       </View> : null}
-      {inSheet ? <View style={styles.section}>
+      {section === 'more' ? <View testID="card-organization-actions" style={styles.section}>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.organization.section', locale)}</Text>
         <ActionButton label={t('inspector.archive', locale)} accessibilityLabel={t('inspector.archive.accessibilityLabel', locale, { title: cardTitle(card, locale) })} onPress={onArchive} />
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.archive.hint', locale)}</Text>
         <ActionButton label={t('inspector.trash', locale)} accessibilityLabel={t('inspector.trash.accessibilityLabel', locale, { title: cardTitle(card, locale) })} onPress={onTrash} />
@@ -1093,6 +1136,8 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   heading: { fontSize: 20, lineHeight: 25, fontWeight: '800' },
   section: { gap: 10 },
+  sectionTabs: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  sectionTab: { flex: 1, minWidth: 0, paddingHorizontal: 4 },
   htmlEditor: { gap: 8 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

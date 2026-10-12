@@ -3,10 +3,9 @@ import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { ActionButton } from '../../components/controls';
 import { AppIcon } from '../../components/AppIcon';
 import type { AppIconName } from '../../components/AppIcon';
-import { Dialog } from '../../components/Dialog';
+import { Dialog, DialogCloseButton } from '../../components/Dialog';
 import { t } from '../../i18n';
 import { CONTROL_SIZE, actionLabel, actionVerb, cardActions } from './cardChrome';
 import type { CardAction, Chrome } from './cardChrome';
@@ -152,7 +151,7 @@ export function CardMenu({ title, display, compact, anchor, onEdit, onQuickEdit,
           style={[styles.popover, { left, top, width, maxHeight: Math.max(0, screen.height - 16), backgroundColor: colors.background, borderColor: colors.border }]}>
           <View style={styles.menuHead}>
             <Text numberOfLines={1} style={[styles.menuTitle, { color: colors.textPrimary }]}>{title}</Text>
-            <ActionButton label={t('cardMenu.close', locale)} accessibilityLabel={t('cardMenu.close.accessibilityLabel', locale, { title: title.toLowerCase() })} onPress={onClose} />
+            <DialogCloseButton label={t('cardMenu.close.accessibilityLabel', locale, { title: title.toLowerCase() })} onPress={onClose} />
           </View>
           <ScrollView keyboardShouldPersistTaps="handled">{content}</ScrollView>
         </View>

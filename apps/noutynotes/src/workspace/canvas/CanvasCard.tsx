@@ -383,7 +383,7 @@ export function CanvasCard(props: CanvasCardProps) {
           </View>
         ) : floatingText && display === 'expanded' ? (
           <View testID={`floating-text-${card.id}`} style={[styles.floatingTextWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
-            <Text style={[styles.content, {
+            <Text numberOfLines={Math.max(1, bodyLines)} style={[styles.content, {
               color: floatingTextColor(card.textColor, colors.textPrimary),
               fontSize: contentSize,
               lineHeight: contentLine,

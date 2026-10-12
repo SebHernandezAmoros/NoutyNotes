@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrandMark } from '../components/BrandMark';
 import { AppIcon } from '../components/AppIcon';
 import type { AppIconName } from '../components/AppIcon';
-import { Dialog } from '../components/Dialog';
+import { Dialog, DialogCloseButton } from '../components/Dialog';
 import { ActionButton, ToolButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
 import { t } from '../i18n';
@@ -44,6 +44,7 @@ import type { ViewPreferences } from './canvas/preferences';
 import { visibleCells, zoomIn, zoomOut } from './canvas/viewport';
 import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
+import type { CardInspectorSection } from './CardInspector';
 import { FrameInspector } from './FrameInspector';
 import { ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
@@ -148,6 +149,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
   const [presentOpen, setPresentOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [multiMoreOpen, setMultiMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -170,6 +172,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Seleccionar una tarjeta ya no abre su editor ni reduce el lienzo; solo «Editar» (doble clic/toque,
   // o el botón que aparece junto a la seleccionada) lo hace. `null` mientras solo hay selección.
   const [editingId, setEditingId] = useState<CardId | null>(null);
+  const [inspectorSection, setInspectorSection] = useState<CardInspectorSection>('content');
   /** `true`: editor breve sobre la ficha; `false`: editor completo (ADR 0047). */
   const [inlineEditing, setInlineEditing] = useState(false);
   // Selección múltiple (ADR 0025): null fuera del modo; en el modo, tocar una tarjeta la añade o la quita.
@@ -293,11 +296,12 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
   // Botón «Editar» de la tarjeta ya seleccionada, o llegar a ella con el teclado: abre su editor sin
   // pasar por un doble clic/toque (auditoría de interacción, 2026-09-29).
-  const editCard = async (cardId: CardId) => {
+  const editCard = async (cardId: CardId, section: CardInspectorSection = 'content') => {
     if (!await flushPendingText()) return;
     if (!activateSurface(cardId, 'full')) return;
     setSelectedId(cardId);
     setEditingId(cardId);
+    setInspectorSection(section);
     setInlineEditing(false);
     setMulti(null);
     setFrameId(null);
@@ -345,6 +349,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     // transporta Markdown y no puede adquirir autoridad sin arriesgar una reescritura vacía.
     const canEditInline = !compact && placement?.display === 'expanded' && base !== 'shape' && base !== 'connector' && card?.contentDocument === undefined;
     if (!activateSurface(cardId, canEditInline ? 'quick' : 'full')) return;
+    setInspectorSection('content');
     setSelectedId(cardId);
     setEditingId(cardId);
     setInlineEditing(canEditInline);
@@ -793,7 +798,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const deleteSelection = async () => {
     const overlayOpen = editingId !== null || insertOpen || searchOpen || settingsOpen || trashOpen || moreOpen
-      || projectsOpen || linkOpen || shortcutOpen || boardActionsId !== null || presentOpen || frameId !== null;
+      || projectsOpen || linkOpen || shortcutOpen || boardActionsId !== null || presentOpen || frameId !== null || multiMoreOpen;
     if (mainView !== 'board' || overlayOpen) return;
     if (multiIds.length > 0) await trashMany();
     else if (selectedId !== null) await sendToTrash(selectedId);
@@ -1113,6 +1118,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       richTextCodec={markdownRichTextCodec}
       htmlCodec={htmlRichTextCodec}
       initialDraft={recoveredText?.cardId === selected.id ? recoveredText : undefined}
+      section={inspectorSection}
+      onSectionChange={setInspectorSection}
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
       onOpenBoard={(target) => { setEditingId(null); setInlineEditing(false); void chooseBoard(target); }}
@@ -1329,31 +1336,47 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     </View>
   ) : null;
 
-  // Barra de la selección múltiple (ADR 0025; UX7-A1/A2): recuento, todas, cancelar, agrupar, archivar y Papelera.
-  // Mover el conjunto ya no usa botones de flecha: las flechas del teclado lo hacen (ver el efecto más arriba).
+  // Barra de la selección múltiple (ADR 0025; UX7-A1/A2; UX7-REFINEMENT-D):
+  // una sola fila flotante sobre el lienzo (no reflow): recuento, Más (Todas/Copiar/Cortar/
+  // Duplicar/Agrupar), Archivar, Papelera y Cancelar. Mover el conjunto usa las flechas del
+  // teclado (ver el efecto más arriba), no botones.
   const multiBar = workspace && multi !== null ? (
     <View testID="multi-bar" accessibilityRole="toolbar" accessibilityLabel="Selección múltiple"
       accessibilityHint={multiIds.length > 0 ? 'Usa las flechas del teclado para mover el conjunto una celda' : undefined}
       style={[styles.multiBar, { borderColor: colors.selection, backgroundColor: colors.surface }]}>
-      {/* Dos filas también en 390 px: recuento, «Todas» y «Cancelar»; debajo, las acciones del conjunto. */}
       <View style={styles.multiRow}>
-        <Text testID="multi-count" accessibilityLiveRegion="polite" style={[styles.multiCount, { color: colors.textPrimary }]}>
-          {multiIds.length === 0 ? 'NINGUNA · toca tarjetas para añadirlas' : plural(multiIds.length, '1 SELECCIONADA', '# SELECCIONADAS')}
+        <Text testID="multi-count" accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.multiCount, { color: colors.textPrimary }]}>
+          {multiIds.length === 0 ? 'NINGUNA' : plural(multiIds.length, '1 SELECCIONADA', '# SELECCIONADAS')}
         </Text>
-        <ActionButton label="Todas" accessibilityLabel="Seleccionar todas las tarjetas del tablero" onPress={() => setMulti(layout?.placements.map((placement) => placement.cardId) ?? [])} />
+        {multiIds.length > 0 ? (
+          <>
+            <ToolButton testID="multi-more" icon="menu" label="Más" accessibilityLabel="Más acciones sobre la selección" onPress={() => setMultiMoreOpen(true)} style={styles.multiToolCell} />
+            <ToolButton icon="archive" label="Archivar" accessibilityLabel={plural(multiIds.length, 'Archivar la seleccionada', 'Archivar las # seleccionadas')} onPress={() => void archiveMany()} style={styles.multiToolCell} />
+            <ToolButton icon="trash" label="Papelera" accessibilityLabel={plural(multiIds.length, 'Enviar la seleccionada a la Papelera', 'Enviar las # seleccionadas a la Papelera')} onPress={() => void trashMany()} style={styles.multiToolCell} />
+          </>
+        ) : null}
         <ActionButton label="Cancelar" accessibilityLabel="Cancelar la selección" onPress={() => setMulti(null)} />
       </View>
-      {multiIds.length > 0 ? (
-        <View style={styles.multiRow}>
-          <ToolButton icon="copy" label="Copiar" accessibilityLabel={plural(multiIds.length, 'Copiar la seleccionada', 'Copiar las # seleccionadas')} onPress={copyMany} style={styles.multiToolCell} />
-          <ToolButton icon="cut" label="Cortar" accessibilityLabel={plural(multiIds.length, 'Cortar la seleccionada', 'Cortar las # seleccionadas')} onPress={() => void cutMany()} style={styles.multiToolCell} />
-          <ToolButton icon="duplicate" label="Duplicar" accessibilityLabel={plural(multiIds.length, 'Duplicar la seleccionada', 'Duplicar las # seleccionadas')} onPress={() => void duplicateMany()} style={styles.multiToolCell} />
-          <ToolButton icon="frame" label="Agrupar" accessibilityLabel={plural(multiIds.length, 'Agrupar la seleccionada en un marco', 'Agrupar las # seleccionadas en un marco')} onPress={() => void groupMany()} style={styles.multiToolCell} />
-          <ToolButton icon="archive" label="Archivar" accessibilityLabel={plural(multiIds.length, 'Archivar la seleccionada', 'Archivar las # seleccionadas')} onPress={() => void archiveMany()} style={styles.multiToolCell} />
-          <ToolButton icon="trash" label="Papelera" accessibilityLabel={plural(multiIds.length, 'Enviar la seleccionada a la Papelera', 'Enviar las # seleccionadas a la Papelera')} onPress={() => void trashMany()} style={styles.multiToolCell} />
-        </View>
-      ) : null}
     </View>
+  ) : null;
+
+  const multiMoreSheet = workspace && multi !== null ? (
+    <Dialog visible={multiMoreOpen} title="Más acciones" compact={compact} onClose={() => setMultiMoreOpen(false)} testID="multi-more-sheet">
+      <ActionButton label="Seleccionar todas" accessibilityLabel="Seleccionar todas las tarjetas del tablero"
+        onPress={() => { setMulti(layout?.placements.map((placement) => placement.cardId) ?? []); setMultiMoreOpen(false); }} />
+      {multiIds.length > 0 ? (
+        <>
+          <ActionButton label="Copiar" accessibilityLabel={plural(multiIds.length, 'Copiar la seleccionada', 'Copiar las # seleccionadas')}
+            onPress={() => { copyMany(); setMultiMoreOpen(false); }} />
+          <ActionButton label="Cortar" accessibilityLabel={plural(multiIds.length, 'Cortar la seleccionada', 'Cortar las # seleccionadas')}
+            onPress={() => { void cutMany(); setMultiMoreOpen(false); }} />
+          <ActionButton label="Duplicar" accessibilityLabel={plural(multiIds.length, 'Duplicar la seleccionada', 'Duplicar las # seleccionadas')}
+            onPress={() => { void duplicateMany(); setMultiMoreOpen(false); }} />
+          <ActionButton label="Agrupar en un marco" accessibilityLabel={plural(multiIds.length, 'Agrupar la seleccionada en un marco', 'Agrupar las # seleccionadas en un marco')}
+            onPress={() => { void groupMany(); setMultiMoreOpen(false); }} />
+        </>
+      ) : null}
+    </Dialog>
   ) : null;
 
   const relocateBar = workspace && relocateOffer ? (
@@ -1397,6 +1420,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardPress={pressCard}
         onToggleCheck={toggleCheck}
         onCardEdit={(cardId) => void editCard(cardId)}
+        onCardTags={(cardId) => void editCard(cardId, 'more')}
         onCardStartConnect={(cardId) => {
           setEditingId(null);
           setInlineEditing(false);
@@ -1423,6 +1447,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onInlineClose={() => { setEditingId(null); setInlineEditing(false); setFocus(false); }}
         onInlineAdvanced={(cardId) => {
           if (!activateSurface(cardId, 'full')) return;
+          setInspectorSection('content');
           setSelectedId(cardId); setEditingId(cardId); setInlineEditing(false); setFocus(true);
         }}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
@@ -1627,7 +1652,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                         />
                       </>
                     )}
-                    <ActionButton label={t('inspector.close', locale)} accessibilityLabel={t(frame ? 'inspector.sheet.close.frame.accessibilityLabel' : 'inspector.close.accessibilityLabel', locale)} onPress={closeInspector} />
+                    <DialogCloseButton label={t(frame ? 'inspector.sheet.close.frame.accessibilityLabel' : 'inspector.close.accessibilityLabel', locale)} onPress={closeInspector} />
                   </View>
                   {/* Oculto, sigue montado: el texto sin guardar no se pierde. */}
                   <ScrollView ref={sheetScroll} onScroll={onSheetScroll} scrollEventThrottle={32} style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>
@@ -1740,13 +1765,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onClose={() => setRecoveryOpen(false)}
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
+          {multiMoreSheet}
           <InsertMenu
             visible={insertOpen}
             compact={compact}
             onClose={() => setInsertOpen(false)}
             onNote={() => { setInsertOpen(false); void add('note'); }}
             onText={() => { setInsertOpen(false); void add('text'); }}
-            onTitle={() => { setInsertOpen(false); void add('title'); }}
             onImage={() => { setInsertOpen(false); void importImage(); }}
             onLink={() => { setInsertOpen(false); setLinkOpen(true); }}
             onTable={(rows, columns) => { setInsertOpen(false); void addTable(rows, columns); }}
@@ -2229,10 +2254,12 @@ const styles = StyleSheet.create({
   feedback: { fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   offer: { borderWidth: 2, padding: 8, gap: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   offerText: { flexBasis: 220, flexGrow: 1, fontSize: 14, lineHeight: 19 },
-  multiCount: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
-  multiBar: { borderWidth: 2, padding: 6, gap: 6 },
-  multiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  multiToolCell: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', paddingHorizontal: 5 },
+  multiCount: { flexShrink: 1, minWidth: 0, fontFamily: mono, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  // UX7-REFINEMENT-CORRECTION: ancho ajustado a su contenido, no a todo el área de trabajo — una barra
+  // contextual con 4-5 controles no debe ocupar el ancho entero del lienzo (captura 3 del usuario).
+  multiBar: { alignSelf: 'flex-start', maxWidth: '100%', borderWidth: 2, padding: 6, gap: 6 },
+  multiRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 },
+  multiToolCell: { flexGrow: 0, flexShrink: 1, flexBasis: 'auto', paddingHorizontal: 5 },
   // En la barra de herramientas (escritorio): mismo aviso, sin fondo propio que compita con la barra.
   feedbackRow: { flexDirection: 'row', alignItems: 'stretch', gap: 4 },
   feedbackGrow: { flex: 1, minWidth: 0 },

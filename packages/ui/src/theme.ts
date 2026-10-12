@@ -28,6 +28,10 @@ export interface ThemeColors {
   headerText: string;
   /** Error: colisión, fuera de límites o fallo al guardar. */
   danger: string;
+  /** Texto/icono sobre un relleno `danger` sólido (UX7-REFINEMENT-CORRECTION: el cierre en X es un
+   * cuadrado rojo, no un icono rojo sobre fondo neutro) — mismo criterio de contraste que `accentText`/
+   * `brandText`/`headerText` para sus respectivos fondos de color. */
+  dangerText: string;
 }
 
 const light: ThemeColors = {
@@ -53,6 +57,7 @@ const light: ThemeColors = {
   headerImage: '#9DD6E2',
   headerText: '#1E1F1A',
   danger: '#B3261E',
+  dangerText: '#FBF8EE',
 };
 
 const dark: ThemeColors = {
@@ -80,6 +85,7 @@ const dark: ThemeColors = {
   headerImage: '#86C9D6',
   headerText: '#1E1F1A',
   danger: '#FF8A80',
+  dangerText: '#1E1F1A',
 };
 
 export const themeColors = { light, dark } as const;

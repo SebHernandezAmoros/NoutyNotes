@@ -3,6 +3,7 @@ import { useTheme } from '@noutynotes/ui';
 import { useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 
+import { AppIcon } from '../../components/AppIcon';
 import type { ConnectorRouteGeometry } from '../board-geometry';
 import { shapeStrokeColor, shapeStrokePixels } from '../shapeStyle';
 
@@ -45,6 +46,37 @@ function PointHandle(props: {
   </View>;
 }
 
+/**
+ * Acciones rápidas del conector seleccionado (UX7-REFINEMENT-E): Archivar/Papelera sin exigir
+ * selección múltiple. El conector es una Card decorativa (no una Relation): reutiliza las mismas
+ * operaciones de dominio que cualquier otra tarjeta, solo con su propio anclaje visual.
+ */
+function ConnectorQuickActions(props: {
+  readonly cardId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly zoom: number;
+  readonly onTrash: () => void;
+  readonly onArchive: () => void;
+}) {
+  const { theme } = useTheme();
+  const colors = theme.colors;
+  const size = 36 / props.zoom;
+  const gap = 4 / props.zoom;
+  return (
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: props.x, top: props.y, flexDirection: 'row', gap }}>
+      <Pressable testID={`connector-archive-${props.cardId}`} accessibilityRole="button" accessibilityLabel="Archivar este conector"
+        onPress={props.onArchive} style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderColor: colors.gridLine, borderWidth: 1 }}>
+        <AppIcon name="archive" size={16} color={colors.textPrimary} />
+      </Pressable>
+      <Pressable testID={`connector-trash-${props.cardId}`} accessibilityRole="button" accessibilityLabel="Enviar este conector a la Papelera"
+        onPress={props.onTrash} style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderColor: colors.gridLine, borderWidth: 1 }}>
+        <AppIcon name="trash" size={16} color={colors.danger} />
+      </Pressable>
+    </View>
+  );
+}
+
 /** Ruta decorativa P18-D: el propio trazo y sus puntos son la superficie de interacción. */
 export function ConnectorLine(props: {
   readonly route: ConnectorRouteGeometry;
@@ -54,6 +86,8 @@ export function ConnectorLine(props: {
   readonly onSelect: () => void;
   readonly onOpen: () => void;
   readonly onPointMove: (index: number, dx: number, dy: number) => void;
+  readonly onTrash: () => void;
+  readonly onArchive: () => void;
 }) {
   const { route, card } = props;
   const { theme } = useTheme();
@@ -98,6 +132,10 @@ export function ConnectorLine(props: {
       <PointHandle key={`${card.id}-point-${index}-${point.x}-${point.y}`} cardId={card.id} index={index} x={point.x} y={point.y}
         zoom={props.zoom} color={theme.colors.selection} onMove={props.onPointMove} />
     )) : null}
+    {props.selected && last ? (
+      <ConnectorQuickActions cardId={card.id} x={last.endX + 10 / props.zoom} y={last.endY - 46 / props.zoom}
+        zoom={props.zoom} onTrash={props.onTrash} onArchive={props.onArchive} />
+    ) : null}
   </View>;
 }
 

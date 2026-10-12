@@ -65,7 +65,11 @@ function literalParagraph(text: string): RichTextDocument {
 
 /** Tipos mínimos que la interfaz añade a demanda; texto, título e imagen convergen en una nota. */
 export const PROTOTYPE_CARD_PRESETS: Readonly<Record<PrototypeCardKind, CardPreset>> = {
-  note: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nueva nota', content: '' },
+  // UX7-REFINEMENT-CORRECTION: el título es un identificador interno, no un encabezado obligatorio del
+  // lienzo (decisión de producto, sección 2) — `titleVisibility: 'hidden'` solo cambia el valor por
+  // DEFECTO de las notas nuevas; una nota existente conserva el `titleVisibility` ya guardado (o,
+  // si no tiene ninguno, seguirá mostrándose visible, exactamente igual que hasta ahora).
+  note: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nueva nota', content: '', titleVisibility: 'hidden' },
   text: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, contentDocument: literalParagraph('Nuevo texto'), size: { w: 4, h: 3 }, frameOverride: 'hidden', titleVisibility: 'hidden', bodyVisibility: 'visible' },
   shape: { type: { id: 'forma' as CardTypeId, label: 'Forma', base: 'shape', fields: [] }, size: { w: 4, h: 3 } },
   connector: { type: { id: 'conector' as CardTypeId, label: 'Conector', base: 'connector', fields: [] }, size: { w: 4, h: 3 } },

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { DialogCloseButton } from '../components/Dialog';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
@@ -60,7 +61,7 @@ export function FrameInspector({ frame, boardId, members, run, inSheet, onClose,
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>MARCO SELECCIONADO</Text>
             <Text accessibilityRole="header" numberOfLines={2} style={[styles.heading, { color: colors.textPrimary }]}>{frame.title}</Text>
           </View>
-          <ActionButton label="Cerrar" accessibilityLabel="Cerrar el editor del marco" onPress={onClose} />
+          <DialogCloseButton label="Cerrar el editor del marco" onPress={onClose} />
         </View>
       )}
       <View style={styles.section}>
@@ -103,7 +104,7 @@ export function FrameInspector({ frame, boardId, members, run, inSheet, onClose,
 
 const styles = StyleSheet.create({
   panel: { borderWidth: 2, padding: 14, gap: 16 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerText: { flex: 1, minWidth: 0 },
   eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 1 },
   heading: { fontSize: 20, fontWeight: '900' },

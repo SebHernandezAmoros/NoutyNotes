@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/controls';
+import { DialogCloseButton } from '../components/Dialog';
 import { ConnectorPreview } from './ConnectorPreview';
 import { floatingTextColor } from './floatingText';
 import { PresentationBody } from './PresentationBody';
@@ -79,7 +80,7 @@ export function PresentView({ boardTitle, entries, images, onClose }: PresentVie
           <Text testID="present-count" style={[styles.count, { color: colors.textSecondary }]}>
             {entries.length === 0 ? 'SIN TARJETAS' : `${index + 1} / ${entries.length}`}
           </Text>
-          <ActionButton label="Cerrar" accessibilityLabel="Cerrar la presentación" onPress={onClose} />
+          <DialogCloseButton label="Cerrar la presentación" onPress={onClose} />
         </View>
         {entry ? (
           entry.floatingText ? (

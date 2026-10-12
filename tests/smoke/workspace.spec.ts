@@ -282,6 +282,51 @@ async function expectGeometry(page: Page, cardNumber: number, text: string) {
   await expect(geometry(page)).toHaveText(text);
 }
 
+test('UX7: el Inspector separa contenido, apariencia y más opciones; Etiquetas abre su contexto', async ({ page }, testInfo) => {
+  await page.goto('/');
+  if (testInfo.project.name === 'desktop') await button(page, 'Tema oscuro').click();
+  await createWorkspace(page, `Inspector ${testInfo.project.name}`);
+  await addCards(page, ['nota']);
+
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await page.getByRole('button', { name: 'Editar etiquetas de Nueva nota', exact: true }).click();
+
+  const inspector = page.getByTestId('card-inspector');
+  await expect(inspector).toBeVisible();
+  await expect(page.getByTestId('card-inspector-section-more')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('card-inspector-section-more')).toHaveText('Más');
+  await expect(page.getByTestId('card-tags')).toBeVisible();
+  await expect(page.getByTestId('card-icon-picker')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('ux7-inspector-more.png'), fullPage: true });
+
+  await page.getByTestId('card-inspector-section-appearance').click();
+  await expect(page.getByTestId('card-icon-picker')).toBeVisible();
+  await expect(page.getByTestId('card-tags')).toHaveCount(0);
+  await page.getByTestId('card-icon-option-star').click();
+  await expect(page.getByTestId('selected-card-icon')).toContainText('Estrella');
+  await expect(page.getByTestId('card-inspector-section-appearance')).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: testInfo.outputPath('ux7-inspector-appearance.png'), fullPage: true });
+
+  await page.getByTestId('card-inspector-section-content').click();
+  await expect(page.getByTestId('body-mode-switch')).toBeVisible();
+  await expect(page.getByTestId('card-icon-picker')).toHaveCount(0);
+  await expect(hasHorizontalOverflow(page)).resolves.toBe(false);
+
+  await page.screenshot({ path: testInfo.outputPath('ux7-inspector-content.png'), fullPage: true });
+  if (testInfo.project.name === 'desktop') {
+    await page.setViewportSize(tabletPortrait);
+    await expect(page.getByTestId('card-inspector-sections')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('ux7-inspector-tablet-portrait.png'), fullPage: true });
+    await expect(hasHorizontalOverflow(page)).resolves.toBe(false);
+    await page.setViewportSize(tabletLandscape);
+    await expect(page.getByTestId('card-inspector-sections')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('ux7-inspector-tablet-landscape.png'), fullPage: true });
+    await expect(hasHorizontalOverflow(page)).resolves.toBe(false);
+    await page.setViewportSize(desktop);
+    await expect(hasHorizontalOverflow(page)).resolves.toBe(false);
+  }
+});
+
 test('flujo principal: estado vacío, crear, editar, conectar, mover con botones y reabrir en la sesión', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.emulateMedia({ colorScheme: 'light' });

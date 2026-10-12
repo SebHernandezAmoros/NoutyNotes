@@ -131,6 +131,8 @@ interface CanvasProps {
   /** Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): un solo clic ya
    * no abre el editor por sí solo; esta es la vía explícita para llegar a él sin doble clic/toque. */
   readonly onCardEdit: (cardId: CardId) => void;
+  /** Abre el Inspector directamente en las propiedades organizativas de la tarjeta. */
+  readonly onCardTags: (cardId: CardId) => void;
   /** Atajo del menú contextual: inicia una conexión desde esta tarjeta. */
   readonly onCardStartConnect: (cardId: CardId) => void;
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
@@ -858,6 +860,7 @@ export function Canvas(props: CanvasProps) {
           const placement = placements.find((candidate) => candidate.cardId === route.cardId);
           return card ? [<ConnectorLine key={card.id} route={route} card={card} selected={selectedId === card.id} zoom={zoom}
             onSelect={() => props.onCardPress(card.id)} onOpen={() => props.onCardOpen(card.id)}
+            onTrash={() => props.onTrash(card.id)} onArchive={() => props.onArchive(card.id)}
             onPointMove={(index, dx, dy) => {
               if (!placement?.connectorPath) return;
               const point = placement.connectorPath[index];
@@ -1006,7 +1009,7 @@ export function Canvas(props: CanvasProps) {
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
           onQuickEdit={() => props.onCardOpen(menuPlacement.cardId)}
-          onTags={() => props.onCardEdit(menuPlacement.cardId)}
+          onTags={() => props.onCardTags(menuPlacement.cardId)}
           onConnect={() => props.onCardStartConnect(menuPlacement.cardId)}
           onSelectMany={() => props.onSelectMany(menuPlacement.cardId)}
           onArchive={() => props.onArchive(menuPlacement.cardId)}

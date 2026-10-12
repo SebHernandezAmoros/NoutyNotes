@@ -61,7 +61,7 @@ type BlockKind = 'paragraph' | `heading-${HeadingLevel}` | 'bullet' | 'ordered' 
 const MAX_TABLE_ROWS = 20;
 const MAX_TABLE_COLUMNS = 12;
 
-function EditorToolbar({ onInsertImage, titleOnly = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'titleOnly'>) {
+function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'titleOnly'> & { readonly compact?: boolean }) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -80,6 +80,10 @@ function EditorToolbar({ onInsertImage, titleOnly = false }: Pick<RichTextEditor
   const [tableColumns, setTableColumns] = useState('3');
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  // UX7-REFINEMENT-CORRECTION: en edición rápida (nota pequeña en el lienzo), enlace/imagen/tabla se
+  // agrupan tras «Más formato» — no caben como botones directos sin desplazar el contenido hacia abajo.
+  // En el Inspector completo (`compact=false`) y en el título (`titleOnly`) no cambia nada.
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const readSelection = useCallback(() => {
     const selection = $getSelection();
@@ -225,8 +229,9 @@ function EditorToolbar({ onInsertImage, titleOnly = false }: Pick<RichTextEditor
     });
   };
 
-  const button = (label: string, accessibilityLabel: string, selected: boolean, disabled: boolean, action: () => void) => (
+  const button = (label: string, accessibilityLabel: string, selected: boolean, disabled: boolean, action: () => void, key?: string) => (
     <Pressable
+      key={key}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled, selected }}
@@ -242,6 +247,33 @@ function EditorToolbar({ onInsertImage, titleOnly = false }: Pick<RichTextEditor
     </Pressable>
   );
 
+  // UX7-REFINEMENT-CORRECTION: en edición rápida (tarjeta pequeña del lienzo), enlace/imagen/tabla y
+  // sus sub-controles se agrupan tras «Más formato» en vez de ocupar la fila principal — negrita,
+  // cursiva, listas, el selector de bloque H1-H6 y deshacer/rehacer siguen directos, como pide el brief.
+  const compactFormat = compact && !titleOnly;
+  const tableControls = !titleOnly && inTable ? [
+    button('+F', t('editor.visual.table.addRow', locale), false, false, () => editSelectedTable((table) => ({ ...table, rows: [...table.rows, emptyRow(tableWidth(table))] })), 'table-add-row'),
+    button('−F', t('editor.visual.table.removeRow', locale), false, false, () => editSelectedTable((table) => table.rows.length <= 1 ? table : ({ ...table, rows: table.rows.slice(0, -1) })), 'table-remove-row'),
+    button('+C', t('editor.visual.table.addColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) >= MAX_TABLE_COLUMNS ? table : ({
+      ...table,
+      ...(table.header ? { header: { cells: [...table.header.cells, { content: [] }] } } : {}),
+      rows: table.rows.map((row) => ({ cells: [...row.cells, { content: [] }] })),
+    })), 'table-add-column'),
+    button('−C', t('editor.visual.table.removeColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) <= 1 ? table : ({
+      ...table,
+      ...(table.header ? { header: { cells: table.header.cells.slice(0, -1) } } : {}),
+      rows: table.rows.map((row) => ({ cells: row.cells.slice(0, -1) })),
+    })), 'table-remove-column'),
+    button('H', t('editor.visual.table.toggleHeader', locale), false, false, () => editSelectedTable((table) => table.header
+      ? { type: 'table', rows: [table.header, ...table.rows] }
+      : { type: 'table', header: table.rows[0] as RichTextTableRow, rows: table.rows.length > 1 ? table.rows.slice(1) : [emptyRow(tableWidth(table))] }), 'table-toggle-header'),
+  ] : [];
+  const linkImageTableControls = [
+    button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink, 'link'),
+    !titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }, 'image') : null,
+    titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open), 'table'),
+    ...tableControls,
+  ];
   return (
     <View>
       <View accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)} style={styles.toolbar}>
@@ -261,28 +293,32 @@ function EditorToolbar({ onInsertImage, titleOnly = false }: Pick<RichTextEditor
         {titleOnly ? null : button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
         {titleOnly ? null : button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
         {titleOnly ? null : button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
-        {button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink)}
-        {!titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }) : null}
-        {titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open))}
-        {!titleOnly && inTable ? button('+F', t('editor.visual.table.addRow', locale), false, false, () => editSelectedTable((table) => ({ ...table, rows: [...table.rows, emptyRow(tableWidth(table))] }))) : null}
-        {!titleOnly && inTable ? button('−F', t('editor.visual.table.removeRow', locale), false, false, () => editSelectedTable((table) => table.rows.length <= 1 ? table : ({ ...table, rows: table.rows.slice(0, -1) }))) : null}
-        {!titleOnly && inTable ? button('+C', t('editor.visual.table.addColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) >= MAX_TABLE_COLUMNS ? table : ({
-          ...table,
-          ...(table.header ? { header: { cells: [...table.header.cells, { content: [] }] } } : {}),
-          rows: table.rows.map((row) => ({ cells: [...row.cells, { content: [] }] })),
-        }))) : null}
-        {!titleOnly && inTable ? button('−C', t('editor.visual.table.removeColumn', locale), false, false, () => editSelectedTable((table) => tableWidth(table) <= 1 ? table : ({
-          ...table,
-          ...(table.header ? { header: { cells: table.header.cells.slice(0, -1) } } : {}),
-          rows: table.rows.map((row) => ({ cells: row.cells.slice(0, -1) })),
-        }))) : null}
-        {!titleOnly && inTable ? button('H', t('editor.visual.table.toggleHeader', locale), false, false, () => editSelectedTable((table) => table.header
-          ? { type: 'table', rows: [table.header, ...table.rows] }
-          : { type: 'table', header: table.rows[0] as RichTextTableRow, rows: table.rows.length > 1 ? table.rows.slice(1) : [emptyRow(tableWidth(table))] })) : null}
+        {compactFormat ? null : linkImageTableControls}
         <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
         {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
         {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
+        {compactFormat ? (
+          <Pressable
+            testID="editor-more-format-toggle"
+            accessibilityRole="button"
+            accessibilityLabel={moreOpen ? t('editor.visual.more.hide', locale) : t('editor.visual.more.show', locale)}
+            accessibilityState={{ selected: moreOpen }}
+            onPress={() => setMoreOpen((open) => !open)}
+            style={({ pressed }) => [styles.toolButton, {
+              borderColor: moreOpen ? colors.selection : colors.border,
+              backgroundColor: moreOpen ? colors.accent : colors.surface,
+              opacity: pressed ? 0.7 : 1,
+            }]}
+          >
+            <Text style={[styles.toolText, { color: colors.textPrimary }]}>⋯</Text>
+          </Pressable>
+        ) : null}
       </View>
+      {compactFormat && moreOpen ? (
+        <View testID="editor-more-format-row" accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.more.show', locale)} style={styles.toolbar}>
+          {linkImageTableControls}
+        </View>
+      ) : null}
       {linkOpen ? (
         <View style={[styles.linkEditor, { borderColor: linkProblem ? colors.danger : colors.gridLine, backgroundColor: colors.surface }]}>
           <TextInput
@@ -437,7 +473,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
       `}</style>
       <LexicalComposer initialConfig={initialConfig}>
         <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage}>
-        <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} />
+        <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} compact={compact} />
         <View style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
             contentEditable={(

@@ -65,7 +65,13 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
  * Acento rojo discreto solo en el trazo del icono, no en un fondo lleno (cerrar no es destructivo:
  * no debe leerse como un botón de peligro).
  */
-function DialogCloseButton({ label, onPress }: { readonly label: string; readonly onPress: () => void }) {
+/** UX7-REFINEMENT-G/CORRECTION: exportado para que las superficies sin `Dialog` compartido
+ * (PresentView, CardMenu de escritorio, FrameInspector, CardInspector, inspector-sheet) usen el mismo
+ * botón. Diseño aprobado: cuadrado rojo sólido (`colors.danger`) con una X del color de contraste de
+ * ese fondo (`colors.dangerText`, mismo criterio que `accentText`/`brandText`/`headerText`) — no un
+ * icono rojo sobre fondo neutro. Cerrar no es una acción destructiva (no sustituye a Cancelar/
+ * Descartar/Eliminar), pero el diseño aprobado por el usuario es este cuadrado rojo de todas formas. */
+export function DialogCloseButton({ label, onPress }: { readonly label: string; readonly onPress: () => void }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
@@ -76,9 +82,13 @@ function DialogCloseButton({ label, onPress }: { readonly label: string; readonl
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={[styles.closeButton, { borderColor: focused ? colors.selection : colors.border, backgroundColor: colors.surface }]}
+      style={({ pressed }) => [styles.closeButton, {
+        borderColor: focused ? colors.selection : colors.danger,
+        backgroundColor: colors.danger,
+        opacity: pressed ? 0.8 : 1,
+      }]}
     >
-      <AppIcon name="close" size={16} color={colors.danger} />
+      <AppIcon name="close" size={18} color={colors.dangerText} />
     </Pressable>
   );
 }
