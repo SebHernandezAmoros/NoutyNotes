@@ -29,6 +29,10 @@ const fakeFolder = `
           return {
             write: async (value) => { bytes = Array.from(value); },
             close: async () => {
+              if (window.__failNoutyWrite) {
+                window.__failNoutyWrite = false;
+                throw Object.assign(new Error('La ruta dejó de estar disponible durante la escritura.'), { name: 'NotFoundError' });
+              }
               if (window.__holdNoutyWrite) {
                 window.__holdNoutyWrite = false;
                 await new Promise((resolve) => { window.__releaseNoutyWrite = resolve; });
@@ -129,6 +133,31 @@ test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y 
   // su mera existencia que hay algo recuperable. Sin incidencia real, no lleva señal de atención.
   await expect(page.getByTestId('recovery-badge')).toBeVisible();
   await expect(page.getByTestId('recovery-badge-attention')).toHaveCount(0);
+});
+
+test('UX7-CONSOLIDATION: un fallo de escritura se revisa bajo el proyecto sin perder el borrador', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 1100, 'La ubicación bajo el proyecto corresponde a la navegación lateral de escritorio.');
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByLabel('Nombre del nuevo espacio').fill('Guardado protegido');
+  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+
+  await page.evaluate(() => { (window as typeof window & { __failNoutyWrite?: boolean }).__failNoutyWrite = true; });
+  await page.getByLabel('Contenido visual').fill('BORRADOR CONSERVADO TRAS ERROR');
+  await page.getByRole('button', { name: 'Guardar texto' }).click();
+
+  const issue = page.getByTestId('save-issue');
+  await expect(issue).toBeVisible();
+  await expect(issue).toContainText('Error al guardar · Revisar');
+  await expect(page.getByTestId('workspace-feedback')).toHaveCount(0);
+  await issue.click();
+  await expect(page.getByTestId('recovery-save-problem')).toContainText('ruta');
+  await expect(page.getByRole('button', { name: 'Reintentar los cambios pendientes' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Volver a seleccionar la carpeta' })).toBeVisible();
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR CONSERVADO TRAS ERROR');
 });
 
 test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin alterar la nota durable', async ({ page }) => {

@@ -9,15 +9,24 @@ interface ProjectTabsProps {
   readonly currentId: string | undefined;
   /** Cambia de proyecto; quien llama guarda antes el borrador pendiente. */
   readonly onOpen: (id: string) => void;
+  /** UX7-CONSOLIDATION: reutiliza la navegación a Inicio ya existente (guarda primero, igual que
+   * «Volver a mis espacios») — Inicio ya ofrece crear un espacio; este selector no duplica ese flujo. */
+  readonly onCreate: () => void;
 }
 
 const numbered = (index: number) => String(index + 1).padStart(2, '0');
 
 /** Selector de proyectos abierto desde «Proyectos» en la cabecera, en cualquier ancho de escritorio (ADR 0048). */
-export function ProjectSheet({ projects, currentId, onOpen, visible, onClose }: ProjectTabsProps & { readonly visible: boolean; readonly onClose: () => void }) {
+export function ProjectSheet({ projects, currentId, onOpen, onCreate, visible, onClose }: ProjectTabsProps & { readonly visible: boolean; readonly onClose: () => void }) {
   return (
     <Dialog visible={visible} title="Proyectos" compact onClose={onClose} testID="project-sheet">
       <View style={styles.list}>
+        <ActionButton
+          label="+ Nuevo proyecto"
+          accessibilityLabel="Crear un nuevo proyecto desde Inicio"
+          tone="primary"
+          onPress={() => { onClose(); onCreate(); }}
+        />
         {projects.map((project, index) => {
           const active = project.id === currentId;
           return (

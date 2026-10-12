@@ -41,6 +41,9 @@ export function describeFailure(issues: readonly WorkspaceStorageIssue[], mode: 
   if (mode === 'folder' && (cause.code === 'workspace-not-found' || cause.code === 'invalid-workspace-id')) {
     return 'Este espacio no está disponible en la carpeta seleccionada. Si recargaste, vuelve al inicio y selecciona la carpeta.';
   }
+  // El adaptador distingue rutas ausentes de otros fallos de E/S. Conservar ese texto seguro evita
+  // ocultar el diagnóstico bajo la frase genérica asociada al código `io-failure`.
+  if (cause.code === 'io-failure') return cause.message;
   return byCode[cause.code] ?? cause.message;
 }
 

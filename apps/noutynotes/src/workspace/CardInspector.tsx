@@ -570,13 +570,21 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
                 </View>
               </>
             ) : (
+              // UX7-CONSOLIDATION: un título de marcador de posición («Nueva nota») ya se identifica
+              // arriba, en la cabecera del Inspector — repetirlo aquí era una identificación redundante.
+              // Solo se muestra el texto real cuando la persona usuaria escribió un título de verdad.
               <ActionButton testID="title-editor-toggle"
-                label={title.trim() ? (title.trim().length > 40 ? `${title.trim().slice(0, 40)}…` : title.trim()) : t('inspector.title.toggle.show', locale)}
-                accessibilityLabel={title.trim() ? `${t('inspector.title.toggle.show.accessibilityLabel', locale)}: ${title.trim()}` : t('inspector.title.toggle.show.accessibilityLabel', locale)}
+                label={title.trim() && !PLACEHOLDER_TITLES.has(title.trim()) ? (title.trim().length > 40 ? `${title.trim().slice(0, 40)}…` : title.trim()) : t('inspector.title.toggle.show', locale)}
+                accessibilityLabel={title.trim() && !PLACEHOLDER_TITLES.has(title.trim()) ? `${t('inspector.title.toggle.show.accessibilityLabel', locale)}: ${title.trim()}` : t('inspector.title.toggle.show.accessibilityLabel', locale)}
                 onPress={() => setTitleEditorOpen(true)} />
             )}
           </View>
         ) : null}
+        {/* UX7-CONSOLIDATION: el control de tamaño de texto se retira de la interfaz general de Nota
+            (ya no basta con moverlo a «Más» — pedido explícito del usuario). `titleSize`/`bodySize`
+            NO se tocan como campos durables: una tarjeta que ya tenía un tamaño distinto de «medio»
+            se sigue leyendo y representando igual (`titleFontSize`/`bodyFontSize` en `CanvasCard.tsx`
+            y en Lista/impresión no cambiaron), solo deja de poder cambiarse desde aquí. */}
         {section === 'content' && linkKey ? (
           <View testID="card-link" style={styles.tagSection}>
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.section', locale)}</Text>
@@ -589,7 +597,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.link.hint', locale)}</Text>
           </View>
         ) : null}
-        {section === 'more' ? <View testID="card-tags" style={styles.tagSection}>
+        {/* UX7-CONSOLIDATION: las etiquetas son parte de cómo se identifica/organiza el contenido al
+            escribir, no una propiedad avanzada — se mueven de «Más» a «Contenido». */}
+        {section === 'content' ? <View testID="card-tags" style={styles.tagSection}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.tags.section', locale)}</Text>
           {(card.tags ?? []).length > 0 ? (
             <View style={styles.row} accessibilityLabel={t('inspector.tags.accessibilityLabel', locale)}>
@@ -780,30 +790,6 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         ) : null}
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.frame.hint', locale)}</Text>
       </View>
-
-      {/* UX7-D4 (ADR 0050): se perdió al unificar notas/tablas/banners (P18-C) sin que ningún ADR
-          retirara el tamaño por ficha; el lienzo y Lista siguen leyendo `titleSize`/`bodySize». */}
-      {!shape && !connector ? <View testID="card-text-size-picker" style={styles.section}>
-        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.textSize.section', locale)}</Text>
-        {cardBase === 'note' ? null : <View style={styles.row}>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.titleRow', locale)}</Text>
-          {(['small', 'medium', 'large'] as const).map((size) => (
-            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
-              accessibilityLabel={t(`inspector.textSize.title.${size}.accessibilityLabel`, locale)}
-              pressed={(card.titleSize ?? 'medium') === size}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleSize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' }, { reactive: true })} />
-          ))}
-        </View>}
-        <View style={styles.row}>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.bodyRow', locale)}</Text>
-          {(['small', 'medium', 'large'] as const).map((size) => (
-            <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
-              accessibilityLabel={t(`inspector.textSize.body.${size}.accessibilityLabel`, locale)}
-              pressed={(card.bodySize ?? 'medium') === size}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodySize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' }, { reactive: true })} />
-          ))}
-        </View>
-      </View> : null}
 
       {shape ? (
         <View testID="shape-style-picker" style={styles.section}>

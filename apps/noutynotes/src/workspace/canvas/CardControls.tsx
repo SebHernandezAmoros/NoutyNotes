@@ -76,10 +76,16 @@ function Control({ testID, icon, label, danger = false, floating = false, contai
 }
 
 /** Acciones cercanas a la tarjeta en escritorio; hoja temporal en móvil. */
-export function CardMenu({ title, display, compact, anchor, onEdit, onQuickEdit, onTags, onConnect, onSelectMany, onArchive, onAction, onClose }: {
+export function CardMenu({ title, display, compact, canQuickEdit, anchor, onEdit, onQuickEdit, onTags, onConnect, onSelectMany, onArchive, onAction, onClose }: {
   readonly title: string;
   readonly display: CardDisplayMode;
   readonly compact: boolean;
+  /** UX7-CONSOLIDATION: misma condición exacta que decide `WorkspaceScreen.openCard` — antes este
+   * componente recalculaba una versión local incompleta (sin mirar `card.contentDocument`), así que
+   * «Editar» podía etiquetarse como «dentro de la ficha» y en realidad abrir el mismo editor completo
+   * que «Completo», un duplicado real para cualquier nota autoría HTML. Con el valor real, «Editar»
+   * deja de mostrarse cuando llevaría exactamente al mismo sitio que «Completo». */
+  readonly canQuickEdit: boolean;
   readonly anchor: { readonly left: number; readonly top: number } | null;
   readonly onEdit: () => void;
   readonly onQuickEdit: () => void;
@@ -97,10 +103,7 @@ export function CardMenu({ title, display, compact, anchor, onEdit, onQuickEdit,
   const actions = cardActions(display);
   const displayActions = actions.filter((action) => action.kind !== 'trash');
   const trash = actions.find((action) => action.kind === 'trash');
-  // El destino real de «Editar» (ADR 0048): igual que decide `WorkspaceScreen`, para que la etiqueta no
-  // prometa «dentro de la ficha» cuando en realidad abre el editor completo (contraída/minimizada o móvil).
-  const quickEditInline = !compact && display === 'expanded';
-  const quickEditLabel = t(quickEditInline ? 'cardMenu.edit.inline.accessibilityLabel' : 'cardMenu.edit.full.accessibilityLabel', locale, { title });
+  const quickEditLabel = t('cardMenu.edit.inline.accessibilityLabel', locale, { title });
   useEffect(() => {
     if (compact || Platform.OS !== 'web') return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -113,8 +116,10 @@ export function CardMenu({ title, display, compact, anchor, onEdit, onQuickEdit,
     <View style={styles.menu}>
       <Text style={[styles.menuSection, { color: colors.textSecondary }]}>{t('cardMenu.section.work', locale)}</Text>
       <View style={styles.menuGrid}>
-        <MenuAction half icon="edit" label={t('cardMenu.edit', locale)} accessibilityLabel={quickEditLabel} onPress={() => { onClose(); onQuickEdit(); }} />
-        <MenuAction half icon="expand" label={t('cardMenu.full', locale)} accessibilityLabel={t('cardMenu.full.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onEdit(); }} />
+        {canQuickEdit ? (
+          <MenuAction half icon="edit" label={t('cardMenu.edit', locale)} accessibilityLabel={quickEditLabel} onPress={() => { onClose(); onQuickEdit(); }} />
+        ) : null}
+        <MenuAction half={canQuickEdit} icon="expand" label={t('cardMenu.full', locale)} accessibilityLabel={t('cardMenu.full.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onEdit(); }} />
         <MenuAction half icon="star" label={t('cardMenu.tags', locale)} accessibilityLabel={t('cardMenu.tags.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onTags(); }} />
         <MenuAction half icon="connect" label={t('cardMenu.connect', locale)} accessibilityLabel={t('cardMenu.connect.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onConnect(); }} />
       </View>

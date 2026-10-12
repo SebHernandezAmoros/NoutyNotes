@@ -41,6 +41,16 @@ function success<T>(value: T): WorkspaceStorageResult<T> { return { ok: true, va
 function error<T>(code: 'invalid-stored-data' | 'permission-denied' | 'external-change' | 'io-failure', path: string, message: string): WorkspaceStorageResult<T> {
   return storageFailure(code, path, message);
 }
+function saveError<T>(cause: unknown): WorkspaceStorageResult<T> {
+  const name = typeof cause === 'object' && cause !== null && 'name' in cause && typeof cause.name === 'string' ? cause.name : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return error('permission-denied', 'folder', 'La carpeta retiró el permiso de escritura. Vuelve a seleccionarla.');
+  }
+  if (name === 'NotFoundError') {
+    return error('io-failure', 'folder', 'No se encontró la ruta de la carpeta durante el guardado. Vuelve a seleccionarla para recuperar el acceso.');
+  }
+  return error('io-failure', 'workspace', 'No se pudo guardar el workspace; comprueba la recuperación de la carpeta.');
+}
 function fingerprint(files: TextFiles): string { return JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))); }
 function summary(workspace: Workspace): WorkspaceSummary { return { id: workspace.id, name: workspace.metadata.name }; }
 
@@ -245,7 +255,7 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
       await this.#commit(found.folder, found.files, next.value);
       this.#baseline.set(workspace.id, fingerprint(next.value));
       return success(summary(workspace));
-    } catch { return error('io-failure', 'workspace', 'No se pudo guardar el workspace; comprueba la recuperación de la carpeta.'); }
+    } catch (cause) { return saveError(cause); }
   }
 
   async rename(from: WorkspaceId, to: WorkspaceId): Promise<WorkspaceStorageResult<WorkspaceSummary>> {

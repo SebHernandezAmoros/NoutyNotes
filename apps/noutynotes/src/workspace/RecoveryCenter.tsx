@@ -80,6 +80,11 @@ interface RecoveryCenterProps {
   readonly workspace: Workspace;
   readonly drafts: readonly EditorialDraft[];
   readonly problem: string | null;
+  readonly saveProblem: string | null;
+  readonly saveProblemKind: 'conflict' | 'reselect' | 'retry' | null;
+  readonly onRetrySave: () => void;
+  readonly onRecoverExternal: () => void;
+  readonly onReselectFolder: () => void;
   readonly onRecover: (cardId: CardId) => void;
   readonly onDiscard: (cardId: CardId) => void;
   readonly onClose: () => void;
@@ -90,7 +95,7 @@ interface RecoveryCenterProps {
  * JSON crudo como contenido principal (solo bajo «Ver fuente exacta», para copiar); nunca ofrece
  * «Recuperar» cuando no puede funcionar — la persona usuaria ve de inmediato por qué, sin intentarlo.
  */
-export function RecoveryCenter({ visible, compact, workspace, drafts, problem, onRecover, onDiscard, onClose }: RecoveryCenterProps) {
+export function RecoveryCenter({ visible, compact, workspace, drafts, problem, saveProblem, saveProblemKind, onRetrySave, onRecoverExternal, onReselectFolder, onRecover, onDiscard, onClose }: RecoveryCenterProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [confirming, setConfirming] = useState<CardId | null>(null);
@@ -108,6 +113,22 @@ export function RecoveryCenter({ visible, compact, workspace, drafts, problem, o
         Borradores privados de seguridad que todavía no están confirmados en el workspace. Cerrar esto no descarta nada.
       </Text>
       {problem ? <Text testID="recovery-problem" accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{problem}</Text> : null}
+      {saveProblem ? (
+        <View testID="recovery-save-problem" style={[styles.saveProblem, { borderColor: colors.danger }]}>
+          <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{saveProblem}</Text>
+          <View style={styles.actions}>
+            {saveProblemKind === 'conflict' ? (
+              <ActionButton label="Recargar y reaplicar" accessibilityLabel="Recargar el proyecto y reaplicar los cambios pendientes" tone="primary" onPress={onRecoverExternal} />
+            ) : null}
+            {saveProblemKind === 'retry' ? (
+              <ActionButton label="Reintentar" accessibilityLabel="Reintentar los cambios pendientes" tone="primary" onPress={onRetrySave} />
+            ) : null}
+            {saveProblemKind === 'retry' || saveProblemKind === 'reselect' ? (
+              <ActionButton label="Volver a seleccionar" accessibilityLabel="Volver a seleccionar la carpeta" onPress={onReselectFolder} />
+            ) : null}
+          </View>
+        </View>
+      ) : null}
       {entries.length === 0 ? (
         <Text testID="recovery-empty" style={[styles.empty, { color: colors.textSecondary, borderColor: colors.gridLine }]}>
           No hay borradores pendientes de revisar.
@@ -170,4 +191,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   confirm: { borderWidth: 2, padding: 10, gap: 8 },
   warning: { fontSize: 14, lineHeight: 19, fontWeight: '700' },
+  saveProblem: { borderWidth: 2, padding: 10, gap: 8 },
 });

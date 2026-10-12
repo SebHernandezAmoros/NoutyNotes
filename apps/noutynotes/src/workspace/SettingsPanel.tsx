@@ -23,6 +23,10 @@ interface SettingsPanelProps {
   readonly onResetView: () => void;
   /** Abre la biblioteca en la que se importan fuentes locales o de Google. */
   readonly onOpenFontLibrary: () => void;
+  /** UX7-CONSOLIDATION: acceso estable al Centro de recuperación — ya no es una entrada de
+   * navegación propia; esta es la vía siempre disponible, con o sin incidencia real. */
+  readonly onOpenRecovery: () => void;
+  readonly recoverableCount: number;
   readonly onClose: () => void;
 }
 
@@ -90,6 +94,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
         </View>
         <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.fonts.note', locale)}</Text>
         <ActionButton label={t('settings.fonts.library', locale)} accessibilityLabel={t('settings.fonts.library.accessibilityLabel', locale)} onPress={props.onOpenFontLibrary} />
+      </View>
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.recovery', locale)}</Text>
+        <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.recovery.note', locale)}</Text>
+        <ActionButton
+          testID="settings-open-recovery"
+          label={props.recoverableCount > 0 ? t('settings.recovery.open.count', locale, { count: String(props.recoverableCount) }) : t('settings.recovery.open', locale)}
+          accessibilityLabel={props.recoverableCount > 0
+            ? t('settings.recovery.open.count.accessibilityLabel', locale, { count: String(props.recoverableCount) })
+            : t('settings.recovery.open.accessibilityLabel', locale)}
+          onPress={props.onOpenRecovery}
+        />
       </View>
       <View style={styles.section}>
         <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t('settings.canvas', locale)}</Text>

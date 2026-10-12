@@ -271,8 +271,17 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink, 'link'),
     !titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }, 'image') : null,
     titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open), 'table'),
-    ...tableControls,
   ];
+  // UX7-CONSOLIDATION: los controles de fila/columna ya no viven mezclados dentro de «Más formato» —
+  // son su propia fila contextual, visible solo con el cursor dentro de una tabla, en cualquier ancho
+  // (compacto o Inspector completo). No son un menú flotante anclado al DOM de la tabla (fuera de
+  // alcance seguro en esta ronda), pero sí dejan de competir visualmente con enlace/imagen/listas.
+  const tableContextRow = !titleOnly && inTable ? (
+    <View testID="editor-table-controls" accessibilityRole="toolbar" accessibilityLabel="Controles de la tabla" style={[styles.toolbar, styles.tableContextToolbar, { borderTopColor: colors.gridLine }]}>
+      <Text style={[styles.tableContextLabel, { color: colors.textSecondary }]}>TABLA</Text>
+      {tableControls}
+    </View>
+  ) : null;
   return (
     <View>
       <View accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)} style={styles.toolbar}>
@@ -324,6 +333,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
           {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
         </View>
       ) : null}
+      {tableContextRow}
       {linkOpen ? (
         <View style={[styles.linkEditor, { borderColor: linkProblem ? colors.danger : colors.gridLine, backgroundColor: colors.surface }]}>
           <TextInput
@@ -509,9 +519,14 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         <DocumentChanges document={document} initialDocument={initialDocument} onChange={onChange} />
         </ImageEditorBridge>
       </LexicalComposer>
-      <Text accessibilityLiveRegion="polite" style={[styles.status, { color: problem ? colors.danger : colors.textSecondary }]}>
-        {problem ?? t('editor.visual.status', locale)}
-      </Text>
+      {/* UX7-CONSOLIDATION: guardar correctamente es silencioso (mismo criterio que el resto de la
+          app) — esta línea ya no repite «los cambios se guardan automáticamente» en cada fotograma;
+          solo aparece ante un error real del propio editor (`onError` de Lexical). */}
+      {problem ? (
+        <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={[styles.status, { color: colors.danger }]}>
+          {problem}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -523,6 +538,8 @@ const styles = StyleSheet.create({
   shellCompact: { flex: 1, flexBasis: 0, minHeight: 0, overflow: 'hidden' },
   toolbar: { minHeight: 52, padding: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   compactMoreToolbar: { minHeight: 48, padding: 4, gap: 4 },
+  tableContextToolbar: { minHeight: 44, padding: 4, borderTopWidth: 1 },
+  tableContextLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginRight: 2 },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   toolText: { fontSize: 17 },
   bold: { fontWeight: '900' },

@@ -123,6 +123,8 @@ interface CanvasProps {
   /** Tarjeta cuya edición rápida está superpuesta sobre la propia ficha (ADR 0047). */
   readonly inlineEditingId: CardId | null;
   readonly richTextCodec: RichTextCodec;
+  /** UX7-CONSOLIDATION: codec HTML v1, para Visual/HTML en edición rápida (`InlineCardEditor`). */
+  readonly htmlCodec: RichTextCodec;
   readonly inlineDraft?: { readonly cardId: CardId; readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
   readonly onInlineDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
   readonly onInlineSave: (cardId: CardId, title: string, content: string, titleDocument: RichTextDocument) => Promise<boolean>;
@@ -735,6 +737,14 @@ export function Canvas(props: CanvasProps) {
     if (next !== current.props.pan) current.props.onPan(next);
   };
   const menuPlacement = menuFor ? placements.find((placement) => placement.cardId === menuFor) : undefined;
+  // UX7-CONSOLIDATION: misma condición exacta que `WorkspaceScreen.openCard` (`canEditInline`) — antes
+  // `CardMenu` recalculaba una versión local incompleta (sin mirar `contentDocument`), así que podía
+  // etiquetar «Editar» como «dentro de la ficha» y en realidad abrir igual el editor completo, idéntico
+  // a «Completo». Con el valor real, el menú deja de ofrecer dos botones que llevan al mismo sitio.
+  const menuCard = menuPlacement ? cards.get(menuPlacement.cardId) : undefined;
+  const menuCardBase = menuCard ? workspace.cardTypes.find((candidate) => candidate.id === menuCard.typeId)?.base : undefined;
+  const canQuickEditMenuCard = Boolean(menuPlacement && !props.compact && menuPlacement.display === 'expanded'
+    && menuCardBase !== 'shape' && menuCardBase !== 'connector' && menuCard?.contentDocument === undefined);
   const inlinePlacement = props.inlineEditingId ? placements.find((placement) => placement.cardId === props.inlineEditingId) : undefined;
   const inlineCard = inlinePlacement ? cards.get(inlinePlacement.cardId) : undefined;
   const inlineBox = inlinePlacement ? (() => {
@@ -952,6 +962,7 @@ export function Canvas(props: CanvasProps) {
           card={inlineCard}
           box={inlineBox}
           richTextCodec={props.richTextCodec}
+          htmlCodec={props.htmlCodec}
           noteFontFamily={props.noteFontFamily}
           initialDraft={props.inlineDraft?.cardId === inlineCard.id ? props.inlineDraft : undefined}
           onDraftChange={props.onInlineDraftChange}
@@ -1006,6 +1017,7 @@ export function Canvas(props: CanvasProps) {
           title={names.get(menuPlacement.cardId) ?? t('card.untitled', locale)}
           display={menuPlacement.display}
           compact={props.compact}
+          canQuickEdit={canQuickEditMenuCard}
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
           onQuickEdit={() => props.onCardOpen(menuPlacement.cardId)}

@@ -164,7 +164,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     notice !== '' ? { tone: 'success', text: notice } : null,
   );
   const {
-    view, feedback, saving, saveState, run, setFeedback, undo, redo, retry, recoverExternal,
+    view, feedback, saving, saveState, saveIssues, run, setFeedback, undo, redo, retry, recoverExternal,
     flush: flushWorkspace, revision, undoLabel, redoLabel,
   } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
@@ -1099,6 +1099,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   });
   // Un error/conflicto nunca usa el color de «guardado»; guardando/pendiente son neutros y la memoria volátil, aviso.
   const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' || statusTone === 'pending' ? colors.textSecondary : colors.danger;
+  const recoveryPending = saveState === 'error' || saveState === 'conflict';
+  const saveIssue = saveIssues[0];
+  const saveProblem = recoveryPending
+    ? (saveIssues.length > 0 ? describeFailure(saveIssues, storageMode) : feedback?.text ?? 'No se pudieron confirmar los cambios pendientes.')
+    : null;
+  const saveProblemKind: 'conflict' | 'reselect' | 'retry' | null = saveState === 'conflict'
+    ? 'conflict'
+    : saveIssue && ['permission-denied', 'invalid-stored-data', 'workspace-not-found'].includes(saveIssue.code)
+      ? 'reselect'
+      : saveState === 'error' ? 'retry' : null;
   const hint = tool === 'pan' ? 'Mano: arrastra el lienzo para desplazarte. Las tarjetas no se mueven con esta herramienta.'
     : tool === 'connector'
       ? connectorStart ? 'Posición 1 marcada. Toca una segunda posición o una tarjeta para terminar el conector.'
@@ -1208,30 +1218,36 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       {workspace.metadata.name}
     </Text>
   ) : null;
-  const identityStatus = workspace ? (
-    <Text testID="workspace-memory" numberOfLines={1} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
-  ) : null;
   /**
-   * UX7-SIDEBAR: «Recuperación» es ahora una opción estable de la navegación (siempre presente,
-   * nunca aparece/desaparece por sí sola) — no un indicador que solo existe cuando hay algo que
-   * recuperar. El número de borradores recuperables deja de mostrarse en el funcionamiento normal
-   * (un borrador privado intacto en una tarjeta que sigue existiendo no es una incidencia); solo
-   * una señal discreta (punto de color, sin número) marca una incidencia real: un borrador huérfano
-   * cuya tarjeta está en la Papelera/Archivo/eliminada (`draftProblem`, con riesgo real de perderse)
-   * o un fallo/conflicto de guardado real. Cerrar el Centro nunca descarta nada; cuando no hay
-   * incidencias, sigue abriéndose igual, solo sin la señal.
+   * UX7-CONSOLIDATION (sustituye el criterio de UX7-SIDEBAR): Recuperación deja de ser una entrada
+   * permanente de la navegación. La incidencia real (fallo/conflicto de guardado, o un borrador
+   * huérfano cuya tarjeta está en Papelera/Archivo/eliminada — `draftProblem`, con riesgo real de
+   * perderse) se anuncia de forma contextual y clara bajo el nombre del proyecto, en el mismo lugar
+   * donde ya vivía el estado de guardado (`identityStatus`) — no en un punto de color aparte. Fuera
+   * de una incidencia, Recuperación sigue siendo alcanzable de forma estable desde Configuración
+   * (`SettingsPanel`), nunca oculta ni en riesgo: ningún borrador histórico deja de ser recuperable
+   * por no tener ya una entrada de navegación dedicada.
    */
   const draftAttention = draftProblem !== null || saveState === 'error' || saveState === 'conflict';
-  const identityRecovery = workspace ? (
-    <NavItem
-      testID="recovery-badge"
-      icon="recover"
-      label="Recuperación"
-      attention={draftAttention ? colors.danger : undefined}
-      accessibilityLabel={recoverableCount > 0 ? `Centro de recuperación: ${recoverableCount} ${recoverableCount === 1 ? 'borrador recuperable' : 'borradores recuperables'}` : 'Centro de recuperación'}
+  const recoveryReason = saveState === 'conflict' ? 'Conflicto de cambios · Revisar'
+    : saveState === 'error' ? 'Error al guardar · Revisar'
+    : draftProblem !== null ? 'Borrador por revisar · Revisar'
+    : null;
+  const identityStatus = workspace ? (draftAttention && recoveryReason ? (
+    <Pressable
+      testID="save-issue"
+      accessibilityRole="button"
+      accessibilityLabel={saveState === 'conflict' ? 'Conflicto de cambios. Revisar recuperación'
+        : saveState === 'error' ? 'Error al guardar. Revisar recuperación'
+        : 'Hay un borrador por revisar. Abrir el Centro de recuperación'}
       onPress={() => setRecoveryOpen(true)}
-    />
-  ) : null;
+      style={({ pressed }) => [styles.saveIssue, { borderColor: colors.danger, backgroundColor: pressed ? colors.surfaceRaised : 'transparent' }]}
+    >
+      <Text numberOfLines={1} style={[styles.memoryText, { color: colors.danger }]}>{recoveryReason}</Text>
+    </Pressable>
+  ) : (
+    <Text testID="workspace-memory" numberOfLines={1} style={[styles.memoryText, { color: statusColor }]}>{status}</Text>
+  )) : null;
 
   const exportBar = showArchive && workspace ? (
     <View testID="export-bar" style={[styles.exportBar, compact ? styles.exportBarCompact : null, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
@@ -1266,7 +1282,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // conectar) o un error real de guardado/conflicto. Un éxito rutinario (`feedback?.tone ===
   // 'success'`) nunca llega aquí.
   const feedbackContent = tool === 'pan' || tool === 'connector' || tool === 'connect' || connectSource !== null ? hint
-    : feedback?.tone === 'error' ? feedback.text
+    : feedback?.tone === 'error' && feedback.saveFailed !== true ? feedback.text
     : null;
   const feedbackText = workspace && feedbackContent ? (
     <Text
@@ -1283,18 +1299,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       {feedbackContent}
     </Text>
   ) : null;
-  const recoveryPending = saveState === 'error' || saveState === 'conflict';
   // UX7-LAYOUT-CORRECTION: deshacer/rehacer/pegar ya no viven sueltos aquí (ADR 0026/0052
   // superada) — son un grupo más de la propia barra de herramientas del lienzo, en cualquier
   // ancho (ver `Toolbar.tsx`). Esta línea ahora solo existe cuando hay algo real que decir.
-  const feedbackLine = workspace && recoveryPending ? (
-    <View style={styles.feedbackRow}>
-      <View style={styles.feedbackGrow}>{feedbackText}</View>
-      <ActionButton label={saveState === 'conflict' ? 'Recargar y reaplicar' : 'Reintentar'}
-        accessibilityLabel={saveState === 'conflict' ? 'Recargar el proyecto y reaplicar los cambios pendientes' : 'Reintentar los cambios pendientes'}
-        onPress={() => void (saveState === 'conflict' ? recoverExternal() : retry())} />
-    </View>
-  ) : feedbackText;
+  const feedbackLine = feedbackText;
 
   // UX7-LAYOUT-CORRECTION: sin barra lateral (< 1100 px), no hay ninguna fila encima del lienzo.
   // En compacto (< 800 px), identidad/estado/recuperación caben al final de la propia barra de
@@ -1315,7 +1323,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         <>
           {identityHeading}
           {identityStatus}
-          {identityRecovery}
         </>
       ) : null}
     </View>
@@ -1448,7 +1455,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardPress={pressCard}
         onToggleCheck={toggleCheck}
         onCardEdit={(cardId) => void editCard(cardId)}
-        onCardTags={(cardId) => void editCard(cardId, 'more')}
+        // UX7-CONSOLIDATION: las etiquetas se movieron de «Más» a «Contenido» en el Inspector — este
+        // acceso directo debe seguir apuntando a donde viven de verdad.
+        onCardTags={(cardId) => void editCard(cardId, 'content')}
         onCardStartConnect={(cardId) => {
           setEditingId(null);
           setInlineEditing(false);
@@ -1469,6 +1478,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardOpen={(cardId) => void openCard(cardId)}
         inlineEditingId={inlineEditing ? editingId : null}
         richTextCodec={markdownRichTextCodec}
+        htmlCodec={htmlRichTextCodec}
         inlineDraft={recoveredText?.cardId === editingId ? recoveredText : undefined}
         onInlineDraftChange={(draft) => { setPendingText(draft, authority); }}
         onInlineSave={saveInlineCard}
@@ -1560,17 +1570,23 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
                 <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
                 {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
-                {board && board.cardIds.length > 0 ? (
-                  <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => void archiveCurrentBoard()} />
-                ) : null}
-                <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
+                {/* UX7-CONSOLIDATION: «Archivar tablero» ya vive en la barra lateral derecha (Opciones
+                    del tablero → BoardActionsDialog) a este mismo ancho — repetirlo aquí era un
+                    duplicado real, no dos superficies con propósitos distintos. En compacto/tablet
+                    (sin barra derecha) la versión de «Más secciones» sigue siendo la única vía y se
+                    conserva sin cambios. */}
               </ScrollView>
             ) : null}
             {workspace ? (
               <View style={styles.sidebarBottom}>
                 <View style={[styles.navRule, { backgroundColor: colors.gridLine }]} />
+                {/* UX7-CONSOLIDATION: Configuración se usa con poca frecuencia pero debe seguir siendo
+                    fácil de encontrar sin desplazar la lista — vive en la región inferior fija, junto a
+                    Proyectos/Guardar, no al final de la lista con scroll. «Recuperación» ya no es una
+                    entrada de navegación propia (ver `identityStatus` arriba y «Centro de recuperación»
+                    dentro de Configuración, siempre disponible). */}
+                <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
                 <NavItem icon="folder" label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} />
-                {identityRecovery}
                 <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => void saveNow()} />
               </View>
             ) : null}
@@ -1700,7 +1716,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       </View>
       {workspace ? (
         <>
-          <ProjectSheet projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} visible={projectsOpen} onClose={() => setProjectsOpen(false)} />
+          <ProjectSheet projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} onCreate={() => void goHome()} visible={projectsOpen} onClose={() => setProjectsOpen(false)} />
           {boardActions ? (
             <BoardActionsDialog
               key={`${boardActions.id}:${boardActions.title}`}
@@ -1723,6 +1739,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onZoomOut={() => setZoom(zoomOut)}
             onResetView={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
             onOpenFontLibrary={() => { setSettingsOpen(false); openView('assets'); }}
+            onOpenRecovery={() => { setSettingsOpen(false); setRecoveryOpen(true); }}
+            recoverableCount={recoverableCount}
             onClose={() => setSettingsOpen(false)}
           />
           {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
@@ -1730,13 +1748,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             {/* UX7-LAYOUT-CORRECTION: entre 800 y 1099 px no hay barra lateral y la barra de
                 herramientas ya inlinea Papelera/Diario/Archivo/Assets/Presentar/Imprimir/
                 Configuración (no caben en una barra lateral que no existe a este ancho) — así que
-                aquí solo viven identidad/estado/recuperación, para no duplicar nada. */}
+                aquí solo viven identidad/estado, para no duplicar nada. UX7-CONSOLIDATION:
+                «Recuperación» ya no es una entrada propia; su incidencia (si la hay) ya se anuncia en
+                `identityStatus`, y el acceso estable vive dentro de Configuración. */}
             {!sidebar && !compact ? (
               <View style={styles.toolbarExtras}>
                 {backButton}
                 {identityHeading}
                 {identityStatus}
-                {identityRecovery}
               </View>
             ) : null}
             {compact ? (
@@ -1781,6 +1800,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             workspace={workspace}
             drafts={recoverableDrafts}
             problem={draftProblem}
+            saveProblem={saveProblem}
+            saveProblemKind={saveProblemKind}
+            onRetrySave={() => { void retry(); }}
+            onRecoverExternal={() => { void recoverExternal(); }}
+            onReselectFolder={() => {
+              void session.connectFolder().then((result) => {
+                if (result.ok) setRecoveryOpen(false);
+                else setFeedback({ tone: 'error', text: result.message });
+              });
+            }}
             onRecover={(cardId) => {
               if (!recoverDraft(cardId)) return;
               setRecoveryOpen(false);
@@ -1799,7 +1828,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             compact={compact}
             onClose={() => setInsertOpen(false)}
             onNote={() => { setInsertOpen(false); void add('note'); }}
-            onText={() => { setInsertOpen(false); void add('text'); }}
             onImage={() => { setInsertOpen(false); void importImage(); }}
             onLink={() => { setInsertOpen(false); setLinkOpen(true); }}
             onTable={(rows, columns) => { setInsertOpen(false); void addTable(rows, columns); }}
@@ -2263,6 +2291,7 @@ const styles = StyleSheet.create({
   identityTitle: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '700' },
   title: { fontWeight: '900', letterSpacing: -0.5 },
   memoryText: { flexShrink: 1, fontFamily: mono, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  saveIssue: { minHeight: 32, alignSelf: 'flex-start', justifyContent: 'center', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
   // `flexWrap` (no una sola línea rígida): «←» + título + estado + Proyectos/Guardar no siempre
   // caben en una fila; sin esto, el título (único elemento con `flexGrow`) se comprimía a 0 px de
   // ancho —invisible para Playwright aunque el nodo existiera— en vez de que el resto pasara a una

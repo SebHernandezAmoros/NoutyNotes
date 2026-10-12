@@ -13,7 +13,6 @@ interface InsertMenuProps {
   readonly compact: boolean;
   readonly onClose: () => void;
   readonly onNote: () => void;
-  readonly onText: () => void;
   readonly onImage: () => void;
   readonly onLink: () => void;
   readonly onTable: (rows: number, columns: number) => void;
@@ -21,7 +20,10 @@ interface InsertMenuProps {
   readonly onConnector: () => void;
 }
 
-/** Entrada única de creación (UX7 P10); Conector permanece reservado para P15. */
+/** Entrada única de creación (UX7 P10); Conector permanece reservado para P15.
+ * UX7-CONSOLIDATION: «Texto» se retiró como entrada independiente — la única herramienta editorial
+ * de creación es «Nota»; su cuerpo enriquecido admite texto y encabezados, y la presentación sin
+ * marco sigue disponible desde Apariencia → Marco → «Ocultar siempre» (preset `text`, sin tocar). */
 export function InsertMenu(props: InsertMenuProps) {
   const { locale } = useLocale();
   const { theme } = useTheme();
@@ -37,7 +39,6 @@ export function InsertMenu(props: InsertMenuProps) {
       <View style={styles.list}>
         <InsertGroup testID="insert-group-content" label={t('insert.group.content', locale)}>
           <InsertOption icon="note" label={t('insert.note', locale)} hint={t('insert.note.hint', locale)} onPress={props.onNote} />
-          <InsertOption icon="text" label={t('insert.text', locale)} hint={t('insert.text.hint', locale)} onPress={props.onText} />
           <InsertOption icon="upload" label={t('insert.image', locale)} hint={t('insert.image.hint', locale)} onPress={props.onImage} />
           <InsertOption icon="link" label={t('insert.link', locale)} hint={t('insert.link.hint', locale)} onPress={props.onLink} />
           <InsertOption icon="board" label={t('insert.table', locale)} hint={t('insert.table.hint', locale)} onPress={() => setTableOpen((open) => !open)} />

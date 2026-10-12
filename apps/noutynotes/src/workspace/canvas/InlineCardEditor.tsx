@@ -5,16 +5,22 @@ import { useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { ActionButton, TextField } from '../../components/controls';
 import { AppIcon } from '../../components/AppIcon';
 import { DialogCloseButton } from '../../components/Dialog';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
 
+const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
+
 interface InlineCardEditorProps {
   readonly card: Card;
   readonly box: ScreenBox;
   readonly richTextCodec: RichTextCodec;
+  /** UX7-CONSOLIDATION: codec HTML v1 (mismo que usa `CardInspector.tsx`) — distinto de
+   * `richTextCodec` (que aquí serializa a markdown, el formato que ya persiste `content`). */
+  readonly htmlCodec: RichTextCodec;
   readonly noteFontFamily?: string | undefined;
   readonly initialDraft?: { readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
   readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
@@ -24,7 +30,7 @@ interface InlineCardEditorProps {
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [title] = useState(initialDraft?.title ?? cardTitleText(card));
@@ -40,8 +46,36 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
     const parsed = richTextCodec.parse(initialDraft?.content ?? card.content ?? '');
     return parsed.ok && supportsVisualDocument(parsed.value) ? parsed.value : null;
   });
-  const [saving, setSaving] = useState(false);
+  // UX7-CONSOLIDATION: ya no hay un indicador rutinario de «Guardando…» (guardar correctamente es
+  // silencioso); `setSaving` se conserva porque `persist()` todavía lo usa para no solapar guardados.
+  const [, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // UX7-CONSOLIDATION: Visual/HTML en edición rápida reutiliza los dos mecanismos seguros ya
+  // existentes: `htmlCodec` (mismo codec HTML v1/lista blanca que `CardInspector.tsx`) para leer y
+  // validar el HTML de origen, y `richTextCodec` (markdown) para persistir — el mismo formato que ya
+  // produce el modo Visual, sin inventar un nuevo campo de borrador ni tocar `DraftStore`.
+  const [bodyMode, setBodyMode] = useState<'visual' | 'html'>('visual');
+  const [htmlDraft, setHtmlDraft] = useState('');
+  const [htmlIssue, setHtmlIssue] = useState<string | null>(null);
+  const openHtml = () => {
+    const source = visualDocument ? htmlCodec.serialize(visualDocument) : null;
+    setHtmlDraft(source?.ok ? source.value : '');
+    setHtmlIssue(null);
+    setBodyMode('html');
+  };
+  const changeHtml = (value: string) => { setHtmlDraft(value); if (htmlIssue) setHtmlIssue(null); };
+  const discardHtml = () => { setHtmlIssue(null); setBodyMode('visual'); };
+  const applyHtml = () => {
+    const parsed = htmlCodec.parse(htmlDraft);
+    if (!parsed.ok) { setHtmlIssue(parsed.issues[0]?.message ?? 'El código HTML no es válido.'); return; }
+    const encoded = richTextCodec.serialize(parsed.value);
+    if (!encoded.ok) { setHtmlIssue(encoded.issues[0]?.message ?? 'No se pudo aplicar el código.'); return; }
+    setContent(encoded.value);
+    setVisualDocument(supportsVisualDocument(parsed.value) ? parsed.value : null);
+    onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument });
+    setHtmlIssue(null);
+    setBodyMode('visual');
+  };
   // UX7-VISUAL-FINALIZATION: el título se conserva en la sesión y en el guardado, pero se edita como
   // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
@@ -118,6 +152,12 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
         </Pressable>
         <DialogCloseButton label="Guardar y cerrar la edición rápida" onPress={close} />
       </View>
+      {!floatingText && Platform.OS === 'web' ? (
+        <View testID="inline-body-mode-switch" style={styles.modeRow} accessibilityRole="toolbar" accessibilityLabel="Modo de edición del cuerpo">
+          <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => { if (bodyMode === 'html') applyHtml(); }} />
+          <ActionButton label="HTML" accessibilityLabel="Editar el código HTML del cuerpo" pressed={bodyMode === 'html'} onPress={openHtml} />
+        </View>
+      ) : null}
       {floatingText ? (
         <TextInput
           testID="inline-floating-text"
@@ -131,6 +171,17 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
           placeholderTextColor={colors.textSecondary}
           style={[styles.plainText, { color: colors.cardText }, noteFontFamily === undefined ? null : { fontFamily: noteFontFamily }]}
         />
+      ) : bodyMode === 'html' ? (
+        <View testID="inline-html-editor" style={styles.htmlEditor}>
+          <TextField testID="inline-html-source" label="Código HTML del cuerpo" value={htmlDraft} onChangeText={changeHtml} multiline fontFamily={mono} />
+          {htmlIssue ? (
+            <Text testID="inline-html-error" accessibilityLiveRegion="assertive" style={[styles.modeHint, { color: colors.danger }]}>{htmlIssue}</Text>
+          ) : null}
+          <View style={styles.modeRow}>
+            <ActionButton label="Aplicar HTML" accessibilityLabel="Validar y aplicar el código HTML" tone="primary" onPress={applyHtml} />
+            <ActionButton label="Descartar" accessibilityLabel="Descartar los cambios del código HTML" onPress={discardHtml} />
+          </View>
+        </View>
       ) : visualDocument ? (
         <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily} compact />
       ) : (
@@ -138,12 +189,15 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
           <Text style={[styles.modeHint, { color: colors.textSecondary }]}>Este contenido se edita desde Más opciones.</Text>
         </View>
       )}
-      <View style={styles.footer}>
-        <Text accessibilityLiveRegion="polite" style={[styles.status, { color: problem ? colors.danger : colors.textSecondary }]}>{problem ?? (saving ? 'Guardando…' : 'Los cambios se guardan automáticamente')}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Abrir el editor completo" onPress={advanced} style={[styles.more, { borderColor: colors.border }]}>
-          <Text style={[styles.moreText, { color: colors.cardText }]}>Más opciones</Text>
-        </Pressable>
-      </View>
+      {/* UX7-CONSOLIDATION: el guardado automático correcto es silencioso (mismo criterio que el resto
+          de la app desde UX7-LAYOUT-CORRECTION) — esta fila solo aparece ante un error real, nunca
+          como mensaje rutinario. «Más opciones»/«Editar completo» ya vive en la cabecera (icono
+          expandir); repetirlo aquí abajo desperdiciaba una fila entera para la misma acción. */}
+      {problem ? (
+        <View style={styles.footer}>
+          <Text accessibilityLiveRegion="assertive" style={[styles.status, { color: colors.danger }]}>{problem}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -153,6 +207,8 @@ const styles = StyleSheet.create({
   bar: { height: 44, borderBottomWidth: 2, paddingLeft: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
   eyebrow: { flex: 1, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   modeHint: { fontSize: 11, lineHeight: 16 },
+  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
+  htmlEditor: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
   iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
   plainText: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 10, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
   unsupportedContent: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8 },

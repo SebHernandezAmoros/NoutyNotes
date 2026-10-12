@@ -1,5 +1,5 @@
 import { EMPTY_HISTORY, ReactiveWorkspaceEditor, recordStep } from '@noutynotes/application';
-import type { ReactiveSaveStatus, ReactiveWorkspaceSnapshot, UndoHistory, WorkspaceStorage, WorkspaceStorageResult } from '@noutynotes/application';
+import type { ReactiveSaveStatus, ReactiveWorkspaceSnapshot, UndoHistory, WorkspaceStorage, WorkspaceStorageIssue, WorkspaceStorageResult } from '@noutynotes/application';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
 import { useLocale } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -52,6 +52,7 @@ export function useWorkspaceEditor(id: string | undefined) {
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<ReactiveSaveStatus>('saved');
   const [pendingCount, setPendingCount] = useState(0);
+  const [saveIssues, setSaveIssues] = useState<readonly WorkspaceStorageIssue[]>([]);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const mounted = useRef(false);
   const reactive = useRef<ReactiveWorkspaceEditor | null>(null);
@@ -76,6 +77,7 @@ export function useWorkspaceEditor(id: string | undefined) {
     setRevision(snapshot.revision);
     setSaveState(snapshot.status);
     setPendingCount(snapshot.pendingCount);
+    setSaveIssues(snapshot.issues);
     setSaving(snapshot.status === 'saving');
   }, []);
 
@@ -209,7 +211,7 @@ export function useWorkspaceEditor(id: string | undefined) {
   const flush = useCallback(async () => (await reactive.current?.flush())?.ok ?? true, []);
 
   return {
-    view, feedback, saving, saveState, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal, flush, revision,
+    view, feedback, saving, saveState, saveIssues, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal, flush, revision,
     undoLabel: steps.past.at(-1)?.label ?? null,
     redoLabel: steps.future.at(-1)?.label ?? null,
   };
