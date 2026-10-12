@@ -260,6 +260,7 @@ export function CanvasCard(props: CanvasCardProps) {
     && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);
   const shape = type?.base === 'shape';
   const connector = type?.base === 'connector';
+  const note = type?.base === 'note';
   const connections = workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length;
   const hint = connectHints[connectRole];
   const borderColor = colliding ? colors.danger : selected || focused || connectRole === 'source' ? colors.selection : colors.border;
@@ -318,8 +319,11 @@ export function CanvasCard(props: CanvasCardProps) {
   const headerColor = image ? colors.headerImage : colors.headerNote;
   const icon = card.icon ?? miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
-  // Con los controles ocupando la cabecera, si no cabe «001 // TIPO» se muestra solo el número.
-  const tabLabel = box.width - props.reserveRight - 16 >= 110 ? `${number3} // ${(type?.label ?? 'Tarjeta').toUpperCase()}` : number3;
+  // El nombre de una Nota es metadato: la pestaña lo identifica de forma compacta y truncable, sin
+  // convertirlo en un segundo encabezado encima del cuerpo. Los demás tipos conservan su etiqueta.
+  const tabLabel = note
+    ? `${number3} // ${cardDisplayTitle(card) || type?.label || 'Nota'}`
+    : box.width - props.reserveRight - 16 >= 110 ? `${number3} // ${(type?.label ?? 'Tarjeta').toUpperCase()}` : number3;
   const accessibilityHint = connectRole === 'connect' ? `Conectar ${connectSourceName} con esta tarjeta`
     : connectRole === 'disconnect' ? `Desconectar ${connectSourceName} de esta tarjeta`
       : connectRole === 'source' ? 'Cancelar la conexión' : 'Selecciona la tarjeta; doble toque para editar; arrastra para mover';
@@ -363,7 +367,7 @@ export function CanvasCard(props: CanvasCardProps) {
           </View>
         ) : unifiedFloating && display === 'expanded' ? (
           <View testID={`unified-content-${card.id}`} style={[styles.floatingTextWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
-            {presentation.title === 'visible' && cardDisplayTitle(card) ? (
+            {!note && presentation.title === 'visible' && cardDisplayTitle(card) ? (
               card.titleRichText ? (
                 // ADR 0030: el título mantiene la tipografía del sistema, no la elegida para las notas.
                 <BasicRichTextPreview document={{ schemaVersion: 1, blocks: [{ type: 'paragraph', content: card.titleRichText }] }} numberOfLines={3}
@@ -417,7 +421,7 @@ export function CanvasCard(props: CanvasCardProps) {
               </View>
             </View>
             <View style={styles.body}>
-              {presentation.title === 'visible' && cardDisplayTitle(card) ? (
+              {!note && presentation.title === 'visible' && cardDisplayTitle(card) ? (
                 <Text
                   numberOfLines={lowZoom ? 3 : 2}
                   style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}

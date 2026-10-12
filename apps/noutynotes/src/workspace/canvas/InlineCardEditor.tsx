@@ -5,11 +5,9 @@ import { useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { ActionButton } from '../../components/controls';
 import { AppIcon } from '../../components/AppIcon';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import { RichTextEditor } from '../RichTextEditor';
-import { isPlaceholderTitle } from '../titlePlaceholders';
 import type { ScreenBox } from './cardChrome';
 
 interface InlineCardEditorProps {
@@ -28,9 +26,9 @@ interface InlineCardEditorProps {
 export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
-  const [title, setTitle] = useState(initialDraft?.title ?? cardTitleText(card));
+  const [title] = useState(initialDraft?.title ?? cardTitleText(card));
   const [content, setContent] = useState(initialDraft?.content ?? card.content ?? '');
-  const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
+  const [titleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
     schemaVersion: 1, blocks: [{ type: 'paragraph', content: (initialDraft?.title ?? cardTitleText(card)) ? [{ type: 'text', text: initialDraft?.title ?? cardTitleText(card) }] : [] }],
   }));
   const floatingText = card.typeId === 'texto-flotante';
@@ -43,14 +41,8 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
   });
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  // UX7-REFINEMENT-CORRECTION: el título no es una segunda superficie editorial obligatoria — en una
-  // nota nueva (título todavía en su marcador de posición del preset) empieza colapsado detrás de una
-  // acción compacta; una nota con un título real ya escrito lo conserva visible, igual que en el
-  // Inspector completo (`CardInspector.tsx`, misma heurística `isPlaceholderTitle`).
-  const [titleOpen, setTitleOpen] = useState(() => {
-    const initial = (initialDraft?.title ?? cardTitleText(card)).trim();
-    return initial !== '' && !isPlaceholderTitle(initial);
-  });
+  // UX7-VISUAL-FINALIZATION: el título se conserva en la sesión y en el guardado, pero se edita como
+  // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
     const encoded = richTextCodec.serialize(document);
@@ -125,31 +117,6 @@ export function InlineCardEditor({ card, box, richTextCodec, noteFontFamily, ini
           <AppIcon name="close" size={18} color={colors.headerText} />
         </Pressable>
       </View>
-      {!floatingText ? (titleOpen ? (
-        <View style={[styles.titleRow, { borderColor: colors.gridLine }]}>
-          <TextInput
-            testID="inline-card-title"
-            accessibilityLabel="Título de la tarjeta"
-            value={title}
-            onChangeText={(value) => {
-              const document: RichTextDocument = { schemaVersion: 1, blocks: [{ type: 'paragraph', content: value ? [{ type: 'text', text: value }] : [] }] };
-              setTitle(value); setTitleDocument(document); onDraftChange({ cardId: card.id, title: value, content, titleDocument: document });
-            }}
-            onBlur={() => { void persist(); }}
-            placeholder="Título"
-            placeholderTextColor={colors.textSecondary}
-            style={[styles.title, { color: colors.cardText }]}
-          />
-          <ActionButton testID="inline-title-toggle" label="Listo" accessibilityLabel="Terminar de editar el título" onPress={() => setTitleOpen(false)} />
-        </View>
-      ) : (
-        <View style={[styles.titleCollapsed, { borderColor: colors.gridLine }]}>
-          <ActionButton testID="inline-title-toggle"
-            label={title.trim() ? (title.trim().length > 32 ? `${title.trim().slice(0, 32)}…` : title.trim()) : 'Editar título'}
-            accessibilityLabel={title.trim() ? `Editar el título de la tarjeta: ${title.trim()}` : 'Editar el título de la tarjeta'}
-            onPress={() => setTitleOpen(true)} />
-        </View>
-      )) : null}
       {floatingText ? (
         <TextInput
           testID="inline-floating-text"
@@ -186,9 +153,6 @@ const styles = StyleSheet.create({
   eyebrow: { flex: 1, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   modeHint: { fontSize: 11, lineHeight: 16 },
   iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6, paddingVertical: 4, borderBottomWidth: 1 },
-  title: { flex: 1, minWidth: 0, height: 36, paddingHorizontal: 6, fontSize: 15, lineHeight: 20, fontWeight: '700' },
-  titleCollapsed: { paddingHorizontal: 6, paddingVertical: 4, borderBottomWidth: 1 },
   plainText: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 10, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
   unsupportedContent: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8 },
   footer: { minHeight: 38, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 8 },

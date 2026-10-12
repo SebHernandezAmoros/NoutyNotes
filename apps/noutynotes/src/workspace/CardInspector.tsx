@@ -525,11 +525,10 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // nota. Mismo patrón ya probado en `advancedOpen` (posición/tamaño): agrupados detrás de un único
   // interruptor, cerrado por defecto en escritorio; en la hoja móvil se mantienen siempre visibles
   // (igual que `advancedOpen`/`geometryBlock`), porque ahí no compiten con un panel lateral aparte.
-  // UX7-REFINEMENT-A: el título es una propiedad identificadora, no una segunda superficie editorial
-  // obligatoria — el cuerpo es donde se compone. Una Nota nueva empieza con el título colapsado, detrás
-  // de una acción contextual compacta; una Nota con un título real ya escrito lo conserva visible (no se
-  // oculta contenido existente). Los títulos de marcador de posición de los presets («Nueva nota», «Nuevo
-  // título»…) cuentan como «sin título real» para esta decisión visual — nadie los escribió a propósito.
+  // UX7-VISUAL-FINALIZATION: el título es metadato plano, no una segunda superficie editorial. Solo se
+  // ofrece en «Más» y puede contraerse allí; el cuerpo conserva toda la composición enriquecida. Un título
+  // real existente permanece accesible y los marcadores de los presets («Nueva nota», «Nuevo título»…)
+  // cuentan como vacíos para decidir el estado inicial del control. El lienzo no lo repite como encabezado.
   const initialTitle = (initialDraft?.title ?? card.title ?? '').trim();
   const [titleEditorOpen, setTitleEditorOpen] = useState(() => initialTitle !== '' && !PLACEHOLDER_TITLES.has(initialTitle));
   const geometryBlock = (
@@ -828,9 +827,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.contentVisibility.section', locale)}</Text>
             <View style={styles.row}>
-              <ActionButton label={t('inspector.contentVisibility.title', locale)} pressed={presentation.title === 'visible'}
+              {cardBase === 'note' ? null : <ActionButton label={t('inspector.contentVisibility.title', locale)} pressed={presentation.title === 'visible'}
                 accessibilityLabel={t('inspector.contentVisibility.title.accessibilityLabel', locale)}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleVisibility: presentation.title === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleVisibility: presentation.title === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />}
               <ActionButton label={t('inspector.contentVisibility.body', locale)} pressed={presentation.body === 'visible'}
                 accessibilityLabel={t('inspector.contentVisibility.body.accessibilityLabel', locale)}
                 onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodyVisibility: presentation.body === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
@@ -850,7 +849,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           retirara el tamaño por ficha; el lienzo y Lista siguen leyendo `titleSize`/`bodySize». */}
       {!shape && !connector ? <View testID="card-text-size-picker" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.textSize.section', locale)}</Text>
-        <View style={styles.row}>
+        {cardBase === 'note' ? null : <View style={styles.row}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.titleRow', locale)}</Text>
           {(['small', 'medium', 'large'] as const).map((size) => (
             <ActionButton key={size} label={t(`inspector.textSize.${size}`, locale)}
@@ -858,7 +857,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               pressed={(card.titleSize ?? 'medium') === size}
               onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleSize: size === 'medium' ? null : size }), { label: 'Apariencia actualizada' }, { reactive: true })} />
           ))}
-        </View>
+        </View>}
         <View style={styles.row}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.textSize.bodyRow', locale)}</Text>
           {(['small', 'medium', 'large'] as const).map((size) => (

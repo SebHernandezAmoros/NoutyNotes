@@ -80,9 +80,9 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
   const [tableColumns, setTableColumns] = useState('3');
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  // UX7-REFINEMENT-CORRECTION: en edición rápida (nota pequeña en el lienzo), enlace/imagen/tabla se
-  // agrupan tras «Más formato» — no caben como botones directos sin desplazar el contenido hacia abajo.
-  // En el Inspector completo (`compact=false`) y en el título (`titleOnly`) no cambia nada.
+  // UX7-VISUAL-FINALIZATION: la edición rápida conserva una sola fila estable. El bloque, negrita y
+  // cursiva quedan directos; listas, enlace, imagen, tabla e historial permanecen en «Más formato».
+  // El Inspector completo (`compact=false`) conserva todas sus acciones visibles.
   const [moreOpen, setMoreOpen] = useState(false);
 
   const readSelection = useCallback(() => {
@@ -247,9 +247,8 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     </Pressable>
   );
 
-  // UX7-REFINEMENT-CORRECTION: en edición rápida (tarjeta pequeña del lienzo), enlace/imagen/tabla y
-  // sus sub-controles se agrupan tras «Más formato» en vez de ocupar la fila principal — negrita,
-  // cursiva, listas, el selector de bloque H1-H6 y deshacer/rehacer siguen directos, como pide el brief.
+  // `compactFormat` afecta únicamente a la representación de la toolbar: no cambia comandos,
+  // documento, selección ni sesión editorial.
   const compactFormat = compact && !titleOnly;
   const tableControls = !titleOnly && inTable ? [
     button('+F', t('editor.visual.table.addRow', locale), false, false, () => editSelectedTable((table) => ({ ...table, rows: [...table.rows, emptyRow(tableWidth(table))] })), 'table-add-row'),
@@ -289,14 +288,14 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
         </select>}
         {button('B', t('editor.visual.bold', locale), bold, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold'); })}
         {button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
-        {titleOnly ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
-        {titleOnly ? null : button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
-        {titleOnly ? null : button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
-        {titleOnly ? null : button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
+        {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
+        {compactFormat ? null : button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
+        {compactFormat ? null : button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
+        {compactFormat ? null : button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
         {compactFormat ? null : linkImageTableControls}
-        <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
-        {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
-        {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
+        {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
+        {compactFormat ? null : button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
+        {compactFormat ? null : button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
         {compactFormat ? (
           <Pressable
             testID="editor-more-format-toggle"
@@ -316,7 +315,13 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
       </View>
       {compactFormat && moreOpen ? (
         <View testID="editor-more-format-row" accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.more.show', locale)} style={styles.toolbar}>
+          {button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
+          {button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
+          {button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
           {linkImageTableControls}
+          <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
+          {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
+          {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
         </View>
       ) : null}
       {linkOpen ? (
@@ -456,7 +461,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
   }));
 
   return (
-    <View testID="web-rich-text-editor" style={[styles.shell, { borderColor: colors.border, backgroundColor: colors.cardSurface }]}>
+    <View testID="web-rich-text-editor" style={[styles.shell, compact ? styles.shellCompact : null, { borderColor: colors.border, backgroundColor: colors.cardSurface }]}>
       <style>{`
         .nouty-h1,.nouty-h2,.nouty-h3,.nouty-h4,.nouty-h5,.nouty-h6{font-weight:800;margin:0 0 .35em}
         .nouty-h1{font-size:2em}.nouty-h2{font-size:1.65em}.nouty-h3{font-size:1.4em}.nouty-h4{font-size:1.2em}.nouty-h5{font-size:1.05em}.nouty-h6{font-size:1em}
@@ -474,7 +479,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
       <LexicalComposer initialConfig={initialConfig}>
         <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage}>
         <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} compact={compact} />
-        <View style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
+        <View testID="web-rich-text-scroll" style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
             contentEditable={(
               <ContentEditable
@@ -511,7 +516,8 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
 }
 
 const styles = StyleSheet.create({
-  shell: { width: '100%', borderWidth: 2 },
+  shell: { width: '100%', borderWidth: 2, minHeight: 0 },
+  shellCompact: { flex: 1 },
   toolbar: { minHeight: 52, padding: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   toolText: { fontSize: 17 },
@@ -526,7 +532,7 @@ const styles = StyleSheet.create({
   tableLabel: { fontSize: 13, fontWeight: '700' },
   tableInput: { width: 64, height: 44, borderWidth: 2, paddingHorizontal: 10 },
   tableHint: { flexBasis: '100%', fontSize: 12 },
-  editArea: { position: 'relative', minHeight: 220 },
-  editAreaCompact: { minHeight: 96 },
+  editArea: { position: 'relative', minHeight: 220, maxHeight: 420, overflow: 'scroll' },
+  editAreaCompact: { flex: 1, minHeight: 0, maxHeight: undefined },
   status: { minHeight: 30, paddingHorizontal: 10, paddingVertical: 6, fontSize: 12 },
 });
