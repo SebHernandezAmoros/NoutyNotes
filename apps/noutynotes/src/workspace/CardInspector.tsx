@@ -209,7 +209,12 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     publishDraft({ title, content: next, titleDocument });
   };
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const requiresHtml = document.blocks.some((block) => (block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined);
+    const requiresHtml = document.blocks.some((block) =>
+      ((block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined)
+      || (block.type === 'image' && (block.size !== undefined || block.alignment !== undefined))
+      || (block.type === 'table' && [...(block.header ? [block.header] : []), ...block.rows]
+        .some((row) => row.cells.some((cell) => cell.verticalAlignment !== undefined))),
+    );
     const nextHtmlAuthored = htmlAuthored || requiresHtml;
     const encoded = (nextHtmlAuthored ? htmlCodec : richTextCodec).serialize(document);
     if (!encoded.ok || encoded.value === content) return;
@@ -378,6 +383,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }, draft = content): Promise<RichTextImage | null> => {
     const file = await pickImageOrFail();
     if (!file) return null;
+    if (!await flushPendingText()) return null;
     const result = await run((storage, id) => {
       const assets = assetsOf(storage);
       if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
@@ -401,6 +407,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const placeImageDocument = async (place: { kind: 'insert'; afterBlock?: number } | { kind: 'replace'; blockIndex: number }, draft: RichTextDocument): Promise<RichTextImage | null> => {
     const file = await pickImageOrFail();
     if (!file) return null;
+    if (!await flushPendingText()) return null;
     const result = await run((storage, id) => {
       const assets = assetsOf(storage);
       if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
@@ -799,6 +806,15 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
               <ActionButton label={t('inspector.contentLayout.banner', locale)} pressed={presentation.layout === 'banner'}
                 onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'banner' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
             </View>
+            {cardBase === 'note' ? <>
+              <Text style={[styles.hint, { color: colors.textSecondary }]}>Alineación vertical del cuerpo</Text>
+              <View testID="note-vertical-alignment" style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Alineación vertical del cuerpo de la Nota">
+                {(['top', 'center', 'bottom'] as const).map((alignment) => <ActionButton key={alignment}
+                  label={alignment === 'top' ? 'Arriba' : alignment === 'center' ? 'Centro' : 'Abajo'}
+                  pressed={(card.noteVerticalAlignment ?? 'top') === alignment}
+                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { noteVerticalAlignment: alignment === 'top' ? null : alignment }), { label: 'Alineación vertical actualizada' }, { reactive: true })} />)}
+              </View>
+            </> : null}
           </>
         ) : null}
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.frame.hint', locale)}</Text>

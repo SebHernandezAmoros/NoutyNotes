@@ -48,7 +48,10 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
   return (
     <View testID={testID} style={[styles.wrap, { maxHeight: Math.max(0, height) }]}>
       {preview.document.blocks.map((block, blockIndex) => block.type === 'image' ? (
-        <View key={blockIndex} style={sideways ? styles.imageRow : styles.imageBlock}>
+        <View key={blockIndex} style={[sideways ? styles.imageRow : styles.imageBlock, {
+          width: block.size === 'small' ? '25%' : block.size === 'medium' ? '50%' : block.size === 'large' ? '75%' : '100%',
+          alignSelf: block.alignment === 'left' ? 'flex-start' : block.alignment === 'right' ? 'flex-end' : 'center',
+        }]}>
           {position === 'top' || position === 'left' ? captionNode(block, blockIndex) : null}
           {images.get(block.assetRef) ? (
             <Image

@@ -63,7 +63,10 @@ function RichNoteReaderNative(props: {
       </View>
     );
     return (
-      <View style={sideways ? styles.imageRow : styles.imageBlock}>
+      <View style={[sideways ? styles.imageRow : styles.imageBlock, {
+        width: block.size === 'small' ? '25%' : block.size === 'medium' ? '50%' : block.size === 'large' ? '75%' : '100%',
+        alignSelf: block.alignment === 'left' ? 'flex-start' : block.alignment === 'right' ? 'flex-end' : 'center',
+      }]}>
         {position === 'top' || position === 'left' ? captionNode : null}
         {images.get(block.assetRef) ? (
           <Image

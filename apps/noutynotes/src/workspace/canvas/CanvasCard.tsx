@@ -461,6 +461,11 @@ export function CanvasCard(props: CanvasCardProps) {
               </View>
             </View>
             <View style={styles.body}>
+              <View testID={`card-body-content-${card.id}`} style={[styles.bodyContent, {
+                justifyContent: fullReader || overflow.hiddenLines > 0 ? 'flex-start'
+                  : card.noteVerticalAlignment === 'center' ? 'center'
+                    : card.noteVerticalAlignment === 'bottom' ? 'flex-end' : 'flex-start',
+              }]}>
               {!note && presentation.title === 'visible' && cardDisplayTitle(card) ? (
                 <Text
                   numberOfLines={lowZoom ? 3 : 2}
@@ -543,6 +548,7 @@ export function CanvasCard(props: CanvasCardProps) {
                   {`+${overflow.hiddenLines} ${overflow.hiddenLines === 1 ? 'línea' : 'líneas'} más`}
                 </Text>
               ) : null}
+              </View>
               {!lowZoom && tags.length > 0 ? (
                 // Pie de etiquetas (ADR 0019): hasta tres y el resto como «+n»; el nombre completo va en el inspector.
                 <Text testID={`card-tags-${card.id}`} numberOfLines={1} style={[styles.tags, { color: colors.cardText }]}>
@@ -634,6 +640,7 @@ const styles = StyleSheet.create({
   collapsedTitle: { flexShrink: 1, fontSize: 15, fontWeight: '800' },
   headerText: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   body: { flex: 1, padding: 8, gap: 6 },
+  bodyContent: { flex: 1, minHeight: 0, gap: 6 },
   readerShell: { flex: 1, minHeight: 0 },
   title: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
   floatingTitleWrap: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 36, paddingBottom: 8 },

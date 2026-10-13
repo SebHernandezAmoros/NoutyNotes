@@ -100,7 +100,7 @@ describe('adaptador Lexical de UX7 P04/P07', () => {
       schemaVersion: 1,
       blocks: [
         { type: 'paragraph', content: [{ type: 'text', text: 'Antes' }] },
-        { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Plano', caption: [{ type: 'text', text: 'Primera leyenda', marks: ['italic'] }] },
+        { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Plano', caption: [{ type: 'text', text: 'Primera leyenda', marks: ['italic'] }], size: 'medium', alignment: 'right' },
         { type: 'paragraph', content: [{ type: 'text', text: 'Entre imágenes' }] },
         { type: 'image', assetRef: 'assets/images/dos.png' as AssetRef, alt: 'Mapa' },
       ],
@@ -130,7 +130,7 @@ describe('adaptador Lexical de UX7 P04/P07', () => {
           { content: [{ type: 'text', text: 'Fecha' }] },
         ] },
         rows: [
-          { cells: [{ content: [{ type: 'text', text: 'Idea' }] }, { content: [{ type: 'text', text: 'Activa' }] }, { content: [] }] },
+          { cells: [{ content: [{ type: 'text', text: 'Idea' }], verticalAlignment: 'center' }, { content: [{ type: 'text', text: 'Activa' }] }, { content: [] }] },
           { cells: [{ content: [] }, { content: [] }, { content: [] }] },
         ],
       }],

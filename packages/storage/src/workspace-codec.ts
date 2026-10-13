@@ -53,15 +53,16 @@ function cardDocument(card: Card): GeneratedDocument {
   const hasShapeStyle = card.shapeKind !== undefined || card.shapeFill !== undefined || card.shapeStroke !== undefined || card.shapeStrokeWidth !== undefined;
   const hasConnectorStyle = card.connectorColor !== undefined || card.connectorWidth !== undefined || card.connectorDash !== undefined || card.connectorArrows !== undefined || card.connectorDirection !== undefined || card.connectorStartCardId !== undefined || card.connectorEndCardId !== undefined;
   const hasUnifiedContent = card.titleRichText !== undefined || card.titleVisibility !== undefined || card.bodyVisibility !== undefined || card.contentLayout !== undefined;
+  const hasVerticalAlignment = card.noteVerticalAlignment !== undefined;
   const html = card.contentDocument === undefined ? null : serializeRichTextHtml(card.contentDocument);
   if (html && !html.ok) throw new Error('Workspace validado con contenido no representable por HTML seguro v1.');
   return markdownDocument(compact({
-    schemaVersion: card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
+    schemaVersion: hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     id: card.id, typeId: card.typeId, title: card.title, titleRichText: card.titleRichText,
     fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
     boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
     titleSize: card.titleSize, bodySize: card.bodySize, captionPosition: card.captionPosition, textAlign: card.textAlign, textColor: card.textColor,
-    titleVisibility: card.titleVisibility, bodyVisibility: card.bodyVisibility, contentLayout: card.contentLayout,
+    titleVisibility: card.titleVisibility, bodyVisibility: card.bodyVisibility, contentLayout: card.contentLayout, noteVerticalAlignment: card.noteVerticalAlignment,
     shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth,
     connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
     connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
@@ -80,7 +81,7 @@ function trashData(entry: TrashedCard): unknown {
       tags: card.tags?.length ? card.tags : undefined, createdAt: card.createdAt, icon: card.icon,
       boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
       titleSize: card.titleSize, bodySize: card.bodySize, captionPosition: card.captionPosition, textAlign: card.textAlign, textColor: card.textColor,
-      titleVisibility: card.titleVisibility, bodyVisibility: card.bodyVisibility, contentLayout: card.contentLayout,
+      titleVisibility: card.titleVisibility, bodyVisibility: card.bodyVisibility, contentLayout: card.contentLayout, noteVerticalAlignment: card.noteVerticalAlignment,
       shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth,
       content: card.content, contentDocument: card.contentDocument,
       connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
@@ -273,7 +274,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -295,6 +296,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     const hasConnectorStyle = front.connectorColor !== undefined || front.connectorWidth !== undefined || front.connectorDash !== undefined || front.connectorArrows !== undefined || front.connectorDirection !== undefined || front.connectorStartCardId !== undefined || front.connectorEndCardId !== undefined;
     const hasUnifiedContent = front.titleRichText !== undefined || front.titleVisibility !== undefined || front.bodyVisibility !== undefined || front.contentLayout !== undefined;
     const hasHtml = front.contentFormat !== undefined || front.contentVersion !== undefined;
+    const hasVerticalAlignment = front.noteVerticalAlignment !== undefined;
     if (hasHtml && front.contentFormat !== HTML_CONTENT_FORMAT) {
       issues.push(storageIssue('invalid-document', `${file}#contentFormat`, 'Formato de contenido no admitido.'));
       continue;
@@ -312,7 +314,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(...parsedHtml.issues.map((found) => storageIssue('invalid-document', `${file}#body.${found.path}`, found.message)));
       continue;
     }
-    const expected = hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
+    const expected = hasVerticalAlignment ? 13 : hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -322,7 +324,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       id, typeId: front.typeId, title: front.title, titleRichText: front.titleRichText, fields: front.fields, assetRefs: front.assetRefs, tags: front.tags, createdAt: front.createdAt,
       icon: front.icon, boardTargetId: front.boardTargetId, frameOverride: front.frameOverride,
       titleSize: front.titleSize, bodySize: front.bodySize, captionPosition: front.captionPosition, textAlign: front.textAlign, textColor: front.textColor,
-      titleVisibility: front.titleVisibility, bodyVisibility: front.bodyVisibility, contentLayout: front.contentLayout,
+      titleVisibility: front.titleVisibility, bodyVisibility: front.bodyVisibility, contentLayout: front.contentLayout, noteVerticalAlignment: front.noteVerticalAlignment,
       shapeKind: front.shapeKind, shapeFill: front.shapeFill, shapeStroke: front.shapeStroke, shapeStrokeWidth: front.shapeStrokeWidth,
       connectorColor: front.connectorColor, connectorWidth: front.connectorWidth, connectorDash: front.connectorDash, connectorArrows: front.connectorArrows,
       connectorDirection: front.connectorDirection, connectorStartCardId: front.connectorStartCardId, connectorEndCardId: front.connectorEndCardId,

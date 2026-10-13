@@ -14,6 +14,9 @@ import type {
   RichTextLeaf,
   RichTextList,
   RichTextMark,
+  RichTextImageAlignment,
+  RichTextImageSize,
+  RichTextVerticalAlignment,
   RichTextTableRow,
 } from '@noutynotes/domain';
 import type { RichTextCodec, RichTextCodecResult } from '@noutynotes/application';
@@ -256,7 +259,11 @@ function parseList(node: HtmlNode): RichTextList {
 }
 
 function parseFigure(node: HtmlNode): RichTextBlock {
-  exactAttrs(node, []);
+  exactAttrs(node, ['data-nouty-image-size', 'data-nouty-image-align']);
+  const size = node.attrs['data-nouty-image-size'];
+  const alignment = node.attrs['data-nouty-image-align'];
+  if (size !== undefined && !['small', 'medium', 'large', 'full'].includes(size)) throw new HtmlCodecError('html.figure[data-nouty-image-size]', 'Tamaño de imagen no admitido.');
+  if (alignment !== undefined && !['left', 'center', 'right'].includes(alignment)) throw new HtmlCodecError('html.figure[data-nouty-image-align]', 'Alineación de imagen no admitida.');
   const children = nodesOnly(node.children, 'html.figure');
   if (children.length < 1 || children.length > 2 || children[0]?.tag !== 'img' || (children[1] && children[1].tag !== 'figcaption')) {
     throw new HtmlCodecError('html.figure', 'Figure debe contener img y una leyenda opcional.');
@@ -269,6 +276,8 @@ function parseFigure(node: HtmlNode): RichTextBlock {
   if (caption) exactAttrs(caption, []);
   return {
     type: 'image', assetRef: image.attrs.src, alt: image.attrs.alt,
+    ...(size ? { size: size as RichTextImageSize } : {}),
+    ...(alignment ? { alignment: alignment as RichTextImageAlignment } : {}),
     ...(caption ? { caption: inlineContent(caption.children) } : {}),
   };
 }
@@ -277,7 +286,12 @@ function parseRow(node: HtmlNode, cellTag: 'th' | 'td'): RichTextTableRow {
   exactAttrs(node, []);
   const cells = nodesOnly(node.children, 'html.tr');
   if (cells.length === 0 || cells.some((cell) => cell.tag !== cellTag)) throw new HtmlCodecError('html.tr', `La fila debe contener celdas ${cellTag}.`);
-  return { cells: cells.map((cell) => { exactAttrs(cell, []); return { content: inlineContent(cell.children) }; }) };
+  return { cells: cells.map((cell) => {
+    exactAttrs(cell, ['data-nouty-valign']);
+    const verticalAlignment = cell.attrs['data-nouty-valign'];
+    if (verticalAlignment !== undefined && !['top', 'center', 'bottom'].includes(verticalAlignment)) throw new HtmlCodecError(`html.${cell.tag}[data-nouty-valign]`, 'Alineación vertical no admitida.');
+    return { content: inlineContent(cell.children), ...(verticalAlignment ? { verticalAlignment: verticalAlignment as RichTextVerticalAlignment } : {}) };
+  }) };
 }
 
 function parseTable(node: HtmlNode): RichTextBlock {
@@ -374,7 +388,7 @@ function serializeList(list: RichTextList): string {
 }
 
 function serializeRow(row: RichTextTableRow, cell: 'th' | 'td'): string {
-  return `<tr>${row.cells.map((item) => `<${cell}>${serializeInlines(item.content)}</${cell}>`).join('')}</tr>`;
+  return `<tr>${row.cells.map((item) => `<${cell}${item.verticalAlignment ? ` data-nouty-valign="${item.verticalAlignment}"` : ''}>${serializeInlines(item.content)}</${cell}>`).join('')}</tr>`;
 }
 
 function serializeBlock(block: RichTextBlock, index: number): string {
@@ -387,7 +401,7 @@ function serializeBlock(block: RichTextBlock, index: number): string {
     case 'list': return serializeList(block);
     case 'image':
       if (!safeAsset(block.assetRef)) throw new HtmlCodecError(`document.blocks[${index}].assetRef`, 'La imagen debe permanecer dentro de assets/.');
-      return `<figure><img alt="${escapeAttribute(block.alt)}" src="${escapeAttribute(block.assetRef)}">${
+      return `<figure${block.size ? ` data-nouty-image-size="${block.size}"` : ''}${block.alignment ? ` data-nouty-image-align="${block.alignment}"` : ''}><img alt="${escapeAttribute(block.alt)}" src="${escapeAttribute(block.assetRef)}">${
         block.caption === undefined ? '' : `<figcaption>${serializeInlines(block.caption)}</figcaption>`}</figure>`;
     case 'table': return `<table>${block.header ? `<thead>${serializeRow(block.header, 'th')}</thead>` : ''}<tbody>${block.rows.map((row) => serializeRow(row, 'td')).join('')}</tbody></table>`;
     case 'opaque-markdown': throw new HtmlCodecError(`document.blocks[${index}]`, 'HTML v1 no admite bloques Markdown opacos.');

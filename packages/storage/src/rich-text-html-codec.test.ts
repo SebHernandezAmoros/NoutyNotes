@@ -60,6 +60,17 @@ describe('HTML seguro v1 ↔ RichTextDocument (P18-E2)', () => {
     expect(problems(parseRichTextHtml('<p data-nouty-align="left; color:red">x</p>'))).toEqual(['invalid-html@html.p[data-nouty-align]']);
   });
 
+  it('conserva tamaño y alineación de imagen y alineación vertical de celda con atributos enumerados', () => {
+    const source = '<figure data-nouty-image-size="medium" data-nouty-image-align="right"><img alt="Plano" src="assets/images/uno.png"></figure>\n<table><tbody><tr><td data-nouty-valign="bottom">Final</td></tr></tbody></table>';
+    const parsed = valueOf(parseRichTextHtml(source));
+    expect(parsed.blocks).toEqual([
+      { type: 'image', assetRef: ref('assets/images/uno.png'), alt: 'Plano', size: 'medium', alignment: 'right' },
+      { type: 'table', rows: [{ cells: [{ content: [{ type: 'text', text: 'Final' }], verticalAlignment: 'bottom' }] }] },
+    ]);
+    expect(valueOf(serializeRichTextHtml(parsed))).toBe(source);
+    expect(problems(parseRichTextHtml('<figure data-nouty-image-size="calc(1px)" ><img alt="x" src="assets/images/uno.png"></figure>'))[0]).toBe('invalid-html@html.figure[data-nouty-image-size]');
+  });
+
   it.each([
     ['script', '<p>bien</p><script>alert(1)</script>'],
     ['evento', '<p onclick="alert(1)">texto</p>'],

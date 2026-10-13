@@ -20,6 +20,12 @@ export type RichTextHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export type RichTextListStyle = 'bullet' | 'ordered' | 'checklist';
 export const richTextAlignments = ['left', 'center', 'right', 'justify'] as const;
 export type RichTextAlignment = (typeof richTextAlignments)[number];
+export const richTextVerticalAlignments = ['top', 'center', 'bottom'] as const;
+export type RichTextVerticalAlignment = (typeof richTextVerticalAlignments)[number];
+export const richTextImageSizes = ['small', 'medium', 'large', 'full'] as const;
+export type RichTextImageSize = (typeof richTextImageSizes)[number];
+export const richTextImageAlignments = ['left', 'center', 'right'] as const;
+export type RichTextImageAlignment = (typeof richTextImageAlignments)[number];
 
 export interface RichTextDocument {
   readonly schemaVersion: typeof RICH_TEXT_SCHEMA_VERSION;
@@ -76,10 +82,13 @@ export interface RichTextImage {
   readonly assetRef: AssetRef;
   readonly alt: string;
   readonly caption?: readonly RichTextInline[];
+  readonly size?: RichTextImageSize;
+  readonly alignment?: RichTextImageAlignment;
 }
 
 export interface RichTextTableCell {
   readonly content: readonly RichTextInline[];
+  readonly verticalAlignment?: RichTextVerticalAlignment;
 }
 
 export interface RichTextTableRow {
@@ -110,10 +119,10 @@ const documentKeys = ['schemaVersion', 'blocks'];
 const documentPath = 'document';
 const paragraphKeys = ['type', 'alignment', 'content'];
 const headingKeys = ['type', 'level', 'alignment', 'content'];
-const imageKeys = ['type', 'assetRef', 'alt', 'caption'];
+const imageKeys = ['type', 'assetRef', 'alt', 'caption', 'size', 'alignment'];
 const tableKeys = ['type', 'header', 'rows'];
 const tableRowKeys = ['cells'];
-const tableCellKeys = ['content'];
+const tableCellKeys = ['content', 'verticalAlignment'];
 const opaqueKeys = ['type', 'source'];
 const textKeys = ['type', 'text', 'marks'];
 const breakKeys = ['type'];
@@ -247,6 +256,7 @@ function collectTableRowIssues(input: unknown, path: string, issues: DomainIssue
     }
     checkKnownKeys(cell, tableCellKeys, cellPath, issues);
     collectInlineListIssues(cell.content, `${cellPath}.content`, issues);
+    if (cell.verticalAlignment !== undefined && !richTextVerticalAlignments.includes(cell.verticalAlignment as RichTextVerticalAlignment)) issues.push(issue('invalid-value', `${cellPath}.verticalAlignment`, 'Debe ser "top", "center" o "bottom".'));
   });
   return cells.length;
 }
@@ -282,6 +292,8 @@ function collectBlockIssues(input: unknown, path: string, issues: DomainIssue[])
       checkAssetRef(input.assetRef, `${path}.assetRef`, issues);
       checkText(input.alt, `${path}.alt`, issues, true);
       if (input.caption !== undefined) collectInlineListIssues(input.caption, `${path}.caption`, issues);
+      if (input.size !== undefined && !richTextImageSizes.includes(input.size as RichTextImageSize)) issues.push(issue('invalid-value', `${path}.size`, 'Debe ser "small", "medium", "large" o "full".'));
+      if (input.alignment !== undefined && !richTextImageAlignments.includes(input.alignment as RichTextImageAlignment)) issues.push(issue('invalid-value', `${path}.alignment`, 'Debe ser "left", "center" o "right".'));
       return;
     case 'table': {
       checkKnownKeys(input, tableKeys, path, issues);
@@ -373,7 +385,7 @@ function normalizeList(list: RichTextList): RichTextList {
 }
 
 function normalizeRow(row: RichTextTableRow): RichTextTableRow {
-  return { cells: row.cells.map((cell) => ({ content: normalizeInlines(cell.content) })) };
+  return { cells: row.cells.map((cell) => ({ content: normalizeInlines(cell.content), ...(cell.verticalAlignment ? { verticalAlignment: cell.verticalAlignment } : {}) })) };
 }
 
 function normalizeBlock(block: RichTextBlock): RichTextBlock {

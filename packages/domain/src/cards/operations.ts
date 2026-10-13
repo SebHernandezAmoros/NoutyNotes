@@ -13,8 +13,8 @@ import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
 import {
-  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
-  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type ContentLayout, type ContentVisibility, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
+  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, noteVerticalAlignments, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
+  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type ContentLayout, type ContentVisibility, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type NoteVerticalAlignment, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
 } from './card';
 import { validateRichTextDocument } from '../rich-text/rich-text';
 import type { RichTextDocument, RichTextInline } from '../rich-text/rich-text';
@@ -254,6 +254,7 @@ export interface CardAppearanceChanges {
   readonly titleVisibility?: ContentVisibility | null;
   readonly bodyVisibility?: ContentVisibility | null;
   readonly contentLayout?: ContentLayout | null;
+  readonly noteVerticalAlignment?: NoteVerticalAlignment | null;
   readonly textAlign?: FloatingTextAlign | null;
   readonly textColor?: FloatingTextColor | null;
   readonly shapeKind?: ShapeKind | null;
@@ -269,7 +270,7 @@ export interface CardAppearanceChanges {
   readonly connectorEndCardId?: CardId | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId'];
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'noteVerticalAlignment', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId'];
 
 /** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
@@ -290,6 +291,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const nextTitleVisibility = changes.titleVisibility;
   const nextBodyVisibility = changes.bodyVisibility;
   const nextContentLayout = changes.contentLayout;
+  const nextNoteVerticalAlignment = changes.noteVerticalAlignment;
   const nextTextAlign = changes.textAlign;
   const nextTextColor = changes.textColor;
   const nextShapeKind = changes.shapeKind;
@@ -325,6 +327,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   if (nextTitleVisibility !== undefined && nextTitleVisibility !== null && !contentVisibilities.includes(nextTitleVisibility as ContentVisibility)) return failure([issue('invalid-value', 'changes.titleVisibility', 'Visibilidad desconocida.')]);
   if (nextBodyVisibility !== undefined && nextBodyVisibility !== null && !contentVisibilities.includes(nextBodyVisibility as ContentVisibility)) return failure([issue('invalid-value', 'changes.bodyVisibility', 'Visibilidad desconocida.')]);
   if (nextContentLayout !== undefined && nextContentLayout !== null && !contentLayouts.includes(nextContentLayout as ContentLayout)) return failure([issue('invalid-value', 'changes.contentLayout', 'Composición desconocida.')]);
+  if (nextNoteVerticalAlignment !== undefined && nextNoteVerticalAlignment !== null && !noteVerticalAlignments.includes(nextNoteVerticalAlignment as NoteVerticalAlignment)) return failure([issue('invalid-value', 'changes.noteVerticalAlignment', 'Alineación vertical desconocida.')]);
   if (nextTextAlign !== undefined && nextTextAlign !== null && !floatingTextAlignments.includes(nextTextAlign as FloatingTextAlign)) {
     return failure([issue('invalid-value', 'changes.textAlign', 'Alineación desconocida.')]);
   }
@@ -347,7 +350,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   }
   const {
     icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize,
-    captionPosition: _captionPosition, titleVisibility: _titleVisibility, bodyVisibility: _bodyVisibility, contentLayout: _contentLayout, textAlign: _textAlign, textColor: _textColor,
+    captionPosition: _captionPosition, titleVisibility: _titleVisibility, bodyVisibility: _bodyVisibility, contentLayout: _contentLayout, noteVerticalAlignment: _noteVerticalAlignment, textAlign: _textAlign, textColor: _textColor,
     shapeKind: _shapeKind, shapeFill: _shapeFill, shapeStroke: _shapeStroke, shapeStrokeWidth: _shapeStrokeWidth,
     connectorColor: _connectorColor, connectorWidth: _connectorWidth, connectorDash: _connectorDash, connectorArrows: _connectorArrows, connectorDirection: _connectorDirection,
     connectorStartCardId: _connectorStartCardId, connectorEndCardId: _connectorEndCardId, ...base
@@ -368,6 +371,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
     ...(nextTitleVisibility === undefined ? (card.titleVisibility === undefined ? {} : { titleVisibility: card.titleVisibility }) : nextTitleVisibility === null ? {} : { titleVisibility: nextTitleVisibility as ContentVisibility }),
     ...(nextBodyVisibility === undefined ? (card.bodyVisibility === undefined ? {} : { bodyVisibility: card.bodyVisibility }) : nextBodyVisibility === null ? {} : { bodyVisibility: nextBodyVisibility as ContentVisibility }),
     ...(nextContentLayout === undefined ? (card.contentLayout === undefined ? {} : { contentLayout: card.contentLayout }) : nextContentLayout === null ? {} : { contentLayout: nextContentLayout as ContentLayout }),
+    ...(nextNoteVerticalAlignment === undefined ? (card.noteVerticalAlignment === undefined ? {} : { noteVerticalAlignment: card.noteVerticalAlignment }) : nextNoteVerticalAlignment === null ? {} : { noteVerticalAlignment: nextNoteVerticalAlignment as NoteVerticalAlignment }),
     ...(nextTextAlign === undefined ? (card.textAlign === undefined ? {} : { textAlign: card.textAlign })
       : nextTextAlign === null ? {} : { textAlign: nextTextAlign as FloatingTextAlign }),
     ...(nextTextColor === undefined ? (card.textColor === undefined ? {} : { textColor: card.textColor })

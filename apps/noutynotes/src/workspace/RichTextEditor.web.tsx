@@ -95,6 +95,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
   const [tableCellKey, setTableCellKey] = useState<string | null>(null);
   const [tableRowCount, setTableRowCount] = useState(0);
   const [tableColumnCount, setTableColumnCount] = useState(0);
+  const [tableVerticalAlignment, setTableVerticalAlignment] = useState<'top' | 'center' | 'bottom'>('top');
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const [selectionLink, setSelectionLink] = useState('');
   const [linkHref, setLinkHref] = useState('');
@@ -141,6 +142,8 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     setInTable(insideTable);
     if (!insideTable) setTableMenuOpen(false);
     setTableCellKey(selectedCell ? selectedCell.getKey() : null);
+    const selectedVertical = selectedCell?.getVerticalAlign();
+    setTableVerticalAlignment(selectedVertical === 'middle' ? 'center' : selectedVertical === 'bottom' ? 'bottom' : 'top');
     setTableRowCount(selectedTable ? selectedTable.getChildrenSize() : 0);
     const firstRow = selectedTable?.getFirstChild();
     setTableColumnCount($isTableRowNode(firstRow) ? firstRow.getChildrenSize() : 0);
@@ -268,6 +271,10 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     const isHeader = $isTableCellNode(firstCell) ? firstCell.hasHeader() : false;
     $setTableRowIsHeader(tableNode, 0, !isHeader);
   });
+  const alignTableCell = (alignment: 'top' | 'center' | 'bottom') => withSelectedCell((cellNode) => {
+    cellNode.setVerticalAlign(alignment === 'center' ? 'middle' : alignment === 'bottom' ? 'bottom' : null);
+    setTableVerticalAlignment(alignment);
+  });
   const tableMenuActions: readonly { readonly label: string; readonly action: () => void; readonly disabled?: boolean; readonly key: string }[] = [
     { key: 'row-above', label: t('editor.visual.table.addRowAbove', locale), action: () => insertTableRow(false) },
     { key: 'row-below', label: t('editor.visual.table.addRowBelow', locale), action: () => insertTableRow(true) },
@@ -276,6 +283,9 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     { key: 'remove-row', label: t('editor.visual.table.removeRow', locale), action: deleteTableRow, disabled: tableRowCount <= 1 },
     { key: 'remove-column', label: t('editor.visual.table.removeColumn', locale), action: deleteTableColumn, disabled: tableColumnCount <= 1 },
     { key: 'toggle-header', label: t('editor.visual.table.toggleHeader', locale), action: toggleTableHeader },
+    { key: 'align-top', label: `${tableVerticalAlignment === 'top' ? '✓ ' : ''}Alinear celda arriba`, action: () => alignTableCell('top') },
+    { key: 'align-center', label: `${tableVerticalAlignment === 'center' ? '✓ ' : ''}Centrar celda verticalmente`, action: () => alignTableCell('center') },
+    { key: 'align-bottom', label: `${tableVerticalAlignment === 'bottom' ? '✓ ' : ''}Alinear celda abajo`, action: () => alignTableCell('bottom') },
   ];
   const insertImage = async () => {
     if (!onInsertImage) return;
@@ -692,9 +702,11 @@ const styles = StyleSheet.create({
   compactMoreToolbar: { minHeight: 48, padding: 4, gap: 4 },
   toolbarShellRaised: { position: 'relative', zIndex: 20 },
   toolbarCollapsed: { display: 'none' },
-  tableMenuWrap: { position: 'relative' },
+  tableMenuWrap: { position: 'relative', alignSelf: 'flex-start' },
   tableMenuButton: { height: 44, paddingHorizontal: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  tableMenu: { position: 'absolute', top: 46, left: 0, zIndex: 50, minWidth: 220, borderWidth: 2, paddingVertical: 4 },
+  // El menú participa en el alto de la toolbar: evita que el estado de guardado o el editor, que son
+  // hermanos posteriores, queden físicamente encima e intercepten sus acciones.
+  tableMenu: { position: 'relative', minWidth: 220, borderWidth: 2, paddingVertical: 4 },
   tableMenuItem: { paddingHorizontal: 10, paddingVertical: 10, minHeight: 40, justifyContent: 'center' },
   tableMenuItemText: { fontSize: 13, fontWeight: '700' },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

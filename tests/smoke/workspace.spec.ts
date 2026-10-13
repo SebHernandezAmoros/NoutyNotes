@@ -899,6 +899,11 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await expect(images.first().locator('img')).toBeVisible();
   await images.first().getByLabel(/^Texto alternativo/).fill('Plano general');
   await images.first().getByLabel(/^Leyenda/).fill('Leyenda visible');
+  await images.first().getByRole('button', { name: 'Tamaño pequeño de la imagen' }).click();
+  await expect(images.first().getByTestId('image-layout')).toHaveAttribute('style', /width:\s*25%/);
+  await images.first().getByRole('button', { name: 'Tamaño mediano de la imagen' }).click();
+  await images.first().getByRole('button', { name: 'Alinear imagen a la derecha' }).click();
+  await expect(images.first().getByTestId('image-layout')).toHaveCSS('width', /[1-9]/);
 
   await insert('mapa.png');
   await expect(images).toHaveCount(2);
@@ -919,7 +924,7 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await expect(images).toHaveCount(1);
   await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
   await expect(images.first().getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
-  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await expect(page.getByText('Sin cambios pendientes')).toBeVisible({ timeout: 3_000 });
   await page.screenshot({ path: testInfo.outputPath('p08-rich-images.png'), fullPage: true });
 
   await closeEditor(page);
@@ -929,9 +934,57 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await expect(reopenedImage).toHaveCount(1);
   await expect(reopenedImage.getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
   await expect(reopenedImage.getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
+  await expect(reopenedImage.getByRole('button', { name: 'Tamaño mediano de la imagen' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(reopenedImage.getByRole('button', { name: 'Alinear imagen a la derecha' })).toHaveAttribute('aria-pressed', 'true');
+  await reopenedImage.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('p08-image-layout-reopened.png'), fullPage: true });
+  await closeEditor(page);
+  await openSettings(page);
+  await button(page, 'Usar el tema oscuro').click();
+  await button(page, 'Cerrar configuración').click();
+  await tapCard(page, 1);
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  const darkImage = page.locator('[data-testid^="rich-image-"]');
+  await darkImage.scrollIntoViewIfNeeded();
+  const darkLayoutControl = darkImage.getByRole('button', { name: 'Tamaño mediano de la imagen' });
+  await expect(darkLayoutControl).toHaveAttribute('aria-pressed', 'true');
+  const darkControlContrast = await darkLayoutControl.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { color: style.color, background: style.backgroundColor };
+  });
+  expect(darkControlContrast.color).not.toBe(darkControlContrast.background);
+  await page.screenshot({ path: testInfo.outputPath('p08-image-layout-dark.png'), fullPage: true });
   // La comprobación de los bytes Markdown exactos (línea de imagen y comentario de leyenda) ya no
   // es alcanzable desde aquí: esa vista se retiró en web (P18-E3-B2); la cobertura de persistencia de
   // leyendas e imágenes real por carpeta sigue en folder.spec.ts.
+});
+
+test('alineación vertical de Nota se conserva al cerrar y reabrir sin afectar el acceso al contenido', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Alineación vertical');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const visual = page.getByLabel('Contenido visual');
+  await visual.fill('Contenido alineado abajo');
+  await page.getByTestId('card-inspector-section-appearance').click();
+  await button(page, 'Abajo').click();
+  await expect(button(page, 'Abajo')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+  await expect(page.getByTestId('card-body-content-tarjeta-1')).toHaveCSS('justify-content', 'flex-end');
+  await page.screenshot({ path: testInfo.outputPath('note-vertical-bottom.png'), fullPage: true });
+  await tapCard(page, 1);
+  await page.getByTestId('card-inspector-section-appearance').click();
+  await expect(button(page, 'Abajo')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('card-inspector-section-content').click();
+  const longBody = Array.from({ length: 240 }, (_, index) => `Línea vertical ${index + 1}`).join('\n');
+  await page.getByLabel('Contenido visual').fill(longBody);
+  await expect(page.getByText('Sin cambios pendientes')).toBeVisible({ timeout: 3_000 });
+  await closeEditor(page);
+  await expect(page.getByTestId('card-body-content-tarjeta-1')).toHaveCSS('justify-content', 'flex-start');
+  const reader = page.getByTestId('card-reader-tarjeta-1');
+  await reader.focus();
+  await page.keyboard.press('End');
+  await expect(reader).toContainText('Línea vertical 240');
 });
 
 test('imágenes reales en una nota HTML segura: el cuerpo sigue siendo `contentDocument`, nunca se convierte a Markdown', async ({ page }, testInfo) => {
@@ -986,7 +1039,7 @@ test('imágenes reales en una nota HTML segura: el cuerpo sigue siendo `contentD
   expect(await hasHorizontalOverflow(page)).toBe(false);
 });
 
-test('tabla en una nota HTML segura: insertar y editar celdas es un cambio de Lexical como cualquier otro, sin tocar `content`', async ({ page }) => {
+test('tabla en una nota HTML segura: insertar y editar celdas es un cambio de Lexical como cualquier otro, sin tocar `content`', async ({ page }, testInfo) => {
   // A diferencia de las imágenes (E/S asíncrona fuera de Lexical), insertar/editar una tabla es un
   // comando interno del editor (`INSERT_TABLE_COMMAND`) que ya pasa por el mismo `onChange` consciente
   // de `contentDocument`: se verifica aquí que de verdad no necesita el mismo arreglo que las imágenes.
@@ -1002,18 +1055,24 @@ test('tabla en una nota HTML segura: insertar y editar celdas es un cambio de Le
   await expect(cells).toHaveCount(9);
   await cells.first().click();
   await page.keyboard.type('Nombre');
+  await page.getByTestId('editor-table-menu-toggle').click();
+  await page.getByTestId('editor-table-menu-align-center').click();
+  await expect(cells.first()).toHaveCSS('vertical-align', 'middle');
+  await page.getByTestId('editor-table-menu-toggle').click();
+  await page.screenshot({ path: testInfo.outputPath('table-cell-vertical-center.png'), fullPage: true });
+  await page.getByTestId('editor-table-menu-toggle').click();
   await button(page, 'Guardar texto').click();
-  await expect(feedback(page)).toContainText('Texto guardado', { timeout: 3_000 });
+  await expect(page.getByText('Sin cambios pendientes')).toBeVisible({ timeout: 3_000 });
   await button(page, 'Editar el código HTML del cuerpo').click();
   await expect(page.getByTestId('html-source-input')).toHaveValue(/<p>Antes de la tabla\.<\/p>/);
   await expect(page.getByTestId('html-source-input')).toHaveValue(/<table>[\s\S]*Nombre[\s\S]*<\/table>/);
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/<th data-nouty-valign="center">Nombre<\/th>/);
   await button(page, 'Editar el cuerpo visualmente').click();
   await closeEditor(page);
-  // Sin imagen, una tabla no necesita el visor «mixto» (ese es solo para cuando el legado perdería
-  // estructura, tabla + imagen a la vez): el visor enriquecido genérico ya sabe pintar tablas.
-  const preview = page.getByTestId('rich-note-preview-tarjeta-1');
-  await expect(preview).toContainText('Antes de la tabla.');
-  await expect(preview).toContainText('Nombre');
+  // El lector enriquecido del lienzo conserva la tabla y su alineación después de cerrar.
+  await expect(card(page, 1)).toContainText('Antes de la tabla.');
+  await expect(card(page, 1)).toContainText('Nombre');
+  await expect(card(page, 1).locator('th').first()).toHaveCSS('vertical-align', 'middle');
   await expect(card(page, 1)).not.toContainText('| Nombre |');
 });
 

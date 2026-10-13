@@ -72,7 +72,7 @@ function blockNode(block: RichTextBlock, index: number, props: {
         <tbody>{rows.map((row, rowIndex) => (
           <tr key={rowIndex}>{row.cells.map((cell, cellIndex) => {
             const Cell = block.header && rowIndex === 0 ? 'th' : 'td';
-            return <Cell key={cellIndex} style={{ border: '1px solid currentColor', padding: 4 }}>{inlineNodes(cell.content, `${index}-${rowIndex}-${cellIndex}`)}</Cell>;
+            return <Cell key={cellIndex} style={{ border: '1px solid currentColor', padding: 4, verticalAlign: cell.verticalAlignment === 'center' ? 'middle' : cell.verticalAlignment ?? 'top' }}>{inlineNodes(cell.content, `${index}-${rowIndex}-${cellIndex}`)}</Cell>;
           })}</tr>
         ))}</tbody>
       </table>
@@ -80,10 +80,12 @@ function blockNode(block: RichTextBlock, index: number, props: {
   }
   const source = props.images.get(block.assetRef);
   const caption = block.caption && block.caption.length > 0 ? block.caption : block.alt ? [{ type: 'text' as const, text: block.alt }] : [];
-  const image = source ? <img src={source} alt={block.alt} style={{ width: '100%', height: IMAGE_HEIGHT, objectFit: props.layout === 'banner' ? 'cover' : 'contain', display: 'block' }} />
+  const width = block.size === 'small' ? '25%' : block.size === 'medium' ? '50%' : block.size === 'large' ? '75%' : '100%';
+  const marginInline = block.alignment === 'left' ? '0 auto 0 0' : block.alignment === 'right' ? '0 0 0 auto' : '0 auto';
+  const image = source ? <img src={source} alt={block.alt} style={{ width: '100%', height: 'auto', maxHeight: IMAGE_HEIGHT, objectFit: props.layout === 'banner' ? 'cover' : 'contain', display: 'block' }} />
     : <div role="img" aria-label={`Imagen no disponible: ${block.alt || block.assetRef}`} style={{ height: IMAGE_HEIGHT, display: 'grid', placeItems: 'center', border: '1px solid currentColor' }}>{`▣ ${block.alt || 'Imagen'}`}</div>;
   const captionNode = caption.length > 0 ? <figcaption>{inlineNodes(caption, `${index}-caption`)}</figcaption> : null;
-  return <figure style={{ margin: 0 }}>{props.captionPosition === 'top' || props.captionPosition === 'left' ? captionNode : null}{image}{props.captionPosition === 'bottom' || props.captionPosition === 'right' ? captionNode : null}</figure>;
+  return <figure style={{ margin: marginInline, width, maxWidth: '100%' }}>{props.captionPosition === 'top' || props.captionPosition === 'left' ? captionNode : null}{image}{props.captionPosition === 'bottom' || props.captionPosition === 'right' ? captionNode : null}</figure>;
 }
 
 /** Lector web virtualizado: solo monta los bloques cercanos al scroll y conserva altura total mediante espaciadores. */

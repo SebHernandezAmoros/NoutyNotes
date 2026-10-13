@@ -67,6 +67,7 @@ function createTableRow(row: RichTextTableRow, header: boolean) {
   const rowNode = $createTableRowNode();
   for (const cell of row.cells) {
     const cellNode = $createTableCellNode(header ? TableCellHeaderStates.ROW : TableCellHeaderStates.NO_STATUS);
+    cellNode.setVerticalAlign(cell.verticalAlignment === 'center' ? 'middle' : cell.verticalAlignment === 'bottom' ? 'bottom' : null);
     const paragraph = $createParagraphNode();
     appendInlines(paragraph, cell.content);
     cellNode.append(paragraph);
@@ -184,7 +185,8 @@ function readTableCell(node: ElementNode): RichTextTableCell | null {
     if (content.length > 0) content.push({ type: 'hard-break' });
     content.push(...paragraph);
   }
-  return { content };
+  const vertical = $isTableCellNode(node) ? node.getVerticalAlign() : undefined;
+  return { content, ...(vertical === 'middle' ? { verticalAlignment: 'center' as const } : vertical === 'bottom' ? { verticalAlignment: 'bottom' as const } : {}) };
 }
 
 function readTableRow(node: ElementNode): RichTextTableRow | null {

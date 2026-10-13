@@ -51,6 +51,8 @@ export interface Card {
   readonly bodyVisibility?: ContentVisibility;
   /** Flujo de documento o composición de imágenes tipo banner (P18-C). */
   readonly contentLayout?: ContentLayout;
+  /** Alineación vertical del cuerpo dentro de la Nota. Ausente: arriba. Independiente de tablas. */
+  readonly noteVerticalAlignment?: NoteVerticalAlignment;
   /** Alineación horizontal del texto flotante (ADR 0057). Ausente: izquierda. */
   readonly textAlign?: FloatingTextAlign;
   /** Color semántico portable del texto flotante (ADR 0057). Ausente: color del tema. */
@@ -97,6 +99,8 @@ export type ContentVisibility = (typeof contentVisibilities)[number];
 
 export const contentLayouts = ['document', 'banner'] as const;
 export type ContentLayout = (typeof contentLayouts)[number];
+export const noteVerticalAlignments = ['top', 'center', 'bottom'] as const;
+export type NoteVerticalAlignment = (typeof noteVerticalAlignments)[number];
 
 export function richTextInlineText(inlines: readonly RichTextInline[] | undefined): string {
   return (inlines ?? []).map((inline) => inline.type === 'hard-break' ? '\n'
@@ -226,6 +230,9 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   }
   if (card.contentLayout !== undefined && !contentLayouts.includes(card.contentLayout as ContentLayout)) {
     issues.push(issue('invalid-value', `${path}.contentLayout`, 'Debe ser "document" o "banner".'));
+  }
+  if (card.noteVerticalAlignment !== undefined && !noteVerticalAlignments.includes(card.noteVerticalAlignment as NoteVerticalAlignment)) {
+    issues.push(issue('invalid-value', `${path}.noteVerticalAlignment`, 'Debe ser "top", "center" o "bottom".'));
   }
   if (card.textAlign !== undefined && !floatingTextAlignments.includes(card.textAlign as FloatingTextAlign)) {
     issues.push(issue('invalid-value', `${path}.textAlign`, 'Debe ser "left", "center" o "right".'));

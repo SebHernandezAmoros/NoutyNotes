@@ -1,6 +1,6 @@
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { PrintEntry } from '@noutynotes/application';
-import type { CaptionPosition } from '@noutynotes/domain';
+import type { CaptionPosition, RichTextImage } from '@noutynotes/domain';
 import { parseRichTextMarkdown } from '@noutynotes/storage';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import type { ColorValue } from 'react-native';
@@ -12,7 +12,7 @@ import { markdownExcerpt } from './markdownLists';
 // recorta ni añade «+n bloques más»; este número solo evita que `numberOfLines` trunque un párrafo real.
 const UNBOUNDED_LINES = 9999;
 
-function imageBlock(ref: string, alt: string, images: ReadonlyMap<string, string>, position: CaptionPosition, color: ColorValue, key: string) {
+function imageBlock(ref: string, alt: string, images: ReadonlyMap<string, string>, position: CaptionPosition, color: ColorValue, key: string, layout?: Pick<RichTextImage, 'size' | 'alignment'>) {
   const uri = images.get(ref);
   const sideways = position === 'left' || position === 'right';
   const image = uri ? (
@@ -23,12 +23,13 @@ function imageBlock(ref: string, alt: string, images: ReadonlyMap<string, string
       <Text style={[styles.missingText, { color }]}>{`▣ ${alt || 'Imagen'}`}</Text>
     </View>
   );
-  if (alt === '') return <View key={key} style={styles.imageBlock}>{image}</View>;
+  const layoutStyle = { width: layout?.size === 'small' ? '25%' : layout?.size === 'medium' ? '50%' : layout?.size === 'large' ? '75%' : '100%', alignSelf: layout?.alignment === 'left' ? 'flex-start' : layout?.alignment === 'right' ? 'flex-end' : 'center' } as const;
+  if (alt === '') return <View key={key} style={[styles.imageBlock, layoutStyle]}>{image}</View>;
   const caption = <Text key="caption" style={[styles.caption, { color }, sideways ? styles.captionSide : null]}>{alt}</Text>;
-  if (position === 'top') return <View key={key} style={styles.imageBlock}>{caption}{image}</View>;
-  if (position === 'left') return <View key={key} style={styles.imageRow}>{caption}{image}</View>;
-  if (position === 'right') return <View key={key} style={styles.imageRow}>{image}{caption}</View>;
-  return <View key={key} style={styles.imageBlock}>{image}{caption}</View>;
+  if (position === 'top') return <View key={key} style={[styles.imageBlock, layoutStyle]}>{caption}{image}</View>;
+  if (position === 'left') return <View key={key} style={[styles.imageRow, layoutStyle]}>{caption}{image}</View>;
+  if (position === 'right') return <View key={key} style={[styles.imageRow, layoutStyle]}>{image}{caption}</View>;
+  return <View key={key} style={[styles.imageBlock, layoutStyle]}>{image}{caption}</View>;
 }
 
 /**
@@ -53,7 +54,7 @@ export function PresentationBody({ entry, images, color, fontSize, lineHeight, t
     const inline = new Set<string>(parsed.value.blocks.filter((block) => block.type === 'image').map((block) => block.assetRef));
     const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref, index) => imageBlock(ref, '', images, position, color, `standalone-${index}`));
     const body = parsed.value.blocks.map((block, index) => {
-      if (block.type === 'image') return imageBlock(block.assetRef, block.alt, images, position, color, `block-${index}`);
+      if (block.type === 'image') return imageBlock(block.assetRef, block.alt, images, position, color, `block-${index}`, block);
       return (
         <BasicRichTextPreview key={`block-${index}`} document={{ schemaVersion: parsed.value.schemaVersion, blocks: [block] }}
           numberOfLines={UNBOUNDED_LINES} color={color as string} fontSize={fontSize} lineHeight={lineHeight} testID={`${testID}-block-${index}`} />

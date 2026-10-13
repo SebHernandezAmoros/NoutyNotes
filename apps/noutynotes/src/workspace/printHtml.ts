@@ -5,7 +5,7 @@
  */
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { PrintEntry } from '@noutynotes/application';
-import type { CaptionPosition, RichTextInline, RichTextTable } from '@noutynotes/domain';
+import type { CaptionPosition, RichTextImage, RichTextInline, RichTextTable } from '@noutynotes/domain';
 import { parseRichTextMarkdown, serializeRichTextMarkdown } from '@noutynotes/storage';
 
 import { markdownExcerpt } from './markdownLists';
@@ -25,18 +25,23 @@ const connectionLine = (connection: PrintEntry['connections'][number]) =>
  * de `figcaption` (sin estilo en línea); las otras tres la sustituyen. «left»/«right» convierten la
  * figura en una fila (imagen y leyenda reparten el ancho) en vez de apilar en el presupuesto vertical.
  */
-function imageHtml(ref: string, alt: string, images: ReadonlyMap<string, string>, position: CaptionPosition): string {
+function imageHtml(ref: string, alt: string, images: ReadonlyMap<string, string>, position: CaptionPosition, layout?: Pick<RichTextImage, 'size' | 'alignment'>): string {
   const uri = images.get(ref);
   if (!uri) return '';
   const sideways = position === 'left' || position === 'right';
   const img = `<img src="${escapeHtml(uri)}" alt="${escapeHtml(alt)}"${sideways ? ' style="flex:2;min-width:0;"' : ''} />`;
-  if (alt === '') return `<figure${sideways ? ' style="display:flex;gap:8px;align-items:flex-start;"' : ''}>${img}</figure>`;
+  const width = layout?.size === 'small' ? '25%' : layout?.size === 'medium' ? '50%' : layout?.size === 'large' ? '75%' : '100%';
+  const margin = layout?.alignment === 'left' ? '0 auto 0 0' : layout?.alignment === 'right' ? '0 0 0 auto' : '0 auto';
+  const explicitLayout = layout?.size !== undefined || layout?.alignment !== undefined;
+  const figureStyle = `${explicitLayout ? `width:${width};max-width:100%;margin:${margin};` : ''}${sideways ? 'display:flex;gap:8px;align-items:flex-start;' : ''}`;
+  const figureAttr = figureStyle === '' ? '' : ` style="${figureStyle}"`;
+  if (alt === '') return `<figure${figureAttr}>${img}</figure>`;
   const captionStyle = position === 'top' ? ' style="margin:0 0 4px;"' : sideways ? ' style="flex:1;margin:0;"' : '';
   const caption = `<figcaption${captionStyle}>${escapeHtml(alt)}</figcaption>`;
-  if (position === 'top') return `<figure>${caption}${img}</figure>`;
-  if (position === 'left') return `<figure style="display:flex;gap:8px;align-items:flex-start;">${caption}${img}</figure>`;
-  if (position === 'right') return `<figure style="display:flex;gap:8px;align-items:flex-start;">${img}${caption}</figure>`;
-  return `<figure>${img}${caption}</figure>`;
+  if (position === 'top') return `<figure${figureAttr}>${caption}${img}</figure>`;
+  if (position === 'left') return `<figure${figureAttr}>${caption}${img}</figure>`;
+  if (position === 'right') return `<figure${figureAttr}>${img}${caption}</figure>`;
+  return `<figure${figureAttr}>${img}${caption}</figure>`;
 }
 
 function textHtml(text: string, bodyPx: number, bodyLine: number): string {
@@ -54,9 +59,9 @@ function inlineText(content: readonly RichTextInline[]): string {
 
 function tableHtml(table: RichTextTable): string {
   const header = table.header
-    ? `<thead><tr>${table.header.cells.map((cell) => `<th>${escapeHtml(inlineText(cell.content))}</th>`).join('')}</tr></thead>`
+    ? `<thead><tr>${table.header.cells.map((cell) => `<th${cell.verticalAlignment ? ` style="vertical-align:${cell.verticalAlignment === 'center' ? 'middle' : cell.verticalAlignment};"` : ''}>${escapeHtml(inlineText(cell.content))}</th>`).join('')}</tr></thead>`
     : '';
-  const rows = table.rows.map((row) => `<tr>${row.cells.map((cell) => `<td>${escapeHtml(inlineText(cell.content))}</td>`).join('')}</tr>`).join('');
+  const rows = table.rows.map((row) => `<tr>${row.cells.map((cell) => `<td${cell.verticalAlignment ? ` style="vertical-align:${cell.verticalAlignment === 'center' ? 'middle' : cell.verticalAlignment};"` : ''}>${escapeHtml(inlineText(cell.content))}</td>`).join('')}</tr>`).join('');
   return `<table>${header}<tbody>${rows}</tbody></table>`;
 }
 
@@ -78,7 +83,7 @@ function bodyHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): strin
     const inline = new Set<string>(parsed.value.blocks.filter((block) => block.type === 'image').map((block) => block.assetRef));
     const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images, position));
     const body = parsed.value.blocks.map((block) => {
-      if (block.type === 'image') return imageHtml(block.assetRef, block.alt, images, position);
+      if (block.type === 'image') return imageHtml(block.assetRef, block.alt, images, position, block);
       if (block.type === 'table') return tableHtml(block);
       const encoded = serializeRichTextMarkdown({ schemaVersion: parsed.value.schemaVersion, blocks: [block] });
       return encoded.ok ? textHtml(encoded.value, bodyPx, bodyLine) : '';

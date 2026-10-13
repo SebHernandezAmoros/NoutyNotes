@@ -85,6 +85,24 @@ describe('RichTextDocument (ADR 0053, UX7 P02)', () => {
     })))).toContain('invalid-value@document.blocks[0].alignment');
   });
 
+  it('conserva disposición enumerada de imágenes y alineación vertical independiente de celdas', () => {
+    const document: RichTextDocument = {
+      schemaVersion: 1,
+      blocks: [
+        { type: 'image', assetRef: imageRef(), alt: 'Plano', size: 'medium', alignment: 'right' },
+        { type: 'table', rows: [{ cells: [{ content: [{ type: 'text', text: 'Centro' }], verticalAlignment: 'center' }] }] },
+      ],
+    };
+    expect(validateRichTextDocument(document)).toEqual({ ok: true, value: document });
+    expect(problems(validateRichTextDocument(unsafe<RichTextDocument>({
+      schemaVersion: 1,
+      blocks: [{ type: 'image', assetRef: imageRef(), alt: '', size: '100px', alignment: 'float-left' }],
+    })))).toEqual([
+      'invalid-value@document.blocks[0].size',
+      'invalid-value@document.blocks[0].alignment',
+    ]);
+  });
+
   it('normaliza marcas y une tramos de texto contiguos equivalentes sin tocar bloques opacos', () => {
     const opaque = { type: 'opaque-markdown', source: '<custom exact="yes">' } as const;
     const document = unsafe<RichTextDocument>({
