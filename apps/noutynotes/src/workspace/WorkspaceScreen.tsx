@@ -1716,7 +1716,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         {/* Barra lateral derecha de tableros (ADR 0048): conservada tal como funcionaba antes de
             UX7-CLEANUP, por instrucción explícita — no se sustituye por un botón en la barra de
             herramientas. */}
-        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onActions={setBoardActionsId} /> : null}
+        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onActions={setBoardActionsId} onReturn={() => setProjectsOpen(true)} /> : null}
       </View>
       {workspace ? (
         <>

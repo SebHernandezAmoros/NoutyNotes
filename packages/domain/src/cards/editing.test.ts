@@ -22,8 +22,8 @@ describe('añadir una tarjeta a un board (fase 7)', () => {
     expect(result.cards).toEqual([...validWorkspace().cards, cardC]);
     expect(result.boards[0]?.cardIds).toEqual([ideaA.id, ideaB.id, cardC.id]);
     expect(result.boards[1]).toEqual(validWorkspace().boards[1]);
-    // A ocupa 0..3 y la huella minimizada de B ocupa la columna 4: el primer hueco es x = 5.
-    expect(result.layouts[0]?.placements.at(-1)).toEqual({ cardId: cardC.id, rect: { x: 5, y: 0, w: 4, h: 3 }, display: 'expanded' });
+    // A ocupa 0..3 y la huella minimizada 2×2 de B ocupa 4..5: el primer hueco es x = 6.
+    expect(result.layouts[0]?.placements.at(-1)).toEqual({ cardId: cardC.id, rect: { x: 6, y: 0, w: 4, h: 3 }, display: 'expanded' });
     expect(result.relations).toEqual(validWorkspace().relations);
     expect(validateWorkspace(result).ok).toBe(true);
     expect(validateGridLayout(result.layouts[0]!, DESKTOP_GRID).ok).toBe(true);
@@ -54,8 +54,8 @@ describe('añadir una tarjeta a un board (fase 7)', () => {
   it('devuelve los errores del motor de grilla sin colocar la tarjeta', () => {
     expect(problems(addCard(validWorkspace(), cardC, { boardId: overview, size: { w: 13, h: 1 }, config: DESKTOP_GRID })))
       .toEqual(['out-of-bounds@size']);
-    // Con 5 columnas y 3 filas no queda ningún hueco de 1×3.
-    expect(problems(addCard(validWorkspace(), cardC, { boardId: overview, size: { w: 1, h: 3 }, config: { columns: 5, rows: 3 } })))
+    // Con 6 columnas y 3 filas, A más la huella minimizada 2×2 de B no dejan un hueco de 1×3.
+    expect(problems(addCard(validWorkspace(), cardC, { boardId: overview, size: { w: 1, h: 3 }, config: { columns: 6, rows: 3 } })))
       .toEqual(['no-free-space@size']);
     expect(problems(addCard(validWorkspace(), cardC, { boardId: overview, size: { w: 0, h: 1 }, config: DESKTOP_GRID })))
       .toEqual(['invalid-layout@size.w']);

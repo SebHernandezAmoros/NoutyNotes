@@ -170,7 +170,7 @@ describe('añadir tarjetas (fase 7)', () => {
     expect(workspace.cardTypes.map(({ id: typeId, base }) => `${typeId}:${base}`)).toEqual(['nota:note']);
     expect(workspace.boards).toEqual([{ id: 'principal', title: 'Tablero principal', cardIds: ['tarjeta-1', 'tarjeta-2'] }]);
     expect(workspace.cards).toEqual([
-      { id: 'tarjeta-1', typeId: 'nota', title: 'Nueva nota', content: '', fields: {} },
+      { id: 'tarjeta-1', typeId: 'nota', title: 'Nueva nota', content: '', fields: {}, titleVisibility: 'hidden' },
       { id: 'tarjeta-2', typeId: 'nota', title: 'Imagen', content: '', fields: {}, contentLayout: 'banner' },
     ]);
     expect(workspace.layouts[0]?.placements.map(({ rect }) => rect)).toEqual([{ x: 0, y: 0, w: 4, h: 3 }, { x: 4, y: 0, w: 6, h: 7 }]);
@@ -215,7 +215,7 @@ describe('editar, mover, redimensionar y relacionar a través del puerto (fase 7
     expect(opened.layouts[0]?.placements.find((placement) => placement.cardId === note)?.rect).toMatchObject({ x: 0.25, y: 0.5 });
     const files = ok(storage.exportPackage(workspaceId));
     expect(files['.nouty/layout.yaml']).toContain('schemaVersion: 4');
-    expect(files[`cards/${shortcut}.md`]).toContain('schemaVersion: 4');
+    expect(files[`cards/${shortcut}.md`]).toContain('schemaVersion: 11');
   });
   it('edita título y Markdown y lo conserva al reabrir', async () => {
     const { storage, workspaceId } = await session();

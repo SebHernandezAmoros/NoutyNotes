@@ -43,14 +43,19 @@ export function BoardTabs({ boards, current, onSelect, onCreate, vertical, scrol
 }
 
 /** Escritorio: los tableros viven como pestañas verticales en el borde derecho del lienzo. */
-export function BoardRail({ boards, current, onSelect, onCreate, onActions }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
+export function BoardRail({ boards, current, onSelect, onCreate, onActions, onReturn }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
   readonly onActions: (boardId: BoardId) => void;
+  readonly onReturn: () => void;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   return (
     <ScrollView testID="board-tabs" accessibilityLabel="Tableros" style={[styles.rail, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}
       contentContainerStyle={styles.railContent}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Volver a Proyectos" onPress={onReturn}
+        style={[styles.railReturn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <Text style={[styles.railReturnText, { color: colors.textPrimary }]}>←</Text>
+      </Pressable>
       {boards.map((board, index) => (
         <RailTab key={board.id} number={String(index + 1).padStart(2, '0')} label={board.title} count={board.cardIds.length}
           active={board.id === current} onPress={() => onSelect(board.id)} onActions={() => onActions(board.id)} />
@@ -142,6 +147,8 @@ const styles = StyleSheet.create({
   count: { fontSize: 12, fontWeight: '700' },
   rail: { width: RAIL_WIDTH + 8, flexGrow: 0, borderLeftWidth: 2 },
   railContent: { paddingVertical: 8, paddingLeft: 8, gap: 6 },
+  railReturn: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  railReturnText: { fontSize: 20, lineHeight: 24, fontWeight: '900' },
   railTabWrap: { width: RAIL_WIDTH, height: RAIL_LENGTH, position: 'relative' },
   railTab: { width: RAIL_WIDTH, height: RAIL_LENGTH, borderWidth: 2, overflow: 'hidden' },
   railTurned: {

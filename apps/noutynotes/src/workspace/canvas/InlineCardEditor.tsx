@@ -28,11 +28,12 @@ interface InlineCardEditorProps {
   readonly onDraftChange: (draft: EditableCardDraft) => void;
   readonly onSave: (draft: EditableCardDraft) => Promise<boolean>;
   readonly onAdvanced: () => void;
+  readonly onCollapse: () => void;
   readonly onClose: () => void;
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -149,6 +150,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   }, []);
 
   const close = () => { void persist().then((ok) => { if (ok) onClose(); }); };
+  const collapse = () => { void persist().then((ok) => { if (ok) onCollapse(); }); };
   const advanced = () => { onAdvanced(); };
   return (
     <View
@@ -165,19 +167,9 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     >
       <View style={[styles.bar, { backgroundColor: colors.headerNote, borderColor: colors.border }]}>
         <Text style={[styles.eyebrow, { color: colors.headerText }]}>{toolsCollapsed ? 'EDICIÓN RÁPIDA · HERRAMIENTAS PLEGADAS' : 'EDICIÓN RÁPIDA'}</Text>
-        {!floatingText && Platform.OS === 'web' ? (
-          <Pressable
-            testID="inline-toolbar-toggle"
-            accessibilityRole="button"
-            accessibilityLabel={t(toolsCollapsed ? 'inline.toolbar.show' : 'inline.toolbar.hide', locale)}
-            accessibilityState={{ expanded: !toolsCollapsed }}
-            aria-expanded={!toolsCollapsed}
-            onPress={() => setToolsCollapsed((collapsed) => !collapsed)}
-            style={[styles.iconButton, { borderColor: colors.border }]}
-          >
-            <Text accessibilityElementsHidden style={[styles.toolbarToggleText, { color: colors.headerText }]}>{toolsCollapsed ? '+' : '−'}</Text>
-          </Pressable>
-        ) : null}
+        <Pressable testID="inline-collapse-note" accessibilityRole="button" accessibilityLabel="Contraer Nota" onPress={collapse} style={[styles.iconButton, { borderColor: colors.border }]}>
+          <Text accessibilityElementsHidden style={[styles.toolbarToggleText, { color: colors.headerText }]}>−</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Abrir el editor completo" onPress={advanced} style={[styles.iconButton, { borderColor: colors.border }]}>
           <AppIcon name="expand" size={18} color={colors.headerText} />
         </Pressable>
@@ -186,14 +178,23 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
       {!floatingText && Platform.OS === 'web' ? (
         <View
           testID="inline-body-mode-switch"
-          style={[styles.modeRow, toolsCollapsed ? styles.toolsHidden : null]}
+          style={styles.modeRow}
           accessibilityRole="toolbar"
           accessibilityLabel="Modo de edición del cuerpo"
-          accessibilityElementsHidden={toolsCollapsed}
-          importantForAccessibility={toolsCollapsed ? 'no-hide-descendants' : 'auto'}
         >
-          <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => { if (bodyMode === 'html') applyHtml(); }} />
-          <ActionButton label="HTML" accessibilityLabel="Editar el código HTML del cuerpo" pressed={bodyMode === 'html'} onPress={openHtml} />
+          <Pressable
+            testID="inline-toolbar-toggle"
+            accessibilityRole="button"
+            accessibilityLabel={t(toolsCollapsed ? 'inline.toolbar.show' : 'inline.toolbar.hide', locale)}
+            accessibilityState={{ expanded: !toolsCollapsed }}
+            aria-expanded={!toolsCollapsed}
+            onPress={() => setToolsCollapsed((collapsed) => !collapsed)}
+            style={[styles.toolsToggle, { borderColor: colors.border }]}
+          >
+            <Text style={[styles.toolsToggleText, { color: colors.cardText }]}>{toolsCollapsed ? '+ Mostrar herramientas' : '− Ocultar herramientas'}</Text>
+          </Pressable>
+          {toolsCollapsed ? null : <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => { if (bodyMode === 'html') applyHtml(); }} />}
+          {toolsCollapsed ? null : <ActionButton label="HTML" accessibilityLabel="Editar el código HTML del cuerpo" pressed={bodyMode === 'html'} onPress={openHtml} />}
         </View>
       ) : null}
       {floatingText ? (
@@ -249,7 +250,8 @@ const styles = StyleSheet.create({
   htmlEditor: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
   iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
   toolbarToggleText: { fontSize: 22, lineHeight: 24, fontWeight: '900' },
-  toolsHidden: { display: 'none' },
+  toolsToggle: { minHeight: 44, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  toolsToggleText: { fontSize: 12, fontWeight: '800' },
   plainText: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 10, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
   unsupportedContent: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8 },
   footer: { minHeight: 38, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 8 },

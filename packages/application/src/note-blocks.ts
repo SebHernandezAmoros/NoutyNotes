@@ -71,9 +71,9 @@ export function noteImageRefs(content: string): AssetRef[] {
 }
 
 /** Referencias de imágenes de un documento enriquecido, en orden y sin repetir. */
-export function richTextImageRefs(document: RichTextDocument | undefined): AssetRef[] {
-  if (!document) return [];
-  return [...new Set(document.blocks
+export function richTextImageRefs(richTextDocument: RichTextDocument | undefined): AssetRef[] {
+  if (!richTextDocument) return [];
+  return [...new Set(richTextDocument.blocks
     .filter((block): block is RichTextImage => block.type === 'image')
     .map((block) => block.assetRef))];
 }

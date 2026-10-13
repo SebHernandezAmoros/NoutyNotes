@@ -471,6 +471,10 @@ export function Canvas(props: CanvasProps) {
     if (!node) return;
     node.tabIndex = 0;
     const wheel = (event: WheelEvent) => {
+      // Una Nota extensa tiene un lector propio: su rueda/touchpad pertenece al documento y no debe
+      // cambiar el pan o el zoom del lienzo, incluso cuando el lector ya llegó a uno de sus extremos.
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-testid^="card-reader-"]')) return;
       event.preventDefault();
       const current = latest.current;
       const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? current.viewport.height : 1;
@@ -970,6 +974,7 @@ export function Canvas(props: CanvasProps) {
           onDraftChange={props.onInlineDraftChange}
           onSave={props.onInlineSave}
           onAdvanced={() => props.onInlineAdvanced(inlineCard.id)}
+          onCollapse={() => { props.onInlineClose(); props.onDisplay(inlineCard.id, 'collapsed'); }}
           onClose={props.onInlineClose}
         />
       ) : null}

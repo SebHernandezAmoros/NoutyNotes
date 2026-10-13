@@ -331,14 +331,15 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     !titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }, 'image') : null,
     titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open), 'table'),
   ];
-  const alignmentControls = ([
-    ['left', '≡', 'Alinear a la izquierda'],
-    ['center', '≣', 'Centrar'],
-    ['right', '≡', 'Alinear a la derecha'],
-    ['justify', '☰', 'Justificar'],
-  ] as const).map(([value, label, accessibilityLabel]) => (
+  const alignmentControls = <View testID="editor-alignment-controls" accessibilityRole="toolbar" accessibilityLabel="Alineación horizontal" style={[styles.alignmentGroup, { borderColor: colors.gridLine }]}>{([
+    ['left', 'Alinear a la izquierda'],
+    ['center', 'Centrar'],
+    ['right', 'Alinear a la derecha'],
+    ['justify', 'Justificar'],
+  ] as const).map(([value, accessibilityLabel]) => (
+    <div key={`align-${value}`} title={accessibilityLabel} style={{ display: 'flex' }}>
     <Pressable
-      key={`align-${value}`}
+      testID={`editor-align-${value}`}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: inTable, selected: alignment === value }}
@@ -353,9 +354,14 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
         opacity: inTable ? 0.45 : pressed ? 0.7 : 1,
       }]}
     >
-      <Text style={[styles.toolText, { color: colors.textPrimary }]}>{label}</Text>
+      <View style={[styles.alignmentIcon, value === 'left' ? styles.alignLeft : value === 'right' ? styles.alignRight : styles.alignCenter]}>
+        {[24, value === 'justify' ? 24 : 17, 24, value === 'justify' ? 24 : 14].map((width, index) => (
+          <View key={index} style={[styles.alignmentLine, { width, backgroundColor: colors.textPrimary }]} />
+        ))}
+      </View>
     </Pressable>
-  ));
+    </div>
+  ))}</View>;
   // UX7-CONSOLIDATION (Hito B): un único control contextual «Opciones de tabla» sustituye la fila fija
   // de 5 iconos abreviados (D28) — esa fila ocupaba espacio permanente mientras el cursor seguía dentro
   // de la tabla, incluso sin usarla, y en la edición rápida (tarjeta pequeña) llegaba a tapar casi todo
@@ -692,6 +698,12 @@ const styles = StyleSheet.create({
   tableMenuItem: { paddingHorizontal: 10, paddingVertical: 10, minHeight: 40, justifyContent: 'center' },
   tableMenuItemText: { fontSize: 13, fontWeight: '700' },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  alignmentGroup: { flexDirection: 'row', gap: 4, paddingLeft: 6, borderLeftWidth: 1 },
+  alignmentIcon: { width: 24, gap: 3 },
+  alignLeft: { alignItems: 'flex-start' },
+  alignCenter: { alignItems: 'center' },
+  alignRight: { alignItems: 'flex-end' },
+  alignmentLine: { height: 2 },
   toolText: { fontSize: 17 },
   bold: { fontWeight: '900' },
   italic: { fontStyle: 'italic' },

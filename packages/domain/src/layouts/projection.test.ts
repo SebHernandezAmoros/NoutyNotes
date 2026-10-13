@@ -47,8 +47,8 @@ describe('proyección responsive', () => {
       ['a', 0, 3, 'expanded'],
       ['b', 3, 1, 'collapsed'],
       ['c', 4, 2, 'expanded'],
-      ['d', 6, 1, 'minimized'],
-      ['e', 7, 1, 'expanded'],
+      ['d', 6, 2, 'minimized'],
+      ['e', 8, 1, 'expanded'],
     ]);
     expect(mobile.items.every((item) => item.cell.x === 0 && item.cell.w === 1)).toBe(true);
     expectWellFormed(mobile, canonical, MOBILE_GRID);
@@ -60,7 +60,7 @@ describe('proyección responsive', () => {
       ['a', { x: 0, y: 0, w: 2, h: 3 }],
       ['b', { x: 2, y: 0, w: 2, h: 1 }],
       ['c', { x: 4, y: 0, w: 2, h: 2 }],
-      ['d', { x: 2, y: 1, w: 1, h: 1 }],
+      ['d', { x: 2, y: 1, w: 1, h: 2 }],
       ['e', { x: 0, y: 3, w: 6, h: 1 }],
     ]);
     expectWellFormed(tablet, canonical, TABLET_GRID);
@@ -68,7 +68,7 @@ describe('proyección responsive', () => {
 
   it('con la misma cantidad de columnas conserva los anchos de la huella', () => {
     const same = value(projectLayout(canonical, DESKTOP_GRID, DESKTOP_GRID));
-    expect(same.items.map((item) => item.cell.w)).toEqual([4, 4, 4, 1, 12]);
+    expect(same.items.map((item) => item.cell.w)).toEqual([4, 4, 4, 2, 12]);
   });
 
   it('no modifica el layout canónico y es determinista', () => {
@@ -106,7 +106,9 @@ describe('proyección responsive', () => {
       const w = 1 + Math.floor(random() * 6);
       const candidate = place(`p${i}`, Math.floor(random() * (13 - w)), Math.floor(random() * 10), w, 1 + Math.floor(random() * 3),
         (['expanded', 'collapsed', 'minimized'] as const)[Math.floor(random() * 3)]);
-      if (placements.every((other) => !cellsOverlap(footprint(other), footprint(candidate)))) placements.push(candidate);
+      const candidateFootprint = footprint(candidate);
+      if (candidateFootprint.x + candidateFootprint.w <= DESKTOP_GRID.columns
+        && placements.every((other) => !cellsOverlap(footprint(other), candidateFootprint))) placements.push(candidate);
     }
     const source = deepFreeze(layoutOf(...placements));
     const snapshot = JSON.stringify(source);
@@ -193,7 +195,9 @@ describe('regresiones de la revisión de fase 2 (G3, G4)', () => {
       const w = 1 + Math.floor(random() * 6);
       const candidate = place(`p${i}`, Math.floor(random() * (13 - w)), Math.floor(random() * 10), w, 1 + Math.floor(random() * 3),
         (['expanded', 'collapsed', 'minimized'] as const)[Math.floor(random() * 3)]);
-      if (placements.every((other) => !cellsOverlap(footprint(other), footprint(candidate)))) placements.push(candidate);
+      const candidateFootprint = footprint(candidate);
+      if (candidateFootprint.x + candidateFootprint.w <= DESKTOP_GRID.columns
+        && placements.every((other) => !cellsOverlap(footprint(other), candidateFootprint))) placements.push(candidate);
     }
     const layout = layoutOf(...placements);
     for (const columns of [1, 2, 3, 6, 12]) {

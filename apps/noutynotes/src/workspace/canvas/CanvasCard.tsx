@@ -21,6 +21,7 @@ import { CardIcon } from './CardIcon';
 import { NotePreview } from './NotePreview';
 import { previewOverflow } from './previewOverflow';
 import { RichNotePreview } from './RichNotePreview';
+import { RichNoteReader } from './RichNoteReader';
 import type { ConnectRole } from './connect';
 import { isDrag } from './geometry';
 import type { PixelBox, ResizeHandle } from './geometry';
@@ -166,6 +167,8 @@ export function CanvasCard(props: CanvasCardProps) {
   // para que el PanResponder de abajo las excluya y el toque llegue al Pressable de la fila, no al arrastre.
   const checklistHitsRef = useRef<ReadonlyMap<number, ChecklistHit>>(new Map());
   const checklistRowRefs = useRef<Map<number, RNView>>(new Map());
+  const readerHitRef = useRef<ChecklistHit | null>(null);
+  const readerRef = useRef<RNView | null>(null);
   // Igual que `areaSelect`/`panner` en Canvas.tsx: la función que mira la ref vive en su propia
   // fábrica, separada de la que la usa; así ESLint no confunde el acceso (diferido al evento) con
   // una lectura de ref durante el pintado. `hitsChecklist` también la usa el Pressable de la ficha
@@ -178,6 +181,10 @@ export function CanvasCard(props: CanvasCardProps) {
         if (x >= hit.left && x <= hit.right && y >= hit.top && y <= hit.bottom) return true;
       }
       return false;
+    },
+    hitsReader: (x: number, y: number) => {
+      const hit = readerHitRef.current;
+      return hit !== null && x >= hit.left && x <= hit.right && y >= hit.top && y <= hit.bottom;
     },
   }));
   // Un PanResponder estable por tarjeta. Con Seleccionar captura al pulsar, para no perder un arrastre
@@ -195,7 +202,7 @@ export function CanvasCard(props: CanvasCardProps) {
         // haya habido movimiento); se usa la posición del evento nativo, como hace el Pressable de la
         // ficha para la misma decisión.
         const { pageX, pageY } = event.nativeEvent;
-        blocked = !controller.canDragCard() || checklistGuard.hitsChecklist(pageX, pageY);
+        blocked = !controller.canDragCard() || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY);
         return !blocked;
       },
       onPanResponderGrant: () => { dragging = false; },
@@ -284,6 +291,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
   const collapsedBodyLines = Math.max(0, Math.floor((box.height - HEADER - 12) / contentLine));
   const overflow = previewOverflow(htmlAuthored ? (richDocument ? richDocumentPlainText(richDocument) : '') : (card.content ?? ''), box.width, contentSize, bodyLines);
+  const fullReader = note && display === 'expanded' && richDocument !== null && overflow.hiddenLines > 0 && !lowZoom;
   // UX7-B2: cada línea mostrada es texto agrupado o una fila de checklist propia (marcable sin abrir
   // el editor). El recorte por `bodyLines` es el mismo que el bloque único anterior.
   const bodyBlocks: PreviewBodyBlock[] = [];
@@ -321,6 +329,13 @@ export function CanvasCard(props: CanvasCardProps) {
       });
     }
   });
+  useLayoutEffect(() => {
+    const node = readerRef.current;
+    if (!node) { readerHitRef.current = null; return; }
+    node.measureInWindow((x, y, width, height) => {
+      readerHitRef.current = { top: y, bottom: y + height, left: x, right: x + width };
+    });
+  });
   const headerColor = image ? colors.headerImage : colors.headerNote;
   const icon = card.icon ?? miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
@@ -351,7 +366,7 @@ export function CanvasCard(props: CanvasCardProps) {
           // Igual que la decisión de captura de arriba: un toque que empezó en una fila de checklist
           // no debe seleccionar ni abrir la ficha entera.
           const { pageX, pageY } = event.nativeEvent;
-          if (checklistGuard.hitsChecklist(pageX, pageY)) return;
+          if (checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY)) return;
           if (!controller.justEndedGesture(card.id)) onPress();
         }}
         onFocus={() => { setFocused(true); props.onFocus(); }}
@@ -474,14 +489,18 @@ export function CanvasCard(props: CanvasCardProps) {
                   {`↗ ${link.host}${link.rest}`}
                 </Text>
               ) : null}
-              {presentation.body === 'visible' && mixedRich && richDocument ? (
+              {presentation.body === 'visible' && fullReader && richDocument ? (
+                <View ref={readerRef} style={styles.readerShell}>
+                  <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout} />
+                </View>
+              ) : presentation.body === 'visible' && mixedRich && richDocument ? (
                 <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : presentation.body === 'visible' && mixed ? (
                 <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
-              {presentation.body === 'visible' && !image && !mixed && previewDocument && bodyLines > 0 ? (
+              {presentation.body === 'visible' && !fullReader && !image && !mixed && previewDocument && bodyLines > 0 ? (
                 <BasicRichTextPreview
                   document={previewDocument}
                   numberOfLines={overflow.shownLines}
@@ -492,7 +511,7 @@ export function CanvasCard(props: CanvasCardProps) {
                   testID={`card-rich-text-${card.id}`}
                 />
               ) : null}
-              {presentation.body === 'visible' && !image && !mixed && bodyBlocks.length > 0 ? (
+              {presentation.body === 'visible' && !fullReader && !image && !mixed && bodyBlocks.length > 0 ? (
                 <View style={styles.bodyBlocks}>
                   {bodyBlocks.map((block, index) => block.kind === 'text' ? (
                     <Text key={index} numberOfLines={block.text.split('\n').length}
@@ -519,7 +538,7 @@ export function CanvasCard(props: CanvasCardProps) {
                   ))}
                 </View>
               ) : null}
-              {!image && !mixed && overflow.hiddenLines > 0 ? (
+              {!fullReader && !image && !mixed && overflow.hiddenLines > 0 ? (
                 <Text testID={`card-overflow-${card.id}`} numberOfLines={1} style={[styles.more, { color: colors.cardText }]}>
                   {`+${overflow.hiddenLines} ${overflow.hiddenLines === 1 ? 'línea' : 'líneas'} más`}
                 </Text>
@@ -615,6 +634,7 @@ const styles = StyleSheet.create({
   collapsedTitle: { flexShrink: 1, fontSize: 15, fontWeight: '800' },
   headerText: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   body: { flex: 1, padding: 8, gap: 6 },
+  readerShell: { flex: 1, minHeight: 0 },
   title: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
   floatingTitleWrap: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 36, paddingBottom: 8 },
   floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },

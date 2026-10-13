@@ -89,14 +89,14 @@ describe('motor de grilla sobre un workspace', () => {
     const huge: BoardLayout = {
       boardId: 'overview' as BoardId,
       placements: [
-        { cardId: ideaA.id, rect: { x: 1, y: 0, w: 2, h: Number.MAX_SAFE_INTEGER }, display: 'minimized' },
+        { cardId: ideaA.id, rect: { x: 1, y: 0, w: 3, h: Number.MAX_SAFE_INTEGER }, display: 'minimized' },
         { cardId: ideaB.id, rect: { x: 0, y: 0, w: 1, h: 1 }, display: 'expanded' },
       ],
     };
     const workspace = deepFreeze(withLayout(base, huge));
     const snapshot = JSON.stringify(workspace);
     expect(validateWorkspace(workspace).ok).toBe(true);
-    const result = setDisplay(huge, ideaA.id, 'expanded', { columns: 2 }, { ifOccupied: 'relocate' });
+    const result = setDisplay(huge, ideaA.id, 'expanded', { columns: 3 }, { ifOccupied: 'relocate' });
     expect(result.ok ? [] : result.issues.map((found) => found.code)).toEqual(['no-free-space']);
     expect(JSON.stringify(workspace)).toBe(snapshot);
   });

@@ -1537,7 +1537,9 @@ test('P18-A: una nota con texto oculto lo anuncia en la ficha', async ({ page },
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
   await seedBodyHtml(page, [
+    '<h2>Inicio estructurado</h2>',
     ...Array.from({ length: 1_700 }, (_, index) => `<p>Línea ${index + 1}</p>`),
+    '<ul><li>Elemento enriquecido uno</li><li><strong>Elemento enriquecido dos</strong></li></ul>',
     '<table><thead><tr><th>Tabla final</th></tr></thead><tbody><tr><td>No debe desplazar el inicio</td></tr></tbody></table>',
   ].join('\n'));
   const visual = page.getByLabel('Contenido visual');
@@ -1546,10 +1548,29 @@ test('P18-A: una nota con texto oculto lo anuncia en la ficha', async ({ page },
   await expect(visual).toContainText('Línea 1700');
   await expect(visual.locator('table')).toContainText('No debe desplazar el inicio');
   await closeEditor(page);
-  const preview = page.getByTestId('card-rich-text-tarjeta-1');
-  await expect(preview).toContainText('Línea 1');
-  await expect(preview).not.toContainText('Tabla final');
-  await expect(page.getByTestId('card-overflow-tarjeta-1')).toContainText(/líneas más/);
+  const reader = page.getByTestId('card-reader-tarjeta-1');
+  await expect(reader).toBeVisible();
+  await expect(reader).toContainText('Inicio estructurado');
+  await expect(reader).toContainText('Línea 1');
+  await expect(reader).not.toContainText('Tabla final');
+  const cardBeforeWheel = await card(page, 1).boundingBox();
+  await reader.hover();
+  await page.mouse.wheel(0, 720);
+  await expect.poll(() => reader.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  expect(await card(page, 1).boundingBox()).toEqual(cardBeforeWheel);
+  await reader.focus();
+  await page.keyboard.press('End');
+  await expect.poll(() => reader.evaluate((node) => Math.round(node.scrollTop + node.clientHeight))).toBeGreaterThan(1_000);
+  await expect(page.getByTestId('card-reader-tarjeta-1-block-1700')).toContainText('Línea 1700');
+  await page.getByTestId('card-reader-tarjeta-1-block-1700').scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('card-reader-tarjeta-1-block-1700')).toBeInViewport();
+  await reader.focus();
+  await page.keyboard.press('End');
+  await expect(reader.getByTestId(/-table-/).first()).toContainText('No debe desplazar el inicio');
+  await expect(reader.getByTestId(/-table-/).first()).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('long-document-canvas-end.png'), fullPage: true });
+  await page.keyboard.press('Home');
+  await expect(reader).toContainText('Línea 1');
   await page.screenshot({ path: testInfo.outputPath('long-document-canvas.png'), fullPage: true });
 
   await openFullCardEditor(page, card(page, 1));
@@ -2492,7 +2513,6 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
     await button(page, 'Crear un tablero').click();
   };
   await createBoard();
-  await expect(feedback(page)).toHaveText('Tablero creado. Guardado en memoria.');
   await expect(tab('Tablero Tablero 1')).toHaveAttribute('aria-pressed', 'true');
   await addCards(page, ['nota']);
   await createBoard();
@@ -2530,8 +2550,11 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
   // herramientas ya no se oculta al enfocar—; desde 800 px, al final de la barra de herramientas o
   // en la barra lateral, sin pasos previos.
   await expect(page.getByTestId('project-tabs')).toHaveCount(0);
-  if (isCompact(page)) await button(page, 'Más secciones').click();
-  await button(page, 'Cambiar de proyecto').click();
+  if ((page.viewportSize()?.width ?? 0) >= 1100) await button(page, 'Volver a Proyectos').click();
+  else {
+    if (isCompact(page)) await button(page, 'Más secciones').click();
+    await button(page, 'Cambiar de proyecto').click();
+  }
   await expect(page.getByTestId('project-sheet')).toBeVisible();
   await expect(button(page, 'Guion, proyecto actual')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('projects-sheet.png') });

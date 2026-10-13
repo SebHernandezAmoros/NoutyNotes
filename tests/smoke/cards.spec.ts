@@ -557,7 +557,9 @@ test('UX7 consolidación: pliega solo la toolbar de edición rápida y conserva 
 
   await toggle.click();
   await expect(toolbar).toBeHidden();
-  await expect(page.getByTestId('inline-body-mode-switch')).toBeHidden();
+  await expect(page.getByTestId('inline-body-mode-switch')).toBeVisible();
+  await expect(button(page, 'Editar el cuerpo visualmente')).toHaveCount(0);
+  await expect(button(page, 'Editar el código HTML del cuerpo')).toHaveCount(0);
   await expect(inline).toBeVisible();
   await expect(content).toContainText('Documento que no debe desmontarse');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -570,6 +572,9 @@ test('UX7 consolidación: pliega solo la toolbar de edición rápida y conserva 
   await page.keyboard.press('End');
   await page.keyboard.type(' y continúa');
   await expect(content).toContainText('Documento que no debe desmontarse y continúa');
+  await button(page, 'Contraer Nota').click();
+  await expect(inline).toHaveCount(0);
+  await expect(page.getByTestId('collapsed-tarjeta-1')).toBeVisible();
 });
 
 test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú «⋯» si no caben; 44 px con cualquier zoom (ADR 0016)', async ({ page }, testInfo) => {
@@ -1023,8 +1028,11 @@ test('UX7: alineación durable, toolbar plegable y apariencias diferenciadas', a
   await page.getByLabel('Nombre de la Nota').fill('Nota alineada');
   const fullBody = page.getByLabel('Contenido visual');
   await fullBody.fill('Contenido centrado');
+  await expect(page.getByTestId('editor-alignment-controls')).toHaveAttribute('aria-label', 'Alineación horizontal');
+  await expect(page.getByTestId('editor-align-center').locator('xpath=..')).toHaveAttribute('title', 'Centrar');
   await button(page, 'Centrar').click();
   await expect(fullBody.locator('p')).toHaveCSS('text-align', 'center');
+  await page.screenshot({ path: testInfo.outputPath('alignment-controls.png'), fullPage: true });
   await button(page, 'Editar el código HTML del cuerpo').click();
   await expect(page.getByTestId('html-source-input')).toHaveValue(/<p data-nouty-align="center">Contenido centrado<\/p>/);
   await button(page, 'Editar el cuerpo visualmente').click();
@@ -1039,6 +1047,10 @@ test('UX7: alineación durable, toolbar plegable y apariencias diferenciadas', a
 
   await openCardActions(page, card(page, 1), 'Nota alineada');
   await button(page, 'Editar Nota alineada dentro de la ficha').click();
+  await expect(button(page, 'Contraer Nota')).toBeVisible();
+  await expect(button(page, 'Abrir el editor completo')).toBeVisible();
+  await expect(button(page, 'Guardar y cerrar la edición rápida')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('inline-header-actions.png'), fullPage: true });
   const quickBody = page.getByLabel('Contenido visual');
   await expect(quickBody).toContainText('Contenido centrado');
   await page.getByTestId('inline-toolbar-toggle').click();
