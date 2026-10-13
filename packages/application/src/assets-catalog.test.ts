@@ -11,10 +11,17 @@ const card = (id: string, typeId: string, extra: Record<string, unknown> = {}): 
 const workspace = {
   id: 'w', metadata: { name: 'W' }, relationTypes: [], relations: [], layouts: [],
   cardTypes: [type('imagen', 'image'), type('nota', 'note'), type('ficha', 'note', [{ key: 'adjunto', kind: 'asset' } as CardTypeDefinition['fields'][number]])],
-  boards: [{ id: 'principal', title: 'Principal', cardIds: ['foto', 'diario', 'ficha'] }],
+  boards: [{ id: 'principal', title: 'Principal', cardIds: ['foto', 'diario', 'html', 'ficha'] }],
   cards: [
     card('foto', 'imagen', { assetRefs: ['assets/images/foto.png'] }),
     card('diario', 'nota', { content: 'Hoy.\n\n![foto](assets/images/foto.png)\n\n![mapa](assets/images/mapa.jpg)', assetRefs: ['assets/images/foto.png', 'assets/images/mapa.jpg'] }),
+    card('html', 'nota', {
+      contentDocument: { schemaVersion: 1, blocks: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'Documento' }] },
+        { type: 'image', assetRef: 'assets/images/html.png', alt: 'Plano', caption: [{ type: 'text', text: 'Leyenda durable' }] },
+      ] },
+      assetRefs: ['assets/images/html.png'],
+    }),
     card('ficha', 'ficha', { fields: { adjunto: 'assets/files/guion.pdf' } }),
   ],
   trash: [{ card: card('vieja', 'imagen', { assetRefs: ['assets/images/vieja.webp'] }), trashedAt: '2026-09-26T00:00:00Z', boards: [], relations: [] }],
@@ -27,10 +34,11 @@ describe('catálogo de assets del proyecto (ADR 0022)', () => {
   });
 
   it('reúne lo que hay en disco y lo referenciado: «Usado en» (también Papelera), falta y sin usar', () => {
-    const catalog = buildAssetCatalog(workspace, ['assets/images/foto.png', 'assets/images/mapa.jpg', 'assets/images/huerfana.gif', 'assets/images/vieja.webp']);
+    const catalog = buildAssetCatalog(workspace, ['assets/images/foto.png', 'assets/images/html.png', 'assets/images/mapa.jpg', 'assets/images/huerfana.gif', 'assets/images/vieja.webp']);
     expect(catalog.map((entry) => [entry.ref, entry.kind, entry.missing, entry.unused, entry.usedBy.map((use) => `${use.cardId}${use.inTrash ? '*' : ''}`)])).toEqual([
       ['assets/files/guion.pdf', 'document', true, false, ['ficha']],
       ['assets/images/foto.png', 'image', false, false, ['diario', 'foto']],
+      ['assets/images/html.png', 'image', false, false, ['html']],
       ['assets/images/huerfana.gif', 'image', false, true, []],
       ['assets/images/mapa.jpg', 'image', false, false, ['diario']],
       ['assets/images/vieja.webp', 'image', false, false, ['vieja*']],
@@ -50,5 +58,12 @@ describe('catálogo de assets del proyecto (ADR 0022)', () => {
     expect(byField.cards.find((candidate) => candidate.id === 'diario')).toBe(workspace.cards[1]);
     const inTrash = replaceAssetReferences(workspace, 'assets/images/vieja.webp', 'assets/images/nueva.webp');
     expect(inTrash.trash?.[0]?.card.assetRefs).toEqual(['assets/images/nueva.webp']);
+
+    const inDocument = replaceAssetReferences(workspace, 'assets/images/html.png', 'assets/images/html-2.png');
+    const html = inDocument.cards.find((candidate) => candidate.id === 'html')!;
+    expect(html.assetRefs).toEqual(['assets/images/html-2.png']);
+    expect(html.contentDocument?.blocks[1]).toEqual({
+      type: 'image', assetRef: 'assets/images/html-2.png', alt: 'Plano', caption: [{ type: 'text', text: 'Leyenda durable' }],
+    });
   });
 });

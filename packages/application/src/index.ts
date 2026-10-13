@@ -58,7 +58,7 @@ export type {
 export { MAX_IMAGE_BYTES, addNoteImage, addNoteImageDocument, importImageCard, inspectImage } from './images';
 export type { AddNoteImageDocumentInput, AddNoteImageInput, ImageKind, ImportImageInput } from './images';
 export {
-  insertImageBlock, moveNoteBlock, noteImageRefs, parseNoteBlocks, removeNoteBlock, replaceNoteImage, serializeNoteBlocks, setNoteImageAlt, syncNoteAssetRefs,
+  insertImageBlock, moveNoteBlock, noteImageRefs, parseNoteBlocks, removeNoteBlock, replaceNoteImage, richTextImageRefs, serializeNoteBlocks, setNoteImageAlt, syncNoteAssetRefs,
 } from './note-blocks';
 export type { NoteBlock } from './note-blocks';
 export type { WorkspaceAssets } from './workspace-assets';

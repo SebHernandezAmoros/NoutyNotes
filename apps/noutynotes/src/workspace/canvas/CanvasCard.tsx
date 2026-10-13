@@ -258,6 +258,10 @@ export function CanvasCard(props: CanvasCardProps) {
   const presentation = cardContentPresentation(card, type?.base);
   const unifiedFloating = type?.base === 'note' && card.frameOverride === 'hidden'
     && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);
+  // Una Nota sin superficie hereda el contraste del lienzo efectivo. `textColor` sigue ganando cuando
+  // la persona eligió un color manual; `default` usa el texto primario del tema, no `cardText`, que fue
+  // diseñado para la superficie clara y opaca de la tarjeta incluso en modo oscuro.
+  const noteTextColor = unifiedFloating ? floatingTextColor(card.textColor, colors.textPrimary) : colors.cardText;
   const shape = type?.base === 'shape';
   const connector = type?.base === 'connector';
   const note = type?.base === 'note';
@@ -384,7 +388,7 @@ export function CanvasCard(props: CanvasCardProps) {
               ) : <Text numberOfLines={3} style={[styles.floatingTitle, { color: colors.textPrimary }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
             {presentation.body === 'visible' && previewDocument ? (
-              <BasicRichTextPreview document={previewDocument} numberOfLines={Math.max(1, bodyLines)} color={colors.cardText}
+              <BasicRichTextPreview document={previewDocument} numberOfLines={Math.max(1, bodyLines)} color={noteTextColor}
                 fontSize={contentSize} lineHeight={contentLine} fontFamily={props.noteFontFamily} testID={`card-rich-text-${card.id}`} />
             ) : null}
           </View>
@@ -412,7 +416,7 @@ export function CanvasCard(props: CanvasCardProps) {
         ) : connector && display === 'expanded' ? (
           <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
         ) : display === 'collapsed' ? (
-          <View style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
+          <View testID={`collapsed-${card.id}`} style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
             <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>{number3}</Text>
             {cardDisplayTitle(card) ? (
               <Text numberOfLines={1} style={[styles.collapsedTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>

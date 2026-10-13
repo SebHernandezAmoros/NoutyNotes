@@ -1,4 +1,4 @@
-import { assetsOf, inspectImage, noteImageRefs } from '@noutynotes/application';
+import { assetsOf, inspectImage, noteImageRefs, richTextImageRefs } from '@noutynotes/application';
 import type { WorkspaceStorage } from '@noutynotes/application';
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
 import { useEffect, useState } from 'react';
@@ -26,7 +26,9 @@ export function useImagePreviews(storage: WorkspaceStorage, workspace: Workspace
     const [ref] = card.assetRefs ?? [];
     return types.get(card.typeId) === 'image' && ref && IMAGE.test(ref) ? [{ cardId: card.id, ref }] : [];
   });
-  const noteRefs = (workspace?.cards ?? []).flatMap((card) => (types.get(card.typeId) === 'image' ? [] : noteImageRefs(card.content ?? '')));
+  const noteRefs = (workspace?.cards ?? []).flatMap((card) => (types.get(card.typeId) === 'image'
+    ? []
+    : [...noteImageRefs(card.content ?? ''), ...richTextImageRefs(card.contentDocument)]));
   const key = [...new Set([...cardRefs.map(({ ref }) => ref), ...noteRefs])].filter((ref) => IMAGE.test(ref)).sort().join('|');
   const workspaceId = workspace?.id;
 

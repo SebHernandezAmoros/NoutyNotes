@@ -69,20 +69,15 @@ export async function seedBodyHtml(page: Page, html: string): Promise<void> {
 }
 
 /**
- * El título es un editor Lexical (`titleRichText`, ADR 0060), no un `<textarea>`: `.fill()` muta el
- * DOM directamente y Lexical no siempre reconcilia ese cambio con su propio estado (carrera con su
- * reconciliador), dejando el título sin guardar de forma intermitente. Clic + seleccionar todo +
- * teclear pasa por el mismo camino de eventos que una persona usuaria y no tiene esa carrera.
+ * El nombre de Nota es metadato de texto plano en el Inspector completo. Los títulos históricos de
+ * otros tipos conservan temporalmente su etiqueta anterior; el helper acepta ambos contratos.
  */
 export async function fillCardTitle(page: Page, text: string): Promise<void> {
-  const title = page.getByLabel('Título de la tarjeta');
+  const title = page.getByLabel(/^(Nombre de la Nota|Note name|Título de la tarjeta|Card title)$/);
   await title.selectText();
   if (text === '') await page.keyboard.press('Delete');
   else await page.keyboard.type(text);
-  // Lexical reconcilia tras el evento `input`; el siguiente paso (p. ej. «Guardar texto») puede
-  // adelantarse a esa reconciliación si no se espera a que el DOM visible ya refleje el cambio.
-  if (text === '') await expect(title).toHaveText('');
-  else await expect(title).toContainText(text);
+  await expect(title).toHaveValue(text);
 }
 
 /**

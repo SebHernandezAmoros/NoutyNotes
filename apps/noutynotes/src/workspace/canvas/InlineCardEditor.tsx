@@ -1,13 +1,14 @@
 import type { RichTextCodec } from '@noutynotes/application';
 import { cardTitleText } from '@noutynotes/domain';
 import type { Card, CardId, RichTextDocument } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ActionButton, TextField } from '../../components/controls';
 import { AppIcon } from '../../components/AppIcon';
 import { DialogCloseButton } from '../../components/Dialog';
+import { t } from '../../i18n';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
@@ -32,6 +33,7 @@ interface InlineCardEditorProps {
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
 export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [title] = useState(initialDraft?.title ?? cardTitleText(card));
   const [content, setContent] = useState(initialDraft?.content ?? card.content ?? '');
@@ -57,6 +59,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   const [bodyMode, setBodyMode] = useState<'visual' | 'html'>('visual');
   const [htmlDraft, setHtmlDraft] = useState('');
   const [htmlIssue, setHtmlIssue] = useState<string | null>(null);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const openHtml = () => {
     const source = visualDocument ? htmlCodec.serialize(visualDocument) : null;
     setHtmlDraft(source?.ok ? source.value : '');
@@ -147,13 +150,33 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     >
       <View style={[styles.bar, { backgroundColor: colors.headerNote, borderColor: colors.border }]}>
         <Text style={[styles.eyebrow, { color: colors.headerText }]}>EDICIÓN RÁPIDA</Text>
+        {!floatingText && Platform.OS === 'web' ? (
+          <Pressable
+            testID="inline-toolbar-toggle"
+            accessibilityRole="button"
+            accessibilityLabel={t(toolsCollapsed ? 'inline.toolbar.show' : 'inline.toolbar.hide', locale)}
+            accessibilityState={{ expanded: !toolsCollapsed }}
+            aria-expanded={!toolsCollapsed}
+            onPress={() => setToolsCollapsed((collapsed) => !collapsed)}
+            style={[styles.iconButton, { borderColor: colors.border }]}
+          >
+            <Text accessibilityElementsHidden style={[styles.toolbarToggleText, { color: colors.headerText }]}>{toolsCollapsed ? '+' : '−'}</Text>
+          </Pressable>
+        ) : null}
         <Pressable accessibilityRole="button" accessibilityLabel="Abrir el editor completo" onPress={advanced} style={[styles.iconButton, { borderColor: colors.border }]}>
           <AppIcon name="expand" size={18} color={colors.headerText} />
         </Pressable>
         <DialogCloseButton label="Guardar y cerrar la edición rápida" onPress={close} />
       </View>
       {!floatingText && Platform.OS === 'web' ? (
-        <View testID="inline-body-mode-switch" style={styles.modeRow} accessibilityRole="toolbar" accessibilityLabel="Modo de edición del cuerpo">
+        <View
+          testID="inline-body-mode-switch"
+          style={[styles.modeRow, toolsCollapsed ? styles.toolsHidden : null]}
+          accessibilityRole="toolbar"
+          accessibilityLabel="Modo de edición del cuerpo"
+          accessibilityElementsHidden={toolsCollapsed}
+          importantForAccessibility={toolsCollapsed ? 'no-hide-descendants' : 'auto'}
+        >
           <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => { if (bodyMode === 'html') applyHtml(); }} />
           <ActionButton label="HTML" accessibilityLabel="Editar el código HTML del cuerpo" pressed={bodyMode === 'html'} onPress={openHtml} />
         </View>
@@ -183,7 +206,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
           </View>
         </View>
       ) : visualDocument ? (
-        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily} compact />
+        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily} compact toolbarCollapsed={toolsCollapsed} />
       ) : (
         <View style={styles.unsupportedContent}>
           <Text style={[styles.modeHint, { color: colors.textSecondary }]}>Este contenido se edita desde Más opciones.</Text>
@@ -209,7 +232,9 @@ const styles = StyleSheet.create({
   modeHint: { fontSize: 11, lineHeight: 16 },
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
   htmlEditor: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
-  iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
+  iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
+  toolbarToggleText: { fontSize: 22, lineHeight: 24, fontWeight: '900' },
+  toolsHidden: { display: 'none' },
   plainText: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 10, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
   unsupportedContent: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8 },
   footer: { minHeight: 38, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 8 },

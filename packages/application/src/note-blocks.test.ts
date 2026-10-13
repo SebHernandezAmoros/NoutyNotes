@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { insertImageBlock, moveNoteBlock, noteImageRefs, parseNoteBlocks, removeNoteBlock, replaceNoteImage, serializeNoteBlocks, setNoteImageAlt, syncNoteAssetRefs } from './note-blocks';
+import { insertImageBlock, moveNoteBlock, noteImageRefs, parseNoteBlocks, removeNoteBlock, replaceNoteImage, richTextImageRefs, serializeNoteBlocks, setNoteImageAlt, syncNoteAssetRefs } from './note-blocks';
 
 const note = 'Intro del viaje.\nSegunda línea.\n\n![Templo](assets/images/tarjeta-1-1.png)\n\n- uno\n- dos\n\n![Río](assets/images/tarjeta-1-2.jpg)';
 
@@ -19,6 +19,15 @@ describe('bloques de una nota con imágenes (ADR 0021)', () => {
     expect(parseNoteBlocks(text).every((block) => block.kind === 'text')).toBe(true);
     expect(noteImageRefs(text)).toEqual([]);
     expect(serializeNoteBlocks(parseNoteBlocks(text))).toBe(text);
+  });
+
+  it('extrae las imágenes del documento enriquecido aunque el Markdown no tenga una copia', () => {
+    expect(richTextImageRefs({ schemaVersion: 1, blocks: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Solo HTML' }] },
+      { type: 'image', assetRef: 'assets/images/a.png', alt: 'A' },
+      { type: 'image', assetRef: 'assets/images/a.png', alt: 'Repetida' },
+      { type: 'image', assetRef: 'assets/images/b.webp', alt: 'B' },
+    ] })).toEqual(['assets/images/a.png', 'assets/images/b.webp']);
   });
 
   it('insertar va después del párrafo del cursor (o al final); mover, reemplazar, quitar y el texto alternativo', () => {

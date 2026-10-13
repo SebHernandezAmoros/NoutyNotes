@@ -1,4 +1,4 @@
-import type { CaptionPosition, ContentLayout, RichTextDocument, TextSize } from '@noutynotes/domain';
+import type { CaptionPosition, ContentLayout, RichTextDocument, RichTextImage, RichTextInline, TextSize } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
@@ -24,13 +24,30 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
   const lines = Math.max(1, Math.floor(height / lineHeight));
   const position = captionPosition ?? 'bottom';
   const sideways = position === 'left' || position === 'right';
+  const captionOf = (block: RichTextImage): readonly RichTextInline[] => block.caption && block.caption.length > 0
+    ? block.caption
+    : block.alt ? [{ type: 'text', text: block.alt }] : [];
+  const captionNode = (block: RichTextImage, blockIndex: number) => {
+    const caption = captionOf(block);
+    return caption.length === 0 ? null : (
+      <View style={sideways ? styles.captionSide : null}>
+        <BasicRichTextPreview
+          document={{ schemaVersion: document.schemaVersion, blocks: [{ type: 'paragraph', content: caption }] }}
+          numberOfLines={sideways ? 4 : 1}
+          color={theme.colors.cardText}
+          fontSize={11}
+          lineHeight={14}
+          fontFamily={fontFamily}
+          testID={`${testID}-caption-${blockIndex}`}
+        />
+      </View>
+    );
+  };
   return (
     <View testID={testID} style={[styles.wrap, { maxHeight: Math.max(0, height) }]}>
       {document.blocks.map((block, blockIndex) => block.type === 'image' ? (
         <View key={blockIndex} style={sideways ? styles.imageRow : styles.imageBlock}>
-          {(position === 'top' || position === 'left') && block.alt ? (
-            <Text numberOfLines={sideways ? 4 : 1} style={[styles.caption, sideways ? styles.captionSide : null, { color: theme.colors.cardText }]}>{block.alt}</Text>
-          ) : null}
+          {position === 'top' || position === 'left' ? captionNode(block, blockIndex) : null}
           {images.get(block.assetRef) ? (
             <Image
               testID={`${testID}-image-${blockIndex}`}
@@ -48,9 +65,7 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
               <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
             </View>
           )}
-          {(position === 'bottom' || position === 'right') && block.alt ? (
-            <Text numberOfLines={sideways ? 4 : 1} style={[styles.caption, sideways ? styles.captionSide : null, { color: theme.colors.cardText }]}>{block.alt}</Text>
-          ) : null}
+          {position === 'bottom' || position === 'right' ? captionNode(block, blockIndex) : null}
         </View>
       ) : (
         <BasicRichTextPreview
@@ -76,6 +91,5 @@ const styles = StyleSheet.create({
   imageSide: { flex: 2, width: undefined },
   missing: { alignItems: 'center', justifyContent: 'center', padding: 4 },
   missingText: { fontSize: 12, fontWeight: '700' },
-  caption: { fontSize: 11, lineHeight: 14, fontStyle: 'italic' },
   captionSide: { flex: 1 },
 });

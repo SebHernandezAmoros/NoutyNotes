@@ -44,7 +44,7 @@ function inlineText(content: Extract<RichTextEditorProps['document']['blocks'][n
     ? inline.content.map((leaf) => leaf.type === 'hard-break' ? '\n' : leaf.text).join('') : inline.text).join('');
 }
 
-export function RichTextEditor({ document, codec, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, compact = false, titleOnly = false }: RichTextEditorProps) {
+export function RichTextEditor({ document, codec, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, compact = false, toolbarCollapsed = false, titleOnly = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -120,7 +120,9 @@ export function RichTextEditor({ document, codec, onChange, images = new Map(), 
 
   return (
     <View testID="native-rich-text-editor" style={[styles.shell, { borderColor: colors.border, backgroundColor: colors.cardSurface }]}>
-      <View accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)} style={styles.toolbar}>
+      <View testID="editor-toolbar" accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)}
+        accessibilityElementsHidden={toolbarCollapsed} importantForAccessibility={toolbarCollapsed ? 'no-hide-descendants' : 'auto'}
+        style={[styles.toolbar, toolbarCollapsed ? styles.toolbarCollapsed : null]}>
         <EditorToolButton label="B" accessibilityLabel={t('editor.visual.bold', locale)} selected={format?.bold.isActive === true} onPress={toggleBold} />
         <EditorToolButton label="I" accessibilityLabel={t('editor.visual.italic', locale)} selected={format?.italic.isActive === true} onPress={toggleItalic} />
         <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
@@ -171,6 +173,7 @@ export function RichTextEditor({ document, codec, onChange, images = new Map(), 
 const styles = StyleSheet.create({
   shell: { width: '100%', borderWidth: 2 },
   toolbar: { minHeight: 52, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  toolbarCollapsed: { display: 'none' },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   toolText: { fontSize: 17 },
   bold: { fontWeight: '900' },

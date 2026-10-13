@@ -6,7 +6,7 @@ import { cardTitleText } from '@noutynotes/domain';
 import type { AssetRef, BoardId, Card, CardId, Workspace } from '@noutynotes/domain';
 
 import { fold } from './search';
-import { noteImageRefs, parseNoteBlocks, serializeNoteBlocks } from './note-blocks';
+import { noteImageRefs, parseNoteBlocks, richTextImageRefs, serializeNoteBlocks } from './note-blocks';
 
 export type AssetKind = 'image' | 'document' | 'audio' | 'font' | 'other';
 
@@ -47,7 +47,7 @@ export function cardAssetRefs(workspace: Workspace, card: Card): string[] {
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const assetFields = new Set(type?.fields.filter((field) => field.kind === 'asset').map((field) => field.key as string) ?? []);
   const fromFields = Object.entries(card.fields).filter(([key, value]) => assetFields.has(key) && typeof value === 'string').map(([, value]) => value as string);
-  const fromContent = type?.base === 'image' ? [] : noteImageRefs(card.content ?? '');
+  const fromContent = type?.base === 'image' ? [] : [...noteImageRefs(card.content ?? ''), ...richTextImageRefs(card.contentDocument)];
   return [...new Set([...(card.assetRefs ?? []), ...fromFields, ...fromContent])];
 }
 
@@ -84,7 +84,20 @@ function replaceInCard(workspace: Workspace, card: Card, from: string, to: strin
     : card.content;
   const next: Card = { ...card, fields };
   const refs = card.assetRefs ? [...new Set(card.assetRefs.map((ref): AssetRef => (ref === from ? to as AssetRef : ref)))] : undefined;
-  return { ...next, ...(refs ? { assetRefs: refs } : {}), ...(content === undefined ? {} : { content }) };
+  const contentDocument = card.contentDocument?.blocks.some((block) => block.type === 'image' && block.assetRef === from)
+    ? {
+        ...card.contentDocument,
+        blocks: card.contentDocument.blocks.map((block) => block.type === 'image' && block.assetRef === from
+          ? { ...block, assetRef: to as AssetRef }
+          : block),
+      }
+    : card.contentDocument;
+  return {
+    ...next,
+    ...(refs ? { assetRefs: refs } : {}),
+    ...(content === undefined ? {} : { content }),
+    ...(contentDocument === undefined ? {} : { contentDocument }),
+  };
 }
 
 /** Cambia `from` por `to` en todas las tarjetas, también en la Papelera y el Archivo (ADR 0022, «Reemplazar»). */

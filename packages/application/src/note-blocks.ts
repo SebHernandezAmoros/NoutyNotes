@@ -4,7 +4,7 @@
  * resto es texto que nunca se interpreta. Las operaciones separan los bloques con una línea en blanco.
  */
 import { isValidAssetRef } from '@noutynotes/domain';
-import type { AssetRef } from '@noutynotes/domain';
+import type { AssetRef, RichTextDocument, RichTextImage } from '@noutynotes/domain';
 
 export type NoteBlock =
   | { readonly kind: 'text'; readonly text: string; readonly start: number }
@@ -68,6 +68,14 @@ export function serializeNoteBlocks(blocks: readonly NoteBlock[]): string {
 /** Referencias de las imágenes de la nota, en orden y sin repetir. */
 export function noteImageRefs(content: string): AssetRef[] {
   return [...new Set(parseNoteBlocks(content).flatMap((block) => (block.kind === 'image' ? [block.ref] : [])))];
+}
+
+/** Referencias de imágenes de un documento enriquecido, en orden y sin repetir. */
+export function richTextImageRefs(document: RichTextDocument | undefined): AssetRef[] {
+  if (!document) return [];
+  return [...new Set(document.blocks
+    .filter((block): block is RichTextImage => block.type === 'image')
+    .map((block) => block.assetRef))];
 }
 
 /** Texto alternativo en una línea y sin corchetes, para que la línea siga siendo una imagen. */

@@ -338,7 +338,7 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   }
 });
 
-test('UX7 Hito D parcial: Contraída y Minimizada indican una expansión accesible', async ({ page }, testInfo) => {
+test('UX7 Hito 6: Contraída y Minimizada son distintas y permiten expandir con teclado', async ({ page }, testInfo) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'El caso focalizado usa el menú contextual de escritorio y el teclado físico.');
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('./');
@@ -353,7 +353,13 @@ test('UX7 Hito D parcial: Contraída y Minimizada indican una expansión accesib
 
   await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Contraer Nueva nota').click();
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Nueva nota, contraída');
+  await expect(page.getByTestId('collapsed-tarjeta-1')).toBeVisible();
   await expect(card(page, 1)).toContainText('⌄');
+  await expect(card(page, 1)).not.toContainText('Primera línea visible');
+  const collapsedBox = await card(page, 1).boundingBox();
+  expect(collapsedBox).not.toBeNull();
+  expect(collapsedBox?.width ?? 0).toBeGreaterThan((collapsedBox?.height ?? 0) * 2);
   await page.screenshot({ path: testInfo.outputPath('collapsed-dark.png') });
 
   await openCardActions(page, card(page, 1), 'Nueva nota');
@@ -365,7 +371,12 @@ test('UX7 Hito D parcial: Contraída y Minimizada indican una expansión accesib
 
   await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Minimizar Nueva nota').click();
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Nueva nota, minimizada');
   await expect(page.getByTestId('minimized-tarjeta-1')).toContainText('⌄');
+  await expect(card(page, 1)).not.toContainText('Primera línea visible');
+  const minimizedBox = await card(page, 1).boundingBox();
+  expect(minimizedBox).not.toBeNull();
+  expect(Math.abs((minimizedBox?.width ?? 0) - (minimizedBox?.height ?? 0))).toBeLessThanOrEqual(12);
   await page.screenshot({ path: testInfo.outputPath('minimized-dark.png') });
 });
 
@@ -436,6 +447,129 @@ test('UX7 Hito H: revisión visual integrada en móvil, tablet y escritorio', as
   await expect(button(page, 'Abrir menú Insertar')).toBeVisible();
   await expect(card(page, 1)).toContainText('Contenido de control');
   expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
+test('UX7 consolidación: renombra una Nota desde Contenido sin duplicar el título en edición rápida', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida solo existe en escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Nombres de Nota');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+
+  await expect(page.getByTestId('card-inspector-section-content')).toHaveAttribute('aria-pressed', 'true');
+  const name = page.getByLabel('Nombre de la Nota');
+  await expect(name).toBeVisible();
+  await name.fill('Ideas para mi juego');
+  await page.getByLabel('Contenido visual').fill('El cuerpo enriquecido permanece independiente.');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Ideas para mi juego');
+  await expect(card(page, 1)).toContainText('Ideas para mi juego');
+  await expect(card(page, 1)).toContainText('El cuerpo enriquecido permanece independiente.');
+
+  await openCardActions(page, card(page, 1), 'Ideas para mi juego');
+  await button(page, 'Editar Ideas para mi juego dentro de la ficha').click();
+  await expect(page.getByTestId('inline-card-editor')).toBeVisible();
+  await expect(page.getByLabel('Nombre de la Nota')).toHaveCount(0);
+  await expect(page.getByLabel('Contenido visual')).toContainText('El cuerpo enriquecido permanece independiente.');
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+
+  await openCardEditor(page, 1);
+  await expect(page.getByLabel('Nombre de la Nota')).toHaveValue('Ideas para mi juego');
+  await expect(page.getByLabel('Contenido visual')).toContainText('El cuerpo enriquecido permanece independiente.');
+  await page.screenshot({ path: testInfo.outputPath('note-identification.png'), fullPage: true });
+});
+
+test('UX7 consolidación: una Nota transparente hereda contraste del lienzo oscuro', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La reproducción visual focalizada usa el Inspector lateral.');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('./');
+  await createWorkspace(page, 'Contraste transparente');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await page.getByLabel('Contenido visual').fill('Texto transparente legible');
+  await button(page, 'Guardar texto').click();
+  await page.getByTestId('card-inspector-section-appearance').click();
+  await button(page, 'Mostrar apariencia y propiedades').click();
+  await button(page, 'Ocultar siempre').click();
+  await closeEditor(page);
+
+  const preview = page.getByTestId('card-rich-text-tarjeta-1');
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveCSS('color', rgb(themeColors.dark.textPrimary));
+  await page.screenshot({ path: testInfo.outputPath('transparent-note-dark.png'), fullPage: true });
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(preview).toHaveCSS('color', rgb(themeColors.light.textPrimary));
+  await page.screenshot({ path: testInfo.outputPath('transparent-note-light.png'), fullPage: true });
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await openCardEditor(page, 1);
+  await page.getByTestId('card-inspector-section-appearance').click();
+  await button(page, 'Mostrar apariencia y propiedades').click();
+  await button(page, 'Mostrar siempre').click();
+  await closeEditor(page);
+  await expect(preview).toHaveCSS('color', rgb(themeColors.dark.cardText));
+  await expect(card(page, 1)).toHaveCSS('background-color', rgb(themeColors.dark.cardSurface));
+});
+
+test('UX7 consolidación: la pestaña rosa conserva un nombre largo sin convertirse en encabezado', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La comprobación geométrica focalizada usa el Inspector lateral.');
+  const longName = 'Ideas para mi juego de exploración narrativa con decisiones y mundos muy extensos';
+  await page.goto('./');
+  await createWorkspace(page, 'Nombre largo');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await page.getByLabel('Nombre de la Nota').fill(longName);
+  await page.getByLabel('Contenido visual').fill('H1 y H2 pertenecen al documento, no al nombre.');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  const note = card(page, 1);
+  const tabName = note.getByText(longName);
+  await expect(note).toHaveAttribute('aria-label', `Tarjeta ${longName}`);
+  await expect(tabName).toBeVisible();
+  expect(await tabName.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  const [noteBox, nameBox] = await Promise.all([note.boundingBox(), tabName.boundingBox()]);
+  expect(noteBox).not.toBeNull();
+  expect(nameBox).not.toBeNull();
+  expect((nameBox?.x ?? 0) + (nameBox?.width ?? 0)).toBeLessThanOrEqual((noteBox?.x ?? 0) + (noteBox?.width ?? 0));
+  await expect(note.getByText('H1 y H2 pertenecen al documento, no al nombre.')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('long-note-name.png'), fullPage: true });
+});
+
+test('UX7 consolidación: pliega solo la toolbar de edición rápida y conserva el documento', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida solo existe en escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Toolbar plegable');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+
+  const inline = page.getByTestId('inline-card-editor');
+  const content = page.getByLabel('Contenido visual');
+  const toolbar = page.getByTestId('editor-toolbar');
+  const toggle = page.getByTestId('inline-toolbar-toggle');
+  await content.fill('Documento que no debe desmontarse');
+  await expect(toolbar).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+  await toggle.click();
+  await expect(toolbar).toBeHidden();
+  await expect(page.getByTestId('inline-body-mode-switch')).toBeHidden();
+  await expect(inline).toBeVisible();
+  await expect(content).toContainText('Documento que no debe desmontarse');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await page.screenshot({ path: testInfo.outputPath('inline-toolbar-collapsed.png') });
+
+  await toggle.click();
+  await expect(toolbar).toBeVisible();
+  await expect(content).toContainText('Documento que no debe desmontarse');
+  await content.focus();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' y continúa');
+  await expect(content).toContainText('Documento que no debe desmontarse y continúa');
 });
 
 test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú «⋯» si no caben; 44 px con cualquier zoom (ADR 0016)', async ({ page }, testInfo) => {
@@ -753,6 +887,130 @@ test('vista Lista muestra las imágenes reales, no el Markdown crudo ni siempre 
   await expect(card(page, 2)).not.toContainText('![');
   await expect(card(page, 2)).not.toContainText('assets/images');
   await page.screenshot({ path: testInfo.outputPath('list-images.png') });
+});
+
+test('UX7 IMAGES-06: la ficha muestra la leyenda durable y reserva el alt para accesibilidad', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La comprobación focalizada usa el Inspector lateral.');
+  await page.goto('./');
+  await createWorkspace(page, 'Leyenda enriquecida');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await page.getByTestId('html-source-input').fill('<figure><img src="assets/images/inexistente.png" alt="Descripción accesible"><figcaption><strong>Leyenda durable</strong></figcaption></figure>');
+  await button(page, 'Validar y aplicar el código HTML').click();
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await closeEditor(page);
+
+  const note = card(page, 1);
+  await note.click();
+  await expect(note).toHaveAttribute('aria-pressed', 'true');
+  await note.focus();
+  const initialHeight = (await note.boundingBox())?.height ?? 0;
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect.poll(async () => (await note.boundingBox())?.height ?? 0).toBeGreaterThan(initialHeight);
+  const preview = page.getByTestId('rich-note-preview-tarjeta-1');
+  const caption = preview.getByText('Leyenda durable', { exact: true });
+  await expect(caption).toBeVisible();
+  await expect(preview.getByLabel('Imagen no disponible: Descripción accesible')).toBeVisible();
+  const [noteBox, captionBox] = await Promise.all([note.boundingBox(), caption.boundingBox()]);
+  expect((captionBox?.y ?? 0) + (captionBox?.height ?? 0)).toBeLessThanOrEqual((noteBox?.y ?? 0) + (noteBox?.height ?? 0));
+  await page.screenshot({ path: testInfo.outputPath('rich-image-caption.png'), fullPage: true });
+});
+
+test('UX7 Hito 8: tabla contextual conserva foco, Undo/Redo y Visual/HTML', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La comprobación focalizada usa el Inspector lateral.');
+  await page.goto('./');
+  await createWorkspace(page, 'Tabla contextual');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+
+  await button(page, 'Insertar una tabla').click();
+  await page.getByLabel('Filas').fill('3');
+  await page.getByLabel('Columnas').fill('2');
+  await button(page, 'Insertar tabla').click();
+  const visual = page.getByLabel('Contenido visual');
+  const cells = visual.locator('th, td');
+  await expect(cells).toHaveCount(6);
+  await cells.nth(2).click();
+  await page.keyboard.type('Fila objetivo');
+  await expect(button(page, 'Opciones de tabla')).toBeVisible();
+  await expect(page.getByTestId('editor-table-menu')).toHaveCount(0);
+  await button(page, 'Opciones de tabla').click();
+  await page.getByRole('menuitem', { name: 'Insertar fila arriba', exact: true }).click();
+  await expect(cells).toHaveCount(8);
+  await expect(visual).toContainText('Fila objetivo');
+
+  await button(page, 'Deshacer en el editor').click();
+  await expect(cells).toHaveCount(6);
+  await button(page, 'Rehacer en el editor').click();
+  await expect(cells).toHaveCount(8);
+
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/<table>/);
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await expect(visual.locator('th, td')).toHaveCount(8);
+  await expect(visual).toContainText('Fila objetivo');
+  await page.screenshot({ path: testInfo.outputPath('contextual-table.png'), fullPage: true });
+});
+
+test('UX7 Hito 9: flujo editorial integrado conserva nombre, cuerpo, tabla, contraste y apariencias', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Un único contexto desktop recorre después tablet y móvil.');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Integración editorial');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await page.getByLabel('Nombre de la Nota').fill('Mapa narrativo');
+  await page.getByLabel('Contenido visual').fill('Idea inicial');
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  await openCardActions(page, card(page, 1), 'Mapa narrativo');
+  await button(page, 'Editar Mapa narrativo dentro de la ficha').click();
+  const quickBody = page.getByLabel('Contenido visual');
+  await quickBody.fill('Idea inicial ampliada');
+  await page.getByTestId('inline-toolbar-toggle').click();
+  await expect(page.getByTestId('editor-toolbar')).toBeHidden();
+  await page.getByTestId('inline-toolbar-toggle').click();
+  await expect(quickBody).toContainText('Idea inicial ampliada');
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+
+  await openCardEditor(page, 1);
+  await button(page, 'Insertar una tabla').click();
+  await page.getByLabel('Filas').fill('2');
+  await page.getByLabel('Columnas').fill('2');
+  await button(page, 'Insertar tabla').click();
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/Idea inicial ampliada[\s\S]*<table>/);
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await button(page, 'Guardar texto').click();
+  await page.getByTestId('card-inspector-section-appearance').click();
+  await button(page, 'Mostrar apariencia y propiedades').click();
+  await button(page, 'Ocultar siempre').click();
+  await closeEditor(page);
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Mapa narrativo');
+  const transparentPreview = page.getByTestId('card-rich-text-tarjeta-1');
+  await expect(transparentPreview).toContainText('Idea inicial ampliada');
+  await expect(transparentPreview.locator('[data-testid*="-table-"]').first()).toBeVisible();
+  await openCardActions(page, card(page, 1), 'Mapa narrativo');
+  await button(page, 'Contraer Mapa narrativo').click();
+  await expect(page.getByTestId('collapsed-tarjeta-1')).toBeVisible();
+  await openCardActions(page, card(page, 1), 'Mapa narrativo');
+  await button(page, 'Expandir Mapa narrativo').click();
+  await openCardActions(page, card(page, 1), 'Mapa narrativo');
+  await button(page, 'Minimizar Mapa narrativo').click();
+  await expect(page.getByTestId('minimized-tarjeta-1')).toBeVisible();
+  await openCardActions(page, card(page, 1), 'Mapa narrativo');
+  await button(page, 'Expandir Mapa narrativo').click();
+
+  await page.setViewportSize({ width: 950, height: 820 });
+  await expect.poll(() => hasHorizontalOverflow(page)).toBe(false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => hasHorizontalOverflow(page)).toBe(false);
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Mapa narrativo');
+  await page.screenshot({ path: testInfo.outputPath('integrated-mobile-dark.png'), fullPage: true });
 });
 
 test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con confirmación', async ({ page }, testInfo) => {
@@ -2172,7 +2430,7 @@ test('Idioma (E7b, ADR 0040): el editor de tarjeta e inspector también cambian 
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   // En móvil el encabezado propio del inspector se oculta (la hoja ya muestra título y «Close»).
   if (!isCompactWidth(page)) await expect(page.getByText('SELECTED CARD', { exact: true })).toBeVisible();
-  await page.getByLabel('Card title').fill('English card');
+  await page.getByLabel('Note name').fill('English card');
   await button(page, 'Save text').click();
   // Antes de E7f (ADR 0044) el aviso de guardar texto se quedaba fijo en español pese al idioma
   // elegido; con la clave única y compuesta, se traduce igual que el resto.

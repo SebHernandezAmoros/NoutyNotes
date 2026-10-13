@@ -112,6 +112,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const { locale } = useLocale();
   const colors = theme.colors;
   const cardBase = workspace.cardTypes.find((type) => type.id === card.typeId)?.base;
+  const note = cardBase === 'note';
   const floatingText = isFloatingTextCard(card, cardBase);
   const shape = cardBase === 'shape';
   const connector = cardBase === 'connector';
@@ -507,10 +508,8 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   // nota. Mismo patrón ya probado en `advancedOpen` (posición/tamaño): agrupados detrás de un único
   // interruptor, cerrado por defecto en escritorio; en la hoja móvil se mantienen siempre visibles
   // (igual que `advancedOpen`/`geometryBlock`), porque ahí no compiten con un panel lateral aparte.
-  // UX7-VISUAL-FINALIZATION: el título es metadato plano, no una segunda superficie editorial. Solo se
-  // ofrece en «Más» y puede contraerse allí; el cuerpo conserva toda la composición enriquecida. Un título
-  // real existente permanece accesible y los marcadores de los presets («Nueva nota», «Nuevo título»…)
-  // cuentan como vacíos para decidir el estado inicial del control. El lienzo no lo repite como encabezado.
+  // Los tipos históricos que no son Nota conservan el editor de título plegable en «Más». En una Nota,
+  // el nombre es identificación plana y visible dentro de Contenido; nunca entra en el editor enriquecido.
   const initialTitle = (initialDraft?.title ?? card.title ?? '').trim();
   const [titleEditorOpen, setTitleEditorOpen] = useState(() => initialTitle !== '' && !PLACEHOLDER_TITLES.has(initialTitle));
   return (
@@ -555,7 +554,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View>
       ) : null}
       <View style={styles.section}>
-        {section === 'more' && !shape && !connector ? (
+        {section === 'content' && note ? (
+          <View testID="note-identification" style={styles.section}>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.identification.section', locale)}</Text>
+            <TextField
+              testID="note-name-input"
+              label={t('inspector.noteName.label', locale)}
+              value={title}
+              onChangeText={changeTitlePlain}
+              placeholder={t('inspector.noteName.placeholder', locale)}
+            />
+          </View>
+        ) : null}
+        {section === 'more' && !note && !shape && !connector ? (
           <View testID="rich-title-editor" style={styles.section}>
             {titleEditorOpen ? (
               <>

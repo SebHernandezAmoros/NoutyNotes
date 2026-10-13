@@ -533,7 +533,7 @@ const editorTheme = {
   tableCellHeader: 'nouty-table-cell-header',
 };
 
-export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, compact = false, titleOnly = false }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, compact = false, toolbarCollapsed = false, titleOnly = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -565,7 +565,14 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
       `}</style>
       <LexicalComposer initialConfig={initialConfig}>
         <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage}>
-        <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} compact={compact} />
+        <View
+          testID="editor-toolbar"
+          accessibilityElementsHidden={toolbarCollapsed}
+          importantForAccessibility={toolbarCollapsed ? 'no-hide-descendants' : 'auto'}
+          style={toolbarCollapsed ? styles.toolbarCollapsed : null}
+        >
+          <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} compact={compact} />
+        </View>
         <View testID="web-rich-text-scroll" style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
             contentEditable={(
@@ -616,6 +623,7 @@ const styles = StyleSheet.create({
   toolbar: { minHeight: 52, padding: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   compactMoreToolbar: { minHeight: 48, padding: 4, gap: 4 },
   toolbarShellRaised: { position: 'relative', zIndex: 20 },
+  toolbarCollapsed: { display: 'none' },
   tableMenuWrap: { position: 'relative' },
   tableMenuButton: { height: 44, paddingHorizontal: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   tableMenu: { position: 'absolute', top: 46, left: 0, zIndex: 50, minWidth: 220, borderWidth: 2, paddingVertical: 4 },
