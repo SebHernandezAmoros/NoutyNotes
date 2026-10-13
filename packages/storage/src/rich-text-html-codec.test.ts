@@ -48,6 +48,18 @@ describe('HTML seguro v1 ↔ RichTextDocument (P18-E2)', () => {
     expect(valueOf(serializeRichTextHtml(parsed))).toBe('<p>  Café ☕ &amp; <strong>pan</strong><br></p>');
   });
 
+  it('conserva alineación de párrafos y encabezados mediante un atributo seguro enumerado', () => {
+    const source = '<h2 data-nouty-align="center">Centro</h2>\n<p data-nouty-align="right">Derecha</p>\n<p data-nouty-align="justify">Justificado</p>';
+    const parsed = valueOf(parseRichTextHtml(source));
+    expect(parsed.blocks).toEqual([
+      { type: 'heading', level: 2, alignment: 'center', content: [{ type: 'text', text: 'Centro' }] },
+      { type: 'paragraph', alignment: 'right', content: [{ type: 'text', text: 'Derecha' }] },
+      { type: 'paragraph', alignment: 'justify', content: [{ type: 'text', text: 'Justificado' }] },
+    ]);
+    expect(valueOf(serializeRichTextHtml(parsed))).toBe(source);
+    expect(problems(parseRichTextHtml('<p data-nouty-align="left; color:red">x</p>'))).toEqual(['invalid-html@html.p[data-nouty-align]']);
+  });
+
   it.each([
     ['script', '<p>bien</p><script>alert(1)</script>'],
     ['evento', '<p onclick="alert(1)">texto</p>'],

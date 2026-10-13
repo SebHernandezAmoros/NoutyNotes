@@ -18,6 +18,8 @@ export const richTextMarks = ['bold', 'italic'] as const;
 export type RichTextMark = (typeof richTextMarks)[number];
 export type RichTextHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export type RichTextListStyle = 'bullet' | 'ordered' | 'checklist';
+export const richTextAlignments = ['left', 'center', 'right', 'justify'] as const;
+export type RichTextAlignment = (typeof richTextAlignments)[number];
 
 export interface RichTextDocument {
   readonly schemaVersion: typeof RICH_TEXT_SCHEMA_VERSION;
@@ -45,12 +47,14 @@ export type RichTextInline = RichTextLeaf | RichTextLink;
 
 export interface RichTextParagraph {
   readonly type: 'paragraph';
+  readonly alignment?: RichTextAlignment;
   readonly content: readonly RichTextInline[];
 }
 
 export interface RichTextHeading {
   readonly type: 'heading';
   readonly level: RichTextHeadingLevel;
+  readonly alignment?: RichTextAlignment;
   readonly content: readonly RichTextInline[];
 }
 
@@ -104,8 +108,8 @@ export type RichTextBlock =
 
 const documentKeys = ['schemaVersion', 'blocks'];
 const documentPath = 'document';
-const paragraphKeys = ['type', 'content'];
-const headingKeys = ['type', 'level', 'content'];
+const paragraphKeys = ['type', 'alignment', 'content'];
+const headingKeys = ['type', 'level', 'alignment', 'content'];
 const imageKeys = ['type', 'assetRef', 'alt', 'caption'];
 const tableKeys = ['type', 'header', 'rows'];
 const tableRowKeys = ['cells'];
@@ -255,10 +259,16 @@ function collectBlockIssues(input: unknown, path: string, issues: DomainIssue[])
   switch (input.type) {
     case 'paragraph':
       checkKnownKeys(input, paragraphKeys, path, issues);
+      if (input.alignment !== undefined && !richTextAlignments.includes(input.alignment as RichTextAlignment)) {
+        issues.push(issue('invalid-value', `${path}.alignment`, 'Debe ser "left", "center", "right" o "justify".'));
+      }
       collectInlineListIssues(input.content, `${path}.content`, issues);
       return;
     case 'heading':
       checkKnownKeys(input, headingKeys, path, issues);
+      if (input.alignment !== undefined && !richTextAlignments.includes(input.alignment as RichTextAlignment)) {
+        issues.push(issue('invalid-value', `${path}.alignment`, 'Debe ser "left", "center", "right" o "justify".'));
+      }
       if (!Number.isInteger(input.level) || (input.level as number) < 1 || (input.level as number) > 6) {
         issues.push(issue('invalid-value', `${path}.level`, 'Debe ser un nivel entre 1 y 6.'));
       }

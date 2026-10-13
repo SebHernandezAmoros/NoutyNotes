@@ -10,6 +10,7 @@ import { AppIcon } from '../../components/AppIcon';
 import { DialogCloseButton } from '../../components/Dialog';
 import { t } from '../../i18n';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
+import type { EditableCardDraft } from '../editorialDraft';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
 
@@ -23,9 +24,9 @@ interface InlineCardEditorProps {
    * `richTextCodec` (que aquí serializa a markdown, el formato que ya persiste `content`). */
   readonly htmlCodec: RichTextCodec;
   readonly noteFontFamily?: string | undefined;
-  readonly initialDraft?: { readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
-  readonly onDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
-  readonly onSave: (cardId: CardId, title: string, content: string, titleDocument: RichTextDocument) => Promise<boolean>;
+  readonly initialDraft?: EditableCardDraft | undefined;
+  readonly onDraftChange: (draft: EditableCardDraft) => void;
+  readonly onSave: (draft: EditableCardDraft) => Promise<boolean>;
   readonly onAdvanced: () => void;
   readonly onClose: () => void;
 }
@@ -35,8 +36,9 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
+  const initialHtml = card.contentDocument ? htmlCodec.serialize(card.contentDocument) : null;
   const [title] = useState(initialDraft?.title ?? cardTitleText(card));
-  const [content, setContent] = useState(initialDraft?.content ?? card.content ?? '');
+  const [content, setContent] = useState(initialDraft?.content ?? (initialHtml?.ok ? initialHtml.value : card.content ?? ''));
   const [titleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
     schemaVersion: 1, blocks: [{ type: 'paragraph', content: (initialDraft?.title ?? cardTitleText(card)) ? [{ type: 'text', text: initialDraft?.title ?? cardTitleText(card) }] : [] }],
   }));
@@ -44,8 +46,13 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document) && !document.blocks.some((block) => block.type === 'image')
     : isBasicRichTextDocument(document);
+  const initialHtmlAuthored = initialDraft?.bodySource?.format === 'html' || card.contentDocument !== undefined;
+  const [htmlAuthored, setHtmlAuthored] = useState(initialHtmlAuthored);
   const [visualDocument, setVisualDocument] = useState<Parameters<RichTextCodec['serialize']>[0] | null>(() => {
-    const parsed = richTextCodec.parse(initialDraft?.content ?? card.content ?? '');
+    if (initialDraft?.bodyDocument && supportsVisualDocument(initialDraft.bodyDocument)) return initialDraft.bodyDocument;
+    if (card.contentDocument && supportsVisualDocument(card.contentDocument)) return card.contentDocument;
+    const source = initialDraft?.content ?? card.content ?? '';
+    const parsed = (initialHtmlAuthored ? htmlCodec : richTextCodec).parse(source);
     return parsed.ok && supportsVisualDocument(parsed.value) ? parsed.value : null;
   });
   // UX7-CONSOLIDATION: ya no hay un indicador rutinario de «Guardando…» (guardar correctamente es
@@ -53,9 +60,8 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   const [, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   // UX7-CONSOLIDATION: Visual/HTML en edición rápida reutiliza los dos mecanismos seguros ya
-  // existentes: `htmlCodec` (mismo codec HTML v1/lista blanca que `CardInspector.tsx`) para leer y
-  // validar el HTML de origen, y `richTextCodec` (markdown) para persistir — el mismo formato que ya
-  // produce el modo Visual, sin inventar un nuevo campo de borrador ni tocar `DraftStore`.
+  // existentes: `htmlCodec` (mismo codec HTML v1/lista blanca que `CardInspector.tsx`) para leer,
+  // validar y persistir el HTML de origen, y `richTextCodec` para conservar la lectura Markdown.
   const [bodyMode, setBodyMode] = useState<'visual' | 'html'>('visual');
   const [htmlDraft, setHtmlDraft] = useState('');
   const [htmlIssue, setHtmlIssue] = useState<string | null>(null);
@@ -71,11 +77,13 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   const applyHtml = () => {
     const parsed = htmlCodec.parse(htmlDraft);
     if (!parsed.ok) { setHtmlIssue(parsed.issues[0]?.message ?? 'El código HTML no es válido.'); return; }
-    const encoded = richTextCodec.serialize(parsed.value);
+    const encoded = htmlCodec.serialize(parsed.value);
     if (!encoded.ok) { setHtmlIssue(encoded.issues[0]?.message ?? 'No se pudo aplicar el código.'); return; }
+    setHtmlAuthored(true);
     setContent(encoded.value);
     setVisualDocument(supportsVisualDocument(parsed.value) ? parsed.value : null);
-    onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument });
+    onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument,
+      bodySource: { format: 'html', value: encoded.value }, bodyDocument: parsed.value, bodyValidation: { status: 'valid' } });
     setHtmlIssue(null);
     setBodyMode('visual');
   };
@@ -83,11 +91,16 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const encoded = richTextCodec.serialize(document);
+    const requiresHtml = document.blocks.some((block) => (block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined);
+    const nextHtmlAuthored = htmlAuthored || requiresHtml;
+    const encoded = (nextHtmlAuthored ? htmlCodec : richTextCodec).serialize(document);
     if (encoded.ok) {
+      if (requiresHtml && !htmlAuthored) setHtmlAuthored(true);
       setVisualDocument(document);
       setContent(encoded.value);
-      onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument });
+      onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument, ...(nextHtmlAuthored ? {
+        bodySource: { format: 'html' as const, value: encoded.value }, bodyDocument: document, bodyValidation: { status: 'valid' as const },
+      } : {}) });
     }
   };
   const current = useRef({ title, content });
@@ -103,7 +116,9 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     setSaving(true);
     setProblem(null);
     queued.current = draft;
-    const task = queue.current.then(() => onSave(card.id, draft.title, draft.content, titleDocument)).then((ok) => {
+    const task = queue.current.then(() => onSave({ cardId: card.id, ...draft, titleDocument, ...(htmlAuthored && visualDocument ? {
+      bodySource: { format: 'html' as const, value: draft.content }, bodyDocument: visualDocument, bodyValidation: { status: 'valid' as const },
+    } : {}) })).then((ok) => {
       if (ok) saved.current = draft;
       else setProblem('No se pudo guardar. La edición sigue abierta.');
       return ok;
@@ -115,7 +130,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     });
     queue.current = task;
     return task;
-  }, [card.id, content, onSave, title, titleDocument]);
+  }, [card.id, content, htmlAuthored, onSave, title, titleDocument, visualDocument]);
 
   useEffect(() => {
     if (title === saved.current.title && content === saved.current.content) return undefined;
@@ -149,7 +164,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
       }]}
     >
       <View style={[styles.bar, { backgroundColor: colors.headerNote, borderColor: colors.border }]}>
-        <Text style={[styles.eyebrow, { color: colors.headerText }]}>EDICIÓN RÁPIDA</Text>
+        <Text style={[styles.eyebrow, { color: colors.headerText }]}>{toolsCollapsed ? 'EDICIÓN RÁPIDA · HERRAMIENTAS PLEGADAS' : 'EDICIÓN RÁPIDA'}</Text>
         {!floatingText && Platform.OS === 'web' ? (
           <Pressable
             testID="inline-toolbar-toggle"

@@ -23,8 +23,10 @@ function randomLayout(seed: number, config: GridConfig = DESKTOP_GRID, attempts 
   const modes = ['expanded', 'expanded', 'collapsed', 'minimized'] as const;
   for (let i = 0; i < attempts; i += 1) {
     const w = 1 + Math.floor(random() * 4);
-    const candidate = place(`c${i}`, Math.floor(random() * (config.columns - w + 1)), Math.floor(random() * 12), w,
-      1 + Math.floor(random() * 3), modes[Math.floor(random() * modes.length)]);
+    const mode = modes[Math.floor(random() * modes.length)] ?? 'expanded';
+    const footprintWidth = mode === 'minimized' ? 2 : w;
+    const candidate = place(`c${i}`, Math.floor(random() * (config.columns - footprintWidth + 1)), Math.floor(random() * 12), w,
+      1 + Math.floor(random() * 3), mode);
     if (placements.every((other) => !cellsOverlap(footprint(other), footprint(candidate)))) placements.push(candidate);
   }
   return layoutOf(...placements);
@@ -89,9 +91,9 @@ describe('mover', () => {
   });
 
   it('mueve una tarjeta minimizada según su huella y conserva su tamaño expandido', () => {
-    const layout = layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 1, 0, 2, 2));
-    const moved = value(moveCard(layout, card('a'), { x: 11, y: 0 }, DESKTOP_GRID));
-    expect(at(moved, 'a')).toEqual(place('a', 11, 0, 4, 3, 'minimized'));
+    const layout = layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 2, 0, 2, 2));
+    const moved = value(moveCard(layout, card('a'), { x: 10, y: 0 }, DESKTOP_GRID));
+    expect(at(moved, 'a')).toEqual(place('a', 10, 0, 4, 3, 'minimized'));
   });
 });
 
@@ -116,7 +118,7 @@ describe('redimensionar', () => {
   });
 
   it('en una tarjeta minimizada cambia el tamaño a restaurar sin ocupar más', () => {
-    const layout = layoutOf(place('a', 0, 0, 1, 1, 'minimized'), place('b', 1, 0, 2, 2));
+    const layout = layoutOf(place('a', 0, 0, 1, 1, 'minimized'), place('b', 2, 0, 2, 2));
     expect(at(value(resizeCard(layout, card('a'), { w: 6, h: 2 }, DESKTOP_GRID)), 'a')).toEqual(place('a', 0, 0, 6, 2, 'minimized'));
   });
 });
@@ -194,12 +196,12 @@ describe('modos de visualización', () => {
     expect(at(collapsed, 'a')).toEqual(place('a', 2, 1, 4, 3, 'collapsed'));
     const minimized = value(setDisplay(collapsed, card('a'), 'minimized', DESKTOP_GRID));
     expect(at(minimized, 'a')).toEqual(place('a', 2, 1, 4, 3, 'minimized'));
-    expect(footprint(at(minimized, 'a') as CardPlacement)).toEqual({ x: 2, y: 1, w: 1, h: 1 });
+    expect(footprint(at(minimized, 'a') as CardPlacement)).toEqual({ x: 2, y: 1, w: 2, h: 2 });
   });
 
-  it('la tarjeta minimizada sigue ocupando su celda', () => {
+  it('la tarjeta minimizada ocupa su huella 2 × 2', () => {
     const layout = layoutOf(place('a', 0, 0, 4, 3, 'minimized'));
-    expect(findFreeSpace(layout, { w: 1, h: 1 }, DESKTOP_GRID)).toEqual({ ok: true, value: { x: 1, y: 0 } });
+    expect(findFreeSpace(layout, { w: 1, h: 1 }, DESKTOP_GRID)).toEqual({ ok: true, value: { x: 2, y: 0 } });
     expect(problems(moveCard(layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 5, 5, 1, 1)), card('b'), { x: 0, y: 0 }, DESKTOP_GRID)))
       .toEqual(['grid-collision@placements[0]']);
   });
@@ -210,7 +212,7 @@ describe('modos de visualización', () => {
   });
 
   it('si el espacio está ocupado falla por defecto sin cambios parciales', () => {
-    const layout = deepFreeze(layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 1, 1, 2, 2)));
+    const layout = deepFreeze(layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 2, 1, 2, 2)));
     expect(problems(setDisplay(layout, card('a'), 'expanded', DESKTOP_GRID))).toEqual(['grid-collision@placements[1]']);
     // Colapsada ocupa solo la fila 0 y toca a `b` sin solaparse; esa transición sí es válida.
     expect(at(value(setDisplay(layout, card('a'), 'collapsed', DESKTOP_GRID)), 'a')).toEqual(place('a', 0, 0, 4, 3, 'collapsed'));
@@ -218,18 +220,18 @@ describe('modos de visualización', () => {
   });
 
   it('con relocate mueve la tarjeta al primer hueco que admite el tamaño restaurado', () => {
-    const layout = layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 1, 1, 2, 2));
+    const layout = layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 2, 1, 2, 2));
     const restored = value(setDisplay(layout, card('a'), 'expanded', DESKTOP_GRID, { ifOccupied: 'relocate' }));
-    expect(at(restored, 'a')).toEqual(place('a', 3, 0, 4, 3));
-    expect(at(restored, 'b')).toEqual(place('b', 1, 1, 2, 2));
+    expect(at(restored, 'a')).toEqual(place('a', 4, 0, 4, 3));
+    expect(at(restored, 'b')).toEqual(place('b', 2, 1, 2, 2));
     expect(validateGridLayout(restored, DESKTOP_GRID).ok).toBe(true);
   });
 
   it('con relocate informa si no queda sitio, y al expandir fuera de límites también', () => {
     const bounded: GridConfig = { columns: 4, rows: 3 };
-    const layout = layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 1, 1, 2, 2));
+    const layout = layoutOf(place('a', 0, 0, 4, 3, 'minimized'), place('b', 2, 1, 2, 2));
     expect(problems(setDisplay(layout, card('a'), 'expanded', bounded, { ifOccupied: 'relocate' }))).toEqual(['no-free-space@size']);
-    const edge = layoutOf(place('a', 11, 0, 4, 1, 'minimized'));
+    const edge = layoutOf(place('a', 10, 0, 4, 1, 'minimized'));
     expect(problems(setDisplay(edge, card('a'), 'expanded', DESKTOP_GRID))).toEqual(['out-of-bounds@rect']);
     expect(at(value(setDisplay(edge, card('a'), 'expanded', DESKTOP_GRID, { ifOccupied: 'relocate' })), 'a')).toEqual(place('a', 0, 0, 4, 1));
   });
@@ -293,22 +295,22 @@ describe('regresiones de la revisión de fase 2 (G1, G3, G4)', () => {
   });
 
   it('G1: relocate al expandir informa de falta de espacio representable sin cambios parciales', () => {
-    const layout = deepFreeze(layoutOf(place('a', 1, 0, 2, max, 'minimized'), place('b', 0, 0, 1, 1)));
-    expect(validateGridLayout(layout, { columns: 2 }).ok).toBe(true);
-    expect(problems(setDisplay(layout, card('a'), 'expanded', { columns: 2 }, { ifOccupied: 'relocate' }))).toEqual(['no-free-space@size']);
-    expect(at(layout, 'a')).toEqual(place('a', 1, 0, 2, max, 'minimized'));
+    const layout = deepFreeze(layoutOf(place('a', 1, 0, 3, max, 'minimized'), place('b', 0, 0, 1, 1)));
+    expect(validateGridLayout(layout, { columns: 3 }).ok).toBe(true);
+    expect(problems(setDisplay(layout, card('a'), 'expanded', { columns: 3 }, { ifOccupied: 'relocate' }))).toEqual(['no-free-space@size']);
+    expect(at(layout, 'a')).toEqual(place('a', 1, 0, 3, max, 'minimized'));
   });
 
   it('G1: relocate al colapsar exige que el tamaño expandido siga siendo representable', () => {
-    const layout = layoutOf(place('a', 1, 0, 2, max, 'minimized'), place('b', 0, 0, 1, 1));
-    expect(problems(setDisplay(layout, card('a'), 'collapsed', { columns: 2 }, { ifOccupied: 'relocate' }))).toEqual(['no-free-space@size']);
+    const layout = layoutOf(place('a', 1, 0, 3, max, 'minimized'), place('b', 0, 0, 1, 1));
+    expect(problems(setDisplay(layout, card('a'), 'collapsed', { columns: 3 }, { ifOccupied: 'relocate' }))).toEqual(['no-free-space@size']);
   });
 
   it('G1: mover o redimensionar no produce un tamaño expandido no representable', () => {
     const layout = layoutOf(place('a', 0, 0, 1, max - 10, 'minimized'));
-    expect(problems(moveCard(layout, card('a'), { x: 0, y: 11 }, { columns: 1 }))).toEqual(['out-of-bounds@to']);
-    expect(moveCard(layout, card('a'), { x: 0, y: 10 }, { columns: 1 }).ok).toBe(true);
-    expect(problems(resizeCard(layoutOf(place('a', 0, 5, 1, 1, 'minimized')), card('a'), { w: 1, h: max - 4 }, { columns: 1 }))).toEqual(['out-of-bounds@size']);
+    expect(problems(moveCard(layout, card('a'), { x: 0, y: 11 }, { columns: 2 }))).toEqual(['out-of-bounds@to']);
+    expect(moveCard(layout, card('a'), { x: 0, y: 10 }, { columns: 2 }).ok).toBe(true);
+    expect(problems(resizeCard(layoutOf(place('a', 0, 5, 1, 1, 'minimized')), card('a'), { w: 1, h: max - 4 }, { columns: 2 }))).toEqual(['out-of-bounds@size']);
   });
 
   it('G3: busca por eventos de ocupación con alturas enormes y devuelve la primera posición', () => {
@@ -323,9 +325,9 @@ describe('regresiones de la revisión de fase 2 (G1, G3, G4)', () => {
 
   it('G3: relocate con alturas enormes termina y deja un layout válido', () => {
     const tall = 1_000_000_000;
-    const layout = layoutOf(place('a', 0, 0, 1, tall), place('b', 1, 0, 2, 3, 'minimized'), place('c', 2, 0, 1, 1));
+    const layout = layoutOf(place('a', 0, 0, 1, tall), place('b', 1, 0, 2, 3, 'minimized'), place('c', 1, 2, 1, 1));
     const restored = value(setDisplay(layout, card('b'), 'expanded', { columns: 3 }, { ifOccupied: 'relocate' }));
-    expect(at(restored, 'b')).toEqual(place('b', 1, 1, 2, 3));
+    expect(at(restored, 'b')).toEqual(place('b', 1, 3, 2, 3));
     expect(validateGridLayout(restored, { columns: 3 }).ok).toBe(true);
   });
 

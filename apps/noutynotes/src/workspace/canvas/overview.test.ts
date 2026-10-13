@@ -13,8 +13,8 @@ const layout: BoardLayout = {
 };
 
 describe('vista general del lienzo (ADR 0028)', () => {
-  it('los límites incluyen tarjetas (con su huella: minimizada, 1 × 1) y marcos; sin nada, no hay límites', () => {
-    expect(contentBounds(layout, metrics)).toEqual({ left: -200, top: -50, width: 2300, height: 2100 });
+  it('los límites incluyen tarjetas (con su huella: minimizada, 2 × 2) y marcos; sin nada, no hay límites', () => {
+    expect(contentBounds(layout, metrics)).toEqual({ left: -200, top: -50, width: 2400, height: 2150 });
     expect(contentBounds({ boardId: 'b' as BoardId, placements: [] }, metrics)).toBeNull();
     expect(contentBounds({ boardId: 'b' as BoardId, placements: [{
       ...place('ruta', 0, 0, 1, 1), connectorPath: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 6 }],

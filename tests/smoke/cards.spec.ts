@@ -246,7 +246,7 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   }
   await expect(feedback(page)).toHaveText('Tarjeta minimizada. Guardado en memoria.');
   if (compact) {
-    // El tamaño expandido se conserva aunque la huella sea 1 × 1; en móvil se comprueba antes de
+    // El tamaño expandido se conserva aunque la huella sea 2 × 2; en móvil se comprueba antes de
     // volver al tablero porque el editor enfocado ocupa la pantalla completa. En escritorio se
     // confirma más abajo, al volver a expandirla (misma huella 4 × 3), sin repetir la comprobación.
     await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
@@ -281,7 +281,7 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   }
 
   // Segunda ocupa parte del sitio que Primera necesita para expandirse, pegada a su huella minimizada
-  // (1 × 1, columna 1 fila 1) sin pisarla. Dónde nace depende del viewport (a la derecha en escritorio
+  // (2 × 2, desde columna 1 fila 1) sin pisarla. Dónde nace depende del viewport (a la derecha en escritorio
   // —el editor ya no le resta ancho al lienzo—, debajo en móvil, ADR 0004): se lee su posición real y
   // se mueve hasta la columna 2, fila 1, que sí se solapa con el hueco que Primera necesita al volver.
   await tapCard(page, 2);
@@ -1011,6 +1011,56 @@ test('UX7 Hito 9: flujo editorial integrado conserva nombre, cuerpo, tabla, cont
   await expect.poll(() => hasHorizontalOverflow(page)).toBe(false);
   await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Mapa narrativo');
   await page.screenshot({ path: testInfo.outputPath('integrated-mobile-dark.png'), fullPage: true });
+});
+
+test('UX7: alineación durable, toolbar plegable y apariencias diferenciadas', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Escenario focalizado de escritorio para la corrección UX7.');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('./');
+  await createWorkspace(page, 'Corrección visual');
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+  await page.getByLabel('Nombre de la Nota').fill('Nota alineada');
+  const fullBody = page.getByLabel('Contenido visual');
+  await fullBody.fill('Contenido centrado');
+  await button(page, 'Centrar').click();
+  await expect(fullBody.locator('p')).toHaveCSS('text-align', 'center');
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/<p data-nouty-align="center">Contenido centrado<\/p>/);
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  const header = page.getByTestId('card-header-tarjeta-1');
+  const tab = page.getByTestId('card-tab-tarjeta-1');
+  await expect(header).toBeVisible();
+  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe(await tab.evaluate((element) => getComputedStyle(element).backgroundColor));
+
+  await openCardActions(page, card(page, 1), 'Nota alineada');
+  await button(page, 'Editar Nota alineada dentro de la ficha').click();
+  const quickBody = page.getByLabel('Contenido visual');
+  await expect(quickBody).toContainText('Contenido centrado');
+  await page.getByTestId('inline-toolbar-toggle').click();
+  await expect(page.getByTestId('editor-toolbar')).toBeHidden();
+  await expect(page.getByTestId('inline-card-editor')).toContainText('HERRAMIENTAS PLEGADAS');
+  await expect(quickBody).toBeVisible();
+  await page.getByTestId('inline-toolbar-toggle').click();
+  await expect(page.getByTestId('editor-toolbar')).toBeVisible();
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+
+  await openCardActions(page, card(page, 1), 'Nota alineada');
+  await button(page, 'Contraer Nota alineada').click();
+  await expect(page.getByTestId('collapsed-icon-tarjeta-1')).toBeVisible();
+  const collapsedBox = await page.getByTestId('collapsed-tarjeta-1').boundingBox();
+  await openCardActions(page, card(page, 1), 'Nota alineada');
+  await button(page, 'Minimizar Nota alineada').click();
+  await expect(page.getByTestId('minimized-icon-tarjeta-1')).toBeVisible();
+  const minimizedBox = await page.getByTestId('minimized-tarjeta-1').boundingBox();
+  expect(collapsedBox).not.toBeNull();
+  expect(minimizedBox).not.toBeNull();
+  expect((minimizedBox?.height ?? 0)).toBeGreaterThan(collapsedBox?.height ?? Number.POSITIVE_INFINITY);
+  await page.screenshot({ path: testInfo.outputPath('ux7-alignment-appearances-dark.png'), fullPage: true });
 });
 
 test('Papelera: enviar, restaurar con conexiones y eliminar definitivamente con confirmación', async ({ page }, testInfo) => {
@@ -2559,7 +2609,7 @@ test('Conexiones: tipo y rótulo al crear, editarlos después, elegir el estilo 
   }
   await page.screenshot({ path: testInfo.outputPath('connection.png') });
 
-  // Minimizada, la línea y el rótulo siguen visibles (la huella se reduce a 1 × 1, no desaparece).
+  // Minimizada, la línea y el rótulo siguen visibles (la huella se reduce a 2 × 2, no desaparece).
   if (compact) {
     await tapCard(page, 1);
     await button(page, 'Mostrar minimizada').click();

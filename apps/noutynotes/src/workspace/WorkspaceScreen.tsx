@@ -345,9 +345,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     // del umbral antiguo, así que «Editar dentro de la ficha» abría el editor completo sin avisarlo.
     const base = workspace?.cardTypes.find((candidate) => candidate.id === card?.typeId)?.base;
     // Formas y conectores no tienen cuerpo de nota: su edición pertenece al inspector de propiedades.
-    // Una nota HTML debe entrar por el editor Visual/HTML: el editor rápido heredado todavía
-    // transporta Markdown y no puede adquirir autoridad sin arriesgar una reescritura vacía.
-    const canEditInline = !compact && placement?.display === 'expanded' && base !== 'shape' && base !== 'connector' && card?.contentDocument === undefined;
+    // El editor rápido comparte la misma autoridad Visual/HTML y puede conservar documentos HTML
+    // compatibles; el propio editor deriva al inspector completo si encuentra bloques no soportados.
+    const canEditInline = !compact && placement?.display === 'expanded' && base !== 'shape' && base !== 'connector';
     if (!activateSurface(cardId, canEditInline ? 'quick' : 'full')) return;
     setInspectorSection('content');
     setSelectedId(cardId);
@@ -1167,8 +1167,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const focusing = focus && cardInspector !== null;
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
   const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setInlineEditing(false); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
-  const saveInlineCard = useCallback(async (cardId: CardId, title: string, content: string, titleDocument: RichTextDocument) => {
-    if (!setPendingText({ cardId, title, content, titleDocument }, authority)) return true;
+  const saveInlineCard = useCallback(async (draft: EditableCardDraft) => {
+    if (!setPendingText(draft, authority)) return true;
     return flushPendingText(authority ?? undefined);
   }, [authority, flushPendingText, setPendingText]);
   // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor y el mismo caso de

@@ -32,10 +32,10 @@ export {
   MAX_RICH_TEXT_BLOCKS, MAX_RICH_TEXT_INLINES, MAX_RICH_TEXT_LIST_DEPTH,
   MAX_RICH_TEXT_LIST_ITEMS, MAX_RICH_TEXT_TABLE_COLUMNS, MAX_RICH_TEXT_TABLE_ROWS,
   MAX_RICH_TEXT_TEXT_LENGTH, RICH_TEXT_SCHEMA_VERSION, createEmptyRichTextDocument,
-  normalizeRichTextDocument, richTextMarks, toggleRichTextChecklistItem, validateRichTextDocument,
+  normalizeRichTextDocument, richTextAlignments, richTextMarks, toggleRichTextChecklistItem, validateRichTextDocument,
 } from './rich-text/rich-text';
 export type {
-  RichTextBlock, RichTextDocument, RichTextHardBreak, RichTextHeading, RichTextHeadingLevel,
+  RichTextAlignment, RichTextBlock, RichTextDocument, RichTextHardBreak, RichTextHeading, RichTextHeadingLevel,
   RichTextImage, RichTextInline, RichTextLeaf, RichTextLink, RichTextList, RichTextListItem,
   RichTextListStyle, RichTextMark, RichTextOpaqueMarkdown, RichTextParagraph, RichTextTable,
   RichTextTableCell, RichTextTableRow, RichTextTextRun,

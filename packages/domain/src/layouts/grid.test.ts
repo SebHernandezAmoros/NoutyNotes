@@ -60,7 +60,7 @@ describe('huella y solapamiento', () => {
   it('la huella depende del modo de visualización y conserva la esquina', () => {
     expect(footprint(place('a', 2, 3, 4, 5))).toEqual({ x: 2, y: 3, w: 4, h: 5 });
     expect(footprint(place('a', 2, 3, 4, 5, 'collapsed'))).toEqual({ x: 2, y: 3, w: 4, h: 1 });
-    expect(footprint(place('a', 2, 3, 4, 5, 'minimized'))).toEqual({ x: 2, y: 3, w: 1, h: 1 });
+    expect(footprint(place('a', 2, 3, 4, 5, 'minimized'))).toEqual({ x: 2, y: 3, w: 2, h: 2 });
   });
 
   it.each([
@@ -90,7 +90,7 @@ describe('validación de un layout contra la grilla', () => {
   });
 
   it('evalúa colisiones sobre la huella: minimizadas y colapsadas dejan libre el resto de su rect', () => {
-    const minimized = layoutOf(place('a', 0, 0, 4, 4, 'minimized'), place('b', 1, 0, 3, 1), place('c', 0, 1, 2, 2));
+    const minimized = layoutOf(place('a', 0, 0, 4, 4, 'minimized'), place('b', 2, 0, 2, 1), place('c', 0, 2, 2, 2));
     expect(validateGridLayout(minimized, DESKTOP_GRID).ok).toBe(true);
     const collapsed = layoutOf(place('a', 0, 0, 4, 4, 'collapsed'), place('b', 0, 1, 4, 1));
     expect(validateGridLayout(collapsed, DESKTOP_GRID).ok).toBe(true);
@@ -145,7 +145,7 @@ describe('regresiones de la revisión de fase 2 (G2, G4)', () => {
   });
 
   it('G2: conserva que la huella reducida pueda caber donde la expandida no cabe', () => {
-    expect(validateGridLayout(layoutOf(place('a', 11, 0, 4, 3, 'minimized')), DESKTOP_GRID).ok).toBe(true);
+    expect(validateGridLayout(layoutOf(place('a', 10, 0, 4, 3, 'minimized')), DESKTOP_GRID).ok).toBe(true);
     expect(validateGridLayout(layoutOf(place('a', 0, 3, 1, 4, 'collapsed')), { columns: 12, rows: 4 }).ok).toBe(true);
     expect(validateGridLayout(layoutOf(place('a', 0, 0, 1, Number.MAX_SAFE_INTEGER, 'collapsed')), { columns: 1 }).ok).toBe(true);
   });

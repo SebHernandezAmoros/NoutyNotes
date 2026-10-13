@@ -7,6 +7,7 @@ import {
 } from '@noutynotes/domain';
 import type {
   AssetRef,
+  RichTextAlignment,
   RichTextBlock,
   RichTextDocument,
   RichTextInline,
@@ -300,11 +301,26 @@ function parseTable(node: HtmlNode): RichTextBlock {
   return { type: 'table', ...(header ? { header } : {}), rows: parsedRows };
 }
 
+const blockAlignments: readonly RichTextAlignment[] = ['left', 'center', 'right', 'justify'];
+
+function blockAlignment(node: HtmlNode): RichTextAlignment | undefined {
+  exactAttrs(node, ['data-nouty-align']);
+  const value = node.attrs['data-nouty-align'];
+  if (value === undefined) return undefined;
+  if (!blockAlignments.includes(value as RichTextAlignment)) {
+    throw new HtmlCodecError(`html.${node.tag}[data-nouty-align]`, 'Alineación de bloque no admitida.');
+  }
+  return value as RichTextAlignment;
+}
+
 function parseBlock(node: HtmlNode): RichTextBlock {
-  if (node.tag === 'p') { exactAttrs(node, []); return { type: 'paragraph', content: inlineContent(node.children) }; }
+  if (node.tag === 'p') {
+    const alignment = blockAlignment(node);
+    return { type: 'paragraph', ...(alignment ? { alignment } : {}), content: inlineContent(node.children) };
+  }
   if (/^h[1-6]$/.test(node.tag)) {
-    exactAttrs(node, []);
-    return { type: 'heading', level: Number(node.tag[1]) as 1 | 2 | 3 | 4 | 5 | 6, content: inlineContent(node.children) };
+    const alignment = blockAlignment(node);
+    return { type: 'heading', level: Number(node.tag[1]) as 1 | 2 | 3 | 4 | 5 | 6, ...(alignment ? { alignment } : {}), content: inlineContent(node.children) };
   }
   if (node.tag === 'ul' || node.tag === 'ol') return parseList(node);
   if (node.tag === 'figure') return parseFigure(node);
@@ -362,9 +378,12 @@ function serializeRow(row: RichTextTableRow, cell: 'th' | 'td'): string {
 }
 
 function serializeBlock(block: RichTextBlock, index: number): string {
+  const alignment = (block.type === 'paragraph' || block.type === 'heading') && block.alignment
+    ? ` data-nouty-align="${block.alignment}"`
+    : '';
   switch (block.type) {
-    case 'paragraph': return `<p>${serializeInlines(block.content)}</p>`;
-    case 'heading': return `<h${block.level}>${serializeInlines(block.content)}</h${block.level}>`;
+    case 'paragraph': return `<p${alignment}>${serializeInlines(block.content)}</p>`;
+    case 'heading': return `<h${block.level}${alignment}>${serializeInlines(block.content)}</h${block.level}>`;
     case 'list': return serializeList(block);
     case 'image':
       if (!safeAsset(block.assetRef)) throw new HtmlCodecError(`document.blocks[${index}].assetRef`, 'La imagen debe permanecer dentro de assets/.');

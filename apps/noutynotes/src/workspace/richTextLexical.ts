@@ -87,11 +87,13 @@ export function $createWebRichTextNodes(document: RichTextDocument): LexicalNode
   return document.blocks.map((block) => {
     if (block.type === 'paragraph') {
       const paragraph = $createParagraphNode();
+      paragraph.setFormat(block.alignment ?? 'left');
       appendInlines(paragraph, block.content);
       return paragraph;
     }
     if (block.type === 'heading') {
       const heading = $createHeadingNode(`h${block.level}`);
+      heading.setFormat(block.alignment ?? 'left');
       appendInlines(heading, block.content);
       return heading;
     }
@@ -219,9 +221,11 @@ export function $readWebRichTextDocument(): RichTextDocument | null {
     if ($isParagraphNode(node) || $isHeadingNode(node)) {
       const content = readInlines(node);
       if (!content) return null;
+      const format = node.getFormatType();
+      const alignment = format === 'center' || format === 'right' || format === 'justify' ? format : undefined;
       blocks.push($isHeadingNode(node)
-        ? { type: 'heading', level: Number(node.getTag().slice(1)) as 1 | 2 | 3 | 4 | 5 | 6, content }
-        : { type: 'paragraph', content });
+        ? { type: 'heading', level: Number(node.getTag().slice(1)) as 1 | 2 | 3 | 4 | 5 | 6, ...(alignment ? { alignment } : {}), content }
+        : { type: 'paragraph', ...(alignment ? { alignment } : {}), content });
       continue;
     }
     if ($isListNode(node)) {

@@ -70,7 +70,7 @@ export function stepPreference(preferences: ViewPreferences, key: NumericPrefere
   return { ...preferences, [key]: snapTo(preferences[key] + direction * limits.step, limits) };
 }
 
-/** Área táctil mínima de una ficha minimizada (1 × 1). */
+/** Área táctil mínima por celda; una ficha minimizada ocupa 2 × 2 desde UX7. */
 const MIN_TOUCH = 44;
 
 /** Métricas del lienzo según el ancho y la densidad elegida, sin bajar del área táctil mínima. */

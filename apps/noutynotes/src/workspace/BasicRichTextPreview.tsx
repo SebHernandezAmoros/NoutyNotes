@@ -1,5 +1,4 @@
 import type { RichTextDocument, RichTextInline, RichTextList, RichTextTableRow } from '@noutynotes/domain';
-import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { useTheme } from '@noutynotes/ui';
 import { StyleSheet, Text, View } from 'react-native';
@@ -42,6 +41,7 @@ interface PreviewLine {
   readonly prefix: string;
   readonly content: readonly RichTextInline[];
   readonly headingLevel: 1 | 2 | 3 | 4 | 5 | 6 | null;
+  readonly alignment: 'left' | 'center' | 'right' | 'justify';
 }
 
 function listLines(list: RichTextList, blockIndex: number, depth = 0, path = ''): readonly PreviewLine[] {
@@ -49,7 +49,7 @@ function listLines(list: RichTextList, blockIndex: number, depth = 0, path = '')
   list.items.forEach((item, itemIndex) => {
     const ordinal = (list.start ?? 1) + itemIndex;
     const marker = list.style === 'ordered' ? `${ordinal}. ` : list.style === 'checklist' ? `${item.checked ? '☑' : '☐'} ` : '• ';
-    lines.push({ key: `${blockIndex}-list-${path}${itemIndex}`, prefix: `${'  '.repeat(depth)}${marker}`, content: item.content, headingLevel: null });
+    lines.push({ key: `${blockIndex}-list-${path}${itemIndex}`, prefix: `${'  '.repeat(depth)}${marker}`, content: item.content, headingLevel: null, alignment: 'left' });
     item.children?.forEach((child, childIndex) => lines.push(...listLines(child, blockIndex, depth + 1, `${path}${itemIndex}-${childIndex}-`)));
   });
   return lines;
@@ -57,12 +57,12 @@ function listLines(list: RichTextList, blockIndex: number, depth = 0, path = '')
 
 function previewLines(document: RichTextDocument): readonly PreviewLine[] {
   return document.blocks.flatMap((block, blockIndex): readonly PreviewLine[] => {
-    if (block.type === 'paragraph') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: null }];
-    if (block.type === 'heading') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: block.level }];
+    if (block.type === 'paragraph') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: null, alignment: block.alignment ?? 'left' }];
+    if (block.type === 'heading') return [{ key: `${blockIndex}`, prefix: '', content: block.content, headingLevel: block.level, alignment: block.alignment ?? 'left' }];
     if (block.type === 'list') return listLines(block, blockIndex);
     if (block.type === 'opaque-markdown') return [{
       key: `${blockIndex}-opaque`, prefix: '',
-      content: [{ type: 'text', text: block.source }], headingLevel: null,
+      content: [{ type: 'text', text: block.source }], headingLevel: null, alignment: 'left',
     }];
     return [];
   });
@@ -107,24 +107,21 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
   }
   const lines = previewLines(document);
   return (
-    <Text
-      testID={testID}
-      numberOfLines={numberOfLines}
-      style={[styles.content, { color, fontSize, lineHeight }, fontFamily === undefined ? null : { fontFamily }]}
-    >
-      {lines.map((line, lineIndex) => (
-        <Fragment key={line.key}>
-          {lineIndex > 0 ? '\n' : null}
-          {line.prefix}
-          <Text style={line.headingLevel === null ? null : [styles.heading, {
+    <View testID={testID} style={styles.content}>
+      {lines.slice(0, numberOfLines).map((line, lineIndex) => (
+        <Text key={line.key} numberOfLines={Math.max(1, numberOfLines - lineIndex)} style={[
+          { color, fontSize, lineHeight, textAlign: line.alignment },
+          line.headingLevel === null ? null : [styles.heading, {
             fontSize: fontSize * headingScale[line.headingLevel],
             lineHeight: Math.round(fontSize * headingScale[line.headingLevel] * 1.15),
-          }]}>
-            {line.content.map((inline, inlineIndex) => inlineView(inline, lineIndex, inlineIndex, testID))}
-          </Text>
-        </Fragment>
+          }],
+          fontFamily === undefined ? null : { fontFamily },
+        ]}>
+          {line.prefix}
+          {line.content.map((inline, inlineIndex) => inlineView(inline, lineIndex, inlineIndex, testID))}
+        </Text>
       ))}
-    </Text>
+    </View>
   );
 }
 

@@ -210,11 +210,14 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     publishDraft({ title, content: next, titleDocument });
   };
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const encoded = (htmlAuthored ? htmlCodec : richTextCodec).serialize(document);
+    const requiresHtml = document.blocks.some((block) => (block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined);
+    const nextHtmlAuthored = htmlAuthored || requiresHtml;
+    const encoded = (nextHtmlAuthored ? htmlCodec : richTextCodec).serialize(document);
     if (!encoded.ok || encoded.value === content) return;
+    if (requiresHtml && !htmlAuthored) setHtmlAuthored(true);
     setLastValidDocument(document);
     setContent(encoded.value);
-    publishDraft({ title, content: encoded.value, titleDocument }, htmlAuthored
+    publishDraft({ title, content: encoded.value, titleDocument }, nextHtmlAuthored
       ? { source: { format: 'html', value: encoded.value }, document, validation: { status: 'valid' } } : undefined);
   };
   const htmlIssue = htmlValidation.status === 'invalid' ? htmlValidation.error : null;

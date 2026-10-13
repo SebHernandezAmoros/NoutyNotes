@@ -23,7 +23,8 @@ describe('geometría del lienzo (ADR 0013)', () => {
 
   it('el lienzo mide 12 columnas y deja filas libres debajo de la última tarjeta (mínimo 8)', () => {
     expect(canvasSize(undefined, WIDE_METRICS)).toEqual({ width: 1152, height: 8 * 64, rows: 8 });
-    expect(canvasSize(layout, WIDE_METRICS)).toEqual({ width: 1152, height: 10 * 64, rows: 10 });
+    // La minimizada empieza en y=5 y ocupa 2 filas; el lienzo conserva otras 4 filas libres.
+    expect(canvasSize(layout, WIDE_METRICS)).toEqual({ width: 1152, height: 11 * 64, rows: 11 });
     const routed: BoardLayout = { boardId: layout.boardId, placements: [{
       cardId: id('ruta'), rect: { x: 0, y: 0, w: 1, h: 1 }, display: 'expanded',
       connectorPath: [{ x: 0, y: 0 }, { x: 0, y: 14.25 }],
@@ -65,7 +66,7 @@ describe('validación previa al guardado con el motor de grilla', () => {
   it('acepta un destino libre y rechaza colisiones indicando con qué tarjetas', () => {
     expect(checkMove(layout, id('a'), { x: 8, y: 0 })).toEqual({ ok: true });
     expect(checkMove(layout, id('a'), { x: 2, y: 0 })).toEqual({ ok: false, code: 'grid-collision', colliding: ['b'] });
-    // La huella minimizada de c es 1 × 1 en (0, 5): (0, 4) con alto 3 la pisa.
+    // La huella minimizada de c es 2 × 2 en (0, 5): (0, 4) con alto 3 la pisa.
     expect(checkMove(layout, id('b'), { x: 0, y: 4 })).toEqual({ ok: false, code: 'grid-collision', colliding: ['c'] });
   });
 

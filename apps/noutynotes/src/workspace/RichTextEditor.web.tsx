@@ -43,7 +43,9 @@ import {
   $getRoot,
   $getSelection,
   $insertNodes,
+  $isParagraphNode,
   $isRangeSelection,
+  $setSelection,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
   COMMAND_PRIORITY_LOW,
@@ -56,11 +58,13 @@ import {
   UNDO_COMMAND,
   mergeRegister,
 } from 'lexical';
+import type { RangeSelection } from 'lexical';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { isLinkUrl } from '@noutynotes/domain';
+import type { RichTextAlignment } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 
 import { t } from '../i18n';
@@ -74,13 +78,14 @@ type BlockKind = 'paragraph' | `heading-${HeadingLevel}` | 'bullet' | 'ordered' 
 const MAX_TABLE_ROWS = 20;
 const MAX_TABLE_COLUMNS = 12;
 
-function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'titleOnly'> & { readonly compact?: boolean }) {
+function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, collapsed = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'titleOnly'> & { readonly compact?: boolean; readonly collapsed?: boolean }) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
   const [bold, setBold] = useState(false);
   const [italic, setItalic] = useState(false);
+  const [alignment, setAlignment] = useState<RichTextAlignment>('left');
   const [block, setBlock] = useState<BlockKind>('paragraph');
   const [inTable, setInTable] = useState(false);
   // UX7-CONSOLIDATION (Hito B): la celda activa se recuerda por clave de nodo, no por selección en
@@ -104,6 +109,15 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
   // cursiva quedan directos; listas, enlace, imagen, tabla e historial permanecen en «Más formato».
   // El Inspector completo (`compact=false`) conserva todas sus acciones visibles.
   const [moreOpen, setMoreOpen] = useState(false);
+  const lastRangeSelection = useRef<RangeSelection | null>(null);
+
+  useEffect(() => {
+    if (!collapsed) return;
+    setMoreOpen(false);
+    setLinkOpen(false);
+    setTableOpen(false);
+    setTableMenuOpen(false);
+  }, [collapsed]);
 
   const readSelection = useCallback(() => {
     const selection = $getSelection();
@@ -113,6 +127,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     // una selección nula antes del `onPress`. Se conserva la última tabla en ese tránsito; una nueva
     // selección de rango fuera de la tabla sí limpia el contexto unas líneas más abajo.
     if (!$isRangeSelection(selection)) return false;
+    lastRangeSelection.current = selection.clone();
     let selectionNode = selection.anchor.getNode();
     let insideTable = false;
     let selectedTable: TableNode | null = null;
@@ -130,6 +145,8 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     const top = selectedTable ?? selection.anchor.getNode().getTopLevelElement();
     // Los controles de una imagen decorada pueden dejar el ancla temporalmente en la raíz.
     if (!top) return false;
+    const format = top.getFormatType();
+    setAlignment(format === 'center' || format === 'right' || format === 'justify' ? format : 'left');
     if ($isHeadingNode(top)) setBlock(`heading-${Number(top.getTag().slice(1)) as HeadingLevel}`);
     else if ($isListNode(top)) setBlock(top.getListType() === 'number' ? 'ordered' : top.getListType() === 'check' ? 'checklist' : 'bullet');
     else setBlock('paragraph');
@@ -167,6 +184,24 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
         : $createHeadingNode(`h${next.slice(-1)}` as `h${HeadingLevel}`));
     });
   }, [block, editor, inTable]);
+
+  const applyAlignment = useCallback((value: RichTextAlignment) => {
+    editor.update(() => {
+      let selection = $getSelection();
+      if (!$isRangeSelection(selection) && lastRangeSelection.current) {
+        selection = lastRangeSelection.current.clone();
+        $setSelection(selection);
+      }
+      if (!$isRangeSelection(selection)) return;
+      const nodes = selection.getNodes();
+      if (nodes.length === 0) nodes.push(selection.anchor.getNode());
+      for (const node of nodes) {
+        const top = node.getTopLevelElement();
+        if ($isParagraphNode(top) || $isHeadingNode(top)) top.setFormat(value);
+      }
+    }, { discrete: true });
+    editor.focus();
+  }, [editor]);
 
   const openLink = useCallback(() => {
     setLinkHref(selectionLink);
@@ -316,6 +351,19 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
     !titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }, 'image') : null,
     titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open), 'table'),
   ];
+  const alignmentControls = ([
+    ['left', '≡', 'Alinear a la izquierda'],
+    ['center', '≣', 'Centrar'],
+    ['right', '≡', 'Alinear a la derecha'],
+    ['justify', '☰', 'Justificar'],
+  ] as const).map(([value, label, accessibilityLabel]) => button(
+    label,
+    accessibilityLabel,
+    alignment === value,
+    inTable,
+    () => applyAlignment(value),
+    `align-${value}`,
+  ));
   // UX7-CONSOLIDATION (Hito B): un único control contextual «Opciones de tabla» sustituye la fila fija
   // de 5 iconos abreviados (D28) — esa fila ocupaba espacio permanente mientras el cursor seguía dentro
   // de la tabla, incluso sin usarla, y en la edición rápida (tarjeta pequeña) llegaba a tapar casi todo
@@ -379,6 +427,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
         {compactFormat ? null : button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
         {compactFormat ? null : button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
         {compactFormat ? null : button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
+        {compactFormat ? null : alignmentControls}
         {compactFormat ? null : linkImageTableControls}
         {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
         {compactFormat ? null : button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
@@ -405,6 +454,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false }: Pi
           {button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
           {button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
           {button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
+          {alignmentControls}
           {linkImageTableControls}
           <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
           {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
@@ -558,8 +608,8 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         .nouty-unchecked:before{content:'☐'}.nouty-checked:before{content:'☑'}
         .nouty-table{border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;margin:.5em 0}
         .nouty-table-scroll{overflow-x:auto;max-width:100%}
-        .nouty-table-cell{border:1px solid ${colors.border};min-width:96px;padding:7px;vertical-align:top}
-        .nouty-table-cell-header{background:${colors.surface};font-weight:800}
+        .nouty-table-cell{border:1px solid ${colors.border};min-width:96px;padding:7px;vertical-align:top;background:${colors.cardSurface};color:${colors.cardText}}
+        .nouty-table-cell-header{background:${colors.surfaceRaised};color:${colors.textPrimary};font-weight:800}
         .nouty-table-cell p{margin:0;min-height:1.5em}
         [data-testid="web-rich-text-content"]{overflow-x:auto}
       `}</style>
@@ -571,7 +621,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
           importantForAccessibility={toolbarCollapsed ? 'no-hide-descendants' : 'auto'}
           style={toolbarCollapsed ? styles.toolbarCollapsed : null}
         >
-          <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} compact={compact} />
+          <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} compact={compact} collapsed={toolbarCollapsed} />
         </View>
         <View testID="web-rich-text-scroll" style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin

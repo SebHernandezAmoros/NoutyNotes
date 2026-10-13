@@ -70,6 +70,21 @@ describe('RichTextDocument (ADR 0053, UX7 P02)', () => {
     });
   });
 
+  it('acepta alineación de bloque enumerada y rechaza valores arbitrarios', () => {
+    const aligned: RichTextDocument = {
+      schemaVersion: 1,
+      blocks: [
+        { type: 'heading', level: 2, alignment: 'center', content: [{ type: 'text', text: 'Centro' }] },
+        { type: 'paragraph', alignment: 'justify', content: [{ type: 'text', text: 'Justificado' }] },
+      ],
+    };
+    expect(validateRichTextDocument(aligned)).toEqual({ ok: true, value: aligned });
+    expect(problems(validateRichTextDocument(unsafe<RichTextDocument>({
+      schemaVersion: 1,
+      blocks: [{ type: 'paragraph', alignment: 'start; color:red', content: [] }],
+    })))).toContain('invalid-value@document.blocks[0].alignment');
+  });
+
   it('normaliza marcas y une tramos de texto contiguos equivalentes sin tocar bloques opacos', () => {
     const opaque = { type: 'opaque-markdown', source: '<custom exact="yes">' } as const;
     const document = unsafe<RichTextDocument>({

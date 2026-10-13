@@ -30,7 +30,7 @@ Las pruebas `*.test.ts` están junto a cada módulo. `src/__fixtures__/` contien
 - **Campos.** Cada tarjeta usa un tipo declarado. Solo admite los campos que ese tipo define, con valores del tipo correcto, y exige los obligatorios.
 - **Identificadores.** Minúsculas, dígitos, `-` y `_`; como máximo 64 caracteres. Son únicos dentro de su colección y se validan sin transformarlos.
 - **Plantillas.** Solo contienen datos compatibles con JSON/YAML. Se rechazan las claves no declaradas en la raíz, el manifiesto, los boards, los tipos de tarjeta, los campos y los tipos de relación. Nada se evalúa.
-- **Documento enriquecido.** `RichTextDocument` modela párrafos, encabezados, marcas, saltos, enlaces, listas, imágenes, tablas y Markdown opaco. Rechaza propiedades privadas, enlaces activos y estructuras sin límites; no interpreta Markdown ni ejecuta el texto.
+- **Documento enriquecido.** `RichTextDocument` modela párrafos y encabezados con alineación horizontal enumerada, marcas, saltos, enlaces, listas, imágenes, tablas y Markdown opaco. Rechaza propiedades privadas, valores de alineación libres, enlaces activos y estructuras sin límites; no interpreta Markdown ni ejecuta el texto.
 - **Datos mal formados.** Las funciones de validación devuelven incidencias y no lanzan excepciones ante estructuras inesperadas. Las comprobaciones cruzadas solo profundizan en entidades sin incidencias propias.
 - **Versión.** `schemaVersion` versiona el workspace completo y, por separado, el manifiesto de plantilla. Una versión no admitida detiene la validación.
 
@@ -41,7 +41,7 @@ Las pruebas `*.test.ts` están junto a cada módulo. `src/__fixtures__/` contien
 Recibe un `BoardLayout` y una `GridConfig` y devuelve un resultado nuevo o incidencias. No dibuja, no interpreta gestos y no consulta el ancho de pantalla.
 
 - **Configuración:** `DESKTOP_GRID` (12 columnas), `TABLET_GRID` (6) y `MOBILE_GRID` (1). `rows` es opcional; sin él, el board crece hacia abajo.
-- **Huella:** `rect` guarda el tamaño expandido. Una tarjeta ocupa `w×h` expandida, `w×1` colapsada y `1×1` minimizada. Límites y colisiones se evalúan sobre la huella; tocarse por un borde no es colisión.
+- **Huella:** `rect` guarda el tamaño expandido. Una tarjeta ocupa `w×h` expandida, `w×1` colapsada y `2×2` minimizada. Límites y colisiones se evalúan sobre la huella; tocarse por un borde no es colisión.
 - **Operaciones:** `snapUnit`, `snapPoint` y `snapSize` redondean con empates hacia +∞. `moveCard`, `resizeCard` y `setDisplay` devuelven error en lugar de ajustar en silencio. `findFreeSpace` y `compactLayout` siguen el orden de lectura `(y, x, cardId)`.
 - **Restaurar:** al expandir o descontraer, `setDisplay` falla si no hay sitio, o busca el primer hueco con `{ ifOccupied: 'relocate' }`.
 - **Proyección:** `projectLayout(layout, from, to)` deriva la vista para otra cantidad de columnas (por ejemplo, móvil de una columna) sin modificar el layout canónico.

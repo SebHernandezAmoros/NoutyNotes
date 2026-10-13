@@ -282,6 +282,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const linkValue = linkKey ? card.fields[linkKey] : undefined;
   const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
+  const collapsedBodyLines = Math.max(0, Math.floor((box.height - HEADER - 12) / contentLine));
   const overflow = previewOverflow(htmlAuthored ? (richDocument ? richDocumentPlainText(richDocument) : '') : (card.content ?? ''), box.width, contentSize, bodyLines);
   // UX7-B2: cada línea mostrada es texto agrupado o una fila de checklist propia (marcable sin abrir
   // el editor). El recorte por `bodyLines` es el mismo que el bloque único anterior.
@@ -363,7 +364,7 @@ export function CanvasCard(props: CanvasCardProps) {
         }]}
       >
         {display === 'minimized' ? (
-          // Ficha mínima (1 × 1): icono del tipo y título; sin icono propio, solo el título (ADR 0016).
+          // Ficha mínima 2 × 2: conserva identidad, nombre y una pista de expansión legibles.
           <View testID={`minimized-${card.id}`} style={[styles.mini, { backgroundColor: headerColor }]}>
             {icon ? <CardIcon kind={icon} testID={`minimized-icon-${card.id}`} /> : null}
             {/* UX7-A4: título borrado conscientemente no dibuja relleno; el nombre accesible del botón ya anuncia «Nota sin título». */}
@@ -416,20 +417,29 @@ export function CanvasCard(props: CanvasCardProps) {
         ) : connector && display === 'expanded' ? (
           <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
         ) : display === 'collapsed' ? (
-          <View testID={`collapsed-${card.id}`} style={[styles.header, styles.headerCollapsed, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
-            <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>{number3}</Text>
-            {cardDisplayTitle(card) ? (
-              <Text numberOfLines={1} style={[styles.collapsedTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>
+          <View testID={`collapsed-${card.id}`} style={styles.collapsedShell}>
+            <View style={[styles.header, styles.headerCollapsed, collapsedBodyLines < 1 ? styles.headerCollapsedOnly : null, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
+              {icon ? <CardIcon kind={icon} testID={`collapsed-icon-${card.id}`} /> : null}
+              <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>{number3}</Text>
+              {cardDisplayTitle(card) ? (
+                <Text numberOfLines={1} style={[styles.collapsedTitle, { color: colors.headerText }]}>{cardDisplayTitle(card)}</Text>
+              ) : null}
+              {/* La acción real continúa en el menú contextual y por teclado; este glifo no crea un
+                  segundo control ni entra en el árbol accesible. */}
+              <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText }]}>⌄</Text>
+            </View>
+            {collapsedBodyLines > 0 && previewDocument ? (
+              <View style={styles.collapsedPreview}>
+                <BasicRichTextPreview document={previewDocument} numberOfLines={collapsedBodyLines} color={colors.cardText}
+                  fontSize={contentSize} lineHeight={contentLine} fontFamily={props.noteFontFamily} testID={`collapsed-preview-${card.id}`} />
+              </View>
             ) : null}
-            {/* La acción real continúa en el menú contextual y por teclado; este glifo no crea un
-                segundo control ni entra en el árbol accesible. */}
-            <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText }]}>⌄</Text>
           </View>
         ) : (
           <>
             {/* Cabecera en forma de pestaña de carpeta: número y tipo; los controles se dibujan encima. */}
-            <View style={[styles.header, { borderColor: colors.border, paddingRight: props.reserveRight + 8 }]}>
-              <View style={[styles.tab, { backgroundColor: headerColor, borderColor: colors.border }]}>
+            <View testID={`card-header-${card.id}`} style={[styles.header, { borderColor: colors.border, backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
+              <View testID={`card-tab-${card.id}`} style={[styles.tab, { backgroundColor: headerColor }]}>
                 <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText }]}>
                   {tabLabel}
                 </Text>
@@ -597,8 +607,11 @@ const styles = StyleSheet.create({
   lifted: { zIndex: 10 },
   card: { flex: 1, overflow: 'hidden' },
   header: { height: HEADER, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 0, borderBottomWidth: 2 },
-  headerCollapsed: { flex: 1, alignItems: 'center', gap: 8, paddingLeft: 8 },
-  tab: { height: 30, justifyContent: 'center', paddingHorizontal: 8, borderRightWidth: 2, borderTopWidth: 0, maxWidth: '100%' },
+  collapsedShell: { flex: 1 },
+  headerCollapsed: { alignItems: 'center', gap: 8, paddingLeft: 8 },
+  headerCollapsedOnly: { height: '100%' },
+  collapsedPreview: { flex: 1, minHeight: 0, paddingHorizontal: 8, paddingVertical: 6, overflow: 'hidden' },
+  tab: { height: 30, justifyContent: 'center', paddingHorizontal: 8, maxWidth: '100%' },
   collapsedTitle: { flexShrink: 1, fontSize: 15, fontWeight: '800' },
   headerText: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   body: { flex: 1, padding: 8, gap: 6 },

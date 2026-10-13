@@ -32,7 +32,7 @@ const advancedDocument: RichTextDocument = {
   schemaVersion: 1,
   blocks: [
     {
-      type: 'heading', level: 2,
+      type: 'heading', level: 2, alignment: 'center',
       content: [
         { type: 'text', text: 'Plan ' },
         { type: 'link', href: 'https://example.com', content: [{ type: 'text', text: 'externo', marks: ['bold'] }] },

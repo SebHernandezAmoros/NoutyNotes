@@ -11,6 +11,7 @@ import { t } from '../../i18n';
 import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
 import { connectorRoutes, projectedCardBoxes, relationSegments } from '../board-geometry';
+import type { EditableCardDraft } from '../editorialDraft';
 import { ConnectorLine } from './ConnectorLine';
 import { ConnectorPicker } from './ConnectorPicker';
 import { RelationLine } from './RelationLine';
@@ -125,9 +126,9 @@ interface CanvasProps {
   readonly richTextCodec: RichTextCodec;
   /** UX7-CONSOLIDATION: codec HTML v1, para Visual/HTML en edición rápida (`InlineCardEditor`). */
   readonly htmlCodec: RichTextCodec;
-  readonly inlineDraft?: { readonly cardId: CardId; readonly title: string; readonly content: string; readonly titleDocument?: RichTextDocument } | undefined;
-  readonly onInlineDraftChange: (draft: { cardId: CardId; title: string; content: string; titleDocument?: RichTextDocument }) => void;
-  readonly onInlineSave: (cardId: CardId, title: string, content: string, titleDocument: RichTextDocument) => Promise<boolean>;
+  readonly inlineDraft?: EditableCardDraft | undefined;
+  readonly onInlineDraftChange: (draft: EditableCardDraft) => void;
+  readonly onInlineSave: (draft: EditableCardDraft) => Promise<boolean>;
   readonly onInlineClose: () => void;
   readonly onInlineAdvanced: (cardId: CardId) => void;
   /** Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): un solo clic ya
@@ -740,11 +741,12 @@ export function Canvas(props: CanvasProps) {
   // UX7-CONSOLIDATION: misma condición exacta que `WorkspaceScreen.openCard` (`canEditInline`) — antes
   // `CardMenu` recalculaba una versión local incompleta (sin mirar `contentDocument`), así que podía
   // etiquetar «Editar» como «dentro de la ficha» y en realidad abrir igual el editor completo, idéntico
-  // a «Completo». Con el valor real, el menú deja de ofrecer dos botones que llevan al mismo sitio.
+  // a «Completo». HTML seguro y Markdown comparten ahora la misma sesión editorial rápida; los bloques
+  // que esa superficie no representa se derivan desde el propio editor.
   const menuCard = menuPlacement ? cards.get(menuPlacement.cardId) : undefined;
   const menuCardBase = menuCard ? workspace.cardTypes.find((candidate) => candidate.id === menuCard.typeId)?.base : undefined;
   const canQuickEditMenuCard = Boolean(menuPlacement && !props.compact && menuPlacement.display === 'expanded'
-    && menuCardBase !== 'shape' && menuCardBase !== 'connector' && menuCard?.contentDocument === undefined);
+    && menuCardBase !== 'shape' && menuCardBase !== 'connector');
   const inlinePlacement = props.inlineEditingId ? placements.find((placement) => placement.cardId === props.inlineEditingId) : undefined;
   const inlineCard = inlinePlacement ? cards.get(inlinePlacement.cardId) : undefined;
   const inlineBox = inlinePlacement ? (() => {

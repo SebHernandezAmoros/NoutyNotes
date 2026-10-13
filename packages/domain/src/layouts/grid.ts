@@ -103,7 +103,7 @@ export function snapSize(size: GridSize): ValidationResult<GridSize> {
 /** Área que ocupa la colocación según su modo; `rect` conserva el tamaño expandido. */
 export function footprint(placement: CardPlacement): GridCell {
   const { x, y, w, h } = placement.rect;
-  if (placement.display === 'minimized') return { x, y, w: 1, h: 1 };
+  if (placement.display === 'minimized') return { x, y, w: 2, h: 2 };
   if (placement.display === 'collapsed') return { x, y, w, h: 1 };
   return { x, y, w, h };
 }

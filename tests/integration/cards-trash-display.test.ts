@@ -70,14 +70,14 @@ describe('Papelera y representación desde application (ADR 0014, ADR 0015)', ()
     const storage = new MemoryStorage();
     const id = await twoCards(storage);
     ok(await setCardDisplay(storage, id, { boardId: principal, cardId: card('tarjeta-1'), display: 'minimized' }));
-    // Con tarjeta-1 minimizada (1 × 1), tarjeta-2 se mueve encima de su tamaño expandido.
+    // Con tarjeta-1 minimizada (2 × 2), tarjeta-2 se mueve encima de su tamaño expandido.
     const { moveCardOnBoard } = await import('../../packages/application/src/index');
-    ok(await moveCardOnBoard(storage, id, { boardId: principal, cardId: card('tarjeta-2'), to: { x: 1, y: 0 } }));
+    ok(await moveCardOnBoard(storage, id, { boardId: principal, cardId: card('tarjeta-2'), to: { x: 2, y: 0 } }));
     const blocked = await setCardDisplay(storage, id, { boardId: principal, cardId: card('tarjeta-1'), display: 'expanded' });
     expect(blocked.ok).toBe(false);
     expect(blocked.ok ? [] : blocked.issues[0]?.details?.map((detail) => detail.code)).toEqual(['grid-collision']);
     ok(await setCardDisplay(storage, id, { boardId: principal, cardId: card('tarjeta-1'), display: 'expanded', relocate: true }));
     const placement = ok(await storage.open(id)).layouts[0]?.placements.find((entry) => entry.cardId === 'tarjeta-1');
-    expect(placement).toEqual({ cardId: 'tarjeta-1', display: 'expanded', rect: { x: 5, y: 0, w: 4, h: 3 } });
+    expect(placement).toEqual({ cardId: 'tarjeta-1', display: 'expanded', rect: { x: 6, y: 0, w: 4, h: 3 } });
   });
 });
