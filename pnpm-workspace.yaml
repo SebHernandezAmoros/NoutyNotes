@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# pnpm 11 no debe asumir que una instalación interrumpida sigue íntegra: valida y repara los enlaces
+# antes de ejecutar scripts, evitando el estado falso «Already up to date» observado en Windows.
+optimisticRepeatInstall: false
+
 allowBuilds:
   esbuild: true
   react-native-enriched-markdown: true

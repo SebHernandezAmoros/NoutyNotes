@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { useTheme } from '@noutynotes/ui';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { projectRichTextPreview } from './canvas/richTextPreviewProjection';
+
 interface BasicRichTextPreviewProps {
   readonly document: RichTextDocument;
   readonly numberOfLines: number;
@@ -71,10 +73,11 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
 /** Vista semántica P07; Markdown sigue siendo únicamente la persistencia durable. */
 export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID }: BasicRichTextPreviewProps) {
   const { theme } = useTheme();
-  if (document.blocks.some((block) => block.type === 'table')) {
+  const projectedDocument = projectRichTextPreview(document, numberOfLines).document;
+  if (projectedDocument.blocks.some((block) => block.type === 'table')) {
     return (
       <View testID={testID} style={styles.tableDocument}>
-        {document.blocks.map((block, blockIndex) => {
+        {projectedDocument.blocks.map((block, blockIndex) => {
           if (block.type !== 'table') {
             return <BasicRichTextPreview key={blockIndex} document={{ schemaVersion: document.schemaVersion, blocks: [block] }} numberOfLines={numberOfLines}
               color={color} fontSize={fontSize} lineHeight={lineHeight} fontFamily={fontFamily} testID={`${testID}-block-${blockIndex}`} />;
@@ -105,7 +108,7 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
       </View>
     );
   }
-  const lines = previewLines(document);
+  const lines = previewLines(projectedDocument);
   return (
     <View testID={testID} style={styles.content}>
       {lines.slice(0, numberOfLines).map((line, lineIndex) => (

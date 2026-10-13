@@ -43,14 +43,14 @@ import {
   $getRoot,
   $getSelection,
   $insertNodes,
-  $isParagraphNode,
   $isRangeSelection,
-  $setSelection,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
+  BLUR_COMMAND,
   COMMAND_PRIORITY_LOW,
   COMMAND_PRIORITY_HIGH,
   FORMAT_TEXT_COMMAND,
+  FORMAT_ELEMENT_COMMAND,
   KEY_DOWN_COMMAND,
   PASTE_COMMAND,
   REDO_COMMAND,
@@ -58,9 +58,9 @@ import {
   UNDO_COMMAND,
   mergeRegister,
 } from 'lexical';
-import type { RangeSelection } from 'lexical';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { EditorState } from 'lexical';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { isLinkUrl } from '@noutynotes/domain';
@@ -109,14 +109,16 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
   // cursiva quedan directos; listas, enlace, imagen, tabla e historial permanecen en «Más formato».
   // El Inspector completo (`compact=false`) conserva todas sus acciones visibles.
   const [moreOpen, setMoreOpen] = useState(false);
-  const lastRangeSelection = useRef<RangeSelection | null>(null);
 
   useEffect(() => {
     if (!collapsed) return;
-    setMoreOpen(false);
-    setLinkOpen(false);
-    setTableOpen(false);
-    setTableMenuOpen(false);
+    const frame = requestAnimationFrame(() => {
+      setMoreOpen(false);
+      setLinkOpen(false);
+      setTableOpen(false);
+      setTableMenuOpen(false);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [collapsed]);
 
   const readSelection = useCallback(() => {
@@ -127,7 +129,6 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     // una selección nula antes del `onPress`. Se conserva la última tabla en ese tránsito; una nueva
     // selección de rango fuera de la tabla sí limpia el contexto unas líneas más abajo.
     if (!$isRangeSelection(selection)) return false;
-    lastRangeSelection.current = selection.clone();
     let selectionNode = selection.anchor.getNode();
     let insideTable = false;
     let selectedTable: TableNode | null = null;
@@ -138,6 +139,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
       selectionNode = selectionNode.getParent() ?? selectionNode;
     }
     setInTable(insideTable);
+    if (!insideTable) setTableMenuOpen(false);
     setTableCellKey(selectedCell ? selectedCell.getKey() : null);
     setTableRowCount(selectedTable ? selectedTable.getChildrenSize() : 0);
     const firstRow = selectedTable?.getFirstChild();
@@ -165,10 +167,6 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     editor.registerCommand(CAN_UNDO_COMMAND, (value) => { setCanUndo(value); return false; }, COMMAND_PRIORITY_LOW),
     editor.registerCommand(CAN_REDO_COMMAND, (value) => { setCanRedo(value); return false; }, COMMAND_PRIORITY_LOW),
   ), [editor, readSelection]);
-  // El menú de tabla solo tiene sentido con el cursor dentro de una tabla; si la selección sale de
-  // ella (nueva selección de rango en otro bloque) se cierra para no quedar huérfano sin ancla visible.
-  useEffect(() => { if (!inTable) setTableMenuOpen(false); }, [inTable]);
-
   const chooseBlock = useCallback((next: BlockKind) => {
     if (inTable) return;
     if (next === 'bullet' || next === 'ordered' || next === 'checklist') {
@@ -184,24 +182,6 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
         : $createHeadingNode(`h${next.slice(-1)}` as `h${HeadingLevel}`));
     });
   }, [block, editor, inTable]);
-
-  const applyAlignment = useCallback((value: RichTextAlignment) => {
-    editor.update(() => {
-      let selection = $getSelection();
-      if (!$isRangeSelection(selection) && lastRangeSelection.current) {
-        selection = lastRangeSelection.current.clone();
-        $setSelection(selection);
-      }
-      if (!$isRangeSelection(selection)) return;
-      const nodes = selection.getNodes();
-      if (nodes.length === 0) nodes.push(selection.anchor.getNode());
-      for (const node of nodes) {
-        const top = node.getTopLevelElement();
-        if ($isParagraphNode(top) || $isHeadingNode(top)) top.setFormat(value);
-      }
-    }, { discrete: true });
-    editor.focus();
-  }, [editor]);
 
   const openLink = useCallback(() => {
     setLinkHref(selectionLink);
@@ -288,7 +268,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     const isHeader = $isTableCellNode(firstCell) ? firstCell.hasHeader() : false;
     $setTableRowIsHeader(tableNode, 0, !isHeader);
   });
-  const tableMenuActions: ReadonlyArray<{ readonly label: string; readonly action: () => void; readonly disabled?: boolean; readonly key: string }> = [
+  const tableMenuActions: readonly { readonly label: string; readonly action: () => void; readonly disabled?: boolean; readonly key: string }[] = [
     { key: 'row-above', label: t('editor.visual.table.addRowAbove', locale), action: () => insertTableRow(false) },
     { key: 'row-below', label: t('editor.visual.table.addRowBelow', locale), action: () => insertTableRow(true) },
     { key: 'column-left', label: t('editor.visual.table.addColumnLeft', locale), action: () => insertTableColumn(false), disabled: tableColumnCount >= MAX_TABLE_COLUMNS },
@@ -356,13 +336,25 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     ['center', '≣', 'Centrar'],
     ['right', '≡', 'Alinear a la derecha'],
     ['justify', '☰', 'Justificar'],
-  ] as const).map(([value, label, accessibilityLabel]) => button(
-    label,
-    accessibilityLabel,
-    alignment === value,
-    inTable,
-    () => applyAlignment(value),
-    `align-${value}`,
+  ] as const).map(([value, label, accessibilityLabel]) => (
+    <Pressable
+      key={`align-${value}`}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled: inTable, selected: alignment === value }}
+      disabled={inTable}
+      onPress={() => {
+        editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, value);
+        editor.focus();
+      }}
+      style={({ pressed }) => [styles.toolButton, {
+        borderColor: alignment === value ? colors.selection : colors.border,
+        backgroundColor: alignment === value ? colors.accent : colors.surface,
+        opacity: inTable ? 0.45 : pressed ? 0.7 : 1,
+      }]}
+    >
+      <Text style={[styles.toolText, { color: colors.textPrimary }]}>{label}</Text>
+    </Pressable>
   ));
   // UX7-CONSOLIDATION (Hito B): un único control contextual «Opciones de tabla» sustituye la fila fija
   // de 5 iconos abreviados (D28) — esa fila ocupaba espacio permanente mientras el cursor seguía dentro
@@ -549,22 +541,42 @@ function SafePastePlugin({ titleOnly = false }: Pick<RichTextEditorProps, 'title
 }
 
 function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps, 'document' | 'onChange'> & { readonly initialDocument: RichTextEditorProps['document'] }) {
+  const [editor] = useLexicalComposerContext();
   const [initialSignature] = useState(() => JSON.stringify(initialDocument));
   const lastSignature = useRef(initialSignature);
   const changed = useRef(false);
+  const latestState = useRef<EditorState | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const publish = useCallback((editorState: EditorState) => {
+    let next = null;
+    editorState.read(() => { next = $readWebRichTextDocument(); });
+    if (next === null) return;
+    const signature = JSON.stringify(next);
+    if (!changed.current && signature === initialSignature) return;
+    if (signature === lastSignature.current) return;
+    changed.current = true;
+    lastSignature.current = signature;
+    onChange(next);
+  }, [initialSignature, onChange]);
+  const flush = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    const state = latestState.current;
+    latestState.current = null;
+    if (state) publish(state);
+  }, [publish]);
+  useEffect(() => editor.registerCommand(BLUR_COMMAND, () => {
+    flush();
+    return false;
+  }, COMMAND_PRIORITY_LOW), [editor, flush]);
+  useEffect(() => () => flush(), [flush]);
   return (
     <OnChangePlugin
       ignoreSelectionChange
       onChange={(editorState) => {
-        let next = null;
-        editorState.read(() => { next = $readWebRichTextDocument(); });
-        if (next === null) return;
-        const signature = JSON.stringify(next);
-        if (!changed.current && signature === initialSignature) return;
-        if (signature === lastSignature.current) return;
-        changed.current = true;
-        lastSignature.current = signature;
-        onChange(next);
+        latestState.current = editorState;
+        if (timer.current !== null) clearTimeout(timer.current);
+        timer.current = setTimeout(flush, 150);
       }}
     />
   );

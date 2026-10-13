@@ -339,6 +339,7 @@ test('UX7 visual: la Nota larga conserva su toolbar y la geometría cotidiana us
 
   const inline = page.getByTestId('inline-card-editor');
   const visual = page.getByLabel('Contenido visual');
+  await expect(page.getByText('Sin cambios pendientes')).toBeVisible();
   const scroll = visual;
   const more = page.getByTestId('editor-more-format-toggle');
   await expect(inline).toBeVisible();
@@ -1010,7 +1011,7 @@ test('tabla en una nota HTML segura: insertar y editar celdas es un cambio de Le
   await closeEditor(page);
   // Sin imagen, una tabla no necesita el visor «mixto» (ese es solo para cuando el legado perdería
   // estructura, tabla + imagen a la vez): el visor enriquecido genérico ya sabe pintar tablas.
-  const preview = page.getByTestId('card-rich-text-tarjeta-1');
+  const preview = page.getByTestId('rich-note-preview-tarjeta-1');
   await expect(preview).toContainText('Antes de la tabla.');
   await expect(preview).toContainText('Nombre');
   await expect(card(page, 1)).not.toContainText('| Nombre |');
@@ -1527,16 +1528,47 @@ test('P18-A: formas y conectores omiten la edición rápida y respetan el marco 
   await page.screenshot({ path: testInfo.outputPath('p18-a-shape-connector.png'), fullPage: true });
 });
 
-test('P18-A: una nota con texto oculto lo anuncia en la ficha', async ({ page }) => {
+test('P18-A: una nota con texto oculto lo anuncia en la ficha', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   await page.goto('./');
   await createWorkspace(page, 'Texto largo');
   await addCards(page, ['nota']);
   await openFullCardEditor(page, card(page, 1));
   const expandEditor = button(page, 'Ampliar el editor');
   if (await expandEditor.count() > 0) await expandEditor.click();
-  await seedBodyHtml(page, Array.from({ length: 20 }, (_, index) => `<p>Línea ${index + 1}</p>`).join('\n'));
+  await seedBodyHtml(page, [
+    ...Array.from({ length: 1_700 }, (_, index) => `<p>Línea ${index + 1}</p>`),
+    '<table><thead><tr><th>Tabla final</th></tr></thead><tbody><tr><td>No debe desplazar el inicio</td></tr></tbody></table>',
+  ].join('\n'));
+  const visual = page.getByLabel('Contenido visual');
+  await expect(visual).toContainText('Línea 1');
+  await expect(visual).toContainText('Línea 850');
+  await expect(visual).toContainText('Línea 1700');
+  await expect(visual.locator('table')).toContainText('No debe desplazar el inicio');
   await closeEditor(page);
+  const preview = page.getByTestId('card-rich-text-tarjeta-1');
+  await expect(preview).toContainText('Línea 1');
+  await expect(preview).not.toContainText('Tabla final');
   await expect(page.getByTestId('card-overflow-tarjeta-1')).toContainText(/líneas más/);
+  await page.screenshot({ path: testInfo.outputPath('long-document-canvas.png'), fullPage: true });
+
+  await openFullCardEditor(page, card(page, 1));
+  const reopened = page.getByLabel('Contenido visual');
+  await expect(reopened).toContainText('Línea 1');
+  await expect(reopened).toContainText('Línea 850');
+  await expect(reopened).toContainText('Línea 1700');
+  await expect(reopened.locator('table')).toContainText('Tabla final');
+  await reopened.focus();
+  await page.keyboard.press('Control+End');
+  const typingStarted = Date.now();
+  await page.keyboard.insertText(' MARCADOR_FINAL');
+  await expect(reopened).toContainText('MARCADOR_FINAL');
+  console.info(`[PERF-LONG-DOC] escritura visible en ${Date.now() - typingStarted} ms`);
+  await page.getByRole('button', { name: 'Guardar texto', exact: true }).click();
+  await closeEditor(page);
+  await openFullCardEditor(page, card(page, 1));
+  await expect(page.getByLabel('Contenido visual')).toContainText('MARCADOR_FINAL');
+  await page.screenshot({ path: testInfo.outputPath('long-document-editor.png'), fullPage: true });
 });
 
 test('P18-B: Insertar y la barra agrupan las herramientas sin ofrecer una imagen de ejemplo', async ({ page }, testInfo) => {

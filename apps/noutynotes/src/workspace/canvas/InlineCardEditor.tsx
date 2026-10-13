@@ -1,6 +1,6 @@
 import type { RichTextCodec } from '@noutynotes/application';
 import { cardTitleText } from '@noutynotes/domain';
-import type { Card, CardId, RichTextDocument } from '@noutynotes/domain';
+import type { Card, RichTextDocument } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';

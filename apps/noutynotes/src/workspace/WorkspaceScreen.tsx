@@ -982,7 +982,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   // Guarda una posición/tamaño optimista para una tarjeta hasta que su guardado termine (con o sin
   // éxito): sin esto, un redibujado de por medio la mostraría un instante en el layout aún sin guardar.
-  const withPendingRect = <T,>(cardId: CardId, rect: GridRect, action: Promise<T>): Promise<T> => {
+  const withPendingRect = useCallback(<T,>(cardId: CardId, rect: GridRect, action: Promise<T>): Promise<T> => {
     setPendingRects((current) => new Map(current).set(cardId, rect));
     return action.finally(() => setPendingRects((current) => {
       if (!current.has(cardId)) return current;
@@ -990,21 +990,21 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       next.delete(cardId);
       return next;
     }));
-  };
-  const move = (cardId: CardId, to: GridPoint) => {
+  }, []);
+  const move = useCallback((cardId: CardId, to: GridPoint) => {
     if (!board) return;
     const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
     if (!placement) return;
     void withPendingRect(cardId, { ...placement.rect, ...to },
       run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'action.cardMoved', { reactive: true }));
-  };
-  const resize = (cardId: CardId, size: GridSize) => {
+  }, [board, layout, run, withPendingRect]);
+  const resize = useCallback((cardId: CardId, size: GridSize) => {
     if (!board) return;
     const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
     if (!placement) return;
     void withPendingRect(cardId, { ...placement.rect, ...size },
       run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged', { reactive: true }));
-  };
+  }, [board, layout, run, withPendingRect]);
 
   // Alternativa accesible a arrastrar y usar las asas. `Pressable` consume flechas en web, por eso el
   // listener global usa captura y se restringe a la ficha seleccionada que conserva el foco.
@@ -1032,7 +1032,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [layout, multi, selectedOnBoard]);
+  }, [layout, move, multi, resize, selectedOnBoard]);
 
   // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
   const printEntries = workspace && board ? printableDocument(workspace, board.id) : [];

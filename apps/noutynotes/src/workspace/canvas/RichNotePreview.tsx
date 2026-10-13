@@ -4,6 +4,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { BasicRichTextPreview } from '../BasicRichTextPreview';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
+import { projectRichTextPreview } from './richTextPreviewProjection';
 
 const IMAGE_HEIGHT = 88;
 
@@ -22,6 +23,7 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
   const fontSize = bodyFontSize(bodySize);
   const lineHeight = bodyLineHeight(fontSize);
   const lines = Math.max(1, Math.floor(height / lineHeight));
+  const preview = projectRichTextPreview(document, lines, true);
   const position = captionPosition ?? 'bottom';
   const sideways = position === 'left' || position === 'right';
   const captionOf = (block: RichTextImage): readonly RichTextInline[] => block.caption && block.caption.length > 0
@@ -45,7 +47,7 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
   };
   return (
     <View testID={testID} style={[styles.wrap, { maxHeight: Math.max(0, height) }]}>
-      {document.blocks.map((block, blockIndex) => block.type === 'image' ? (
+      {preview.document.blocks.map((block, blockIndex) => block.type === 'image' ? (
         <View key={blockIndex} style={sideways ? styles.imageRow : styles.imageBlock}>
           {position === 'top' || position === 'left' ? captionNode(block, blockIndex) : null}
           {images.get(block.assetRef) ? (
@@ -79,6 +81,11 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
           testID={`${testID}-block-${blockIndex}`}
         />
       ))}
+      {preview.hiddenLines > 0 ? (
+        <Text testID={`${testID}-overflow`} numberOfLines={1} style={[styles.more, { color: theme.colors.cardText }]}>
+          {`Ver documento completo · ${preview.hiddenLines} ${preview.hiddenLines === 1 ? 'línea adicional' : 'líneas adicionales'}`}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -92,4 +99,5 @@ const styles = StyleSheet.create({
   missing: { alignItems: 'center', justifyContent: 'center', padding: 4 },
   missingText: { fontSize: 12, fontWeight: '700' },
   captionSide: { flex: 1 },
+  more: { flexShrink: 0, fontSize: 12, fontWeight: '800' },
 });

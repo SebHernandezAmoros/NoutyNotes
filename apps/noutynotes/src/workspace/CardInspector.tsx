@@ -122,8 +122,9 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' }, { reactive: true });
   const presentation = cardContentPresentation(card, cardBase);
   const durableHtml = card.contentDocument ? htmlCodec.serialize(card.contentDocument) : null;
+  const durableContent = durableHtml?.ok ? durableHtml.value : editableCardContent(card, cardBase);
   const initialContent = initialDraft?.bodySource?.format === 'html' ? initialDraft.bodySource.value
-    : durableHtml?.ok ? durableHtml.value : editableCardContent(card, cardBase);
+    : initialDraft?.content ?? durableContent;
   const [title, setTitle] = useState(initialDraft?.title ?? card.title ?? '');
   const [titleDocument, setTitleDocument] = useState<RichTextDocument>(() => initialDraft?.titleDocument ?? ({
     schemaVersion: 1,
@@ -158,7 +159,6 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const [htmlValidation, setHtmlValidation] = useState<DraftValidation>(initialDraft?.bodyValidation ?? { status: 'valid' });
   const [htmlErrorPath, setHtmlErrorPath] = useState<string | null>(null);
   const [htmlModified, setHtmlModified] = useState(initialDraft?.bodySource?.format === 'html' && initialDraft.bodyValidation?.status !== 'valid');
-  const [bodyDirty, setBodyDirty] = useState(false);
   // El texto flotante es una primitiva propia (P13-P16), no una nota: conserva su campo de texto simple
   // y nunca adopta el editor Visual/HTML (ADR 0066), que es del cuerpo de una nota.
   const supportsVisualEditor = !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
@@ -171,7 +171,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   });
   const selectionRef = useRef<TextSelection>({ start: content.length, end: content.length });
   const [forcedSelection, setForcedSelection] = useState<TextSelection | undefined>();
-  const dirty = title !== cardTitleText(card) || bodyDirty;
+  const dirty = title !== cardTitleText(card) || content !== durableContent;
   const parsedRichText = !htmlAuthored && supportsVisualEditor ? richTextCodec.parse(content) : null;
   const visualDocument = htmlAuthored ? lastValidDocument : parsedRichText?.ok ? parsedRichText.value : null;
   const visualAvailable = visualDocument !== null;
@@ -180,7 +180,6 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const publishDraft = (next: { readonly title: string; readonly content: string; readonly titleDocument: RichTextDocument }, body?: {
     readonly source: DraftSource; readonly document: RichTextDocument | null; readonly validation: DraftValidation;
   }) => {
-    setBodyDirty(true);
     const htmlBody = body ?? (htmlAuthored ? { source: { format: 'html' as const, value: next.content }, document: lastValidDocument, validation: htmlValidation } : null);
     onDraftChange({ cardId: card.id, ...next, ...(htmlBody ? {
       bodySource: htmlBody.source,

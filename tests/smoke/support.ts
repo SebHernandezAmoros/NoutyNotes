@@ -65,7 +65,9 @@ export async function seedBodyHtml(page: Page, html: string): Promise<void> {
   // «Aplicar» solo actualiza la sesión editorial (borrador); sin guardar, la ficha del lienzo sigue
   // mostrando el documento anterior hasta el autoguardado (700 ms) o un «Guardar texto» explícito.
   await page.getByRole('button', { name: 'Guardar texto', exact: true }).click();
-  await page.getByTestId('workspace-feedback').filter({ hasText: 'Texto guardado' }).waitFor({ state: 'visible' });
+  // El aviso es transitorio y puede desaparecer mientras React confirma un documento muy grande.
+  // El historial ofrece una señal durable de que el caso de uso de guardado terminó.
+  await page.getByRole('button', { name: 'Deshacer: Texto guardado', exact: true }).waitFor({ state: 'visible' });
 }
 
 /**

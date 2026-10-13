@@ -1,5 +1,5 @@
 import type { RichTextCodec } from '@noutynotes/application';
-import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace } from '@noutynotes/domain';
+import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
 import { footprint, frameMembers, moveConnectorPoint } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
