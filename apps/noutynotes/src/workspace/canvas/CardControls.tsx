@@ -76,7 +76,7 @@ function Control({ testID, icon, label, danger = false, floating = false, contai
 }
 
 /** Acciones cercanas a la tarjeta en escritorio; hoja temporal en móvil. */
-export function CardMenu({ title, display, compact, canQuickEdit, anchor, onEdit, onQuickEdit, onTags, onConnect, onSelectMany, onArchive, onAction, onClose }: {
+export function CardMenu({ title, display, compact, canQuickEdit, canPaste, anchor, onEdit, onQuickEdit, onTags, onConnect, onCopy, onDuplicate, onPaste, onSelectMany, onArchive, onAction, onClose }: {
   readonly title: string;
   readonly display: CardDisplayMode;
   readonly compact: boolean;
@@ -86,11 +86,15 @@ export function CardMenu({ title, display, compact, canQuickEdit, anchor, onEdit
    * que «Completo», un duplicado real para cualquier nota autoría HTML. Con el valor real, «Editar»
    * deja de mostrarse cuando llevaría exactamente al mismo sitio que «Completo». */
   readonly canQuickEdit: boolean;
+  readonly canPaste: boolean;
   readonly anchor: { readonly left: number; readonly top: number } | null;
   readonly onEdit: () => void;
   readonly onQuickEdit: () => void;
   readonly onTags: () => void;
   readonly onConnect: () => void;
+  readonly onCopy: () => void;
+  readonly onDuplicate: () => void;
+  readonly onPaste: () => void;
   readonly onSelectMany: () => void;
   readonly onArchive: () => void;
   readonly onAction: (action: CardAction) => void;
@@ -134,6 +138,9 @@ export function CardMenu({ title, display, compact, canQuickEdit, anchor, onEdit
       <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
       <Text style={[styles.menuSection, { color: colors.textSecondary }]}>{t('cardMenu.section.organize', locale)}</Text>
       <View style={styles.menuGrid}>
+        <MenuAction half icon="copy" label={t('cardMenu.copy', locale)} accessibilityLabel={t('cardMenu.copy.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onCopy(); }} />
+        <MenuAction half icon="duplicate" label={t('cardMenu.duplicate', locale)} accessibilityLabel={t('cardMenu.duplicate.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onDuplicate(); }} />
+        {canPaste ? <MenuAction half icon="paste" label={t('cardMenu.paste', locale)} accessibilityLabel={t('cardMenu.paste.accessibilityLabel', locale)} onPress={() => { onClose(); onPaste(); }} /> : null}
         <MenuAction half icon="select" label={t('cardMenu.selectMany', locale)} accessibilityLabel={t('cardMenu.selectMany.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onSelectMany(); }} />
         <MenuAction half icon="archive" label={t('cardMenu.archive', locale)} accessibilityLabel={t('cardMenu.archive.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onArchive(); }} />
       </View>
@@ -143,7 +150,9 @@ export function CardMenu({ title, display, compact, canQuickEdit, anchor, onEdit
   const menuTitle = t('cardControls.actionsOf', locale, { title });
   if (compact) return <Dialog visible title={menuTitle} compact onClose={onClose} testID="card-menu">{content}</Dialog>;
   const width = Math.min(248, screen.width - 16);
-  const height = 330;
+  // Incluye las dos filas de organización (copiar/duplicar/pegar/selección) para que el cálculo
+  // coloque el menú completo encima del ancla cuando se abre cerca del borde inferior.
+  const height = 470;
   const left = Math.max(8, Math.min(anchor?.left ?? 8, screen.width - width - 8));
   const below = (anchor?.top ?? 8) + CONTROL_SIZE + 4;
   const top = below + height <= screen.height - 8 ? below : Math.max(8, (anchor?.top ?? 8) - height - 4);

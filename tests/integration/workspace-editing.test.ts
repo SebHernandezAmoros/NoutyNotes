@@ -112,6 +112,21 @@ describe('añadir tarjetas (fase 7)', () => {
     expect(copied).toMatchObject({ shapeKind: 'ellipse', shapeFill: 'transparent', shapeStroke: 'red', shapeStrokeWidth: 'thick' });
   });
 
+  it('pega una copia cerca del punto elegido sin alterar la colocacion original', async () => {
+    const { storage, workspaceId } = await session();
+    const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', title: 'Origen' }));
+    const snapshot = snapshotSelection(ok(await storage.open(workspaceId)), board, [cardId], 'copy');
+    if (!snapshot) throw new Error('sin instantanea');
+
+    ok(await pasteSnapshot(storage, workspaceId, board, snapshot, { x: 10, y: 8 }));
+
+    const reopened = ok(await storage.open(workspaceId));
+    const placement = (id: CardId) => reopened.layouts[0]?.placements.find(({ cardId: candidate }) => candidate === id)?.rect;
+    expect(placement(cardId)).toEqual({ x: 0, y: 0, w: 4, h: 3 });
+    const copiedId = reopened.cards.find((card) => card.id !== cardId)?.id;
+    expect(copiedId && placement(copiedId)).toEqual({ x: 10, y: 8, w: 4, h: 3 });
+  });
+
   it('crea texto flotante como una nota unificada sin título ni marco, con estilo portable, y su contenido es HTML seguro literal (ADR 0057, ADR 0066)', async () => {
     const { storage, workspaceId } = await session();
     const cardId = ok(await addCardToBoard(storage, workspaceId, { kind: 'text', content: 'Primera\nSegunda' }));

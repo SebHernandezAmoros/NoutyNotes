@@ -3,10 +3,12 @@ import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, Gr
 import { footprint, frameMembers, moveConnectorPoint } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
+import { Modal, PanResponder, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 
 import { ActionButton } from '../../components/controls';
+import { AppIcon } from '../../components/AppIcon';
+import { DialogCloseButton } from '../../components/Dialog';
 import { t } from '../../i18n';
 import { describeCode } from '../../session/messages';
 import { cardTitle } from '../Board';
@@ -114,6 +116,10 @@ interface CanvasProps {
   readonly pendingRects: ReadonlyMap<CardId, GridRect>;
   readonly onRejected: (message: string) => void;
   readonly onCreateFirst: () => void;
+  /** Menú contextual del fondo: crea o pega partiendo de la celda pulsada. */
+  readonly onCreateAt: (point: GridPoint) => void;
+  readonly canPaste: boolean;
+  readonly onPasteAt: (point: GridPoint) => void;
   readonly boardTitle: string;
   /** Títulos de las tarjetas del tablero que su layout no coloca (v1 válido). */
   readonly unplaced: readonly string[];
@@ -140,6 +146,9 @@ interface CanvasProps {
   readonly onCardTags: (cardId: CardId) => void;
   /** Atajo del menú contextual: inicia una conexión desde esta tarjeta. */
   readonly onCardStartConnect: (cardId: CardId) => void;
+  readonly onCardCopy: (cardId: CardId) => void;
+  readonly onCardDuplicate: (cardId: CardId) => void;
+  readonly onCardPaste: () => void;
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
@@ -241,6 +250,7 @@ export function Canvas(props: CanvasProps) {
   // Tarjeta estrecha cuyo menú «⋯» está abierto.
   const [menuFor, setMenuFor] = useState<CardId | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ readonly left: number; readonly top: number } | null>(null);
+  const [canvasMenu, setCanvasMenu] = useState<{ readonly anchor: { readonly left: number; readonly top: number }; readonly point: GridPoint } | null>(null);
   // Línea de conexión seleccionada, con su menú compacto abierto (auditoría de interacción, 2026-09-29).
   const [selectedRelationId, setSelectedRelationId] = useState<RelationId | null>(null);
   const cards = useMemo(() => new Map(workspace.cards.map((card) => [card.id, card])), [workspace.cards]);
@@ -415,11 +425,27 @@ export function Canvas(props: CanvasProps) {
     };
     const contextMenu = (event: MouseEvent) => {
       const cardId = cardAt(event.target);
-      if (!cardId) return;
+      if (!cardId) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest('button, input, textarea, select, [contenteditable="true"], [role="button"], [role="slider"]')) return;
+        const bounds = node.getBoundingClientRect();
+        const current = latest.current.props;
+        const point = {
+          x: Math.floor(((event.clientX - bounds.left) - current.pan.x) / current.zoom / current.metrics.cell),
+          y: Math.floor(((event.clientY - bounds.top) - current.pan.y) / current.zoom / current.metrics.row),
+        };
+        event.preventDefault();
+        event.stopPropagation();
+        controller.resetTap();
+        setMenuFor(null);
+        setCanvasMenu({ anchor: { left: event.clientX, top: event.clientY }, point });
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       controller.resetTap();
       latest.current.props.onCardPress(cardId);
+      setCanvasMenu(null);
       setMenuAnchor({ left: event.clientX, top: event.clientY });
       setMenuFor(cardId);
     };
@@ -435,6 +461,7 @@ export function Canvas(props: CanvasProps) {
       const bounds = target.getBoundingClientRect();
       controller.resetTap();
       latest.current.props.onCardPress(cardId);
+      setCanvasMenu(null);
       setMenuAnchor({ left: bounds.left + Math.min(24, bounds.width / 2), top: bounds.top + Math.min(24, bounds.height / 2) });
       setMenuFor(cardId);
     };
@@ -1043,15 +1070,28 @@ export function Canvas(props: CanvasProps) {
           display={menuPlacement.display}
           compact={props.compact}
           canQuickEdit={canQuickEditMenuCard}
+          canPaste={props.canPaste}
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
           onQuickEdit={() => props.onCardOpen(menuPlacement.cardId)}
           onTags={() => props.onCardTags(menuPlacement.cardId)}
           onConnect={() => props.onCardStartConnect(menuPlacement.cardId)}
+          onCopy={() => props.onCardCopy(menuPlacement.cardId)}
+          onDuplicate={() => props.onCardDuplicate(menuPlacement.cardId)}
+          onPaste={props.onCardPaste}
           onSelectMany={() => props.onSelectMany(menuPlacement.cardId)}
           onArchive={() => props.onArchive(menuPlacement.cardId)}
           onAction={(action) => runAction(menuPlacement.cardId, action)}
           onClose={() => setMenuFor(null)}
+        />
+      ) : null}
+      {canvasMenu ? (
+        <CanvasContextMenu
+          anchor={canvasMenu.anchor}
+          canPaste={props.canPaste}
+          onCreate={() => { props.onCreateAt(canvasMenu.point); setCanvasMenu(null); }}
+          onPaste={() => { props.onPasteAt(canvasMenu.point); setCanvasMenu(null); }}
+          onClose={() => setCanvasMenu(null)}
         />
       ) : null}
       {marquee ? (
@@ -1099,6 +1139,62 @@ export function Canvas(props: CanvasProps) {
   );
 }
 
+function CanvasContextMenu({ anchor, canPaste, onCreate, onPaste, onClose }: {
+  readonly anchor: { readonly left: number; readonly top: number };
+  readonly canPaste: boolean;
+  readonly onCreate: () => void;
+  readonly onPaste: () => void;
+  readonly onClose: () => void;
+}) {
+  const { theme } = useTheme();
+  const { locale } = useLocale();
+  const screen = useWindowDimensions();
+  const width = Math.min(236, screen.width - 16);
+  const left = Math.max(8, Math.min(anchor.left, screen.width - width - 8));
+  const top = Math.max(8, Math.min(anchor.top, screen.height - (canPaste ? 164 : 118)));
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const first = requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="canvas-context-menu"] button')?.focus());
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', escape);
+    return () => { cancelAnimationFrame(first); window.removeEventListener('keydown', escape); opener?.focus(); };
+  }, [onClose]);
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={onClose}>
+      <View style={styles.canvasMenuBackdrop}>
+        <Pressable accessible={false} style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View testID="canvas-context-menu" accessibilityViewIsModal
+          {...(Platform.OS === 'web' ? { role: 'dialog', 'aria-modal': true, 'aria-label': t('canvasMenu.accessibilityLabel', locale) } : {})}
+          style={[styles.canvasMenuPopover, { left, top, width, backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+          <View style={styles.canvasMenuHead}>
+            <Text style={[styles.canvasMenuTitle, { color: theme.colors.textPrimary }]}>{t('canvasMenu.title', locale)}</Text>
+            <DialogCloseButton label={t('cardMenu.close', locale)} onPress={onClose} />
+          </View>
+          <CanvasMenuAction icon="note" label={t('canvasMenu.createNote', locale)} accessibilityLabel={t('canvasMenu.createNote.accessibilityLabel', locale)} onPress={onCreate} />
+          {canPaste ? <CanvasMenuAction icon="paste" label={t('canvasMenu.paste', locale)} accessibilityLabel={t('canvasMenu.paste.accessibilityLabel', locale)} onPress={onPaste} /> : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function CanvasMenuAction({ icon, label, accessibilityLabel, onPress }: {
+  readonly icon: 'note' | 'paste';
+  readonly label: string;
+  readonly accessibilityLabel: string;
+  readonly onPress: () => void;
+}) {
+  const { theme } = useTheme();
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}
+      style={({ pressed }) => [styles.canvasMenuAction, { borderColor: theme.colors.gridLine, backgroundColor: pressed ? theme.colors.surfaceRaised : theme.colors.surface }]}>
+      <AppIcon name={icon} size={18} color={theme.colors.textPrimary} />
+      <Text style={[styles.canvasMenuActionText, { color: theme.colors.textPrimary }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   // Superficie de gestos, no de texto: sin selección que el navegador pueda arrastrar.
   viewport: { flex: 1, overflow: 'hidden', borderWidth: 2, position: 'relative', userSelect: 'none' },
@@ -1117,4 +1213,10 @@ const styles = StyleSheet.create({
   connectorStart: { position: 'absolute', borderWidth: 3, borderRadius: 999, backgroundColor: 'transparent' },
   // Encima de los controles inferiores (ADR 0028), que ocupan la esquina de abajo.
   status: { position: 'absolute', left: 12, right: 12, bottom: 72, borderWidth: 2, padding: 10, fontSize: 14, lineHeight: 19, fontWeight: '700' },
+  canvasMenuBackdrop: { flex: 1 },
+  canvasMenuPopover: { position: 'absolute', borderWidth: 2, padding: 10, gap: 7 },
+  canvasMenuHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  canvasMenuTitle: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: '900' },
+  canvasMenuAction: { minHeight: 42, borderWidth: 1, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  canvasMenuActionText: { flexShrink: 1, fontSize: 13, lineHeight: 18, fontWeight: '800' },
 });

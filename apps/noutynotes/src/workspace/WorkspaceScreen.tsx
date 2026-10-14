@@ -1,6 +1,6 @@
 import {
   PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardContent, editConnectorPath, importImageCard,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, Card, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
@@ -8,8 +8,9 @@ import { cardTitleText, createOrthogonalConnectorPath, frameMembers, toggleRichT
 import { htmlRichTextCodec, markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
+import { PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '../components/BrandMark';
@@ -39,7 +40,7 @@ import type { CanvasTool } from './canvas/Canvas';
 import { unplacedCardIds } from './canvas/boardCards';
 import { connectTap } from './canvas/connect';
 import { toggleChecklistLine } from './markdownLists';
-import { DEFAULT_PREFERENCES, metricsFor, parsePreferences } from './canvas/preferences';
+import { DEFAULT_PREFERENCES, PREFERENCE_LIMITS, metricsFor, parsePreferences } from './canvas/preferences';
 import type { ViewPreferences } from './canvas/preferences';
 import { visibleCells, zoomIn, zoomOut } from './canvas/viewport';
 import type { Point } from './canvas/viewport';
@@ -487,6 +488,23 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     await run((storage, workspaceId) => pasteSnapshot(storage, workspaceId, board.id, clipboard),
       pluralAction(count, 'action.selectionPasted', 'action.selectionPasted.many'));
   };
+  const copyCard = (cardId: CardId) => {
+    if (!board || !workspace) return;
+    const snapshot = snapshotSelection(workspace, board.id, [cardId], 'copy');
+    if (!snapshot) return;
+    setClipboard(snapshot);
+    setFeedback({ tone: 'success', text: t('action.selectionCopied', locale) });
+  };
+  const duplicateCard = async (cardId: CardId) => {
+    if (!board) return;
+    await run((storage, workspaceId) => duplicateSelection(storage, workspaceId, board.id, [cardId]), 'action.selectionDuplicated');
+  };
+  const pasteClipboardAt = async (point: GridPoint) => {
+    if (!board || !clipboard) return;
+    const count = clipboard.cards.length;
+    await run((storage, workspaceId) => pasteSnapshot(storage, workspaceId, board.id, clipboard, point),
+      pluralAction(count, 'action.selectionPasted', 'action.selectionPasted.many'));
+  };
 
   const openBoard = (next: BoardId) => {
     setBoardId(next);
@@ -587,8 +605,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
-  const add = (kind: InsertablePrototypeKind, extra: { readonly url?: string; readonly title?: string; readonly content?: string } = {}) => {
-    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+  const add = (kind: InsertablePrototypeKind, extra: { readonly url?: string; readonly title?: string; readonly content?: string } = {}, nearOverride?: { readonly x: number; readonly y: number; readonly columns: number }) => {
+    const near = nearOverride ?? (boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined);
     // La fecha de creación la pone la interfaz (ADR 0024): application no usa el reloj.
     return run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...extra, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
       .then((result) => {
@@ -882,6 +900,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       { key: 'action.boardRenamed', params: { title: title.trim() } },
     );
     if (result.ok) setBoardActionsId(null);
+    return result.ok;
+  };
+  const reorderBoardById = async (targetBoardId: BoardId, targetIndex: number): Promise<boolean> => {
+    const result = await run(
+      (storage, workspaceId) => reorderBoardInWorkspace(storage, workspaceId, targetBoardId, targetIndex),
+      'action.boardReordered',
+    );
     return result.ok;
   };
   const restoreArchivedBoardById = async (boardId: BoardId, title: string) => {
@@ -1482,6 +1507,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         pendingRects={pendingRects}
         onRejected={(message) => setFeedback({ tone: 'error', text: message })}
         onCreateFirst={() => void add('note')}
+        onCreateAt={(point) => { void add('note', {}, { ...point, columns: 1 }); }}
+        canPaste={clipboard !== null}
+        onPasteAt={(point) => { void pasteClipboardAt(point); }}
         boardTitle={board?.title ?? 'sin tableros'}
         unplaced={unplaced}
         imageUris={previews.cards}
@@ -1498,6 +1526,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           showCardInspector(cardId, 'content', true);
         }}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
+        onCardCopy={copyCard}
+        onCardDuplicate={(cardId) => { void duplicateCard(cardId); }}
+        onCardPaste={() => { void pasteClipboard(); }}
         onTrash={(cardId) => void sendToTrash(cardId)}
         onArchive={(cardId) => void archiveSelected(cardId)}
         onSelectMany={(cardId) => void startMulti([cardId])}
@@ -1555,7 +1586,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           `ScrollView`, así que nunca se mueven.
         */}
         {sidebar ? (
-          <View testID="workspace-sidebar" style={[styles.sidebar, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
+          <View testID="workspace-sidebar" style={[styles.sidebar, { width: preferences.leftSidebarWidth, backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
             <View style={styles.sidebarTop}>
               <View style={styles.brandRow}>
                 <BrandMark size={44} />
@@ -1604,6 +1635,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               </View>
             ) : null}
           </View>
+        ) : null}
+        {sidebar ? (
+          <ResizeHandle
+            testID="left-sidebar-resize"
+            label="Ajustar ancho de la barra izquierda"
+            value={preferences.leftSidebarWidth}
+            limits={PREFERENCE_LIMITS.leftSidebarWidth}
+            direction={1}
+            onChange={(leftSidebarWidth) => setPreferences((current) => ({ ...current, leftSidebarWidth }))}
+          />
         ) : null}
         <View style={styles.main}>
           {/* Sin barra lateral (< 1100 px) y sin workspace cargado (cargando o «no disponible»),
@@ -1725,7 +1766,19 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         {/* Barra lateral derecha de tableros (ADR 0048): conservada tal como funcionaba antes de
             UX7-CLEANUP, por instrucción explícita — no se sustituye por un botón en la barra de
             herramientas. */}
-        {sidebar && workspace ? <BoardRail boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onActions={setBoardActionsId} onReturn={() => setProjectsOpen(true)} /> : null}
+        {sidebar && workspace ? (
+          <>
+            <ResizeHandle
+              testID="board-rail-resize"
+              label="Ajustar ancho de la barra de tableros"
+              value={preferences.boardRailWidth}
+              limits={PREFERENCE_LIMITS.boardRailWidth}
+              direction={-1}
+              onChange={(boardRailWidth) => setPreferences((current) => ({ ...current, boardRailWidth }))}
+            />
+            <BoardRail width={preferences.boardRailWidth} boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onActions={setBoardActionsId} onReorder={(target, index) => void reorderBoardById(target, index)} onReturn={() => setProjectsOpen(true)} />
+          </>
+        ) : null}
       </View>
       {workspace ? (
         <>
@@ -1738,6 +1791,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               busy={saving}
               onClose={() => setBoardActionsId(null)}
               onRename={(title) => renameBoardById(boardActions.id, title)}
+              canMoveBefore={workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) > 0}
+              canMoveAfter={workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) < workspace.boards.length - 1}
+              onMoveBefore={() => reorderBoardById(boardActions.id, workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) - 1)}
+              onMoveAfter={() => reorderBoardById(boardActions.id, workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) + 1)}
               onArchive={() => archiveBoardById(boardActions.id)}
             />
           ) : null}
@@ -2297,12 +2354,102 @@ function usePendingText(
   };
 }
 
+function ResizeHandle({ testID, label, value, limits, direction, onChange }: {
+  readonly testID: string;
+  readonly label: string;
+  readonly value: number;
+  readonly limits: { readonly min: number; readonly max: number; readonly step: number };
+  readonly direction: 1 | -1;
+  readonly onChange: (value: number) => void;
+}) {
+  const { theme } = useTheme();
+  const [focused, setFocused] = useState(false);
+  const valueRef = useRef(value);
+  const changeRef = useRef(onChange);
+  const pointerRef = useRef<number | null>(null);
+  const pointerOrigin = useRef({ x: 0, value });
+  valueRef.current = value;
+  changeRef.current = onChange;
+  let origin = value;
+  const snap = (candidate: number) => {
+    const clamped = Math.min(limits.max, Math.max(limits.min, candidate));
+    return Math.min(limits.max, limits.min + Math.round((clamped - limits.min) / limits.step) * limits.step);
+  };
+  const [responder] = useState(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_event, state) => Math.abs(state.dx) >= 2,
+    onPanResponderGrant: () => { origin = valueRef.current; },
+    onPanResponderMove: (_event, state) => changeRef.current(snap(origin + state.dx * direction)),
+    onPanResponderRelease: (_event, state) => changeRef.current(snap(origin + state.dx * direction)),
+    onPanResponderTerminationRequest: () => false,
+  }));
+  const onKeyDown = (event: { key: string; preventDefault: () => void }) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const screenDelta = event.key === 'ArrowRight' ? limits.step : -limits.step;
+    changeRef.current(snap(valueRef.current + screenDelta * direction));
+  };
+  if (Platform.OS === 'web') {
+    const lineColor = focused ? theme.colors.selection : theme.colors.border;
+    return createElement('div', {
+      role: 'slider',
+      tabIndex: 0,
+      'data-testid': testID,
+      'aria-label': label,
+      'aria-valuemin': limits.min,
+      'aria-valuemax': limits.max,
+      'aria-valuenow': value,
+      'aria-valuetext': `${value} px`,
+      onFocus: () => setFocused(true),
+      onBlur: () => setFocused(false),
+      onKeyDown,
+      onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        pointerRef.current = event.pointerId;
+        pointerOrigin.current = { x: event.clientX, value: valueRef.current };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+        if (pointerRef.current !== event.pointerId) return;
+        changeRef.current(snap(pointerOrigin.current.value + (event.clientX - pointerOrigin.current.x) * direction));
+      },
+      onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => {
+        if (pointerRef.current !== event.pointerId) return;
+        changeRef.current(snap(pointerOrigin.current.value + (event.clientX - pointerOrigin.current.x) * direction));
+        pointerRef.current = null;
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      },
+      onPointerCancel: () => { pointerRef.current = null; },
+      style: {
+        width: 10, flex: '0 0 10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'col-resize', userSelect: 'none', touchAction: 'none', backgroundColor: theme.colors.surfaceRaised,
+      },
+    }, createElement('div', { style: { width: 2, height: '100%', backgroundColor: lineColor } }));
+  }
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="adjustable"
+      accessibilityLabel={label}
+      accessibilityValue={{ min: limits.min, max: limits.max, now: value, text: `${value} px` }}
+      {...responder.panHandlers}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={[styles.resizeHandle, { backgroundColor: theme.colors.surfaceRaised }]}
+    >
+      <View style={[styles.resizeHandleLine, { backgroundColor: focused ? theme.colors.selection : theme.colors.border }]} />
+    </Pressable>
+  );
+}
+
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   frame: { flex: 1 },
   frameRow: { flexDirection: 'row' },
+  resizeHandle: { width: 10, flexGrow: 0, alignItems: 'center', justifyContent: 'center' },
+  resizeHandleLine: { width: 2, height: '100%' },
   // UX7-SIDEBAR: columna de tres regiones — superior fija, central desplazable, inferior fija.
   sidebar: { width: 220, flexGrow: 0, flexDirection: 'column', borderRightWidth: 1 },
   sidebarTop: { flexShrink: 0, padding: 16, paddingBottom: 8, gap: 8 },

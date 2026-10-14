@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addBoardToWorkspace, addCardToBoard, createEmptyWorkspaceNamed, renameBoardInWorkspace } from '../../packages/application/src/index';
+import { addBoardToWorkspace, addCardToBoard, createEmptyWorkspaceNamed, renameBoardInWorkspace, reorderBoardInWorkspace } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId } from '../../packages/domain/src/index';
 import { MemoryStorage } from '../../packages/storage/src/index';
@@ -78,6 +78,32 @@ describe('tableros del workspace (experiencia del workspace, ADR 0013)', () => {
 
     expect((await renameBoardInWorkspace(storage, workspaceId, boardId, '   ')).ok).toBe(false);
     expect((await renameBoardInWorkspace(storage, workspaceId, 'no-existe' as BoardId, 'Ideas')).ok).toBe(false);
+    expect(ok(await storage.open(workspaceId))).toEqual(before);
+  });
+
+  it('reordena tableros y conserva el orden, las tarjetas y los layouts al reabrir', async () => {
+    const { storage, workspaceId } = await session();
+    const first = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Inicio' }));
+    const second = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Escenas' }));
+    const third = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Final' }));
+    ok(await addCardToBoard(storage, workspaceId, { kind: 'note', boardId: second }));
+
+    ok(await reorderBoardInWorkspace(storage, workspaceId, third, 0));
+
+    const reopened = ok(await storage.open(workspaceId));
+    expect(reopened.boards.map(({ id }) => id)).toEqual([third, first, second]);
+    expect(reopened.boards.find(({ id }) => id === second)?.cardIds).toEqual(['tarjeta-1']);
+    expect(reopened.layouts.map(({ boardId }) => boardId)).toEqual([first, second, third]);
+  });
+
+  it('rechaza de forma atomica un tablero inexistente o una posicion fuera de rango', async () => {
+    const { storage, workspaceId } = await session();
+    const boardId = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Inicio' }));
+    ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Final' }));
+    const before = ok(await storage.open(workspaceId));
+
+    expect((await reorderBoardInWorkspace(storage, workspaceId, 'no-existe' as BoardId, 0)).ok).toBe(false);
+    expect((await reorderBoardInWorkspace(storage, workspaceId, boardId, 2)).ok).toBe(false);
     expect(ok(await storage.open(workspaceId))).toEqual(before);
   });
 });

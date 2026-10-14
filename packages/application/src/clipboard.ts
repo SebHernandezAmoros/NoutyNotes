@@ -51,7 +51,7 @@ export function snapshotSelection(workspace: Workspace, boardId: BoardId, cardId
  * posiciones relativas y se desplaza como conjunto al siguiente hueco libre desde una celda a la
  * derecha y abajo de donde se copió (visible, nunca superpuesto a sí mismo).
  */
-function pasteOnto(workspace: Workspace, boardId: BoardId, snapshot: ClipboardSnapshot): ValidationResult<Workspace> {
+function pasteOnto(workspace: Workspace, boardId: BoardId, snapshot: ClipboardSnapshot, near?: GridPoint): ValidationResult<Workspace> {
   if (!workspace.boards.some((board) => board.id === boardId)) {
     return { ok: false, issues: [{ code: 'missing-reference', path: 'boardId', message: 'El tablero destino no existe.' }] };
   }
@@ -84,7 +84,8 @@ function pasteOnto(workspace: Workspace, boardId: BoardId, snapshot: ClipboardSn
   const maxX = Math.max(...placementXs);
   const maxY = Math.max(...placementYs);
   const layout = workspace.layouts.find((candidate) => candidate.boardId === boardId) ?? { boardId, placements: [] };
-  const spot = findFreeSpace(layout, { w: maxX - minX, h: maxY - minY }, CANONICAL_GRID, { from: { x: minX + 1, y: minY + 1 } });
+  const spot = findFreeSpace(layout, { w: maxX - minX, h: maxY - minY }, CANONICAL_GRID,
+    near ? { from: near, columns: 1 } : { from: { x: minX + 1, y: minY + 1 } });
   if (!spot.ok) return spot;
   const delta: GridPoint = { x: spot.value.x - minX, y: spot.value.y - minY };
   const placements: CardPlacement[] = snapshot.placements.map((placement) => ({
@@ -98,9 +99,9 @@ function pasteOnto(workspace: Workspace, boardId: BoardId, snapshot: ClipboardSn
 
 /** Pegar (ADR 0052): la instantánea puede ir a un tablero distinto del que se copió, mismo workspace. */
 export function pasteSnapshot(
-  storage: WorkspaceStorage, workspaceId: WorkspaceId, boardId: BoardId, snapshot: ClipboardSnapshot,
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, boardId: BoardId, snapshot: ClipboardSnapshot, near?: GridPoint,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
-  return modifyWorkspace(storage, workspaceId, (workspace) => pasteOnto(workspace, boardId, snapshot));
+  return modifyWorkspace(storage, workspaceId, (workspace) => pasteOnto(workspace, boardId, snapshot, near));
 }
 
 /** Duplicar (ADR 0052): copiar y pegar en un solo paso, sin tocar el portapapeles existente. */

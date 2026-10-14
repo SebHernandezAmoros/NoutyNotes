@@ -355,6 +355,30 @@ export function renameBoardInWorkspace(
   });
 }
 
+/** Reordena la lista durable de tableros sin tocar identidad, contenido, layouts ni relaciones. */
+export function reorderBoardInWorkspace(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, boardId: BoardId, targetIndex: number,
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  if (!Number.isInteger(targetIndex) || targetIndex < 0) {
+    return Promise.resolve(storageFailure('invalid-workspace', 'targetIndex', 'La posiciÃ³n del tablero no es vÃ¡lida.'));
+  }
+  return modifyWorkspace(storage, workspaceId, (workspace) => {
+    const sourceIndex = workspace.boards.findIndex((board) => board.id === boardId);
+    if (sourceIndex < 0) {
+      return { ok: false, issues: [{ code: 'missing-reference', path: 'boardId', message: 'El tablero no existe en el workspace.' }] };
+    }
+    if (targetIndex >= workspace.boards.length) {
+      return { ok: false, issues: [{ code: 'invalid-value', path: 'targetIndex', message: 'La posiciÃ³n del tablero queda fuera del workspace.' }] };
+    }
+    if (sourceIndex === targetIndex) return { ok: true, value: workspace };
+    const boards = [...workspace.boards];
+    const [moving] = boards.splice(sourceIndex, 1);
+    if (!moving) return { ok: true, value: workspace };
+    boards.splice(targetIndex, 0, moving);
+    return validateWorkspace({ ...workspace, boards });
+  });
+}
+
 export function editCardContent(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId, changes: CardContentChanges,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {

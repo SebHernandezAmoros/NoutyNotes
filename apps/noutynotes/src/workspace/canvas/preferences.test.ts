@@ -7,7 +7,7 @@ describe('preferencias de vista del dispositivo (ADR 0014)', () => {
     expect(parsePreferences(null)).toEqual(DEFAULT_PREFERENCES);
     expect(parsePreferences('{no es json')).toEqual(DEFAULT_PREFERENCES);
     expect(parsePreferences(JSON.stringify({ showGrid: false, snap: false, rowHeight: 80, cardGap: 12, showDates: true, hideFrames: true, noteFont: 'serif' })))
-      .toEqual({ showGrid: false, snap: false, rowHeight: 80, cardGap: 12, showDates: true, hideFrames: true, noteFont: 'serif', customFontRef: null });
+      .toEqual({ showGrid: false, snap: false, rowHeight: 80, cardGap: 12, showDates: true, hideFrames: true, noteFont: 'serif', customFontRef: null, leftSidebarWidth: 220, boardRailWidth: 72 });
     // Fecha visible (ADR 0029): apagada por defecto y también si lo guardado no es un booleano.
     expect(parsePreferences(JSON.stringify({ showDates: 'sí' })).showDates).toBe(false);
     // Marco oculto (UX7-D3/ADR 0049): visible por defecto y también si lo guardado no es un booleano.
@@ -20,12 +20,16 @@ describe('preferencias de vista del dispositivo (ADR 0014)', () => {
     // Fuera de rango o de paso: se ajusta al valor válido más cercano; tipos erróneos, por defecto.
     expect(parsePreferences(JSON.stringify({ showGrid: 'sí', rowHeight: 500, cardGap: 3 })))
       .toEqual({ ...DEFAULT_PREFERENCES, rowHeight: 96, cardGap: 4 });
+    expect(parsePreferences(JSON.stringify({ leftSidebarWidth: 10, boardRailWidth: 999 })))
+      .toEqual({ ...DEFAULT_PREFERENCES, leftSidebarWidth: 184, boardRailWidth: 280 });
   });
 
   it('sube y baja por pasos sin salir de los límites', () => {
     expect(stepPreference(DEFAULT_PREFERENCES, 'rowHeight', 1).rowHeight).toBe(56);
     expect(stepPreference({ ...DEFAULT_PREFERENCES, rowHeight: 48 }, 'rowHeight', -1).rowHeight).toBe(48);
     expect(stepPreference({ ...DEFAULT_PREFERENCES, cardGap: 16 }, 'cardGap', 1).cardGap).toBe(16);
+    expect(stepPreference(DEFAULT_PREFERENCES, 'leftSidebarWidth', 1).leftSidebarWidth).toBe(224);
+    expect(stepPreference(DEFAULT_PREFERENCES, 'boardRailWidth', -1).boardRailWidth).toBe(72);
   });
 
   it('la densidad cambia filas y separación; en móvil una ficha minimizada sigue midiendo al menos 44 px', () => {

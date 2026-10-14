@@ -23,6 +23,10 @@ export interface ViewPreferences {
   /** Ruta del asset de la fuente activada como «custom» (ADR 0041); solo tiene sentido en el workspace
    * que la tiene. En otro, o si ya no está, `noteFontFamily` cae a la reserva del sistema por diseño. */
   readonly customFontRef: string | null;
+  /** Ancho local de la navegacion izquierda; nunca forma parte del documento. */
+  readonly leftSidebarWidth: number;
+  /** Ancho local de la barra de tableros derecha; nunca forma parte del documento. */
+  readonly boardRailWidth: number;
 }
 
 // UX7-D1: 100 % debe ser el tamaño normal de trabajo (antes obligaba a bajar a 50-75 % habitualmente).
@@ -31,11 +35,14 @@ export interface ViewPreferences {
 // área táctil mínima de 44 px (ADR 0016) y es la cifra más compacta que no la viola.
 export const DEFAULT_PREFERENCES: ViewPreferences = {
   showGrid: true, snap: true, rowHeight: 48, cardGap: 6, showDates: false, hideFrames: false, noteFont: 'system', customFontRef: null,
+  leftSidebarWidth: 220, boardRailWidth: 72,
 };
 
 export const PREFERENCE_LIMITS = {
   rowHeight: { min: 48, max: 96, step: 8 },
   cardGap: { min: 4, max: 16, step: 2 },
+  leftSidebarWidth: { min: 184, max: 300, step: 4 },
+  boardRailWidth: { min: 72, max: 280, step: 8 },
 } as const;
 
 type NumericPreference = keyof typeof PREFERENCE_LIMITS;
@@ -62,6 +69,7 @@ export function parsePreferences(stored: string | null): ViewPreferences {
   return {
     showGrid: flag('showGrid'), snap: flag('snap'), rowHeight: number('rowHeight'), cardGap: number('cardGap'),
     showDates: flag('showDates'), hideFrames: flag('hideFrames'), noteFont, customFontRef,
+    leftSidebarWidth: number('leftSidebarWidth'), boardRailWidth: number('boardRailWidth'),
   };
 }
 

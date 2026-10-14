@@ -39,6 +39,165 @@ async function tapCard(page: Page, id: number, edit = true) {
   if (edit) await openCardEditor(page, id);
 }
 
+test('UX7-BOARD-ORDER: drag and accessible controls preserve order after reopening', async ({ page }, testInfo) => {
+  test.skip(isCompact(page), 'The draggable board rail belongs to the desktop layout.');
+  await page.goto('./');
+  await createWorkspace(page, 'Orden persistente');
+  await button(page, 'Crear un tablero').click();
+  await button(page, 'Crear un tablero').click();
+  await button(page, 'Crear un tablero').click();
+
+  const rail = page.getByTestId('board-tabs');
+  const boardOrder = () => rail.getByRole('button', { name: /^Tablero / }).evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute('aria-label')),
+  );
+  await expect.poll(boardOrder).toEqual(['Tablero Tablero 1', 'Tablero Tablero 2', 'Tablero Tablero 3']);
+
+  const dragHandle = (name: string) => rail.getByRole('button', { name, exact: true }).locator('xpath=..');
+  await expect(dragHandle('Tablero Tablero 3')).toHaveAttribute('draggable', 'true');
+  await dragHandle('Tablero Tablero 3').dragTo(dragHandle('Tablero Tablero 1'));
+  await expect.poll(boardOrder).toEqual(['Tablero Tablero 3', 'Tablero Tablero 1', 'Tablero Tablero 2']);
+  await expect(button(page, 'Deshacer: Orden de tableros guardado')).toBeVisible();
+
+  await rail.getByRole('button', { name: 'Opciones del tablero Tablero 1', exact: true }).click();
+  await page.getByRole('button', { name: /^Mover despu/ }).click();
+  await expect.poll(boardOrder).toEqual(['Tablero Tablero 3', 'Tablero Tablero 2', 'Tablero Tablero 1']);
+  if (await page.getByTestId('board-actions-dialog').isVisible()) {
+    await page.getByTestId('board-actions-dialog').getByRole('button', { name: /^Cerrar opciones/ }).click();
+  }
+
+  await button(page, 'Volver a Proyectos').click();
+  await button(page, 'Crear un nuevo proyecto desde Inicio').click();
+  await createWorkspace(page, 'Proyecto puente');
+  await button(page, 'Volver a Proyectos').click();
+  await button(page, 'Ir al proyecto Orden persistente').click();
+  await expect.poll(boardOrder).toEqual(['Tablero Tablero 3', 'Tablero Tablero 2', 'Tablero Tablero 1']);
+  await page.screenshot({ path: testInfo.outputPath('board-order-persisted.png') });
+});
+
+test('UX7-CONTEXT-MENUS: create and paste at the clicked canvas point, then duplicate a note', async ({ page }, testInfo) => {
+  test.skip(isCompact(page), 'The pointer context menu belongs to the desktop canvas.');
+  await page.goto('./');
+  await createWorkspace(page, 'Menús del lienzo');
+
+  const background = page.getByTestId('canvas-background');
+  const canvas = await box(background);
+  const canvasTransform = () => page.getByTestId('canvas-content').evaluate((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return { scale: matrix.a, x: matrix.e, y: matrix.f };
+  });
+  const createPoint = { x: Math.min(360, canvas.width - 260), y: Math.min(250, canvas.height - 220) };
+  const beforeCreate = await canvasTransform();
+  const expectedCreate = {
+    x: Math.floor((createPoint.x - beforeCreate.x) / beforeCreate.scale / cellSize(page).x),
+    y: Math.floor((createPoint.y - beforeCreate.y) / beforeCreate.scale / cellSize(page).y),
+  };
+  await background.click({ button: 'right', position: createPoint, force: true });
+  const canvasMenu = page.getByTestId('canvas-context-menu');
+  await expect(canvasMenu).toBeVisible();
+  await expect(canvasMenu.getByRole('button', { name: 'Crear una Nota en esta posición' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('canvas-create-menu.png') });
+  await canvasMenu.getByRole('button', { name: 'Crear una Nota en esta posición' }).click();
+  await expect(card(page, 1)).toBeVisible();
+  const afterCreate = await canvasTransform();
+  const created = await box(card(page, 1));
+  expect(Math.round((created.x - canvas.x - afterCreate.x) / afterCreate.scale / cellSize(page).x)).toBe(expectedCreate.x);
+  expect(Math.round((created.y - canvas.y - afterCreate.y) / afterCreate.scale / cellSize(page).y)).toBe(expectedCreate.y);
+
+  await card(page, 1).click({ button: 'right' });
+  await expect(canvasMenu).toHaveCount(0);
+  const cardMenu = page.getByTestId('card-menu');
+  await expect(cardMenu).toBeVisible();
+  await cardMenu.getByRole('button', { name: 'Copiar la Nota Nueva nota' }).click();
+  await expect(button(page, 'Pegar')).toBeEnabled();
+
+  const pastePoint = { x: Math.min(760, canvas.width - 250), y: Math.min(520, canvas.height - 180) };
+  const beforePaste = await canvasTransform();
+  const expectedPaste = {
+    x: Math.floor((pastePoint.x - beforePaste.x) / beforePaste.scale / cellSize(page).x),
+    y: Math.floor((pastePoint.y - beforePaste.y) / beforePaste.scale / cellSize(page).y),
+  };
+  await background.click({ button: 'right', position: pastePoint, force: true });
+  await expect(canvasMenu.getByRole('button', { name: 'Pegar una copia en esta posición' })).toBeVisible();
+  await canvasMenu.getByRole('button', { name: 'Pegar una copia en esta posición' }).click();
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
+  const pasted = await box(card(page, 2));
+  const afterPaste = await canvasTransform();
+  expect(Math.round((pasted.x - canvas.x - afterPaste.x) / afterPaste.scale / cellSize(page).x)).toBe(expectedPaste.x);
+  expect(Math.round((pasted.y - canvas.y - afterPaste.y) / afterPaste.scale / cellSize(page).y)).toBe(expectedPaste.y);
+
+  await card(page, 2).click({ button: 'right' });
+  await page.screenshot({ path: testInfo.outputPath('note-copy-menu.png') });
+  await page.getByTestId('card-menu').getByRole('button', { name: 'Duplicar la Nota Nueva nota' }).click();
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(3);
+  await expect(button(page, 'Deshacer: Tarjeta duplicada')).toBeVisible();
+});
+
+test('UX7-CONTEXT-MENUS: note clipboard actions remain available on mobile', async ({ page }, testInfo) => {
+  test.skip(!isCompact(page), 'This check covers the compact accessible alternative.');
+  await page.goto('./');
+  await createWorkspace(page, 'Menú móvil');
+  await addCards(page, ['nota']);
+
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  const menu = page.getByTestId('card-menu');
+  await menu.getByRole('button', { name: 'Copiar la Nota Nueva nota' }).click();
+  await expect(button(page, 'Pegar')).toBeEnabled();
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await page.screenshot({ path: testInfo.outputPath('note-copy-menu-mobile.png') });
+  await menu.getByRole('button', { name: 'Duplicar la Nota Nueva nota' }).click();
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
+  await expect(button(page, 'Deshacer: Tarjeta duplicada')).toBeVisible();
+});
+
+test('UX7-BOARD-WIDTHS: both rails resize, persist locally and stay responsive', async ({ page }, testInfo) => {
+  test.skip(isCompact(page), 'Resizable side rails belong to the desktop layout.');
+  await page.goto('./');
+  await createWorkspace(page, 'Barras ajustables');
+  await button(page, 'Crear un tablero').click();
+
+  const left = page.getByTestId('workspace-sidebar');
+  const leftHandle = page.getByTestId('left-sidebar-resize');
+  const right = page.getByTestId('board-tabs');
+  const rightHandle = page.getByTestId('board-rail-resize');
+  expect((await box(left)).width).toBe(220);
+  expect((await box(right)).width).toBe(72);
+
+  await leftHandle.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await expect(leftHandle).toHaveAttribute('aria-valuenow', '228');
+  expect((await box(left)).width).toBe(228);
+  await mouseDrag(page, leftHandle, 32, 0, { header: false });
+  await expect(leftHandle).toHaveAttribute('aria-valuenow', '260');
+  expect((await box(left)).width).toBe(260);
+
+  await mouseDrag(page, rightHandle, -120, 0, { header: false });
+  await expect(rightHandle).toHaveAttribute('aria-valuenow', '192');
+  expect((await box(right)).width).toBe(192);
+  await rightHandle.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(rightHandle).toHaveAttribute('aria-valuenow', '184');
+  await page.keyboard.press('ArrowLeft');
+  await expect(rightHandle).toHaveAttribute('aria-valuenow', '192');
+  const horizontalLabel = right.getByText('TABLERO 1', { exact: true });
+  expect((await box(horizontalLabel)).width).toBeGreaterThan((await box(horizontalLabel)).height);
+  expect(await horizontalLabel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('noutynotes.view.v1') ?? '{}'));
+  expect(stored).toMatchObject({ leftSidebarWidth: 260, boardRailWidth: 192 });
+  const canvasBox = await box(page.getByTestId('board-canvas'));
+  expect(canvasBox.width).toBeGreaterThan(500);
+  await page.screenshot({ path: testInfo.outputPath('board-rail-wide.png') });
+
+  await page.setViewportSize(phone);
+  await expect(leftHandle).toHaveCount(0);
+  await expect(rightHandle).toHaveCount(0);
+  await expect(page.getByTestId('open-tabs')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('board-rails-mobile.png') });
+});
+
 /** Selecciona una tarjeta cuando la prueba necesita abrir su menú contextual. */
 async function selectCard(page: Page, id: number) {
   await expect(async () => {
@@ -431,9 +590,9 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
 
   // 4. Botones del inspector (alternativa accesible a los gestos) con los errores del motor.
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
-  await button(page, 'Mover a la izquierda').click();
+  await page.getByRole('button', { name: /^Mover despu/ }).click();
   await expect(geometry(page)).toHaveText('X -1, Y 0 · 4 × 3');
-  await button(page, 'Mover a la derecha').click();
+  await page.getByRole('button', { name: /^Mover despu/ }).click();
   await expect(geometry(page)).toHaveText('Columna 1, fila 1 · 4 × 3');
   // Dónde nace la segunda nota depende del viewport: a la derecha en escritorio y debajo en móvil
   // (ADR 0004). Se intenta el movimiento que realmente la invade en cada distribución.
@@ -3194,7 +3353,7 @@ test('deshacer y rehacer: mover y archivar, con la barra (o junto al aviso en m�
   // Crear ya no abre el editor por sí sola (auditoría de interacción, 2026-10-02): «Mover a la
   // derecha» es del editor.
   await openFullCardEditor(page, card(page, 1));
-  await button(page, 'Mover a la derecha').click();
+  await page.getByRole('button', { name: /^Mover despu/ }).click();
   await expect(feedback(page)).toHaveText('Tarjeta movida. Guardado en memoria.');
   await expect(geometry(page)).toHaveText('Columna 2, fila 1 · 4 × 3');
 
@@ -3290,7 +3449,7 @@ test('marcos: agrupar la selección, renombrar, mover con sus tarjetas (flechas 
   await expect(header).toContainText('Kioto');
 
   // Flechas: el marco baja una fila y sus tarjetas con él.
-  await button(page, 'Mover el marco abajo').click();
+  await page.getByRole('button', { name: /^Mover despu/ }).click();
   await expect(feedback(page)).toHaveText('Marco movido. Guardado en memoria.');
   await expect(frameGeometry).toHaveText('Columna 1, fila 1 · 8 × 4');
   await page.screenshot({ path: testInfo.outputPath('frame.png') });
