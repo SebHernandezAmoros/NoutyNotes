@@ -89,10 +89,11 @@ function blockNode(block: RichTextBlock, index: number, props: {
 }
 
 /** Lector web virtualizado: solo monta los bloques cercanos al scroll y conserva altura total mediante espaciadores. */
-export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, images, testID, fontFamily, bodySize, captionPosition = 'bottom', layout = 'document' }: {
+export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, images, testID, color, fontFamily, bodySize, captionPosition = 'bottom', layout = 'document' }: {
   readonly document: RichTextDocument;
   readonly images: ReadonlyMap<string, string>;
   readonly testID: string;
+  readonly color?: string | undefined;
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
@@ -139,7 +140,7 @@ export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, ima
       tabIndex={0}
       onScroll={onScroll}
       onKeyDown={onKeyDown}
-      style={{ width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden', color: theme.colors.cardText, fontFamily, fontSize, lineHeight: `${lineHeight}px`, scrollbarWidth: 'thin', overscrollBehavior: 'contain' }}
+      style={{ width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden', color: color ?? theme.colors.cardText, fontFamily, fontSize, lineHeight: `${lineHeight}px`, scrollbarWidth: 'thin', overscrollBehavior: 'contain' }}
     >
       <div aria-hidden="true" style={{ height: metrics[start] }} />
       {document.blocks.slice(start, end).map((block, relativeIndex) => {

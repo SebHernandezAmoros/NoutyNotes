@@ -49,8 +49,14 @@ export function BoardRail({ boards, current, onSelect, onCreate, onActions, onRe
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const webScrollbar = Platform.OS === 'web' ? ({
+    scrollbarWidth: 'thin',
+    scrollbarColor: `${colors.border} transparent`,
+    scrollbarGutter: 'stable',
+  } as object) : null;
   return (
-    <ScrollView testID="board-tabs" accessibilityLabel="Tableros" style={[styles.rail, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}
+    <ScrollView testID="board-tabs" accessibilityLabel="Tableros" showsVerticalScrollIndicator
+      style={[styles.rail, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }, webScrollbar]}
       contentContainerStyle={styles.railContent}>
       <Pressable accessibilityRole="button" accessibilityLabel="Volver a Proyectos" onPress={onReturn}
         style={[styles.railReturn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
@@ -145,8 +151,9 @@ const styles = StyleSheet.create({
   tabVertical: { maxWidth: undefined, justifyContent: 'space-between' },
   label: { flexShrink: 1, fontSize: 14, fontWeight: '800' },
   count: { fontSize: 12, fontWeight: '700' },
-  rail: { width: RAIL_WIDTH + 8, flexGrow: 0, borderLeftWidth: 2 },
-  railContent: { paddingVertical: 8, paddingLeft: 8, gap: 6 },
+  // El canal adicional pertenece al scrollbar: no invade los 48 px táctiles ni el nombre rotado.
+  rail: { width: RAIL_WIDTH + 24, flexGrow: 0, borderLeftWidth: 2 },
+  railContent: { paddingVertical: 8, paddingHorizontal: 6, gap: 6, alignItems: 'center' },
   railReturn: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   railReturnText: { fontSize: 20, lineHeight: 24, fontWeight: '900' },
   railTabWrap: { width: RAIL_WIDTH, height: RAIL_LENGTH, position: 'relative' },

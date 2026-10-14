@@ -190,7 +190,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
         <Pressable testID="inline-collapse-note" accessibilityRole="button" accessibilityLabel="Contraer Nota" onPress={collapse} style={[styles.iconButton, { borderColor: colors.border }]}>
           <Text accessibilityElementsHidden style={[styles.toolbarToggleText, { color: colors.headerText }]}>−</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Abrir el editor completo" onPress={advanced} style={[styles.iconButton, { borderColor: colors.border }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Continuar en el Inspector" onPress={advanced} style={[styles.iconButton, { borderColor: colors.border }]}>
           <AppIcon name="expand" size={18} color={colors.headerText} />
         </Pressable>
         <DialogCloseButton label="Guardar y cerrar la edición rápida" onPress={close} />

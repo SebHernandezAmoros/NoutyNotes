@@ -188,6 +188,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [connectorStart, setConnectorStart] = useState<{ readonly point: GridPoint; readonly cardId?: CardId } | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState<Point>(START_PAN);
+  // Cada apertura de tablero solicita un único encuadre cuando Canvas ya conoce su viewport. No se
+  // vuelve a centrar por seleccionar, editar, mover o redimensionar una Nota.
+  const [boardFitRequest, setBoardFitRequest] = useState(1);
   const [boardView, setBoardView] = useState<BoardView>('canvas');
   // Posición/tamaño optimistas mientras se guarda un movimiento o redimensionado (auditoría de
   // interacción, 2026-09-29): reproducido que, si otra acción vuelve a renderizar el lienzo antes de
@@ -294,10 +297,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setSheetHidden(false);
     if (cardId === null) setFocus(false);
   };
-  // Botón «Editar» de la tarjeta ya seleccionada, o llegar a ella con el teclado: abre su editor sin
-  // pasar por un doble clic/toque (auditoría de interacción, 2026-09-29).
-  const editCard = async (cardId: CardId, section: CardInspectorSection = 'content') => {
-    if (!await flushPendingText()) return;
+  // Única transición hacia CardInspector. El menú contextual lo presenta como panel lateral en
+  // escritorio; «Continuar en el Inspector» desde la edición rápida conserva la intención explícita
+  // de ampliar y lo presenta enfocado. Ambos caminos comparten selección, sección y limpieza de estado.
+  const showCardInspector = (cardId: CardId, section: CardInspectorSection, focused: boolean) => {
     if (!activateSurface(cardId, 'full')) return;
     setSelectedId(cardId);
     setEditingId(cardId);
@@ -306,9 +309,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setMulti(null);
     setFrameId(null);
     setSheetHidden(false);
+    setFocus(focused);
+  };
+  // Botón «Inspector» de la tarjeta ya seleccionada, o llegar a ella con el teclado: abre su editor
+  // sin pasar por un doble clic/toque (auditoría de interacción, 2026-09-29).
+  const editCard = async (cardId: CardId, section: CardInspectorSection = 'content') => {
+    if (!await flushPendingText()) return;
     // En móvil el formulario y el teclado necesitan toda la pantalla; abrirlo como hoja parcial
     // dejaba poco espacio útil. La selección simple sigue sin editar (ADR 0045).
-    setFocus(compact);
+    showCardInspector(cardId, section, compact);
   };
   const selectFrame = async (next: string | null) => {
     if (!await flushPendingText()) return;
@@ -481,6 +490,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const openBoard = (next: BoardId) => {
     setBoardId(next);
+    setBoardFitRequest((current) => current + 1);
     // A partir de `openBoards` (derivado), no de `openBoardIds` (estado crudo): el tablero mostrado
     // por defecto solo existe en la derivación hasta que se abre o cierra algo por primera vez; partir
     // del estado crudo lo perdería en ese primer cambio.
@@ -1442,6 +1452,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onFramePress={(target) => void selectFrame(target)}
         onFrameMove={moveFrame}
         onZoom={setZoom}
+        fitRequest={boardFitRequest}
         onView={(nextZoom, nextPan) => { setZoom(nextZoom); setPan(nextPan); }}
         onResetView={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
         onAreaSelect={(cardIds) => void startMulti(cardIds)}
@@ -1484,9 +1495,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onInlineSave={saveInlineCard}
         onInlineClose={() => { setEditingId(null); setInlineEditing(false); setFocus(false); }}
         onInlineAdvanced={(cardId) => {
-          if (!activateSurface(cardId, 'full')) return;
-          setInspectorSection('content');
-          setSelectedId(cardId); setEditingId(cardId); setInlineEditing(false); setFocus(true);
+          showCardInspector(cardId, 'content', true);
         }}
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onTrash={(cardId) => void sendToTrash(cardId)}
@@ -2173,9 +2182,24 @@ function usePendingText(
     session.editorialSessions.update(requestedAuthority.title, { source: { format: 'rich-text', value: titleDocument }, lastValidDocument: titleDocument, validation: { status: 'valid' }, persistence: 'protection-pending' });
     const bodySource = draft.bodySource ?? { format: 'legacy-markdown' as const, value: draft.content };
     const bodyValidation = draft.bodyValidation ?? { status: 'valid' as const };
+    // Una edición Markdown válida también cambia el documento visual de la sesión. Antes solo se
+    // actualizaba `lastValidDocument` cuando el editor entregaba `bodyDocument`; al volver a abrir la
+    // misma Nota, la fuente contenía el texto nuevo pero el editor Visual priorizaba el documento
+    // antiguo (a menudo vacío). Derivarlo aquí mantiene sincronizadas ambas representaciones sin
+    // convertir ni reescribir todavía el documento durable.
+    const parsedBody = draft.bodyDocument ?? (bodyValidation.status === 'valid'
+      ? bodySource.format === 'rich-text'
+        ? bodySource.value
+        : bodySource.format === 'legacy-markdown'
+          ? markdownRichTextCodec.parse(bodySource.value)
+          : htmlRichTextCodec.parse(bodySource.value)
+      : null);
+    const currentBodyDocument = parsedBody && 'ok' in parsedBody
+      ? (parsedBody.ok ? parsedBody.value : null)
+      : parsedBody;
     session.editorialSessions.update(requestedAuthority.body, {
       source: bodySource,
-      ...(draft.bodyDocument ? { lastValidDocument: draft.bodyDocument } : {}),
+      ...(currentBodyDocument ? { lastValidDocument: currentBodyDocument } : {}),
       validation: bodyValidation,
       persistence: 'protection-pending',
     });

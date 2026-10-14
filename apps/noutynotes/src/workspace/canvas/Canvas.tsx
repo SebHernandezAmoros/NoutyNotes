@@ -88,6 +88,8 @@ interface CanvasProps {
   /** Vista general (ADR 0028): cambiar zoom y cámara juntos, restablecer y seleccionar por área. */
   readonly onZoom: (zoom: number) => void;
   readonly onView: (zoom: number, pan: Point) => void;
+  /** Cambia al abrir un tablero. El lienzo encuadra su contenido una sola vez cuando ya conoce el viewport. */
+  readonly fitRequest: number;
   readonly onResetView: () => void;
   readonly onAreaSelect: (cardIds: readonly CardId[]) => void;
   /** Fecha de creación en el pie de las fichas (ADR 0029). */
@@ -191,12 +193,27 @@ function rejection(check: PlacementCheck, names: ReadonlyMap<CardId, string>): s
  * Nunca modifica datos: al soltar un destino válido llama a `onMove`/`onResize`, que usan los casos de uso.
  */
 export function Canvas(props: CanvasProps) {
-  const { workspace, layout, metrics, zoom, pan, tool, snap, showGrid, selectedId, connectSource, boardTitle } = props;
+  const { workspace, layout, metrics, zoom, pan, tool, snap, showGrid, selectedId, connectSource, boardTitle,
+    fitRequest, onResetView, onView } = props;
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
+  const handledFitRequest = useRef(0);
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  useEffect(() => {
+    if (fitRequest === handledFitRequest.current || viewport.width <= 0 || viewport.height <= 0 || !layout) return;
+    handledFitRequest.current = fitRequest;
+    const bounds = contentBounds(layout, metrics);
+    if (!bounds) {
+      onResetView();
+      return;
+    }
+    // Misma política que «Ver todo»: como mínimo 50 %, por lo que una Nota atípicamente distante no
+    // reduce el texto a una escala microscópica. La cámara cambia; las coordenadas durables no.
+    const fitted = fitView(bounds, viewport, 64);
+    onView(fitted.zoom, fitted.pan);
+  }, [fitRequest, layout, metrics, onResetView, onView, viewport]);
   // Puente local al soltar (auditoría de interacción, 2026-09-29): `setGesture(null)` de aquí y el
   // `pendingRects` que llega por props desde `WorkspaceScreen` no tienen garantizado el mismo ciclo de
   // render (son componentes distintos). Reproducido: sin este puente, un redibujado entre ambos mostraba

@@ -19,6 +19,7 @@ export function RichNoteReader(props: {
   readonly document: RichTextDocument;
   readonly images: ReadonlyMap<string, string>;
   readonly testID: string;
+  readonly color?: string | undefined;
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
@@ -32,12 +33,13 @@ function RichNoteReaderNative(props: {
   readonly document: RichTextDocument;
   readonly images: ReadonlyMap<string, string>;
   readonly testID: string;
+  readonly color?: string | undefined;
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
   readonly layout?: ContentLayout | undefined;
 }) {
-  const { document, images, testID, fontFamily, bodySize, captionPosition, layout = 'document' } = props;
+  const { document, images, testID, color, fontFamily, bodySize, captionPosition, layout = 'document' } = props;
   const { theme } = useTheme();
   const fontSize = bodyFontSize(bodySize);
   const lineHeight = bodyLineHeight(fontSize);
@@ -54,7 +56,7 @@ function RichNoteReaderNative(props: {
         <BasicRichTextPreview
           document={{ schemaVersion: document.schemaVersion, blocks: [{ type: 'paragraph', content: caption }] }}
           numberOfLines={sideways ? 4 : 1}
-          color={theme.colors.cardText}
+          color={color ?? theme.colors.cardText}
           fontSize={11}
           lineHeight={14}
           fontFamily={fontFamily}
@@ -97,7 +99,7 @@ function RichNoteReaderNative(props: {
         <BasicRichTextPreview
           document={{ schemaVersion: document.schemaVersion, blocks: [item] }}
           numberOfLines={Number.MAX_SAFE_INTEGER}
-          color={theme.colors.cardText}
+          color={color ?? theme.colors.cardText}
           fontSize={fontSize}
           lineHeight={lineHeight}
           fontFamily={fontFamily}

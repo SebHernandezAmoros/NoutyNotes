@@ -122,7 +122,6 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris
             imageUri={imageUris?.get(card.id)}
             noteImages={noteImages ?? emptyNoteImages}
             richTextCodec={richTextCodec}
-            connections={workspace.relations.filter((relation) => relation.from === card.id || relation.to === card.id).length}
             selected={selectedId === card.id}
             onPress={() => onSelect(card.id)}
           />
@@ -156,12 +155,11 @@ interface CardViewProps {
   readonly imageUri: string | undefined;
   /** Imágenes intercaladas en una nota (UX7-C3): mismo mapa que usa el lienzo. */
   readonly noteImages: ReadonlyMap<string, string>;
-  readonly connections: number;
   readonly selected: boolean;
   readonly onPress: () => void;
 }
 
-function CardView({ box, card, image, base, imageUri, noteImages, connections, selected, onPress, richTextCodec }: CardViewProps) {
+function CardView({ box, card, image, base, imageUri, noteImages, selected, onPress, richTextCodec }: CardViewProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -243,9 +241,6 @@ function CardView({ box, card, image, base, imageUri, noteImages, connections, s
           {markdownExcerpt(card.content ?? '')}
         </Text>
       )}
-      {connections > 0 ? (
-        <Text style={[styles.badge, { color: textColor }]}>{connections === 1 ? '1 conexión' : `${connections} conexiones`}</Text>
-      ) : null}
     </Pressable>
   );
 }
@@ -264,5 +259,4 @@ const styles = StyleSheet.create({
   cardImage: { flex: 1, minHeight: 24, borderWidth: 1 },
   shapeBody: { flex: 1 },
   connectorBody: { justifyContent: 'center' },
-  badge: { fontSize: 11, fontWeight: '700', marginTop: 'auto' },
 });

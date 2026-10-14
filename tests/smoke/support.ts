@@ -85,10 +85,10 @@ export async function fillCardTitle(page: Page, text: string): Promise<void> {
 /**
  * Abre el editor completo de una tarjeta (ADR 0047/0048): en escritorio no hay ya ningún botón
  * permanente sobre la ficha, así que `card` es la propia ficha (`card-tarjeta-N`), siempre presente.
- * Clic derecho (o el botón táctil `⋯` en móvil) abre su menú y «Completo» el editor. El nombre
+ * Clic derecho (o el botón táctil `⋯` en móvil) abre su menú y «Inspector» el editor. El nombre
  * accesible de ese botón cambia con el idioma de la interfaz (ADR 0032): se acepta cualquiera.
  */
-const OPEN_FULL_EDITOR_NAME = /^(Abrir el editor completo de |Open the full editor for )/;
+const OPEN_FULL_EDITOR_NAME = /^(Abrir el Inspector de |Open the Inspector for )/;
 
 /**
  * Posición y tamaño por teclado (ADR 0048): en escritorio esta sección del editor completo no es fija,
@@ -105,7 +105,7 @@ export async function expandPosition(page: Page) {
 export async function openFullCardEditor(page: Page, card: Locator) {
   const inline = page.getByTestId('inline-card-editor');
   if (await inline.isVisible()) {
-    await inline.getByRole('button', { name: 'Abrir el editor completo', exact: true }).first().click();
+    await inline.getByRole('button', { name: 'Continuar en el Inspector', exact: true }).first().click();
     await page.getByTestId('card-inspector').waitFor({ state: 'visible' });
     await expandPosition(page);
     return;

@@ -465,7 +465,8 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
   await tapCard(page, 1, false);
   await tapCard(page, 3, false);
   await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
-  await expect(card(page, 3)).toContainText('1 conexión');
+  await expect(page.getByTestId('relation-line-relacion-2')).toHaveCount(1);
+  await expect(card(page, 3)).not.toContainText(/conexi[oó]n/i);
   // Tocar el origen cancela sin cambiar nada.
   await tapCard(page, 1, false);
   await tapCard(page, 1, false);
@@ -503,10 +504,13 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await page.goto('./');
   await createWorkspace(page, 'Edición directa');
   await addCards(page, ['nota']);
+  await openCardEditor(page, 1);
+  await fillCardTitle(page, 'Idea editada aquí');
+  await closeEditor(page);
   await selectCard(page, 1);
-  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await openCardActions(page, card(page, 1), 'Idea editada aquí');
   await page.screenshot({ path: testInfo.outputPath('card-actions-menu.png') });
-  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  await button(page, 'Editar Idea editada aquí dentro de la ficha').click();
 
   const inline = page.getByTestId('inline-card-editor');
   await expect(inline).toBeVisible();
@@ -515,7 +519,6 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   expect(Math.abs(editorBox.x - cardBox.x)).toBeLessThanOrEqual(2);
   expect(Math.abs(editorBox.y - cardBox.y)).toBeLessThanOrEqual(2);
   await page.screenshot({ path: testInfo.outputPath('inline-card-editor.png') });
-  await page.getByTestId('inline-card-title').fill('Idea editada aquí');
   const visual = page.getByLabel('Contenido visual');
   await expect(visual).toBeVisible();
   await expect(button(page, 'Editar como Markdown')).toHaveCount(0);
@@ -528,10 +531,10 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await expect(visual.locator('strong')).toHaveText('Texto visible ');
   // P18-E3-B1: la transferencia no espera el debounce ni un guardado durable. El editor completo
   // recibe la misma sesión y un callback tardío de la superficie rápida ya no conserva autoridad.
-  await button(page, 'Abrir el editor completo').first().click();
+  await button(page, 'Continuar en el Inspector').first().click();
   await expect(inline).toHaveCount(0);
   await expect(page.getByTestId('card-inspector')).toBeVisible();
-  await expect(page.getByLabel('Título de la tarjeta')).toHaveText('Idea editada aquí');
+  await expect(page.getByLabel('Nombre de la Nota')).toHaveValue('Idea editada aquí');
   await expect(page.getByLabel('Contenido visual')).toContainText('Texto visible normal');
   await page.waitForTimeout(800);
   await fillCardTitle(page, 'Idea final completa');
@@ -539,9 +542,12 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
   await closeEditor(page);
   await expect(card(page, 1)).toContainText('Idea final completa');
   await expect(card(page, 1)).toContainText('Texto visible normal');
-  await card(page, 1).dblclick();
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Idea final completa');
+  await button(page, 'Editar Idea final completa dentro de la ficha').click();
   await expect(page.getByTestId('inline-card-editor')).toBeVisible();
-  await expect(page.getByTestId('inline-card-title')).toHaveValue('Idea final completa');
+  await expect(page.getByTestId('inline-card-title')).toHaveCount(0);
+  await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Idea final completa');
   await expect(page.getByLabel('Contenido visual')).toContainText('Texto visible normal');
   await button(page, 'Guardar y cerrar la edición rápida').click();
 
@@ -562,7 +568,7 @@ test('P06: la edición rápida abre texto enriquecido visual por defecto y conse
 
   await selectCard(page, 1);
   await openCardActions(page, card(page, 1), 'Idea final completa');
-  await button(page, 'Abrir el editor completo de Idea final completa').click();
+  await button(page, 'Abrir el Inspector de Idea final completa').click();
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   // La comprobación de los bytes Markdown exactos (escape de entidad en el límite de «negrita») ya
   // no es alcanzable desde aquí: esa vista se retiró en web (P18-E3-B2). Queda pendiente como caso
@@ -636,7 +642,7 @@ test('P18-E3-B2: alterna Visual y HTML, aplica una fuente válida y reabre el do
   await closeEditor(page);
   await selectCard(page, 1);
   await openCardActions(page, card(page, 1), 'Nueva nota');
-  await button(page, 'Abrir el editor completo de Nueva nota').click();
+  await button(page, 'Abrir el Inspector de Nueva nota').click();
   await expect(page.getByLabel('Contenido visual').locator('h2 strong')).toHaveText('HTML válido');
   await page.setViewportSize(tabletPortrait);
   await button(page, 'Editar el código HTML del cuerpo').click();
@@ -1046,7 +1052,7 @@ test('UX7-QUICK-EDIT: conserva HTML válido al abrir el editor completo y bloque
   const inline = page.getByTestId('inline-card-editor');
   await inline.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
   await inline.getByTestId('inline-html-source').fill('<h2>Transferencia segura</h2><p>Sin aplicar manualmente.</p>');
-  await inline.getByRole('button', { name: 'Abrir el editor completo' }).click();
+  await inline.getByRole('button', { name: 'Continuar en el Inspector' }).click();
   await expect(inline).toHaveCount(0);
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   await expect(page.getByLabel('Contenido visual').locator('h2')).toHaveText('Transferencia segura');
@@ -1071,10 +1077,13 @@ test('alineación vertical de Nota se conserva al cerrar y reabrir sin afectar e
   await addCards(page, ['nota']);
   await tapCard(page, 1);
   const visual = page.getByLabel('Contenido visual');
-  await visual.fill('Contenido alineado abajo');
+  // Una palabra cabe en una línea incluso en la Nota móvil inicial; así esta primera aserción mide
+  // alineación y no activa deliberadamente la política de overflow que se prueba después.
+  await visual.fill('Abajo');
   await page.getByTestId('card-inspector-section-appearance').click();
   await button(page, 'Abajo').click();
   await expect(button(page, 'Abajo')).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Ocultar siempre').click();
   await closeEditor(page);
   await expect(page.getByTestId('card-body-content-tarjeta-1')).toHaveCSS('justify-content', 'flex-end');
   await page.screenshot({ path: testInfo.outputPath('note-vertical-bottom.png'), fullPage: true });
@@ -1086,11 +1095,31 @@ test('alineación vertical de Nota se conserva al cerrar y reabrir sin afectar e
   await page.getByLabel('Contenido visual').fill(longBody);
   await expect(page.getByText('Sin cambios pendientes')).toBeVisible({ timeout: 3_000 });
   await closeEditor(page);
+  await card(page, 1).focus();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('Shift+ArrowLeft');
   await expect(page.getByTestId('card-body-content-tarjeta-1')).toHaveCSS('justify-content', 'flex-start');
   const reader = page.getByTestId('card-reader-tarjeta-1');
   await reader.focus();
   await page.keyboard.press('End');
   await expect(reader).toContainText('Línea vertical 240');
+});
+
+test('UX7 NOTE-RELATIONS: las relaciones permanecen operativas sin contador dentro de la Nota', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La comprobación focal usa el menú contextual de escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Relaciones sin contador');
+  await addCards(page, ['nota', 'nota']);
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Conectar desde Nueva nota').click();
+  await tapCard(page, 2, false);
+  await expect(page.locator('[data-testid^="relation-line-"]')).toHaveCount(1);
+  await expect(card(page, 1)).not.toContainText(/conexi[oó]n/i);
+  await expect(card(page, 2)).not.toContainText(/conexi[oó]n/i);
+
+  await button(page, 'Vista de lista').click();
+  await expect(page.getByTestId('board-list').getByText(/conexi[oó]n/i)).toHaveCount(0);
 });
 
 test('imágenes reales en una nota HTML segura: el cuerpo sigue siendo `contentDocument`, nunca se convierte a Markdown', async ({ page }, testInfo) => {
@@ -3389,4 +3418,40 @@ test('vista general: selección por área, un toque en el fondo cierra el editor
     await expect(page.getByTestId('canvas-zoom')).toHaveText('100 %');
   }
   expect(runtimeErrors).toEqual([]);
+});
+test('UX7-NAV: el zoom conserva identidad, abrir un tablero centra sus Notas y la barra derecha no recorta pestañas', async ({ page }, testInfo) => {
+  test.skip(isCompact(page), 'La barra derecha pertenece a la disposición de escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Navegación visual');
+  await addCards(page, ['nota']);
+
+  const tabLabel = page.getByTestId('card-tab-label-tarjeta-1');
+  await expect(tabLabel).toContainText('Nueva nota');
+  const normalSize = Number.parseFloat(await tabLabel.evaluate((element) => getComputedStyle(element).fontSize));
+  await zoomBy(page, 'out', 2);
+  const reducedSize = Number.parseFloat(await tabLabel.evaluate((element) => getComputedStyle(element).fontSize));
+  expect(reducedSize).toBeGreaterThan(normalSize);
+  await expect(card(page, 1)).toContainText('Nueva nota');
+  await page.screenshot({ path: testInfo.outputPath('zoom-identificable.png') });
+  await resetView(page);
+
+  // Se lleva la Nota fuera de la cámara inicial. Al volver a abrir el tablero, debe quedar dentro del
+  // viewport sin modificar sus coordenadas durables.
+  const beforeMove = await box(card(page, 1));
+  await mouseDrag(page, card(page, 1), 620, 330);
+  await expect.poll(async () => (await box(card(page, 1))).x).toBeGreaterThan(beforeMove.x + 500);
+  await button(page, 'Crear un tablero').click();
+  const rail = page.getByTestId('board-tabs');
+  await expect(rail.getByRole('button', { name: 'Tablero Tablero 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await rail.getByRole('button', { name: 'Tablero Tablero principal', exact: true }).click();
+  const canvasBox = await box(page.getByTestId('board-canvas'));
+  const cardBox = await box(card(page, 1));
+  expect(cardBox.x).toBeGreaterThanOrEqual(canvasBox.x);
+  expect(cardBox.y).toBeGreaterThanOrEqual(canvasBox.y);
+  expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(canvasBox.x + canvasBox.width);
+  expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(canvasBox.y + canvasBox.height);
+
+  const railGeometry = await rail.evaluate((element) => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+  expect(railGeometry.scrollWidth).toBeLessThanOrEqual(railGeometry.clientWidth);
+  await page.screenshot({ path: testInfo.outputPath('tablero-centrado-barra-derecha.png') });
 });

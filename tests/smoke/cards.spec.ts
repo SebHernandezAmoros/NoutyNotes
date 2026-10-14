@@ -389,7 +389,7 @@ test('UX7 Hito G: el menú de Nota conserva accesos únicos y sus destinos conte
   const menu = page.getByTestId('card-menu');
   const compact = (page.viewportSize()?.width ?? 0) < 800;
   await expect(menu.getByRole('button', { name: 'Editar Nueva nota dentro de la ficha', exact: true })).toHaveCount(compact ? 0 : 1);
-  await expect(menu.getByRole('button', { name: 'Abrir el editor completo de Nueva nota', exact: true })).toHaveCount(1);
+  await expect(menu.getByRole('button', { name: 'Abrir el Inspector de Nueva nota', exact: true })).toHaveCount(1);
   await expect(menu.getByRole('button', { name: 'Editar etiquetas de Nueva nota', exact: true })).toHaveCount(1);
   await expect(menu.getByRole('button', { name: 'Archivar Nueva nota', exact: true })).toHaveCount(1);
   await expect(menu.getByRole('button', { name: 'Enviar Nueva nota a la Papelera', exact: true })).toHaveCount(1);
@@ -402,11 +402,11 @@ test('UX7 Hito G: el menú de Nota conserva accesos únicos y sus destinos conte
 
   await openCardActions(page, card(page, 1), 'Nueva nota');
   if (compact) {
-    await menu.getByRole('button', { name: 'Abrir el editor completo de Nueva nota', exact: true }).click();
+    await menu.getByRole('button', { name: 'Abrir el Inspector de Nueva nota', exact: true }).click();
   } else {
     await menu.getByRole('button', { name: 'Editar Nueva nota dentro de la ficha', exact: true }).click();
     await expect(page.getByTestId('inline-card-editor')).toBeVisible();
-    await button(page, 'Abrir el editor completo').click();
+    await button(page, 'Continuar en el Inspector').click();
   }
   await expect(page.getByTestId('card-inspector')).toBeVisible();
   await expect(button(page, 'Mostrar apariencia y propiedades')).toBeVisible();
@@ -1048,7 +1048,7 @@ test('UX7: alineación durable, toolbar plegable y apariencias diferenciadas', a
   await openCardActions(page, card(page, 1), 'Nota alineada');
   await button(page, 'Editar Nota alineada dentro de la ficha').click();
   await expect(button(page, 'Contraer Nota')).toBeVisible();
-  await expect(button(page, 'Abrir el editor completo')).toBeVisible();
+  await expect(button(page, 'Continuar en el Inspector')).toBeVisible();
   await expect(button(page, 'Guardar y cerrar la edición rápida')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('inline-header-actions.png'), fullPage: true });
   const quickBody = page.getByLabel('Contenido visual');
