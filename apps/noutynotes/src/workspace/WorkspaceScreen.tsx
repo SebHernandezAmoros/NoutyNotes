@@ -34,6 +34,7 @@ import { useWorkspaceSession } from '../session/WorkspaceSession';
 import { Board } from './Board';
 import { BoardRail } from './BoardTabs';
 import { BoardActionsDialog } from './BoardActionsDialog';
+import { BoardOrganizerDialog } from './BoardOrganizerDialog';
 import { OpenTabs } from './OpenTabs';
 import { Canvas } from './canvas/Canvas';
 import type { CanvasTool } from './canvas/Canvas';
@@ -156,6 +157,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [linkOpen, setLinkOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [boardActionsId, setBoardActionsId] = useState<BoardId | null>(null);
+  const [boardOrganizerOpen, setBoardOrganizerOpen] = useState(false);
   // Tarjeta del tablero sin posición a la que se llegó desde la búsqueda: se ofrece colocarla (ADR 0020).
   const [placeOffer, setPlaceOffer] = useState<{ readonly cardId: CardId; readonly boardId: BoardId; readonly title: string } | null>(null);
   const [projectsOpen, setProjectsOpen] = useState(false);
@@ -826,7 +828,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const deleteSelection = async () => {
     const overlayOpen = editingId !== null || insertOpen || searchOpen || settingsOpen || trashOpen || moreOpen
-      || projectsOpen || linkOpen || shortcutOpen || boardActionsId !== null || presentOpen || frameId !== null || multiMoreOpen;
+      || projectsOpen || linkOpen || shortcutOpen || boardActionsId !== null || boardOrganizerOpen || presentOpen || frameId !== null || multiMoreOpen;
     if (mainView !== 'board' || overlayOpen) return;
     if (multiIds.length > 0) await trashMany();
     else if (selectedId !== null) await sendToTrash(selectedId);
@@ -1562,6 +1564,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onCreate={createBoard}
       onInsertShortcut={() => setShortcutOpen(true)}
       onActions={setBoardActionsId}
+      onOrganize={() => setBoardOrganizerOpen(true)}
       compact={compact}
       scroll={compact}
     />
@@ -1776,13 +1779,27 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               direction={-1}
               onChange={(boardRailWidth) => setPreferences((current) => ({ ...current, boardRailWidth }))}
             />
-            <BoardRail width={preferences.boardRailWidth} boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard} onActions={setBoardActionsId} onReorder={(target, index) => void reorderBoardById(target, index)} onReturn={() => setProjectsOpen(true)} />
+            <BoardRail width={preferences.boardRailWidth} boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard}
+              onActions={setBoardActionsId} onOrganize={() => setBoardOrganizerOpen(true)}
+              onReorder={(target, index) => void reorderBoardById(target, index)} onReturn={() => setProjectsOpen(true)} />
           </>
         ) : null}
       </View>
       {workspace ? (
         <>
           <ProjectSheet projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} onCreate={() => void goHome()} visible={projectsOpen} onClose={() => setProjectsOpen(false)} />
+          {boardOrganizerOpen ? (
+            <BoardOrganizerDialog
+              boards={workspace.boards}
+              current={board?.id}
+              compact={compact}
+              busy={saving}
+              onClose={() => setBoardOrganizerOpen(false)}
+              onRename={renameBoardById}
+              onReorder={reorderBoardById}
+              onActions={(target) => { setBoardOrganizerOpen(false); setBoardActionsId(target); }}
+            />
+          ) : null}
           {boardActions ? (
             <BoardActionsDialog
               key={`${boardActions.id}:${boardActions.title}`}
@@ -1790,11 +1807,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               compact={compact}
               busy={saving}
               onClose={() => setBoardActionsId(null)}
-              onRename={(title) => renameBoardById(boardActions.id, title)}
-              canMoveBefore={workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) > 0}
-              canMoveAfter={workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) < workspace.boards.length - 1}
-              onMoveBefore={() => reorderBoardById(boardActions.id, workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) - 1)}
-              onMoveAfter={() => reorderBoardById(boardActions.id, workspace.boards.findIndex(({ id: candidate }) => candidate === boardActions.id) + 1)}
               onArchive={() => archiveBoardById(boardActions.id)}
             />
           ) : null}

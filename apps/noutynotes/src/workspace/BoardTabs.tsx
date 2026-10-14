@@ -1,6 +1,6 @@
 import type { Board, BoardId } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
-import { createElement, useState } from 'react';
+import { createElement, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -45,9 +45,10 @@ export function BoardTabs({ boards, current, onSelect, onCreate, vertical, scrol
 }
 
 /** Escritorio: los tableros viven como pestañas verticales en el borde derecho del lienzo. */
-export function BoardRail({ boards, current, width, onSelect, onCreate, onActions, onReorder, onReturn }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
+export function BoardRail({ boards, current, width, onSelect, onCreate, onActions, onOrganize, onReorder, onReturn }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
   readonly width: number;
   readonly onActions: (boardId: BoardId) => void;
+  readonly onOrganize: () => void;
   readonly onReorder: (boardId: BoardId, targetIndex: number) => void;
   readonly onReturn: () => void;
 }) {
@@ -57,19 +58,21 @@ export function BoardRail({ boards, current, width, onSelect, onCreate, onAction
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const expanded = width >= BOARD_RAIL_HORIZONTAL_MIN;
   const tabWidth = expanded ? Math.max(RAIL_WIDTH, width - 24) : RAIL_WIDTH;
-  const webScrollbar = Platform.OS === 'web' ? ({
-    scrollbarWidth: 'thin',
-    scrollbarColor: `${colors.border} transparent`,
-    scrollbarGutter: 'stable',
-  } as object) : null;
   return (
     <ScrollView testID="board-tabs" accessibilityLabel="Tableros" showsVerticalScrollIndicator
-      style={[styles.rail, { width, borderColor: colors.border, backgroundColor: colors.surfaceRaised }, webScrollbar]}
+      style={[styles.rail, { width, borderColor: colors.border, backgroundColor: colors.surfaceRaised }, Platform.OS === 'web' ? { scrollbarGutter: 'stable' } as object : null]}
       contentContainerStyle={[styles.railContent, expanded ? styles.railContentWide : null]}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Volver a Proyectos" onPress={onReturn}
-        style={[styles.railReturn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-        <Text style={[styles.railReturnText, { color: colors.textPrimary }]}>←</Text>
-      </Pressable>
+      <View style={[styles.railHeader, expanded ? styles.railHeaderWide : null]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Volver a Proyectos" onPress={onReturn}
+          style={[styles.railReturn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <Text style={[styles.railReturnText, { color: colors.textPrimary }]}>←</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Organizar tableros" onPress={onOrganize}
+          style={[styles.railOrganize, expanded ? styles.railOrganizeWide : null, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <Text style={[styles.railOrganizeGlyph, { color: colors.textPrimary }]}>☷</Text>
+          {expanded ? <Text numberOfLines={1} style={[styles.railOrganizeLabel, { color: colors.textPrimary }]}>Organizar</Text> : null}
+        </Pressable>
+      </View>
       {boards.map((board, index) => (
         <RailTab key={board.id} number={String(index + 1).padStart(2, '0')} label={board.title} count={board.cardIds.length}
           active={board.id === current} dragging={dragging === board.id} dropTarget={dropIndex === index && dragging !== board.id}
@@ -111,6 +114,7 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
+  const suppressPress = useRef(false);
   const webMenu = Platform.OS === 'web' ? {
     onContextMenu: (event: { preventDefault: () => void; stopPropagation: () => void }) => { event.preventDefault(); event.stopPropagation(); onActions(); },
     onKeyDown: (event: { key: string; shiftKey?: boolean; preventDefault: () => void; stopPropagation: () => void }) => {
@@ -120,7 +124,8 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
   } : {};
   const tabButton = (
     <Pressable accessibilityRole="button" accessibilityLabel={`Tablero ${label}`} accessibilityState={{ selected: active }}
-      {...(Platform.OS === 'web' ? { 'aria-pressed': active } : {})} {...webMenu} onPress={onPress} onLongPress={onActions}
+      {...(Platform.OS === 'web' ? { 'aria-pressed': active } : {})} {...webMenu}
+      onPress={() => { if (!suppressPress.current) onPress(); }} onLongPress={onActions}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
       style={[styles.railTab, expanded ? styles.railTabWide : null, { width, 
         backgroundColor: active ? colors.brand : colors.surface,
@@ -137,6 +142,7 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
   const draggableTab = Platform.OS === 'web' ? createElement('div', {
     draggable: true,
     onDragStart: (event: DragEvent<HTMLDivElement>) => {
+      suppressPress.current = true;
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', label);
       onDragStart();
@@ -151,7 +157,10 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
       event.stopPropagation();
       onDrop();
     },
-    onDragEnd,
+    onDragEnd: () => {
+      onDragEnd();
+      setTimeout(() => { suppressPress.current = false; }, 0);
+    },
     style: { width, height: expanded ? 56 : RAIL_LENGTH },
   }, tabButton) : tabButton;
   return (
@@ -215,8 +224,14 @@ const styles = StyleSheet.create({
   rail: { flexGrow: 0, borderLeftWidth: 2 },
   railContent: { paddingVertical: 8, paddingHorizontal: 6, gap: 6, alignItems: 'center' },
   railContentWide: { alignItems: 'stretch' },
+  railHeader: { gap: 6, alignItems: 'center' },
+  railHeaderWide: { flexDirection: 'row', alignItems: 'stretch' },
   railReturn: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   railReturnText: { fontSize: 20, lineHeight: 24, fontWeight: '900' },
+  railOrganize: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  railOrganizeWide: { flex: 1, width: undefined, flexDirection: 'row', gap: 6, paddingHorizontal: 8 },
+  railOrganizeGlyph: { fontSize: 20, lineHeight: 24, fontWeight: '900' },
+  railOrganizeLabel: { flexShrink: 1, fontSize: 11, fontWeight: '900' },
   railTabWrap: { width: RAIL_WIDTH, height: RAIL_LENGTH, position: 'relative' },
   railTabWrapWide: { height: 56 },
   railTab: { width: RAIL_WIDTH, height: RAIL_LENGTH, borderWidth: 2, overflow: 'hidden' },

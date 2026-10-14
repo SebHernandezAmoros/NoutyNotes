@@ -360,7 +360,7 @@ export function reorderBoardInWorkspace(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, boardId: BoardId, targetIndex: number,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
   if (!Number.isInteger(targetIndex) || targetIndex < 0) {
-    return Promise.resolve(storageFailure('invalid-workspace', 'targetIndex', 'La posiciÃ³n del tablero no es vÃ¡lida.'));
+    return Promise.resolve(storageFailure('invalid-workspace', 'targetIndex', 'La posición del tablero no es válida.'));
   }
   return modifyWorkspace(storage, workspaceId, (workspace) => {
     const sourceIndex = workspace.boards.findIndex((board) => board.id === boardId);
@@ -368,7 +368,7 @@ export function reorderBoardInWorkspace(
       return { ok: false, issues: [{ code: 'missing-reference', path: 'boardId', message: 'El tablero no existe en el workspace.' }] };
     }
     if (targetIndex >= workspace.boards.length) {
-      return { ok: false, issues: [{ code: 'invalid-value', path: 'targetIndex', message: 'La posiciÃ³n del tablero queda fuera del workspace.' }] };
+      return { ok: false, issues: [{ code: 'invalid-value', path: 'targetIndex', message: 'La posición del tablero queda fuera del workspace.' }] };
     }
     if (sourceIndex === targetIndex) return { ok: true, value: workspace };
     const boards = [...workspace.boards];

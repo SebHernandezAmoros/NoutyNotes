@@ -19,6 +19,7 @@ interface OpenTabsProps {
   /** UX7-A3: «Tablero» salió de la barra principal; el acceso rápido se ofrece aquí donde no hay franja derecha. */
   readonly onInsertShortcut: () => void;
   readonly onActions: (boardId: BoardId) => void;
+  readonly onOrganize: () => void;
   readonly compact: boolean;
   /** Móvil: una sola fila desplazable en horizontal, para no robar alto al lienzo. */
   readonly scroll?: boolean;
@@ -28,7 +29,7 @@ interface OpenTabsProps {
  * Pestañas de tableros abiertos en la sesión (ADR 0035), distintas de la lista completa de
  * `BoardTabs`: un subconjunto que se puede cerrar sin borrar nada y reabrir desde el selector `+`.
  */
-export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, onCreate, onInsertShortcut, onActions, compact, scroll = false }: OpenTabsProps) {
+export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, onCreate, onInsertShortcut, onActions, onOrganize, compact, scroll = false }: OpenTabsProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const canClose = boards.length > 1;
   const tabs = (
@@ -45,6 +46,7 @@ export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, o
         />
       ))}
       <ActionButton label="+" accessibilityLabel="Abrir un tablero" testID="open-tabs-add" onPress={() => setPickerOpen(true)} />
+      <ActionButton label="Organizar" accessibilityLabel="Organizar tableros" onPress={onOrganize} />
     </>
   );
   return (

@@ -53,25 +53,41 @@ test('UX7-BOARD-ORDER: drag and accessible controls preserve order after reopeni
   );
   await expect.poll(boardOrder).toEqual(['Tablero Tablero 1', 'Tablero Tablero 2', 'Tablero Tablero 3']);
 
-  const dragHandle = (name: string) => rail.getByRole('button', { name, exact: true }).locator('xpath=..');
-  await expect(dragHandle('Tablero Tablero 3')).toHaveAttribute('draggable', 'true');
-  await dragHandle('Tablero Tablero 3').dragTo(dragHandle('Tablero Tablero 1'));
+  await expect(button(page, 'Organizar tableros')).toBeVisible();
+  await button(page, 'Organizar tableros').click();
+  const organizer = page.getByTestId('board-organizer-dialog');
+  await expect(organizer).toBeVisible();
+  await expect(organizer.getByRole('button', { name: 'Mover después', exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('board-organizer-order.png') });
+  await organizer.getByLabel('Arrastrar tablero Tablero 3').dragTo(organizer.getByLabel('Arrastrar tablero Tablero 1'));
   await expect.poll(boardOrder).toEqual(['Tablero Tablero 3', 'Tablero Tablero 1', 'Tablero Tablero 2']);
+  await expect(organizer.getByText('Orden guardado automáticamente.')).toBeVisible();
+  await organizer.getByRole('button', { name: 'Seleccionar tablero Tablero 1', exact: true }).click();
+  await expect(organizer.getByRole('button', { name: 'Mover antes', exact: true })).toBeEnabled();
+  await expect(organizer.getByRole('button', { name: 'Mover después', exact: true })).toBeEnabled();
+  await organizer.getByRole('button', { name: /^Cerrar organizar tableros/ }).click();
+
+  const dragHandle = (name: string) => rail.getByRole('button', { name, exact: true }).locator('xpath=..');
+  const selectedBeforeDrag = await rail.locator('[role="button"][aria-pressed="true"]').getAttribute('aria-label');
+  await expect(dragHandle('Tablero Tablero 2')).toHaveAttribute('draggable', 'true');
+  await dragHandle('Tablero Tablero 2').dragTo(dragHandle('Tablero Tablero 3'));
+  await expect.poll(boardOrder).toEqual(['Tablero Tablero 2', 'Tablero Tablero 3', 'Tablero Tablero 1']);
+  await expect(rail.locator('[role="button"][aria-pressed="true"]')).toHaveAttribute('aria-label', selectedBeforeDrag ?? '');
   await expect(button(page, 'Deshacer: Orden de tableros guardado')).toBeVisible();
 
-  await rail.getByRole('button', { name: 'Opciones del tablero Tablero 1', exact: true }).click();
-  await page.getByRole('button', { name: /^Mover despu/ }).click();
-  await expect.poll(boardOrder).toEqual(['Tablero Tablero 3', 'Tablero Tablero 2', 'Tablero Tablero 1']);
-  if (await page.getByTestId('board-actions-dialog').isVisible()) {
-    await page.getByTestId('board-actions-dialog').getByRole('button', { name: /^Cerrar opciones/ }).click();
-  }
+  await button(page, 'Organizar tableros').click();
+  await organizer.getByRole('button', { name: 'Seleccionar tablero Tablero 1', exact: true }).click();
+  await organizer.getByRole('button', { name: 'Mover antes', exact: true }).click();
+  await expect.poll(boardOrder).toEqual(['Tablero Tablero 2', 'Tablero Tablero 1', 'Tablero Tablero 3']);
+  await expect(organizer.getByText('Orden guardado automáticamente.')).toBeVisible();
+  await organizer.getByRole('button', { name: /^Cerrar organizar tableros/ }).click();
 
   await button(page, 'Volver a Proyectos').click();
   await button(page, 'Crear un nuevo proyecto desde Inicio').click();
   await createWorkspace(page, 'Proyecto puente');
   await button(page, 'Volver a Proyectos').click();
   await button(page, 'Ir al proyecto Orden persistente').click();
-  await expect.poll(boardOrder).toEqual(['Tablero Tablero 3', 'Tablero Tablero 2', 'Tablero Tablero 1']);
+  await expect.poll(boardOrder).toEqual(['Tablero Tablero 2', 'Tablero Tablero 1', 'Tablero Tablero 3']);
   await page.screenshot({ path: testInfo.outputPath('board-order-persisted.png') });
 });
 
@@ -3067,19 +3083,20 @@ test('las pestañas permiten renombrar y archivar un tablero con botón o menú 
   await button(page, 'Crear un tablero').click();
   await addCards(page, ['nota']);
 
-  const tab = button(page, 'Tablero Tablero 1');
-  if ((page.viewportSize()?.width ?? 0) >= 1100) await tab.click({ button: 'right' });
-  else await button(page, 'Opciones del tablero Tablero 1').click();
-  await expect(page.getByTestId('board-actions-dialog')).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('board-actions.png') });
-  await page.getByLabel('Nombre del tablero').fill('Escenas');
-  await button(page, 'Guardar nombre').click();
-  await expect(feedback(page)).toContainText('Tablero renombrado a «Escenas»');
+  await button(page, 'Organizar tableros').click();
+  const organizer = page.getByTestId('board-organizer-dialog');
+  await expect(organizer).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('board-organizer.png') });
+  await organizer.getByLabel('Nombre del tablero seleccionado').fill('Escenas');
+  await organizer.getByRole('button', { name: 'Guardar nombre', exact: true }).click();
+  await organizer.getByRole('button', { name: /^Cerrar organizar tableros/ }).click();
+  await expect(button(page, 'Deshacer: Tablero renombrado a «Escenas»')).toBeVisible();
   await expect(button(page, 'Tablero Escenas')).toBeVisible();
 
   await button(page, 'Opciones del tablero Escenas').click();
+  await page.screenshot({ path: testInfo.outputPath('board-actions.png') });
   await button(page, 'Archivar tablero').click();
-  await expect(feedback(page)).toContainText('Tablero «Escenas» archivado con sus tarjetas');
+  await expect(button(page, 'Deshacer: Tablero «Escenas» archivado con sus tarjetas')).toBeVisible();
   await expect(button(page, 'Tablero Escenas')).toHaveCount(0);
 });
 

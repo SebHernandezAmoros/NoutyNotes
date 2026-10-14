@@ -140,7 +140,7 @@ export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, ima
       tabIndex={0}
       onScroll={onScroll}
       onKeyDown={onKeyDown}
-      style={{ width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden', color: color ?? theme.colors.cardText, fontFamily, fontSize, lineHeight: `${lineHeight}px`, scrollbarWidth: 'thin', overscrollBehavior: 'contain' }}
+      style={{ width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden', color: color ?? theme.colors.cardText, fontFamily, fontSize, lineHeight: `${lineHeight}px`, overscrollBehavior: 'contain' }}
     >
       <div aria-hidden="true" style={{ height: metrics[start] }} />
       {document.blocks.slice(start, end).map((block, relativeIndex) => {

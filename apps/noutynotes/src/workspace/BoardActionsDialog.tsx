@@ -1,9 +1,8 @@
 import type { Board } from '@noutynotes/domain';
-import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@noutynotes/ui';
 
-import { ActionButton, TextField } from '../components/controls';
+import { ActionButton } from '../components/controls';
 import { Dialog } from '../components/Dialog';
 
 interface BoardActionsDialogProps {
@@ -11,37 +10,18 @@ interface BoardActionsDialogProps {
   readonly compact: boolean;
   readonly busy: boolean;
   readonly onClose: () => void;
-  readonly onRename: (title: string) => Promise<boolean>;
-  readonly canMoveBefore: boolean;
-  readonly canMoveAfter: boolean;
-  readonly onMoveBefore: () => Promise<boolean>;
-  readonly onMoveAfter: () => Promise<boolean>;
   readonly onArchive: () => Promise<boolean>;
 }
 
 /** Acciones del tablero compartidas por la pestaña móvil y la franja lateral de escritorio. */
-export function BoardActionsDialog({ board, compact, busy, onClose, onRename, canMoveBefore, canMoveAfter, onMoveBefore, onMoveAfter, onArchive }: BoardActionsDialogProps) {
+export function BoardActionsDialog({ board, compact, busy, onClose, onArchive }: BoardActionsDialogProps) {
   const { theme } = useTheme();
-  const [title, setTitle] = useState(board.title);
-  const clean = title.trim();
-  const canRename = clean !== '' && clean !== board.title && !busy;
   const canArchive = board.cardIds.length > 0 && !busy;
-  const dialogTitle = `Opciones de ${board.title}`;
+  const dialogTitle = `Acciones de ${board.title}`;
 
   return (
     <Dialog visible title={dialogTitle} compact={compact} onClose={onClose} testID="board-actions-dialog">
-      <TextField
-        label="Nombre del tablero"
-        value={title}
-        onChangeText={setTitle}
-        onSubmitEditing={() => { if (canRename) void onRename(clean); }}
-      />
       <View style={styles.actions}>
-        <ActionButton label="Guardar nombre" disabled={!canRename} tone="primary" onPress={() => { void onRename(clean); }} />
-        <View style={styles.moveActions}>
-          <ActionButton label="Mover antes" disabled={!canMoveBefore || busy} onPress={() => { void onMoveBefore(); }} />
-          <ActionButton label="Mover despuÃ©s" disabled={!canMoveAfter || busy} onPress={() => { void onMoveAfter(); }} />
-        </View>
         <ActionButton label="Archivar tablero" disabled={!canArchive} onPress={() => { void onArchive(); }} />
       </View>
       {!canArchive && board.cardIds.length === 0 ? (
@@ -53,6 +33,5 @@ export function BoardActionsDialog({ board, compact, busy, onClose, onRename, ca
 
 const styles = StyleSheet.create({
   actions: { gap: 8 },
-  moveActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   note: { fontSize: 13, lineHeight: 18 },
 });

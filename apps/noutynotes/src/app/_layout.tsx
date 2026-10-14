@@ -2,6 +2,7 @@ import { LocaleProvider, ThemeProvider, useTheme } from '@noutynotes/ui';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 
 import { registerOfflineWorker } from '../offline/registerOfflineWorker';
 
@@ -10,6 +11,14 @@ import { loadLocalePreference, loadThemePreference, saveLocalePreference, saveTh
 
 function AppNavigation() {
   const { theme } = useTheme();
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const root = document.documentElement;
+    root.style.setProperty('--nouty-scroll-thumb', theme.colors.border);
+    root.style.setProperty('--nouty-scroll-track', 'transparent');
+    root.style.colorScheme = theme.mode;
+  }, [theme]);
 
   return (
     <>

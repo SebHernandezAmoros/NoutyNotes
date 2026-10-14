@@ -2,8 +2,14 @@ import { LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { HeadingNode } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
+import type { AssetRef, RichTextDocument } from '@noutynotes/domain';
+import { parseRichTextMarkdown } from '@noutynotes/storage';
 import { createEditor } from 'lexical';
 import { describe, expect, it, vi } from 'vitest';
+
+import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
+import { RichTextImageNode } from './RichTextImageNode.web';
+import { $loadBasicRichTextDocument, $loadWebRichTextDocument, $readBasicRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
 
 // Este test ejercita el adaptador Lexical sin renderizar React Native. El nodo de
 // imagen comparte componente con la UI web y consulta el tema al decorarse; aislar
@@ -13,13 +19,6 @@ vi.mock('@noutynotes/ui', () => ({
     theme: { colors: { cardSurface: '#fffdf6', cardText: '#23241f', border: '#34362f' } },
   }),
 }));
-
-import type { AssetRef, RichTextDocument } from '@noutynotes/domain';
-import { parseRichTextMarkdown } from '@noutynotes/storage';
-
-import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
-import { RichTextImageNode } from './RichTextImageNode.web';
-import { $loadBasicRichTextDocument, $loadWebRichTextDocument, $readBasicRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
 
 const basicDocument: RichTextDocument = {
   schemaVersion: 1,
