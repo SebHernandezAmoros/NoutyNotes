@@ -130,14 +130,12 @@ export async function openFullCardEditor(page: Page, card: Locator) {
 }
 
 /**
- * Escritorio abre acciones con clic derecho; móvil conserva el botón táctil visible. `force`: un
- * clic derecho real no pasa por las comprobaciones de accionabilidad de Playwright (el navegador lo
- * dispara contra lo que haya encima, como haría una persona); sin esto, el asa de redimensionado de
- * una ficha contraída y seleccionada (más baja que ella a esta densidad, UX7-D1) bloquearía el clic
- * en vez de dejarlo llegar — `cardAt` (Canvas.tsx) ya resuelve la misma ficha desde el asa.
+ * Escritorio usa la alternativa accesible Shift+F10 sobre la ficha; móvil conserva el botón táctil.
+ * Las regresiones específicas del puntero prueban el clic derecho por separado. Este ayudante evita
+ * que un asa o un rerender entre el cierre del editor y el clic vuelva frágiles recorridos ajenos.
  */
 export async function openCardActions(page: Page, card: Locator, title: string) {
   if (isCompactWidth(page)) await page.getByRole('button', { name: `Acciones de ${title}`, exact: true }).click();
-  else await card.click({ button: 'right', force: true });
+  else await card.press('Shift+F10');
   await page.getByTestId('card-menu').waitFor({ state: 'visible' });
 }

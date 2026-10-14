@@ -16,14 +16,20 @@
     "typecheck": "tsc --noEmit && pnpm --filter @noutynotes/app typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit:fast": "vitest run --config vitest.fast.config.ts",
     "test:smoke": "playwright test",
+    "test:smoke:fast": "playwright test --config playwright.fast.config.ts",
     "test:pages": "playwright test --config playwright.pages.config.ts",
+    "test:pages:fast": "playwright test --config playwright.pages.fast.config.ts",
     "test:firefox": "playwright test --config playwright.firefox.config.ts",
+    "test:area": "node scripts/test-area.mjs",
+    "test:full": "pnpm check && pnpm test:smoke && pnpm test:firefox",
     "build:pages": "node scripts/build-pages.mjs",
     "preview:pages": "node scripts/preview-pages.mjs",
     "build:web": "pnpm --filter @noutynotes/app build:web",
     "build:android:bundle": "pnpm --filter @noutynotes/app build:android:bundle",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "check:fast": "pnpm lint && pnpm typecheck && pnpm test:unit:fast && pnpm test:smoke:fast"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

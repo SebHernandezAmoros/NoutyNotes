@@ -417,14 +417,11 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
   await fillCardTitle(page, 'Descartada');
   await button(page, 'Guardar texto').click();
-  if (isCompactWidth(page)) {
-    await button(page, 'Enviar la tarjeta Descartada a la Papelera').click();
-  } else {
-    // Escritorio: la Papelera vive solo en el menú contextual (ADR 0048), no en el editor.
-    await button(page, 'Cerrar el editor de la tarjeta').click();
-    await openCardActions(page, page.getByTestId('card-tarjeta-2'), 'Descartada');
-    await button(page, 'Enviar Descartada a la Papelera').click();
-  }
+  // UX7 conserva Papelera en el menú contextual en todos los anchos; el editor enfocado móvil ya
+  // no duplica esa acción. Cerrar y abrir el menú prueba la misma ruta real en ambos perfiles.
+  await button(page, 'Cerrar el editor de la tarjeta').click();
+  await openCardActions(page, page.getByTestId('card-tarjeta-2'), 'Descartada');
+  await button(page, 'Enviar Descartada a la Papelera').click();
   await expect(button(page, 'Abrir la Papelera (1)')).toBeVisible();
 
   const download = page.waitForEvent('download');

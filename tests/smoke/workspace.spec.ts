@@ -894,7 +894,7 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
     await (await chooser).setFiles(png(name));
   };
   await insert('plano.png');
-  const images = page.locator('[data-testid^="rich-image-"]');
+  const images = visual.locator('[data-testid^="rich-image-"]');
   await expect(images).toHaveCount(1);
   await expect(images.first().locator('img')).toBeVisible();
   await images.first().getByLabel(/^Texto alternativo/).fill('Plano general');
@@ -930,7 +930,7 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await closeEditor(page);
   await tapCard(page, 1);
   if (await expandEditor.count() > 0) await expandEditor.click();
-  const reopenedImage = page.locator('[data-testid^="rich-image-"]');
+  const reopenedImage = page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]');
   await expect(reopenedImage).toHaveCount(1);
   await expect(reopenedImage.getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
   await expect(reopenedImage.getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
@@ -944,7 +944,7 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await button(page, 'Cerrar configuración').click();
   await tapCard(page, 1);
   if (await expandEditor.count() > 0) await expandEditor.click();
-  const darkImage = page.locator('[data-testid^="rich-image-"]');
+  const darkImage = page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]');
   await darkImage.scrollIntoViewIfNeeded();
   const darkLayoutControl = darkImage.getByRole('button', { name: 'Tamaño mediano de la imagen' });
   await expect(darkLayoutControl).toHaveAttribute('aria-pressed', 'true');
