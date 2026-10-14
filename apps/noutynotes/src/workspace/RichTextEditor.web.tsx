@@ -58,10 +58,10 @@ import {
   UNDO_COMMAND,
   mergeRegister,
 } from 'lexical';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { EditorState } from 'lexical';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { isLinkUrl } from '@noutynotes/domain';
 import type { RichTextAlignment } from '@noutynotes/domain';
@@ -77,6 +77,117 @@ type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type BlockKind = 'paragraph' | `heading-${HeadingLevel}` | 'bullet' | 'ordered' | 'checklist';
 const MAX_TABLE_ROWS = 20;
 const MAX_TABLE_COLUMNS = 12;
+
+type TableMenuAction = {
+  readonly label: string;
+  readonly action: () => void;
+  readonly disabled?: boolean;
+  readonly key: string;
+  readonly group: 'rows' | 'columns' | 'structure' | 'alignment';
+};
+
+const tableMenuGroupLabels: Readonly<Record<TableMenuAction['group'], string>> = {
+  rows: 'Filas', columns: 'Columnas', structure: 'Estructura', alignment: 'Alineación vertical',
+};
+
+function TableContextMenu({ anchor, actions, colors, onClose }: {
+  readonly anchor: HTMLElement;
+  readonly actions: readonly TableMenuAction[];
+  readonly colors: { readonly border: string; readonly surface: string; readonly textPrimary: string; readonly gridLine: string };
+  readonly onClose: (restoreFocus: boolean) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ left: number; width: number; maxHeight: number; top?: number; bottom?: number }>(() => ({ left: 8, top: 8, width: 320, maxHeight: 320 }));
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const rect = anchor.getBoundingClientRect();
+      const width = Math.min(360, Math.max(280, window.innerWidth - 16));
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      const below = Math.max(0, window.innerHeight - rect.bottom - 8);
+      const above = Math.max(0, rect.top - 8);
+      if (below < 260 && above > below) setPosition({ left, bottom: window.innerHeight - rect.top + 6, width, maxHeight: Math.max(120, above - 6) });
+      else setPosition({ left, top: rect.bottom + 6, width, maxHeight: Math.max(120, below - 6) });
+    };
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || menuRef.current?.contains(target) || anchor.contains(target)) return;
+      onClose(false);
+    };
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose(true);
+    };
+    place();
+    const frame = requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus());
+    document.addEventListener('pointerdown', dismiss, true);
+    document.addEventListener('keydown', keyboard);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('pointerdown', dismiss, true);
+      document.removeEventListener('keydown', keyboard);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [anchor, onClose]);
+
+  const moveFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+    if (items.length === 0) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+      : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length
+        : (current - 1 + items.length) % items.length;
+    items[next]?.focus();
+  };
+  const groups = (['rows', 'columns', 'structure', 'alignment'] as const).map((group) => ({ group, actions: actions.filter((item) => item.group === group) }));
+
+  return (
+    <Modal transparent visible animationType="none" onRequestClose={() => onClose(true)}>
+    <div
+      ref={menuRef}
+      data-testid="editor-table-menu"
+      role="menu"
+      aria-label="Opciones de tabla"
+      onKeyDown={moveFocus}
+      style={{
+        position: 'fixed', zIndex: 1000, left: position.left, top: position.top, bottom: position.bottom,
+        width: position.width, maxWidth: 'calc(100vw - 16px)', maxHeight: position.maxHeight, overflowY: 'auto',
+        boxSizing: 'border-box', border: `2px solid ${colors.border}`, background: colors.surface,
+        color: colors.textPrimary, padding: 8, boxShadow: '0 10px 28px rgba(0,0,0,.28)',
+      }}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: position.width >= 340 ? 'repeat(2,minmax(0,1fr))' : '1fr', gap: 8 }}>
+        {groups.map(({ group, actions: groupActions }) => (
+          <div key={group} role="group" aria-label={tableMenuGroupLabels[group]} style={{ minWidth: 0 }}>
+            <div style={{ padding: '4px 8px', borderBottom: `1px solid ${colors.gridLine}`, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>{tableMenuGroupLabels[group]}</div>
+            {groupActions.map((item) => (
+              <button
+                key={item.key}
+                data-testid={`editor-table-menu-${item.key}`}
+                type="button"
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={() => { item.action(); onClose(true); }}
+                style={{
+                  display: 'block', width: '100%', minHeight: 40, padding: '8px', border: 0,
+                  background: 'transparent', color: 'inherit', textAlign: 'left', fontSize: 12,
+                  fontWeight: 700, opacity: item.disabled ? 0.4 : 1, cursor: item.disabled ? 'default' : 'pointer',
+                }}
+              >{item.label}</button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+    </Modal>
+  );
+}
 
 function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, collapsed = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'titleOnly'> & { readonly compact?: boolean; readonly collapsed?: boolean }) {
   const [editor] = useLexicalComposerContext();
@@ -97,6 +208,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
   const [tableColumnCount, setTableColumnCount] = useState(0);
   const [tableVerticalAlignment, setTableVerticalAlignment] = useState<'top' | 'center' | 'bottom'>('top');
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
+  const [tableMenuAnchor, setTableMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [selectionLink, setSelectionLink] = useState('');
   const [linkHref, setLinkHref] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
@@ -275,17 +387,17 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     cellNode.setVerticalAlign(alignment === 'center' ? 'middle' : alignment === 'bottom' ? 'bottom' : null);
     setTableVerticalAlignment(alignment);
   });
-  const tableMenuActions: readonly { readonly label: string; readonly action: () => void; readonly disabled?: boolean; readonly key: string }[] = [
-    { key: 'row-above', label: t('editor.visual.table.addRowAbove', locale), action: () => insertTableRow(false) },
-    { key: 'row-below', label: t('editor.visual.table.addRowBelow', locale), action: () => insertTableRow(true) },
-    { key: 'column-left', label: t('editor.visual.table.addColumnLeft', locale), action: () => insertTableColumn(false), disabled: tableColumnCount >= MAX_TABLE_COLUMNS },
-    { key: 'column-right', label: t('editor.visual.table.addColumnRight', locale), action: () => insertTableColumn(true), disabled: tableColumnCount >= MAX_TABLE_COLUMNS },
-    { key: 'remove-row', label: t('editor.visual.table.removeRow', locale), action: deleteTableRow, disabled: tableRowCount <= 1 },
-    { key: 'remove-column', label: t('editor.visual.table.removeColumn', locale), action: deleteTableColumn, disabled: tableColumnCount <= 1 },
-    { key: 'toggle-header', label: t('editor.visual.table.toggleHeader', locale), action: toggleTableHeader },
-    { key: 'align-top', label: `${tableVerticalAlignment === 'top' ? '✓ ' : ''}Alinear celda arriba`, action: () => alignTableCell('top') },
-    { key: 'align-center', label: `${tableVerticalAlignment === 'center' ? '✓ ' : ''}Centrar celda verticalmente`, action: () => alignTableCell('center') },
-    { key: 'align-bottom', label: `${tableVerticalAlignment === 'bottom' ? '✓ ' : ''}Alinear celda abajo`, action: () => alignTableCell('bottom') },
+  const tableMenuActions: readonly TableMenuAction[] = [
+    { key: 'row-above', group: 'rows', label: t('editor.visual.table.addRowAbove', locale), action: () => insertTableRow(false) },
+    { key: 'row-below', group: 'rows', label: t('editor.visual.table.addRowBelow', locale), action: () => insertTableRow(true) },
+    { key: 'column-left', group: 'columns', label: t('editor.visual.table.addColumnLeft', locale), action: () => insertTableColumn(false), disabled: tableColumnCount >= MAX_TABLE_COLUMNS },
+    { key: 'column-right', group: 'columns', label: t('editor.visual.table.addColumnRight', locale), action: () => insertTableColumn(true), disabled: tableColumnCount >= MAX_TABLE_COLUMNS },
+    { key: 'remove-row', group: 'structure', label: t('editor.visual.table.removeRow', locale), action: deleteTableRow, disabled: tableRowCount <= 1 },
+    { key: 'remove-column', group: 'structure', label: t('editor.visual.table.removeColumn', locale), action: deleteTableColumn, disabled: tableColumnCount <= 1 },
+    { key: 'toggle-header', group: 'structure', label: t('editor.visual.table.toggleHeader', locale), action: toggleTableHeader },
+    { key: 'align-top', group: 'alignment', label: `${tableVerticalAlignment === 'top' ? '✓ ' : ''}Alinear celda arriba`, action: () => alignTableCell('top') },
+    { key: 'align-center', group: 'alignment', label: `${tableVerticalAlignment === 'center' ? '✓ ' : ''}Centrar celda verticalmente`, action: () => alignTableCell('center') },
+    { key: 'align-bottom', group: 'alignment', label: `${tableVerticalAlignment === 'bottom' ? '✓ ' : ''}Alinear celda abajo`, action: () => alignTableCell('bottom') },
   ];
   const insertImage = async () => {
     if (!onInsertImage) return;
@@ -378,8 +490,8 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
   // el contenido (ver captura `hito-a-03-tras-reabrir.png`). El menú solo aparece con el cursor dentro
   // de una tabla, usa etiquetas legibles en vez de abreviaturas y se cierra tras cada acción o al salir
   // de la tabla.
-  const tableMenuAnchor = !titleOnly && inTable ? (
-    <View style={styles.tableMenuWrap}>
+  const tableMenuControl = !titleOnly && inTable ? (
+    <div ref={setTableMenuAnchor} style={{ position: 'relative', alignSelf: 'flex-start', display: 'flex' }}>
       <Pressable
         testID="editor-table-menu-toggle"
         accessibilityRole="button"
@@ -394,29 +506,21 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
       >
         <Text style={[styles.toolText, { color: colors.textPrimary }]}>{t('editor.visual.table.menu.show', locale)}</Text>
       </Pressable>
-      {tableMenuOpen ? (
-        <View testID="editor-table-menu" accessibilityRole="menu" style={[styles.tableMenu, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          {tableMenuActions.map((item) => (
-            <Pressable
-              key={item.key}
-              testID={`editor-table-menu-${item.key}`}
-              accessibilityRole="menuitem"
-              disabled={item.disabled}
-              onPress={() => { item.action(); setTableMenuOpen(false); }}
-              style={({ pressed }) => [styles.tableMenuItem, { opacity: item.disabled ? 0.4 : pressed ? 0.7 : 1 }]}
-            >
-              <Text style={[styles.tableMenuItemText, { color: colors.textPrimary }]}>{item.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+      {tableMenuOpen && tableMenuAnchor ? (
+        <TableContextMenu
+          anchor={tableMenuAnchor}
+          actions={tableMenuActions}
+          colors={colors}
+          onClose={(restoreFocus) => {
+            setTableMenuOpen(false);
+            if (restoreFocus) requestAnimationFrame(() => tableMenuAnchor.querySelector<HTMLElement>('[data-testid="editor-table-menu-toggle"]')?.focus());
+          }}
+        />
       ) : null}
-    </View>
+    </div>
   ) : null;
   return (
-    // El menú de tabla es un descendiente posicionado en términos absolutos de esta vista; sin un
-    // `zIndex` explícito aquí, React Native Web deja esta fila en el mismo nivel de apilado que
-    // `editArea` (su hermano) y el menú queda detrás del cuerpo desplazable, interceptando clics.
-    <View style={tableMenuOpen ? styles.toolbarShellRaised : undefined}>
+    <View>
       <View accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.toolbar', locale)} style={styles.toolbar}>
         {titleOnly ? null : <select
           aria-label={t('editor.visual.block', locale)}
@@ -428,7 +532,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
           <option value="paragraph">{t('editor.visual.paragraph', locale)}</option>
           {([1, 2, 3, 4, 5, 6] as const).map((level) => <option key={level} value={`heading-${level}`}>{`${t('editor.visual.heading', locale)} ${level}`}</option>)}
         </select>}
-        {tableMenuAnchor}
+        {tableMenuControl}
         {button('B', t('editor.visual.bold', locale), bold, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold'); })}
         {button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
         {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
@@ -700,15 +804,8 @@ const styles = StyleSheet.create({
   shellCompact: { flex: 1, flexBasis: 0, minHeight: 0, overflow: 'hidden' },
   toolbar: { minHeight: 52, padding: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   compactMoreToolbar: { minHeight: 48, padding: 4, gap: 4 },
-  toolbarShellRaised: { position: 'relative', zIndex: 20 },
   toolbarCollapsed: { display: 'none' },
-  tableMenuWrap: { position: 'relative', alignSelf: 'flex-start' },
   tableMenuButton: { height: 44, paddingHorizontal: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  // El menú participa en el alto de la toolbar: evita que el estado de guardado o el editor, que son
-  // hermanos posteriores, queden físicamente encima e intercepten sus acciones.
-  tableMenu: { position: 'relative', minWidth: 220, borderWidth: 2, paddingVertical: 4 },
-  tableMenuItem: { paddingHorizontal: 10, paddingVertical: 10, minHeight: 40, justifyContent: 'center' },
-  tableMenuItemText: { fontSize: 13, fontWeight: '700' },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   alignmentGroup: { flexDirection: 'row', gap: 4, paddingLeft: 6, borderLeftWidth: 1 },
   alignmentIcon: { width: 24, gap: 3 },

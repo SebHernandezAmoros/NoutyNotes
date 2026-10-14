@@ -1182,6 +1182,72 @@ test('tabla en una nota HTML segura: insertar y editar celdas es un cambio de Le
   await expect(card(page, 1)).not.toContainText('| Nombre |');
 });
 
+test('UX7-TABLE-OVERLAY: el menú flota dentro del viewport y conserva la celda en Inspector y edición rápida', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Menú de tabla');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await button(page, 'Insertar una tabla').click();
+  await button(page, 'Insertar tabla').click();
+
+  const visual = page.getByLabel('Contenido visual');
+  const bodyEditor = page.getByTestId('web-rich-text-editor').filter({ has: visual });
+  const toolbar = bodyEditor.getByTestId('editor-toolbar');
+  const firstCell = visual.locator('th, td').first();
+  await firstCell.click();
+  const toolbarHeight = (await box(toolbar)).height;
+  await bodyEditor.getByTestId('editor-table-menu-toggle').click();
+  const menu = page.getByTestId('editor-table-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('group', { name: 'Filas' })).toBeVisible();
+  await expect(menu.getByRole('group', { name: 'Columnas' })).toBeVisible();
+  await expect(menu.getByRole('group', { name: 'Estructura' })).toBeVisible();
+  await expect(menu.getByRole('group', { name: 'Alineación vertical' })).toBeVisible();
+  await expect(menu).toHaveCSS('position', 'fixed');
+  const menuBox = await box(menu);
+  const viewport = page.viewportSize();
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.y).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport?.width ?? 0);
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(viewport?.height ?? 0);
+  expect((await box(toolbar)).height).toBe(toolbarHeight);
+  await expect(menu.getByTestId('editor-table-menu-row-above')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.getByTestId('editor-table-menu-row-below')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(bodyEditor.getByTestId('editor-table-menu-toggle')).toBeFocused();
+
+  await bodyEditor.getByTestId('editor-table-menu-toggle').click();
+  await page.getByTestId('editor-table-menu-align-center').click();
+  await expect(firstCell).toHaveCSS('vertical-align', 'middle');
+  await expect(menu).toHaveCount(0);
+  await firstCell.click();
+  await bodyEditor.getByTestId('editor-table-menu-toggle').click();
+  await page.screenshot({ path: testInfo.outputPath('table-menu-inspector.png'), fullPage: true });
+  await page.mouse.click(8, 8);
+  await expect(menu).toHaveCount(0);
+
+  if ((viewport?.width ?? 0) < 800) return;
+
+  await closeEditor(page);
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1));
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  const inline = page.getByTestId('inline-card-editor');
+  await expect(inline).toBeVisible();
+  const inlineVisual = inline.getByLabel('Contenido visual');
+  await inlineVisual.locator('th, td').first().click();
+  await inline.getByTestId('editor-table-menu-toggle').click();
+  await expect(menu).toBeVisible();
+  const inlineMenuBox = await box(menu);
+  expect(inlineMenuBox.x + inlineMenuBox.width).toBeLessThanOrEqual(viewport?.width ?? 0);
+  expect(inlineMenuBox.y + inlineMenuBox.height).toBeLessThanOrEqual(viewport?.height ?? 0);
+  await page.screenshot({ path: testInfo.outputPath('table-menu-inline.png'), fullPage: true });
+  await page.keyboard.press('Escape');
+  await inline.getByRole('button', { name: 'Guardar y cerrar la edición rápida' }).click();
+});
+
 test('P09: parte de 3 × 3, permite configurar la tabla y la conserva en Lista', async ({ page }, testInfo) => {
   const { runtimeErrors, failedResources } = trackProblems(page);
   await page.goto('./');

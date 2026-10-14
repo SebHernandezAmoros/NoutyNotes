@@ -3,7 +3,16 @@ import { ListItemNode, ListNode } from '@lexical/list';
 import { HeadingNode } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import { createEditor } from 'lexical';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Este test ejercita el adaptador Lexical sin renderizar React Native. El nodo de
+// imagen comparte componente con la UI web y consulta el tema al decorarse; aislar
+// ese límite evita que Vitest/Rolldown intente analizar la entrada Flow de RN.
+vi.mock('@noutynotes/ui', () => ({
+  useTheme: () => ({
+    theme: { colors: { cardSurface: '#fffdf6', cardText: '#23241f', border: '#34362f' } },
+  }),
+}));
 
 import type { AssetRef, RichTextDocument } from '@noutynotes/domain';
 import { parseRichTextMarkdown } from '@noutynotes/storage';
