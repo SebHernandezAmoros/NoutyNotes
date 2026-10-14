@@ -11,6 +11,7 @@ export interface RichTextEditorProps {
   readonly fontFamily?: string | undefined;
   readonly onInsertImage?: ((document: RichTextDocument, afterBlock: number) => Promise<RichTextImage | null>) | undefined;
   readonly onReplaceImage?: ((document: RichTextDocument, blockIndex: number) => Promise<RichTextImage | null>) | undefined;
+  readonly onOpenFullEditor?: (() => void) | undefined;
   /** Reduce la altura del editor cuando se monta directamente sobre una ficha del lienzo. */
   readonly compact?: boolean;
   /** Oculta solo las herramientas sin desmontar el documento ni su selección. */

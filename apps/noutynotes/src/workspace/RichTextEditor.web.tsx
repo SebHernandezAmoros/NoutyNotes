@@ -528,14 +528,14 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
   );
 }
 
-function ImageEditorBridge({ images, captionPosition, onReplaceImage, children }: Pick<RichTextEditorProps, 'images' | 'captionPosition' | 'onReplaceImage'> & { readonly children: ReactNode }) {
+function ImageEditorBridge({ images, captionPosition, onReplaceImage, onOpenFullEditor, children }: Pick<RichTextEditorProps, 'images' | 'captionPosition' | 'onReplaceImage' | 'onOpenFullEditor'> & { readonly children: ReactNode }) {
   const [editor] = useLexicalComposerContext();
   const replace = onReplaceImage ? async (blockIndex: number) => {
     const document = editor.getEditorState().read(() => $readWebRichTextDocument());
     return document ? onReplaceImage(document, blockIndex) : null;
   } : undefined;
   return (
-    <RichTextImageProvider value={{ images: images ?? new Map(), captionPosition: captionPosition ?? 'bottom', onReplace: replace }}>
+    <RichTextImageProvider value={{ images: images ?? new Map(), captionPosition: captionPosition ?? 'bottom', onReplace: replace, onOpenFullEditor }}>
       {children}
     </RichTextImageProvider>
   );
@@ -611,7 +611,7 @@ const editorTheme = {
   tableCellHeader: 'nouty-table-cell-header',
 };
 
-export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, compact = false, toolbarCollapsed = false, titleOnly = false }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, onOpenFullEditor, compact = false, toolbarCollapsed = false, titleOnly = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -642,7 +642,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         [data-testid="web-rich-text-content"]{overflow-x:auto}
       `}</style>
       <LexicalComposer initialConfig={initialConfig}>
-        <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage}>
+        <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage} onOpenFullEditor={onOpenFullEditor}>
         <View
           testID="editor-toolbar"
           accessibilityElementsHidden={toolbarCollapsed}

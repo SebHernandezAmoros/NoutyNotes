@@ -897,6 +897,8 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   const images = visual.locator('[data-testid^="rich-image-"]');
   await expect(images).toHaveCount(1);
   await expect(images.first().locator('img')).toBeVisible();
+  await images.first().getByTestId('image-media').click();
+  await images.first().getByRole('button', { name: 'Más opciones de imagen' }).click();
   await images.first().getByLabel(/^Texto alternativo/).fill('Plano general');
   await images.first().getByLabel(/^Leyenda/).fill('Leyenda visible');
   await images.first().getByRole('button', { name: 'Tamaño pequeño de la imagen' }).click();
@@ -905,8 +907,12 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await images.first().getByRole('button', { name: 'Alinear imagen a la derecha' }).click();
   await expect(images.first().getByTestId('image-layout')).toHaveCSS('width', /[1-9]/);
 
+  await visual.click({ position: { x: 12, y: 12 } });
+  await page.keyboard.press('End');
   await insert('mapa.png');
   await expect(images).toHaveCount(2);
+  await images.last().getByTestId('image-media').click();
+  await images.last().getByRole('button', { name: 'Más opciones de imagen' }).click();
   await images.last().getByLabel(/^Texto alternativo/).fill('Mapa inicial');
   await images.last().getByRole('button', { name: /Subir la imagen/ }).click();
   await expect.poll(() => images.evaluateAll((nodes) => nodes.map((node) => ({ id: node.getAttribute('data-testid'), alt: (node.querySelector('[aria-label^="Texto alternativo"]') as HTMLInputElement).value })))).toEqual([
@@ -916,22 +922,26 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Mapa inicial');
 
   const replace = page.waitForEvent('filechooser');
+  await images.first().getByTestId('image-media').click();
   await images.first().getByRole('button', { name: /Reemplazar la imagen/ }).click();
   await (await replace).setFiles(png('mapa-final.png'));
   await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Mapa inicial');
   await expect(images.last().getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
-  await images.first().getByRole('button', { name: /Quitar la imagen/ }).click();
-  await expect(images).toHaveCount(1);
-  await expect(images.first().getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
-  await expect(images.first().getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
-  await expect(page.getByText('Sin cambios pendientes')).toBeVisible({ timeout: 3_000 });
   await page.screenshot({ path: testInfo.outputPath('p08-rich-images.png'), fullPage: true });
-
-  await closeEditor(page);
+  // Ambos clics en el mismo turno reproducen la carrera real entre el debounce de Lexical y el
+  // guardado: la retirada debe llegar a la sesión editorial antes de que Cerrar vacíe el borrador.
+  await page.evaluate(() => {
+    const controls = [...document.querySelectorAll<HTMLButtonElement>('button')];
+    controls.find((control) => control.getAttribute('aria-label')?.startsWith('Quitar la imagen'))?.click();
+    controls.find((control) => control.getAttribute('aria-label') === 'Cerrar el editor de la tarjeta')?.click();
+  });
+  await expect(page.getByTestId('card-inspector')).toHaveCount(0);
   await tapCard(page, 1);
   if (await expandEditor.count() > 0) await expandEditor.click();
   const reopenedImage = page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]');
   await expect(reopenedImage).toHaveCount(1);
+  await reopenedImage.getByTestId('image-media').click();
+  await reopenedImage.getByRole('button', { name: 'Más opciones de imagen' }).click();
   await expect(reopenedImage.getByLabel(/^Texto alternativo/)).toHaveValue('Plano general');
   await expect(reopenedImage.getByLabel(/^Leyenda/)).toHaveValue('Leyenda visible');
   await expect(reopenedImage.getByRole('button', { name: 'Tamaño mediano de la imagen' })).toHaveAttribute('aria-pressed', 'true');
@@ -946,6 +956,8 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   if (await expandEditor.count() > 0) await expandEditor.click();
   const darkImage = page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]');
   await darkImage.scrollIntoViewIfNeeded();
+  await darkImage.getByTestId('image-media').click();
+  await darkImage.getByRole('button', { name: 'Más opciones de imagen' }).click();
   const darkLayoutControl = darkImage.getByRole('button', { name: 'Tamaño mediano de la imagen' });
   await expect(darkLayoutControl).toHaveAttribute('aria-pressed', 'true');
   const darkControlContrast = await darkLayoutControl.evaluate((node) => {
@@ -957,6 +969,69 @@ test('P08: imágenes intercaladas se insertan y editan visualmente sin exponer M
   // La comprobación de los bytes Markdown exactos (línea de imagen y comentario de leyenda) ya no
   // es alcanzable desde aquí: esa vista se retiró en web (P18-E3-B2); la cobertura de persistencia de
   // leyendas e imágenes real por carpeta sigue en folder.spec.ts.
+});
+
+test('UX7-IMAGE-DIRECT: selecciona, redimensiona y conserva la imagen en edición completa y rápida', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida se ofrece en escritorio.');
+  const png = {
+    name: 'portada.png', mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  };
+  await page.goto('./');
+  await createWorkspace(page, 'Manipulación directa');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+
+  const chooser = page.waitForEvent('filechooser');
+  await button(page, 'Insertar una imagen').click();
+  await (await chooser).setFiles(png);
+  const visual = page.getByLabel('Contenido visual');
+  const richImage = visual.locator('[data-testid^="rich-image-"]');
+  await richImage.getByTestId('image-media').click();
+  await expect(richImage).toHaveAttribute('aria-selected', 'true');
+  await expect(richImage.getByTestId('image-context-toolbar')).toBeVisible();
+  await expect(richImage.getByTestId('image-advanced-options')).toHaveCount(0);
+
+  const imageBlock = await box(richImage);
+  const resize = richImage.getByTestId('image-resize-ne');
+  const handle = await box(resize);
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 - imageBlock.width * 0.27, handle.y + handle.height / 2);
+  await page.mouse.up();
+  await expect(richImage.getByTestId('image-layout')).toHaveAttribute('style', /width:\s*75%/);
+  await richImage.getByRole('button', { name: 'Alinear imagen a la derecha' }).click();
+  await richImage.getByRole('button', { name: 'Más opciones de imagen' }).click();
+  await expect(richImage.getByTestId('image-advanced-options')).toBeVisible();
+  await richImage.getByLabel(/^Texto alternativo/).fill('Portada accesible');
+  await richImage.getByLabel(/^Leyenda/).fill('Leyenda escrita bajo la imagen');
+  const mediaBox = await box(richImage.getByTestId('image-media'));
+  const captionBox = await box(richImage.getByLabel(/^Leyenda/));
+  expect(captionBox.y).toBeGreaterThanOrEqual(mediaBox.y + mediaBox.height - 1);
+  await page.screenshot({ path: testInfo.outputPath('image-direct-full.png'), fullPage: true });
+  await closeEditor(page);
+
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  const inline = page.getByTestId('inline-card-editor');
+  const quickImage = inline.locator('[data-testid^="rich-image-"]');
+  await expect(quickImage).toHaveCount(1);
+  await quickImage.getByTestId('image-media').click();
+  await expect(quickImage.getByTestId('image-context-toolbar')).toBeVisible();
+  await quickImage.getByRole('button', { name: 'Alinear imagen a la izquierda' }).click();
+  await expect(quickImage.getByTestId('image-context-toolbar')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('image-direct-quick.png') });
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+
+  await tapCard(page, 1);
+  const reopened = page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]');
+  await reopened.getByTestId('image-media').click();
+  await expect(reopened.getByTestId('image-layout')).toHaveAttribute('style', /width:\s*75%/);
+  await expect(reopened.getByRole('button', { name: 'Alinear imagen a la izquierda' })).toHaveAttribute('aria-pressed', 'true');
+  await reopened.getByRole('button', { name: 'Más opciones de imagen' }).click();
+  await expect(reopened.getByLabel(/^Texto alternativo/)).toHaveValue('Portada accesible');
+  await expect(reopened.getByLabel(/^Leyenda/)).toHaveValue('Leyenda escrita bajo la imagen');
 });
 
 test('alineación vertical de Nota se conserva al cerrar y reabrir sin afectar el acceso al contenido', async ({ page }, testInfo) => {

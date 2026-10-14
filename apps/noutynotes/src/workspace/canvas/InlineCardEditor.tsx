@@ -24,6 +24,7 @@ interface InlineCardEditorProps {
    * `richTextCodec` (que aquí serializa a markdown, el formato que ya persiste `content`). */
   readonly htmlCodec: RichTextCodec;
   readonly noteFontFamily?: string | undefined;
+  readonly noteImages: ReadonlyMap<string, string>;
   readonly initialDraft?: EditableCardDraft | undefined;
   readonly onDraftChange: (draft: EditableCardDraft) => void;
   readonly onSave: (draft: EditableCardDraft) => Promise<boolean>;
@@ -33,7 +34,7 @@ interface InlineCardEditorProps {
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, initialDraft, onDraftChange, onSave, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, noteImages, initialDraft, onDraftChange, onSave, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -45,7 +46,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   }));
   const floatingText = card.typeId === 'texto-flotante';
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
-    ? isWebRichTextDocument(document) && !document.blocks.some((block) => block.type === 'image')
+    ? isWebRichTextDocument(document)
     : isBasicRichTextDocument(document);
   const initialHtmlAuthored = initialDraft?.bodySource?.format === 'html' || card.contentDocument !== undefined;
   const [htmlAuthored, setHtmlAuthored] = useState(initialHtmlAuthored);
@@ -92,7 +93,10 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const requiresHtml = document.blocks.some((block) => (block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined);
+    const requiresHtml = document.blocks.some((block) =>
+      ((block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined)
+      || (block.type === 'image' && (block.size !== undefined || block.alignment !== undefined || block.caption !== undefined))
+      || (block.type === 'table' && block.rows.some((row) => row.cells.some((cell) => cell.verticalAlignment !== undefined))));
     const nextHtmlAuthored = htmlAuthored || requiresHtml;
     const encoded = (nextHtmlAuthored ? htmlCodec : richTextCodec).serialize(document);
     if (encoded.ok) {
@@ -222,7 +226,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
           </View>
         </View>
       ) : visualDocument ? (
-        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily} compact toolbarCollapsed={toolsCollapsed} />
+        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} images={noteImages} onOpenFullEditor={advanced} fontFamily={noteFontFamily} compact toolbarCollapsed={toolsCollapsed} />
       ) : (
         <View style={styles.unsupportedContent}>
           <Text style={[styles.modeHint, { color: colors.textSecondary }]}>Este contenido se edita desde Más opciones.</Text>

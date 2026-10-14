@@ -970,6 +970,7 @@ export function Canvas(props: CanvasProps) {
           richTextCodec={props.richTextCodec}
           htmlCodec={props.htmlCodec}
           noteFontFamily={props.noteFontFamily}
+          noteImages={props.noteImages}
           initialDraft={props.inlineDraft?.cardId === inlineCard.id ? props.inlineDraft : undefined}
           onDraftChange={props.onInlineDraftChange}
           onSave={props.onInlineSave}
