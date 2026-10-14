@@ -1034,6 +1034,37 @@ test('UX7-IMAGE-DIRECT: selecciona, redimensiona y conserva la imagen en edició
   await expect(reopened.getByLabel(/^Leyenda/)).toHaveValue('Leyenda escrita bajo la imagen');
 });
 
+test('UX7-QUICK-EDIT: conserva HTML válido al abrir el editor completo y bloquea la salida con HTML inválido', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida se ofrece en escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Salida HTML rápida');
+  await addCards(page, ['nota']);
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+
+  const inline = page.getByTestId('inline-card-editor');
+  await inline.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
+  await inline.getByTestId('inline-html-source').fill('<h2>Transferencia segura</h2><p>Sin aplicar manualmente.</p>');
+  await inline.getByRole('button', { name: 'Abrir el editor completo' }).click();
+  await expect(inline).toHaveCount(0);
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(page.getByLabel('Contenido visual').locator('h2')).toHaveText('Transferencia segura');
+  await expect(page.getByLabel('Contenido visual').locator('p')).toHaveText('Sin aplicar manualmente.');
+  await closeEditor(page);
+
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  await inline.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
+  await inline.getByTestId('inline-html-source').fill('<p><script>no permitido</script></p>');
+  await inline.getByRole('button', { name: 'Guardar y cerrar la edición rápida' }).click();
+  await expect(inline).toBeVisible();
+  await expect(inline.getByTestId('inline-html-error')).toBeVisible();
+  await expect(inline.getByTestId('inline-html-source')).toHaveValue('<p><script>no permitido</script></p>');
+  await page.screenshot({ path: testInfo.outputPath('quick-edit-invalid-html-protected.png') });
+});
+
 test('alineación vertical de Nota se conserva al cerrar y reabrir sin afectar el acceso al contenido', async ({ page }, testInfo) => {
   await page.goto('./');
   await createWorkspace(page, 'Alineación vertical');

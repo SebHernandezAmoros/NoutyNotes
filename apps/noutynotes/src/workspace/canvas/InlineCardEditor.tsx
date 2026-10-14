@@ -76,17 +76,22 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   };
   const changeHtml = (value: string) => { setHtmlDraft(value); if (htmlIssue) setHtmlIssue(null); };
   const discardHtml = () => { setHtmlIssue(null); setBodyMode('visual'); };
-  const applyHtml = () => {
+  const commitHtmlDraft = (): EditableCardDraft | null => {
     const parsed = htmlCodec.parse(htmlDraft);
-    if (!parsed.ok) { setHtmlIssue(parsed.issues[0]?.message ?? 'El código HTML no es válido.'); return; }
+    if (!parsed.ok) { setHtmlIssue(parsed.issues[0]?.message ?? 'El código HTML no es válido.'); return null; }
     const encoded = htmlCodec.serialize(parsed.value);
-    if (!encoded.ok) { setHtmlIssue(encoded.issues[0]?.message ?? 'No se pudo aplicar el código.'); return; }
+    if (!encoded.ok) { setHtmlIssue(encoded.issues[0]?.message ?? 'No se pudo aplicar el código.'); return null; }
+    const draft: EditableCardDraft = { cardId: card.id, title, content: encoded.value, titleDocument,
+      bodySource: { format: 'html', value: encoded.value }, bodyDocument: parsed.value, bodyValidation: { status: 'valid' } };
     setHtmlAuthored(true);
     setContent(encoded.value);
     setVisualDocument(supportsVisualDocument(parsed.value) ? parsed.value : null);
-    onDraftChange({ cardId: card.id, title, content: encoded.value, titleDocument,
-      bodySource: { format: 'html', value: encoded.value }, bodyDocument: parsed.value, bodyValidation: { status: 'valid' } });
+    onDraftChange(draft);
     setHtmlIssue(null);
+    return draft;
+  };
+  const applyHtml = () => {
+    if (commitHtmlDraft() === null) return;
     setBodyMode('visual');
   };
   // UX7-VISUAL-FINALIZATION: el título se conserva en la sesión y en el guardado, pero se edita como
@@ -114,16 +119,16 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   const queue = useRef<Promise<boolean>>(Promise.resolve(true));
   useEffect(() => { current.current = { title, content }; }, [title, content]);
 
-  const persist = useCallback(() => {
-    const draft = { title, content };
+  const persist = useCallback((override?: EditableCardDraft) => {
+    const draft: EditableCardDraft = override ?? { cardId: card.id, title, content, titleDocument, ...(htmlAuthored && visualDocument ? {
+      bodySource: { format: 'html' as const, value: content }, bodyDocument: visualDocument, bodyValidation: { status: 'valid' as const },
+    } : {}) };
     if (draft.title === saved.current.title && draft.content === saved.current.content) return queue.current;
     if (draft.title === queued.current?.title && draft.content === queued.current.content) return queue.current;
     setSaving(true);
     setProblem(null);
     queued.current = draft;
-    const task = queue.current.then(() => onSave({ cardId: card.id, ...draft, titleDocument, ...(htmlAuthored && visualDocument ? {
-      bodySource: { format: 'html' as const, value: draft.content }, bodyDocument: visualDocument, bodyValidation: { status: 'valid' as const },
-    } : {}) })).then((ok) => {
+    const task = queue.current.then(() => onSave(draft)).then((ok) => {
       if (ok) saved.current = draft;
       else setProblem('No se pudo guardar. La edición sigue abierta.');
       return ok;
@@ -153,9 +158,20 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     return () => window.removeEventListener('beforeunload', warn);
   }, []);
 
-  const close = () => { void persist().then((ok) => { if (ok) onClose(); }); };
-  const collapse = () => { void persist().then((ok) => { if (ok) onCollapse(); }); };
-  const advanced = () => { onAdvanced(); };
+  const close = () => {
+    const draft = bodyMode === 'html' ? commitHtmlDraft() : undefined;
+    if (draft === null) return;
+    void persist(draft).then((ok) => { if (ok) onClose(); });
+  };
+  const collapse = () => {
+    const draft = bodyMode === 'html' ? commitHtmlDraft() : undefined;
+    if (draft === null) return;
+    void persist(draft).then((ok) => { if (ok) onCollapse(); });
+  };
+  const advanced = () => {
+    if (bodyMode === 'html' && commitHtmlDraft() === null) return;
+    onAdvanced();
+  };
   return (
     <View
       testID="inline-card-editor"
