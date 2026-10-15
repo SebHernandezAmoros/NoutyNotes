@@ -53,8 +53,8 @@ test('UX7-BOARD-ORDER: drag and accessible controls preserve order after reopeni
   );
   await expect.poll(boardOrder).toEqual(['Tablero Tablero 1', 'Tablero Tablero 2', 'Tablero Tablero 3']);
 
-  await expect(button(page, 'Organizar tableros')).toBeVisible();
-  await button(page, 'Organizar tableros').click();
+  await expect(button(page, 'Opciones de tableros')).toBeVisible();
+  await button(page, 'Opciones de tableros').click();
   const organizer = page.getByTestId('board-organizer-dialog');
   await expect(organizer).toBeVisible();
   await expect(organizer.getByRole('button', { name: 'Mover después', exact: true })).toBeDisabled();
@@ -75,17 +75,17 @@ test('UX7-BOARD-ORDER: drag and accessible controls preserve order after reopeni
   await expect(rail.locator('[role="button"][aria-pressed="true"]')).toHaveAttribute('aria-label', selectedBeforeDrag ?? '');
   await expect(button(page, 'Deshacer: Orden de tableros guardado')).toBeVisible();
 
-  await button(page, 'Organizar tableros').click();
+  await button(page, 'Opciones de tableros').click();
   await organizer.getByRole('button', { name: 'Seleccionar tablero Tablero 1', exact: true }).click();
   await organizer.getByRole('button', { name: 'Mover antes', exact: true }).click();
   await expect.poll(boardOrder).toEqual(['Tablero Tablero 2', 'Tablero Tablero 1', 'Tablero Tablero 3']);
   await expect(organizer.getByText('Orden guardado automáticamente.')).toBeVisible();
   await organizer.getByRole('button', { name: /^Cerrar organizar tableros/ }).click();
 
-  await button(page, 'Volver a Proyectos').click();
+  await button(page, 'Cambiar de proyecto').click();
   await button(page, 'Crear un nuevo proyecto desde Inicio').click();
   await createWorkspace(page, 'Proyecto puente');
-  await button(page, 'Volver a Proyectos').click();
+  await button(page, 'Cambiar de proyecto').click();
   await button(page, 'Ir al proyecto Orden persistente').click();
   await expect.poll(boardOrder).toEqual(['Tablero Tablero 2', 'Tablero Tablero 1', 'Tablero Tablero 3']);
   await page.screenshot({ path: testInfo.outputPath('board-order-persisted.png') });
@@ -166,7 +166,7 @@ test('UX7-CONTEXT-MENUS: note clipboard actions remain available on mobile', asy
   await expect(button(page, 'Deshacer: Tarjeta duplicada')).toBeVisible();
 });
 
-test('UX7-BOARD-WIDTHS: both rails resize, persist locally and stay responsive', async ({ page }, testInfo) => {
+test('UX7-BOARD-WIDTHS: both rails resize, persist locally and stay responsive', async ({ page }) => {
   test.skip(isCompact(page), 'Resizable side rails belong to the desktop layout.');
   await page.goto('./');
   await createWorkspace(page, 'Barras ajustables');
@@ -178,6 +178,29 @@ test('UX7-BOARD-WIDTHS: both rails resize, persist locally and stay responsive',
   const rightHandle = page.getByTestId('board-rail-resize');
   expect((await box(left)).width).toBe(220);
   expect((await box(right)).width).toBe(72);
+  const boardOptions = right.getByRole('button', { name: 'Opciones de tableros', exact: true });
+  await expect(boardOptions).toBeVisible();
+  await expect(right.getByRole('button', { name: 'Volver a Proyectos', exact: true })).toHaveCount(0);
+  await expect(right.getByRole('button', { name: 'Organizar tableros', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: 'artifacts/ux7-b-board-rail-narrow.png' });
+  await boardOptions.focus();
+  await page.keyboard.press('Enter');
+  const organizer = page.getByTestId('board-organizer-dialog');
+  await expect(organizer).toBeVisible();
+  await page.screenshot({ path: 'artifacts/ux7-b-board-organizer.png' });
+  await organizer.getByRole('button', { name: /^Cerrar organizar tableros/ }).click();
+  await expect(organizer).toHaveCount(0);
+  await expect(button(page, 'Cambiar de proyecto')).toBeVisible();
+
+  await button(page, 'Opciones del tablero Tablero 1').click();
+  const individualActions = page.getByTestId('board-actions-dialog');
+  await expect(individualActions.getByLabel('Nombre del tablero')).toBeVisible();
+  await expect(individualActions.getByRole('button', { name: 'Guardar nombre', exact: true })).toBeVisible();
+  await expect(individualActions.getByRole('button', { name: 'Mover antes', exact: true })).toBeVisible();
+  await expect(individualActions.getByRole('button', { name: 'Mover después', exact: true })).toBeVisible();
+  await expect(individualActions.getByRole('button', { name: 'Archivar tablero', exact: true })).toBeVisible();
+  await page.screenshot({ path: 'artifacts/ux7-b-individual-actions.png' });
+  await individualActions.getByRole('button', { name: /^Cerrar acciones de tablero 1/ }).click();
 
   await leftHandle.focus();
   await page.keyboard.press('ArrowRight');
@@ -199,19 +222,32 @@ test('UX7-BOARD-WIDTHS: both rails resize, persist locally and stay responsive',
   const horizontalLabel = right.getByText('TABLERO 1', { exact: true });
   expect((await box(horizontalLabel)).width).toBeGreaterThan((await box(horizontalLabel)).height);
   expect(await horizontalLabel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(boardOptions.getByText('Opciones de tableros', { exact: true })).toBeVisible();
 
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('noutynotes.view.v1') ?? '{}'));
   expect(stored).toMatchObject({ leftSidebarWidth: 260, boardRailWidth: 192 });
   const canvasBox = await box(page.getByTestId('board-canvas'));
   expect(canvasBox.width).toBeGreaterThan(500);
-  await page.screenshot({ path: testInfo.outputPath('board-rail-wide.png') });
+  await page.screenshot({ path: 'artifacts/ux7-b-board-rail-wide.png' });
+
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await expect(page.getByTestId('board-tabs')).toBeVisible();
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect(page.getByTestId('board-tabs')).toHaveCount(0);
+  await expect(page.getByTestId('open-tabs')).toBeVisible();
+  await button(page, 'Más secciones').click();
+  await expect(page.getByTestId('more-sheet').getByRole('button', { name: 'Cambiar de proyecto' })).toBeVisible();
+  await button(page, 'Cerrar más').click();
 
   await page.setViewportSize(phone);
   await expect(leftHandle).toHaveCount(0);
   await expect(rightHandle).toHaveCount(0);
   await expect(page.getByTestId('open-tabs')).toBeVisible();
+  await expect(button(page, 'Organizar tableros')).toBeVisible();
+  await button(page, 'Más secciones').click();
+  await expect(button(page, 'Cambiar de proyecto')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('board-rails-mobile.png') });
+  await page.screenshot({ path: 'artifacts/ux7-b-compact-navigation.png' });
 });
 
 /** Selecciona una tarjeta cuando la prueba necesita abrir su menú contextual. */
@@ -3285,7 +3321,7 @@ test('tableros y espacios: crear, navegar y añadir tarjetas en el tablero visib
   // herramientas ya no se oculta al enfocar—; desde 800 px, al final de la barra de herramientas o
   // en la barra lateral, sin pasos previos.
   await expect(page.getByTestId('project-tabs')).toHaveCount(0);
-  if ((page.viewportSize()?.width ?? 0) >= 1100) await button(page, 'Volver a Proyectos').click();
+  if ((page.viewportSize()?.width ?? 0) >= 1100) await button(page, 'Cambiar de proyecto').click();
   else {
     if (isCompact(page)) await button(page, 'Más secciones').click();
     await button(page, 'Cambiar de proyecto').click();
@@ -3408,7 +3444,7 @@ test('UX7-A: las acciones individuales permiten renombrar, mover y archivar un t
   await expect(button(page, 'Tablero Escenas')).toHaveAttribute('aria-pressed', 'true');
 
   await actions.getByRole('button', { name: /^Cerrar acciones de escenas/ }).click();
-  await button(page, 'Organizar tableros').click();
+  await button(page, isCompact(page) ? 'Organizar tableros' : 'Opciones de tableros').click();
   const organizer = page.getByTestId('board-organizer-dialog');
   await expect(organizer.getByRole('button', { name: 'Seleccionar tablero Escenas', exact: true })).toBeVisible();
   const durableOrder = () => organizer.getByRole('button', { name: /^Seleccionar tablero / }).evaluateAll((elements) =>

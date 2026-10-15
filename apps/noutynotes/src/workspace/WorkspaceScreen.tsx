@@ -1780,7 +1780,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             />
             <BoardRail width={preferences.boardRailWidth} boards={workspace.boards} current={board?.id} onSelect={(next) => void chooseBoard(next)} onCreate={createBoard}
               onActions={setBoardActionsId} onOrganize={() => setBoardOrganizerOpen(true)}
-              onReorder={(target, index) => void reorderBoardById(target, index)} onReturn={() => setProjectsOpen(true)} />
+              onReorder={(target, index) => void reorderBoardById(target, index)} />
           </>
         ) : null}
       </View>

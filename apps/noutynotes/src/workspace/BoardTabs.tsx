@@ -45,17 +45,17 @@ export function BoardTabs({ boards, current, onSelect, onCreate, vertical, scrol
 }
 
 /** Escritorio: los tableros viven como pestañas verticales en el borde derecho del lienzo. */
-export function BoardRail({ boards, current, width, onSelect, onCreate, onActions, onOrganize, onReorder, onReturn }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
+export function BoardRail({ boards, current, width, onSelect, onCreate, onActions, onOrganize, onReorder }: Omit<BoardTabsProps, 'vertical' | 'scroll'> & {
   readonly width: number;
   readonly onActions: (boardId: BoardId) => void;
   readonly onOrganize: () => void;
   readonly onReorder: (boardId: BoardId, targetIndex: number) => void;
-  readonly onReturn: () => void;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [dragging, setDragging] = useState<BoardId | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [optionsFocused, setOptionsFocused] = useState(false);
   const expanded = width >= BOARD_RAIL_HORIZONTAL_MIN;
   const tabWidth = expanded ? Math.max(RAIL_WIDTH, width - 24) : RAIL_WIDTH;
   return (
@@ -63,14 +63,16 @@ export function BoardRail({ boards, current, width, onSelect, onCreate, onAction
       style={[styles.rail, { width, borderColor: colors.border, backgroundColor: colors.surfaceRaised }, Platform.OS === 'web' ? { scrollbarGutter: 'stable' } as object : null]}
       contentContainerStyle={[styles.railContent, expanded ? styles.railContentWide : null]}>
       <View style={[styles.railHeader, expanded ? styles.railHeaderWide : null]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Volver a Proyectos" onPress={onReturn}
-          style={[styles.railReturn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          <Text style={[styles.railReturnText, { color: colors.textPrimary }]}>←</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Organizar tableros" onPress={onOrganize}
-          style={[styles.railOrganize, expanded ? styles.railOrganizeWide : null, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          <Text style={[styles.railOrganizeGlyph, { color: colors.textPrimary }]}>☷</Text>
-          {expanded ? <Text numberOfLines={1} style={[styles.railOrganizeLabel, { color: colors.textPrimary }]}>Organizar</Text> : null}
+        <Pressable accessibilityRole="button" accessibilityLabel="Opciones de tableros" onPress={onOrganize}
+          {...(Platform.OS === 'web' ? { title: 'Opciones de tableros' } : {})}
+          onFocus={() => setOptionsFocused(true)} onBlur={() => setOptionsFocused(false)}
+          style={({ pressed }) => [styles.railOptions, expanded ? styles.railOptionsWide : null, {
+            borderColor: optionsFocused ? colors.selection : colors.border,
+            backgroundColor: colors.surface,
+            opacity: pressed ? 0.8 : 1,
+          }]}>
+          <Text style={[styles.railOptionsGlyph, { color: colors.textPrimary }]}>☷</Text>
+          {expanded ? <Text numberOfLines={1} style={[styles.railOptionsLabel, { color: colors.textPrimary }]}>Opciones de tableros</Text> : null}
         </Pressable>
       </View>
       {boards.map((board, index) => (
@@ -224,14 +226,12 @@ const styles = StyleSheet.create({
   rail: { flexGrow: 0, borderLeftWidth: 2 },
   railContent: { paddingVertical: 8, paddingHorizontal: 6, gap: 6, alignItems: 'center' },
   railContentWide: { alignItems: 'stretch' },
-  railHeader: { gap: 6, alignItems: 'center' },
-  railHeaderWide: { flexDirection: 'row', alignItems: 'stretch' },
-  railReturn: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  railReturnText: { fontSize: 20, lineHeight: 24, fontWeight: '900' },
-  railOrganize: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  railOrganizeWide: { flex: 1, width: undefined, flexDirection: 'row', gap: 6, paddingHorizontal: 8 },
-  railOrganizeGlyph: { fontSize: 20, lineHeight: 24, fontWeight: '900' },
-  railOrganizeLabel: { flexShrink: 1, fontSize: 11, fontWeight: '900' },
+  railHeader: { alignItems: 'center' },
+  railHeaderWide: { alignItems: 'stretch' },
+  railOptions: { width: RAIL_WIDTH, height: RAIL_WIDTH, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  railOptionsWide: { width: '100%', flexDirection: 'row', gap: 6, paddingHorizontal: 8 },
+  railOptionsGlyph: { fontSize: 20, lineHeight: 24, fontWeight: '900' },
+  railOptionsLabel: { flexShrink: 1, fontSize: 11, fontWeight: '900' },
   railTabWrap: { width: RAIL_WIDTH, height: RAIL_LENGTH, position: 'relative' },
   railTabWrapWide: { height: 56 },
   railTab: { width: RAIL_WIDTH, height: RAIL_LENGTH, borderWidth: 2, overflow: 'hidden' },
