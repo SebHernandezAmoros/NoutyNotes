@@ -12,12 +12,13 @@ import { BasicRichTextPreview } from '../BasicRichTextPreview';
 import { parseWebRichText } from '../basicRichText';
 import { ImagePlaceholder } from '../ImagePlaceholder';
 import { markdownExcerpt, parseChecklistLine } from '../markdownLists';
-import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from '../textSizes';
+import { bodyFontSize, titleFontSize } from '../textSizes';
 import { floatingTextColor } from '../floatingText';
 import { ShapePreview } from '../ShapePreview';
 import type { GestureController } from './Canvas';
 import { miniIcon } from './cardChrome';
 import { CardIcon } from './CardIcon';
+import { canvasTextMetrics } from './canvasTypography';
 import { NotePreview } from './NotePreview';
 import { previewOverflow } from './previewOverflow';
 import { RichNotePreview } from './RichNotePreview';
@@ -125,8 +126,6 @@ interface CanvasCardProps {
   readonly reserveRight: number;
   /** Con el zoom alejado, los controles de 44 px bajan sobre el cuerpo: el título les deja sitio. */
   readonly controlsOverBody: boolean;
-  /** Zoom actual del lienzo: por debajo del umbral, la ficha resume en vez de encoger su texto (ADR 0016). */
-  readonly zoom: number;
   /** UX7-B2: marca o desmarca la línea de checklist `lineIndex` de `card.content` directamente en el lienzo. */
   readonly onToggleCheck: (cardId: Card['id'], lineIndex: number) => void;
   /** Sin marco en reposo (preferencia global u override por ficha, ADR 0049); selección/foco/arrastre/edición lo mantienen. */
@@ -134,17 +133,6 @@ interface CanvasCardProps {
 }
 
 interface ChecklistHit { readonly top: number; readonly bottom: number; readonly left: number; readonly right: number }
-
-/**
- * Por debajo de este zoom, todo el contenido escala junto con la tarjeta (transform del lienzo) y el
- * texto a tamaño base deja de leerse. En vez de intentar caber el editor completo a escala reducida
- * (imposible de leer bien), la ficha pasa a un resumen: solo cabecera, título más grande (compensado,
- * no proporcional del todo, para no desbordar el hueco) e imagen si la tiene — sin resumen de texto,
- * etiquetas ni pie. Encontrado en la auditoría visual del tablero (2026-09-29).
- */
-const ZOOM_SUMMARY_THRESHOLD = 0.75;
-/** El resumen compensa hasta 1,5× el tamaño semántico de la ficha (ADR 0050), no un valor fijo. */
-const MAX_SUMMARY_SCALE = 1.5;
 
 const displayNames: Readonly<Record<CardDisplayMode, string>> = { expanded: '', collapsed: ', contraída', minimized: ', minimizada' };
 
@@ -231,18 +219,15 @@ export function CanvasCard(props: CanvasCardProps) {
     }).panHandlers;
   });
   const image = isImageCard(workspace, card) && card.content === undefined;
-  // A zoom bajo el contenido sigue visible: se compensa la tipografía en vez de convertir la ficha en
-  // una caja vacía. La persona trabaja habitualmente al 50 %, así que ocultar Markdown era engañoso.
-  const zoomFactor = Math.min(1, Math.max(props.zoom, 0.1));
-  const lowZoom = zoomFactor < ZOOM_SUMMARY_THRESHOLD;
-  // Tamaño semántico por ficha (ADR 0050): el resumen de zoom bajo escala desde ese tamaño, no desde
-  // una constante fija, así que una ficha «large» resumida sigue viéndose más grande que una «small».
+  // Las medidas internas permanecen en unidades normales del lienzo. El transform común escala la
+  // Nota y todo su contenido en la misma proporción, sin compensación tipográfica inversa.
   const titleBase = titleFontSize(card.titleSize);
   const bodyBase = bodyFontSize(card.bodySize);
-  const titleSize = lowZoom ? Math.min(titleBase * MAX_SUMMARY_SCALE, titleBase / zoomFactor) : titleBase;
-  const contentSize = lowZoom ? Math.min(bodyBase * MAX_SUMMARY_SCALE, bodyBase / zoomFactor) : bodyBase;
-  const headerTextSize = lowZoom ? Math.min(11 * MAX_SUMMARY_SCALE, 11 / zoomFactor) : 11;
-  const contentLine = bodyLineHeight(contentSize);
+  const typography = canvasTextMetrics({ titleSize: titleBase, bodySize: bodyBase });
+  const titleSize = typography.titleSize;
+  const contentSize = typography.bodySize;
+  const headerTextSize = typography.headerSize;
+  const contentLine = typography.bodyLineHeight;
   // Nota con imágenes intercaladas (ADR 0021): la ficha muestra los bloques en orden. El cuerpo HTML
   // seguro (ADR 0066) sustituye `content` de forma excluyente (dominio): sin él no hay nada que
   // parsear como Markdown, así que estos bloques heredados solo aplican a notas aún no migradas.
@@ -292,7 +277,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
   const collapsedBodyLines = Math.max(0, Math.floor((box.height - HEADER - 12) / contentLine));
   const overflow = previewOverflow(htmlAuthored ? (richDocument ? richDocumentPlainText(richDocument) : '') : (card.content ?? ''), box.width, contentSize, bodyLines);
-  const fullReader = note && display === 'expanded' && richDocument !== null && overflow.hiddenLines > 0 && !lowZoom;
+  const fullReader = note && display === 'expanded' && richDocument !== null && overflow.hiddenLines > 0;
   // UX7-B2: cada línea mostrada es texto agrupado o una fila de checklist propia (marcable sin abrir
   // el editor). El recorte por `bodyLines` es el mismo que el bloque único anterior.
   const bodyBlocks: PreviewBodyBlock[] = [];
@@ -343,9 +328,7 @@ export function CanvasCard(props: CanvasCardProps) {
   // El nombre de una Nota es metadato: la pestaña lo identifica de forma compacta y truncable, sin
   // convertirlo en un segundo encabezado encima del cuerpo. Los demás tipos conservan su etiqueta.
   const tabLabel = note
-    ? lowZoom
-      ? cardDisplayTitle(card) || type?.label || 'Nota'
-      : `${number3} // ${cardDisplayTitle(card) || type?.label || 'Nota'}`
+    ? `${number3} // ${cardDisplayTitle(card) || type?.label || 'Nota'}`
     : box.width - props.reserveRight - 16 >= 110 ? `${number3} // ${(type?.label ?? 'Tarjeta').toUpperCase()}` : number3;
   const accessibilityHint = connectRole === 'connect' ? `Conectar ${connectSourceName} con esta tarjeta`
     : connectRole === 'disconnect' ? `Desconectar ${connectSourceName} de esta tarjeta`
@@ -388,14 +371,14 @@ export function CanvasCard(props: CanvasCardProps) {
             {/* UX7-A4: título borrado conscientemente no dibuja relleno; el nombre accesible del botón ya anuncia «Nota sin título». */}
             {cardDisplayTitle(card) ? (
               <Text testID={`minimized-title-${card.id}`} numberOfLines={icon ? (box.height >= 56 ? 2 : 1) : 3}
-                style={[styles.miniTitle, { color: colors.headerText, fontSize: headerTextSize, lineHeight: headerTextSize + 2 }]}>{cardDisplayTitle(card)}</Text>
+                style={[styles.miniTitle, { color: colors.headerText, fontSize: headerTextSize, lineHeight: typography.headerLineHeight }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
             {/* UX7-CONSOLIDATION (Hito D): pista visual de que hay más contenido al expandir — el
                 nombre accesible ya anuncia «, minimizada», pero no había ninguna señal visible en la
                 propia tarjeta. Puramente decorativa (oculta a lectores de pantalla, que ya tienen el
                 anuncio real). */}
             {box.height >= 40 ? (
-              <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText }]}>⌄</Text>
+              <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText, fontSize: typography.auxiliarySize, lineHeight: typography.auxiliaryLineHeight }]}>⌄</Text>
             ) : null}
           </View>
         ) : unifiedFloating && display === 'expanded' ? (
@@ -404,8 +387,8 @@ export function CanvasCard(props: CanvasCardProps) {
               card.titleRichText ? (
                 // ADR 0030: el título mantiene la tipografía del sistema, no la elegida para las notas.
                 <BasicRichTextPreview document={{ schemaVersion: 1, blocks: [{ type: 'paragraph', content: card.titleRichText }] }} numberOfLines={3}
-                  color={colors.textPrimary} fontSize={28} lineHeight={34} testID={`card-rich-title-${card.id}`} />
-              ) : <Text numberOfLines={3} style={[styles.floatingTitle, { color: colors.textPrimary }]}>{cardDisplayTitle(card)}</Text>
+                  color={colors.textPrimary} fontSize={typography.floatingTitleSize} lineHeight={typography.floatingTitleLineHeight} testID={`card-rich-title-${card.id}`} />
+              ) : <Text numberOfLines={3} style={[styles.floatingTitle, { color: colors.textPrimary, fontSize: typography.floatingTitleSize, lineHeight: typography.floatingTitleLineHeight }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
             <View testID={`card-body-content-${card.id}`} style={[styles.bodyContent, {
               justifyContent: fullReader || overflow.hiddenLines > 0 ? 'flex-start'
@@ -427,7 +410,7 @@ export function CanvasCard(props: CanvasCardProps) {
         ) : floatingTitle && display === 'expanded' ? (
           <View testID={`floating-title-${card.id}`} style={styles.floatingTitleWrap}>
             {cardDisplayTitle(card) ? (
-              <Text numberOfLines={Math.max(1, Math.floor((box.height - 36) / 38))} style={[styles.floatingTitle, { color: colors.textPrimary, paddingRight: box.height >= 100 ? 0 : props.reserveRight }]}>{cardDisplayTitle(card)}</Text>
+              <Text numberOfLines={Math.max(1, Math.floor((box.height - 36) / typography.floatingTitleLineHeight))} style={[styles.floatingTitle, { color: colors.textPrimary, fontSize: typography.floatingTitleSize, lineHeight: typography.floatingTitleLineHeight, paddingRight: box.height >= 100 ? 0 : props.reserveRight }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
           </View>
         ) : floatingText && display === 'expanded' ? (
@@ -451,14 +434,14 @@ export function CanvasCard(props: CanvasCardProps) {
           <View testID={`collapsed-${card.id}`} style={styles.collapsedShell}>
             <View style={[styles.header, styles.headerCollapsed, collapsedBodyLines < 1 ? styles.headerCollapsedOnly : null, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
               {icon ? <CardIcon kind={icon} testID={`collapsed-icon-${card.id}`} /> : null}
-              <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText, fontSize: headerTextSize, lineHeight: headerTextSize + 3 }]}>{number3}</Text>
+              <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText, fontSize: headerTextSize, lineHeight: typography.headerLineHeight }]}>{number3}</Text>
               {cardDisplayTitle(card) ? (
                 <Text testID={`collapsed-title-${card.id}`} numberOfLines={1}
-                  style={[styles.collapsedTitle, { color: colors.headerText, fontSize: lowZoom ? Math.min(15 * MAX_SUMMARY_SCALE, 15 / zoomFactor) : 15 }]}>{cardDisplayTitle(card)}</Text>
+                  style={[styles.collapsedTitle, { color: colors.headerText, fontSize: typography.collapsedTitleSize, lineHeight: typography.collapsedTitleLineHeight }]}>{cardDisplayTitle(card)}</Text>
               ) : null}
               {/* La acción real continúa en el menú contextual y por teclado; este glifo no crea un
                   segundo control ni entra en el árbol accesible. */}
-              <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText }]}>⌄</Text>
+              <Text accessibilityElementsHidden importantForAccessibility="no" style={[styles.expandHint, { color: colors.headerText, fontSize: typography.auxiliarySize, lineHeight: typography.auxiliaryLineHeight }]}>⌄</Text>
             </View>
             {collapsedBodyLines > 0 && previewDocument ? (
               <View style={styles.collapsedPreview}>
@@ -473,7 +456,7 @@ export function CanvasCard(props: CanvasCardProps) {
             <View testID={`card-header-${card.id}`} style={[styles.header, { borderColor: colors.border, backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
               <View testID={`card-tab-${card.id}`} style={[styles.tab, { backgroundColor: headerColor }]}>
                 <Text testID={`card-tab-label-${card.id}`} numberOfLines={1}
-                  style={[styles.headerText, { color: colors.headerText, fontSize: headerTextSize, lineHeight: headerTextSize + 3 }]}>
+                  style={[styles.headerText, { color: colors.headerText, fontSize: headerTextSize, lineHeight: typography.headerLineHeight }]}>
                   {tabLabel}
                 </Text>
               </View>
@@ -486,8 +469,8 @@ export function CanvasCard(props: CanvasCardProps) {
               }]}>
               {!note && presentation.title === 'visible' && cardDisplayTitle(card) ? (
                 <Text
-                  numberOfLines={lowZoom ? 3 : 2}
-                  style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
+                  numberOfLines={2}
+                  style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: typography.titleLineHeight }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
                 >
                   {cardDisplayTitle(card)}
                 </Text>
@@ -505,10 +488,10 @@ export function CanvasCard(props: CanvasCardProps) {
                   style={[styles.photo, { borderColor: colors.border, backgroundColor: colors.surface }]}
                 />
               ) : (card.assetRefs?.length ?? 0) > 0 ? (
-                <Text style={[styles.content, { color: colors.textSecondary }]}>Cargando imagen…</Text>
+                <Text style={[styles.content, { color: colors.textSecondary, fontSize: contentSize, lineHeight: contentLine }]}>Cargando imagen…</Text>
               ) : <ImagePlaceholder />) : null}
               {presentation.body === 'visible' && !image && link ? (
-                <Text testID={`card-link-${card.id}`} numberOfLines={1} style={[styles.link, { color: colors.cardText }]}>
+                <Text testID={`card-link-${card.id}`} numberOfLines={1} style={[styles.link, { color: colors.cardText, fontSize: typography.auxiliarySize, lineHeight: typography.bodyLineHeight }]}>
                   {`↗ ${link.host}${link.rest}`}
                 </Text>
               ) : null}
@@ -562,19 +545,19 @@ export function CanvasCard(props: CanvasCardProps) {
                 </View>
               ) : null}
               {!fullReader && !image && !mixed && overflow.hiddenLines > 0 ? (
-                <Text testID={`card-overflow-${card.id}`} numberOfLines={1} style={[styles.more, { color: colors.cardText }]}>
+                <Text testID={`card-overflow-${card.id}`} numberOfLines={1} style={[styles.more, { color: colors.cardText, fontSize: typography.auxiliarySize, lineHeight: typography.auxiliaryLineHeight }]}>
                   {`+${overflow.hiddenLines} ${overflow.hiddenLines === 1 ? 'línea' : 'líneas'} más`}
                 </Text>
               ) : null}
               </View>
-              {!lowZoom && tags.length > 0 ? (
+              {tags.length > 0 ? (
                 // Pie de etiquetas (ADR 0019): hasta tres y el resto como «+n»; el nombre completo va en el inspector.
-                <Text testID={`card-tags-${card.id}`} numberOfLines={1} style={[styles.tags, { color: colors.cardText }]}>
+                <Text testID={`card-tags-${card.id}`} numberOfLines={1} style={[styles.tags, { color: colors.cardText, fontSize: typography.auxiliarySize, lineHeight: typography.auxiliaryLineHeight }]}>
                   {tags.slice(0, 3).map((tag) => `#${tag}`).join('  ')}{tags.length > 3 ? `  +${tags.length - 3}` : ''}
                 </Text>
               ) : null}
-              {!lowZoom && meta !== '' ? (
-                <Text testID={`card-meta-${card.id}`} numberOfLines={1} style={[styles.badge, { color: colors.cardText }, tags.length > 0 ? { marginTop: 2 } : null]}>{meta}</Text>
+              {meta !== '' ? (
+                <Text testID={`card-meta-${card.id}`} numberOfLines={1} style={[styles.badge, { color: colors.cardText, fontSize: typography.badgeSize, lineHeight: typography.badgeLineHeight }, tags.length > 0 ? { marginTop: 2 } : null]}>{meta}</Text>
               ) : null}
             </View>
           </>
@@ -586,6 +569,8 @@ export function CanvasCard(props: CanvasCardProps) {
               color: connectRole === 'disconnect' ? colors.danger : colors.accentText,
               backgroundColor: connectRole === 'disconnect' ? colors.surface : colors.accent,
               borderColor: connectRole === 'disconnect' ? colors.danger : colors.border,
+              fontSize: typography.auxiliarySize,
+              lineHeight: typography.auxiliaryLineHeight,
             }]}
           >
             {hint}

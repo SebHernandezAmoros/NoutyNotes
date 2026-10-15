@@ -34,6 +34,11 @@ describe('controles de la cabecera de una tarjeta (ADR 0016)', () => {
     expect(chromeFor('minimized', tile, true, viewport)).toEqual({ kind: 'menu', left: 70, top: 42, count: 1 });
     expect(chromeFor('minimized', { ...tile, left: 330 }, true, viewport)).toEqual({ kind: 'menu', left: 284, top: 42, count: 1 });
   });
+
+  it('un objeto transparente seleccionado coloca su menú fuera aunque tenga altura suficiente', () => {
+    const note = { left: 20, top: 40, width: 220, height: 160 };
+    expect(chromeFor('expanded', note, true, viewport, true)).toEqual({ kind: 'menu', left: 242, top: 42, count: 1 });
+  });
 });
 
 describe('controles que no caben dentro de la tarjeta', () => {

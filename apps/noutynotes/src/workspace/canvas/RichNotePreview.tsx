@@ -22,6 +22,10 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
   const { theme } = useTheme();
   const fontSize = bodyFontSize(bodySize);
   const lineHeight = bodyLineHeight(fontSize);
+  const captionSize = 11;
+  const captionLineHeight = 14;
+  const auxiliarySize = 12;
+  const auxiliaryLineHeight = 16;
   const lines = Math.max(1, Math.floor(height / lineHeight));
   const preview = projectRichTextPreview(document, lines, true);
   const position = captionPosition ?? 'bottom';
@@ -37,8 +41,8 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
           document={{ schemaVersion: document.schemaVersion, blocks: [{ type: 'paragraph', content: caption }] }}
           numberOfLines={sideways ? 4 : 1}
           color={theme.colors.cardText}
-          fontSize={11}
-          lineHeight={14}
+          fontSize={captionSize}
+          lineHeight={captionLineHeight}
           fontFamily={fontFamily}
           testID={`${testID}-caption-${blockIndex}`}
         />
@@ -67,7 +71,7 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
             />
           ) : (
             <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.assetRef}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>
-              <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
+              <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight: auxiliaryLineHeight }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
             </View>
           )}
           {position === 'bottom' || position === 'right' ? captionNode(block, blockIndex) : null}
@@ -85,7 +89,7 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
         />
       ))}
       {preview.hiddenLines > 0 ? (
-        <Text testID={`${testID}-overflow`} numberOfLines={1} style={[styles.more, { color: theme.colors.cardText }]}>
+        <Text testID={`${testID}-overflow`} numberOfLines={1} style={[styles.more, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight: auxiliaryLineHeight }]}>
           {`Ver documento completo · ${preview.hiddenLines} ${preview.hiddenLines === 1 ? 'línea adicional' : 'líneas adicionales'}`}
         </Text>
       ) : null}

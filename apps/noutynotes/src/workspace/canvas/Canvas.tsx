@@ -174,6 +174,14 @@ const isFloating = (workspace: Workspace, cardId: CardId): boolean => {
   return card?.typeId === FLOATING_TITLE || type?.base === 'text';
 };
 
+/** Una Nota sin superficie usa controles contextuales flotantes, sin alterar el ancho del documento. */
+const isTransparentNote = (workspace: Workspace, cardId: CardId): boolean => {
+  const card = workspace.cards.find((candidate) => candidate.id === cardId);
+  const type = workspace.cardTypes.find((candidate) => candidate.id === card?.typeId);
+  return type?.base === 'note' && card?.frameOverride === 'hidden'
+    && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);
+};
+
 /** Destino de un gesto en curso y su validez según el motor de grilla, antes de guardar nada. */
 function evaluate(layout: BoardLayout, placement: CardPlacement, gesture: Gesture, zoom: number, metrics: CanvasMetrics, snap: boolean) {
   if (gesture.kind === 'move' && gesture.group) {
@@ -757,18 +765,20 @@ export function Canvas(props: CanvasProps) {
   }, [selectedFrameRect, viewport.width, viewport.height]);
   // Controles de cabecera (ADR 0016): en píxeles de pantalla, fuera de la escala del zoom.
   const chrome = new Map<CardId, Chrome>();
+  const rendersCardControls = Platform.OS !== 'web' || props.compact;
   if (tool === 'select') {
     for (const rawPlacement of placements) {
       if (gesture?.cardId === rawPlacement.cardId || gesture?.group?.includes(rawPlacement.cardId) || (framePreview && groupMoving.has(rawPlacement.cardId))) continue;
       if (rawPlacement.connectorPath) continue;
-      // Un título flotante es un rótulo editorial: sus controles solo aparecen con él seleccionado.
-      if (isFloating(workspace, rawPlacement.cardId) && rawPlacement.cardId !== selectedId) continue;
+      // Los objetos sin superficie no tienen una cabecera que pueda alojar controles permanentes.
+      const transparentNote = isTransparentNote(workspace, rawPlacement.cardId);
+      if ((isFloating(workspace, rawPlacement.cardId) || transparentNote) && rawPlacement.cardId !== selectedId) continue;
       // Mismo sitio optimista que el cuerpo de la tarjeta mientras se guarda (ver `pendingRects` arriba).
       const placement = rectOverrides.has(rawPlacement.cardId) ? { ...rawPlacement, rect: rectOverrides.get(rawPlacement.cardId)! } : rawPlacement;
       const box = worldBoxById.get(rawPlacement.cardId) ?? cardBox(footprint(placement), metrics);
       const screen = { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
       const isSelected = placement.cardId === selectedId;
-      const found = chromeFor(placement.display, screen, isSelected, viewport);
+      const found = chromeFor(placement.display, screen, isSelected, viewport, transparentNote);
       if (found) chrome.set(placement.cardId, found);
     }
   }
@@ -907,10 +917,11 @@ export function Canvas(props: CanvasProps) {
               onFocus={() => reveal(card.id)}
               reserveRight={(() => {
                 const found = chrome.get(card.id);
-                return found ? (found.count * CONTROL_SIZE + 4) / zoom : 0;
+                return rendersCardControls && found && !isTransparentNote(workspace, card.id)
+                  ? (found.count * CONTROL_SIZE + 4) / zoom : 0;
               })()}
-              controlsOverBody={zoom < 1}
-              zoom={zoom}
+              controlsOverBody={rendersCardControls && chrome.has(card.id)
+                && !isTransparentNote(workspace, card.id) && zoom < 1}
               controller={controller}
             />
           );
@@ -1039,7 +1050,7 @@ export function Canvas(props: CanvasProps) {
           {unplacedText}
         </Text>
       ) : null}
-      {Platform.OS === 'web' && !props.compact ? null : placements.map((placement) => {
+      {!rendersCardControls ? null : placements.map((placement) => {
         const found = chrome.get(placement.cardId);
         if (!found) return null;
         return (
@@ -1048,7 +1059,7 @@ export function Canvas(props: CanvasProps) {
             cardId={placement.cardId}
             title={names.get(placement.cardId) ?? t('card.untitled', locale)}
             display={placement.display}
-            floating={isFloating(workspace, placement.cardId)}
+            floating={isFloating(workspace, placement.cardId) || isTransparentNote(workspace, placement.cardId)}
             chrome={found}
             onAction={(action) => runAction(placement.cardId, action)}
             onMenu={() => {

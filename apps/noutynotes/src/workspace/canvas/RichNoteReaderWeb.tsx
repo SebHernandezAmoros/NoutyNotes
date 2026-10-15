@@ -27,8 +27,8 @@ function listItemCount(list: RichTextList): number {
 }
 
 function estimatedHeight(block: RichTextBlock, lineHeight: number): number {
-  if (block.type === 'image') return IMAGE_HEIGHT + (block.caption?.length || block.alt ? 24 : 0) + 8;
-  if (block.type === 'table') return ((block.header ? 1 : 0) + block.rows.length) * 34 + 8;
+  if (block.type === 'image') return IMAGE_HEIGHT + (block.caption?.length || block.alt ? Math.max(24, lineHeight + 6) : 0) + 8;
+  if (block.type === 'table') return ((block.header ? 1 : 0) + block.rows.length) * Math.max(34, lineHeight + 8) + 8;
   if (block.type === 'list') return Math.max(1, listItemCount(block)) * lineHeight + 8;
   const text = block.type === 'opaque-markdown' ? block.source : inlineText(block.content);
   const wrappedLines = Math.max(1, Math.ceil(text.length / 42), text.split('\n').length);

@@ -43,6 +43,9 @@ function RichNoteReaderNative(props: {
   const { theme } = useTheme();
   const fontSize = bodyFontSize(bodySize);
   const lineHeight = bodyLineHeight(fontSize);
+  const captionSize = 11;
+  const captionLineHeight = 14;
+  const auxiliarySize = 12;
   const position = captionPosition ?? 'bottom';
   const sideways = position === 'left' || position === 'right';
 
@@ -57,8 +60,8 @@ function RichNoteReaderNative(props: {
           document={{ schemaVersion: document.schemaVersion, blocks: [{ type: 'paragraph', content: caption }] }}
           numberOfLines={sideways ? 4 : 1}
           color={color ?? theme.colors.cardText}
-          fontSize={11}
-          lineHeight={14}
+          fontSize={captionSize}
+          lineHeight={captionLineHeight}
           fontFamily={fontFamily}
           testID={`${testID}-caption-${blockIndex}`}
         />
@@ -85,7 +88,7 @@ function RichNoteReaderNative(props: {
           />
         ) : (
           <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.assetRef}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>
-            <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
+            <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
           </View>
         )}
         {position === 'bottom' || position === 'right' ? captionNode : null}

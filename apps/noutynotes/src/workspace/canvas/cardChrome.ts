@@ -63,14 +63,14 @@ export interface Chrome {
 }
 
 /** Dónde van los controles de una tarjeta, o `null` si no lleva (ficha minimizada sin seleccionar). */
-export function chromeFor(display: CardDisplayMode, box: ScreenBox, selected: boolean, viewport: Size): Chrome | null {
+export function chromeFor(display: CardDisplayMode, box: ScreenBox, selected: boolean, viewport: Size, outside = false): Chrome | null {
   const actions = cardActions(display);
   // La selección reduce siempre la cabecera a una sola entrada contextual. Evita tiras duplicadas
   // y mantiene las acciones, la edición y la organización en un lugar predecible (ADR 0047).
   if (selected) {
     // En una ficha minimizada o una barra muy baja, el control no debe cubrir el icono/título ni
     // interceptar el segundo toque. Se coloca junto a la ficha, en el lado que tenga espacio.
-    if (display === 'minimized' || box.height < CONTROL_SIZE + INSET * 2) {
+    if (outside || display === 'minimized' || box.height < CONTROL_SIZE + INSET * 2) {
       const right = box.left + box.width + INSET;
       const left = right + CONTROL_SIZE <= viewport.width ? right : Math.max(0, box.left - CONTROL_SIZE - INSET);
       return { kind: 'menu', left, top: Math.max(0, Math.min(box.top + INSET, viewport.height - CONTROL_SIZE)), count: 1 };

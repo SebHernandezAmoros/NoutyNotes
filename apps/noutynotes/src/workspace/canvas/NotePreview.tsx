@@ -35,6 +35,8 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
   const colors = theme.colors;
   const textSize = bodyFontSize(bodySize);
   const LINE = bodyLineHeight(textSize);
+  const captionSize = 11;
+  const auxiliarySize = 12;
   const position = captionPosition ?? 'bottom';
   // «left»/«right» ponen la leyenda junto a la imagen, en una fila: no compite por el presupuesto
   // vertical de bloques (solo por ancho), así que la imagen no necesita encogerse para hacerle sitio
@@ -76,15 +78,15 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
         }, flexStyle]} />
     ) : (
       <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.ref}`} style={[styles.thumb, styles.missing, { height: size, borderColor: colors.border }, flexStyle]}>
-        <Text numberOfLines={2} style={[styles.missingText, { color: colors.cardText }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
+        <Text numberOfLines={2} style={[styles.missingText, { color: colors.cardText, fontSize: auxiliarySize, lineHeight: LINE }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
       </View>
     )
   );
   const captionNode = (block: Extract<NoteBlock, { kind: 'image' }>, size: number, color: ColorValue) => (
     sideways ? (
-      <Text numberOfLines={Math.max(1, Math.floor(size / LINE))} style={[styles.caption, styles.captionSide, { color }]}>{block.alt}</Text>
+      <Text numberOfLines={Math.max(1, Math.floor(size / LINE))} style={[styles.caption, styles.captionSide, { color, fontSize: captionSize, lineHeight: LINE }]}>{block.alt}</Text>
     ) : (
-      <Text numberOfLines={1} style={[styles.caption, { color, lineHeight: LINE }]}>{block.alt}</Text>
+      <Text numberOfLines={1} style={[styles.caption, { color, fontSize: captionSize, lineHeight: LINE }]}>{block.alt}</Text>
     )
   );
   return (
@@ -107,7 +109,7 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
         // Se recortan las líneas en vez de usar solo numberOfLines: con 1, RN Web pone nowrap y juntaría los renglones de una lista.
         <Text key={index} numberOfLines={lines} style={[{ color: colors.cardText, fontSize: textSize, lineHeight: LINE }, fontFamily === undefined ? null : { fontFamily }]}>{markdownExcerpt(block.text).split('\n').slice(0, lines).join('\n')}</Text>
       )))}
-      {hidden > 0 ? <Text style={[styles.more, { color: colors.cardText, lineHeight: LINE }]}>{`+${hidden} ${hidden === 1 ? 'bloque' : 'bloques'} más`}</Text> : null}
+      {hidden > 0 ? <Text style={[styles.more, { color: colors.cardText, fontSize: auxiliarySize, lineHeight: LINE }]}>{`+${hidden} ${hidden === 1 ? 'bloque' : 'bloques'} más`}</Text> : null}
     </View>
   );
 }

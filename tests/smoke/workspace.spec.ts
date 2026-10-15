@@ -2811,6 +2811,306 @@ test('tamaño semántico de título y cuerpo por ficha, igual en el lienzo y en 
   await button(page, 'Vista de lista').click();
 });
 
+test('UX7-ZOOM-PROPORTIONAL: Nota, cabecera y texto escalan juntos sin cambiar la composición', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./');
+  await createWorkspace(page, 'Zoom proporcional');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await fillCardTitle(page, 'Título proporcional con ajuste estable');
+  await page.getByLabel('Contenido visual').fill('Primera línea proporcional.\nSegunda línea estable.');
+  await button(page, 'Guardar texto').click();
+  await expect(page.getByText('Sin cambios pendientes')).toBeVisible();
+  await expect(button(page, 'Deshacer: Texto guardado')).toBeVisible();
+  await closeEditor(page);
+
+  const title = page.getByTestId('card-tab-label-tarjeta-1');
+  const body = card(page, 1).getByText(/Primera línea proporcional/).first();
+  const header = page.getByTestId('card-header-tarjeta-1');
+  const visualLineCount = (locator: typeof body) => locator.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const tops = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0).map((rect) => Math.round(rect.top));
+    return new Set(tops).size;
+  });
+  const measured = async () => ({
+    title: (await box(title)).height,
+    body: (await box(body)).height,
+    header: (await box(header)).height,
+    card: await box(card(page, 1)),
+    lines: await visualLineCount(body),
+    label: await title.textContent(),
+  });
+  const assertRatio = (actual: number, baseline: number, target: number) => {
+    expect(actual / baseline).toBeGreaterThanOrEqual(target * 0.9);
+    expect(actual / baseline).toBeLessThanOrEqual(target * 1.1);
+  };
+
+  await resetView(page);
+  const baseline = await measured();
+  const setZoom = async (target: 0.5 | 0.74 | 0.75 | 0.76 | 0.99 | 1 | 1.25 | 1.5 | 2) => {
+    await resetView(page);
+    if (target === 0.5) await zoomBy(page, 'out', 2);
+    else if (target === 0.74 || target === 0.99) {
+      await page.getByTestId('board-canvas').evaluate((element, requested) => {
+        const rect = element.getBoundingClientRect();
+        element.dispatchEvent(new WheelEvent('wheel', {
+          bubbles: true, cancelable: true, ctrlKey: true,
+          clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+          deltaY: -1200 * Math.log(requested),
+        }));
+      }, target);
+    }
+    else if (target === 0.75 || target === 0.76) {
+      await zoomBy(page, 'out');
+      if (target === 0.76) {
+        await page.getByTestId('board-canvas').evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          element.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, ctrlKey: true,
+            clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+            deltaY: -1200 * Math.log(0.76 / 0.75),
+          }));
+        });
+      }
+    } else if (target === 1.25) await zoomBy(page, 'in');
+    else if (target === 1.5) await zoomBy(page, 'in', 2);
+    else if (target === 2) await zoomBy(page, 'in', 3);
+    await expectZoom(page, `${Math.round(target * 100)} %`);
+  };
+
+  const observations: { zoom: number; titleHeight: number; bodyHeight: number; headerHeight: number; cardWidth: number; lines: number }[] = [];
+  for (const target of [0.5, 0.74, 0.75, 0.76, 0.99, 1, 1.25, 1.5, 2] as const) {
+    await setZoom(target);
+    const current = await measured();
+    observations.push({ zoom: target, titleHeight: current.title, bodyHeight: current.body, headerHeight: current.header, cardWidth: current.card.width, lines: current.lines });
+    assertRatio(current.title, baseline.title, target);
+    assertRatio(current.body, baseline.body, target);
+    assertRatio(current.header, baseline.header, target);
+    assertRatio(current.card.width, baseline.card.width, target);
+    expect(current.lines).toBe(baseline.lines);
+    expect(current.label).toBe(baseline.label);
+    if (target !== 0.74 && target !== 0.99) {
+      await page.screenshot({ path: testInfo.outputPath(`zoom-proportional-${Math.round(target * 100)}.png`) });
+    }
+  }
+  console.info(`[UX7-ZOOM-PROPORTIONAL] ${testInfo.project.name} ${JSON.stringify(observations)}`);
+});
+
+test('UX7-TRANSPARENT-NOTE-ZOOM-FIX: una Nota transparente conserva ancho y líneas al cruzar 100 %', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('./');
+  await createWorkspace(page, 'Zoom transparente');
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await seedBodyHtml(page, '<h1 data-nouty-align="center">historias conceptuales</h1>');
+  await page.getByTestId('card-inspector-section-appearance').click();
+  const bodyVisibility = button(page, 'Mostrar u ocultar el cuerpo de la nota');
+  await bodyVisibility.click();
+  await bodyVisibility.click();
+  await button(page, 'Ocultar siempre').click();
+  await page.getByTestId('note-vertical-alignment').getByRole('button', { name: 'Centro', exact: true }).click();
+  await closeEditor(page);
+  await selectCard(page, 1);
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('Shift+ArrowRight');
+
+  const transparent = page.getByTestId('unified-content-tarjeta-1');
+  const body = page.getByTestId('card-body-content-tarjeta-1');
+  const preview = card(page, 1).getByText('historias conceptuales', { exact: true }).first();
+  const setZoom = async (target: 0.78 | 0.99 | 1 | 1.01 | 1.28) => {
+    await resetView(page);
+    if (target !== 1) {
+      await page.getByTestId('board-canvas').evaluate((element, requested) => {
+        const rect = document.querySelector<HTMLElement>('[data-testid="card-tarjeta-1"]')?.getBoundingClientRect()
+          ?? element.getBoundingClientRect();
+        element.dispatchEvent(new WheelEvent('wheel', {
+          bubbles: true, cancelable: true, ctrlKey: true,
+          clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+          deltaY: -1200 * Math.log(requested),
+        }));
+      }, target);
+    }
+    await expectZoom(page, `${Math.round(target * 100)} %`);
+  };
+  const measure = async () => ({
+    contentWidth: await body.evaluate((element) => element.clientWidth),
+    paddingRight: await transparent.evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingRight)),
+    lines: await preview.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const tops = [...range.getClientRects()]
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+        .map((rect) => Math.round(rect.top));
+      return new Set(tops).size;
+    }),
+  });
+
+  await setZoom(1);
+  const baseline = await measure();
+  const observations: { zoom: number; contentWidth: number; paddingRight: number; lines: number }[] = [];
+  for (const target of [0.78, 0.99, 1, 1.01, 1.28] as const) {
+    await setZoom(target);
+    const current = await measure();
+    observations.push({ zoom: target, ...current });
+    expect(Math.abs(current.contentWidth - baseline.contentWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs(current.paddingRight - baseline.paddingRight)).toBeLessThanOrEqual(1);
+    expect(current.lines).toBe(baseline.lines);
+    await page.screenshot({ path: testInfo.outputPath(`transparent-note-zoom-${Math.round(target * 100)}.png`) });
+  }
+  if (isCompact(page)) {
+    await setZoom(0.78);
+    const controls = page.getByTestId('card-controls-tarjeta-1');
+    await expect(controls).toBeVisible();
+    const cardBox = await box(card(page, 1));
+    const controlsBox = await box(controls);
+    expect(controlsBox.x >= cardBox.x + cardBox.width || controlsBox.x + controlsBox.width <= cardBox.x).toBe(true);
+    await page.getByTestId('card-actions-tarjeta-1').click();
+    await expect(page.getByTestId('card-menu')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('card-menu')).toHaveCount(0);
+  } else {
+    await expect(page.getByTestId('card-controls-tarjeta-1')).toHaveCount(0);
+  }
+  console.info(`[UX7-TRANSPARENT-NOTE-ZOOM-FIX] ${testInfo.project.name} ${JSON.stringify(observations)}`);
+});
+
+test('UX7-ZOOM-PROPORTIONAL: contenido extenso, tabla, imagen y Nota transparente conservan composición', async ({ page }, testInfo) => {
+  test.skip(isCompact(page), 'El recorrido mixto se captura en escritorio oscuro; la matriz básica cubre móvil.');
+  test.setTimeout(60_000);
+  await page.goto('./');
+  await button(page, 'Tema oscuro').click();
+  await createWorkspace(page, 'Zoom enriquecido');
+
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 1));
+  await fillCardTitle(page, 'Título largo con tabla e imagen');
+  await seedBodyHtml(page, '<p>Texto enriquecido estable.</p><table><thead><tr><th>Nombre</th><th>Estado</th></tr></thead><tbody><tr><td>Idea</td><td>Activa</td></tr></tbody></table><figure><img src="assets/images/mapa.png" alt="Mapa"><figcaption>Leyenda visible</figcaption></figure>');
+  await expect(button(page, 'Deshacer: Texto guardado')).toBeVisible();
+  await closeEditor(page);
+  await card(page, 1).focus();
+  for (let step = 0; step < 4; step += 1) await page.keyboard.press('Shift+ArrowDown');
+
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 2));
+  await fillCardTitle(page, 'Documento extenso');
+  await seedBodyHtml(page, Array.from({ length: 80 }, (_, index) => `<p>Línea extensa ${index + 1}</p>`).join(''));
+  await expect(button(page, 'Deshacer: Texto guardado')).toBeVisible();
+  await closeEditor(page);
+
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 3));
+  await fillCardTitle(page, 'Transparente y estrecha');
+  await page.getByLabel('Contenido visual').fill('Texto transparente');
+  await button(page, 'Guardar texto').click();
+  await expect(page.getByText('Sin cambios pendientes')).toBeVisible();
+  await page.getByTestId('card-inspector-section-appearance').click();
+  const bodyVisibility = button(page, 'Mostrar u ocultar el cuerpo de la nota');
+  await bodyVisibility.click();
+  await bodyVisibility.click();
+  await expect(bodyVisibility).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Ocultar siempre').click();
+  await closeEditor(page);
+  await card(page, 3).focus();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('Shift+ArrowLeft');
+
+  const setZoom = async (target: 0.5 | 0.75 | 0.76 | 1 | 1.25 | 1.5 | 2) => {
+    await resetView(page);
+    if (target === 0.5) await zoomBy(page, 'out', 2);
+    else if (target === 0.75 || target === 0.76) {
+      await zoomBy(page, 'out');
+      if (target === 0.76) {
+        await page.getByTestId('board-canvas').evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          element.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, ctrlKey: true,
+            clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+            deltaY: -1200 * Math.log(0.76 / 0.75),
+          }));
+        });
+      }
+    } else if (target === 1.25) await zoomBy(page, 'in');
+    else if (target === 1.5) await zoomBy(page, 'in', 2);
+    else if (target === 2) await zoomBy(page, 'in', 3);
+    await expectZoom(page, `${Math.round(target * 100)} %`);
+  };
+
+  const assertRatio = (actual: number, baseline: number, target: number) => {
+    expect(actual / baseline).toBeGreaterThanOrEqual(target * 0.9);
+    expect(actual / baseline).toBeLessThanOrEqual(target * 1.1);
+  };
+  await setZoom(1);
+  const mixed = page.locator('[data-testid="rich-note-preview-tarjeta-1"], [data-testid="card-reader-tarjeta-1"]').first();
+  const table = mixed.locator('[data-testid*="-table-"]').first();
+  const image = mixed.getByRole('img').first();
+  await expect(table).toBeVisible();
+  await expect(image).toBeVisible();
+  const tableBaseline = await box(table);
+  const imageBaseline = await box(image);
+
+  for (const target of [0.5, 0.75, 0.76, 1, 1.25, 1.5, 2] as const) {
+    await setZoom(target);
+    await expect(mixed).toBeVisible();
+    await expect(mixed).toContainText('Nombre');
+    await expect(mixed).toContainText('Leyenda visible');
+    const mixedBox = await box(mixed);
+    const mixedCard = await box(card(page, 1));
+    expect(mixedBox.x).toBeGreaterThanOrEqual(mixedCard.x);
+    expect(mixedBox.x + mixedBox.width).toBeLessThanOrEqual(mixedCard.x + mixedCard.width + 1);
+    const tableCurrent = await box(table);
+    const imageCurrent = await box(image);
+    assertRatio(tableCurrent.width, tableBaseline.width, target);
+    assertRatio(tableCurrent.height, tableBaseline.height, target);
+    assertRatio(imageCurrent.width, imageBaseline.width, target);
+    assertRatio(imageCurrent.height, imageBaseline.height, target);
+    await expect(page.getByTestId('card-reader-tarjeta-2')).toBeVisible();
+    await expect(card(page, 3)).toContainText('Texto transparente');
+    expect(await hasHorizontalOverflow(page)).toBe(false);
+    await page.screenshot({ path: testInfo.outputPath(`zoom-proportional-rich-${Math.round(target * 100)}.png`) });
+  }
+
+  await setZoom(1);
+  const longReader = page.getByTestId('card-reader-tarjeta-2');
+  await longReader.focus();
+  await longReader.press('End');
+  await expect.poll(() => longReader.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await longReader.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  }));
+  await longReader.focus();
+  await longReader.press('Home');
+  await expect.poll(() => longReader.evaluate((element) => element.scrollTop)).toBe(0);
+
+  await openCardActions(page, card(page, 3), 'Transparente y estrecha');
+  await button(page, 'Contraer Transparente y estrecha').click();
+  const collapsedTitle = page.getByTestId('collapsed-title-tarjeta-3');
+  const collapsedAt100 = await box(collapsedTitle);
+  for (const target of [0.5, 2] as const) {
+    await setZoom(target);
+    await card(page, 3).focus();
+    const current = await box(collapsedTitle);
+    assertRatio(current.height, collapsedAt100.height, target);
+    await page.screenshot({ path: testInfo.outputPath(`zoom-proportional-collapsed-${Math.round(target * 100)}.png`) });
+  }
+
+  await setZoom(1);
+  await openCardActions(page, card(page, 3), 'Transparente y estrecha');
+  await button(page, 'Minimizar Transparente y estrecha').click();
+  const minimizedTitle = page.getByTestId('minimized-title-tarjeta-3');
+  const minimizedAt100 = await box(minimizedTitle);
+  for (const target of [0.5, 2] as const) {
+    await setZoom(target);
+    await card(page, 3).focus();
+    const current = await box(minimizedTitle);
+    assertRatio(current.height, minimizedAt100.height, target);
+    await page.screenshot({ path: testInfo.outputPath(`zoom-proportional-minimized-${Math.round(target * 100)}.png`) });
+  }
+});
+
 test('nota HTML sin imagen: el lienzo y la Lista muestran su texto real, y el tamaño de título/cuerpo se le aplica igual que a una Markdown (ADR 0050, ADR 0066)', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
