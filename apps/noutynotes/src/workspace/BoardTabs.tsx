@@ -1,6 +1,6 @@
 import type { Board, BoardId } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
-import { createElement, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -141,30 +141,32 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
       </View>
     </Pressable>
   );
-  const draggableTab = Platform.OS === 'web' ? createElement('div', {
-    draggable: true,
-    onDragStart: (event: DragEvent<HTMLDivElement>) => {
-      suppressPress.current = true;
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', label);
-      onDragStart();
-    },
-    onDragOver: (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'move';
-      onDragOver();
-    },
-    onDrop: (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onDrop();
-    },
-    onDragEnd: () => {
-      onDragEnd();
-      setTimeout(() => { suppressPress.current = false; }, 0);
-    },
-    style: { width, height: expanded ? 56 : RAIL_LENGTH },
-  }, tabButton) : tabButton;
+  const draggableTab = Platform.OS === 'web' ? (
+    <div draggable
+      onDragStart={(event: DragEvent<HTMLDivElement>) => {
+        suppressPress.current = true;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', label);
+        onDragStart();
+      }}
+      onDragOver={(event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        onDragOver();
+      }}
+      onDrop={(event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onDrop();
+      }}
+      onDragEnd={() => {
+        onDragEnd();
+        setTimeout(() => { suppressPress.current = false; }, 0);
+      }}
+      style={{ width, height: expanded ? 56 : RAIL_LENGTH }}>
+      {tabButton}
+    </div>
+  ) : tabButton;
   return (
     <View style={[styles.railTabWrap, expanded ? styles.railTabWrapWide : null, { width }]}>
     {draggableTab}

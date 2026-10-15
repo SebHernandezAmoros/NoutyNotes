@@ -230,6 +230,21 @@ test('UX7-BOARD-WIDTHS: both rails resize, persist locally and stay responsive',
   expect(canvasBox.width).toBeGreaterThan(500);
   await page.screenshot({ path: 'artifacts/ux7-b-board-rail-wide.png' });
 
+  await page.reload();
+  await button(page, 'Volver a mis espacios').click();
+  await createWorkspace(page, 'Barras tras recargar');
+  await button(page, 'Crear un tablero').click();
+  const reloadedLeft = page.getByTestId('workspace-sidebar');
+  const reloadedLeftHandle = page.getByTestId('left-sidebar-resize');
+  const reloadedRight = page.getByTestId('board-tabs');
+  const reloadedRightHandle = page.getByTestId('board-rail-resize');
+  expect((await box(reloadedLeft)).width).toBe(260);
+  expect((await box(reloadedRight)).width).toBe(192);
+  await mouseDrag(page, reloadedLeftHandle, -4, 0, { header: false });
+  await expect(reloadedLeftHandle).toHaveAttribute('aria-valuenow', '256');
+  await mouseDrag(page, reloadedRightHandle, 8, 0, { header: false });
+  await expect(reloadedRightHandle).toHaveAttribute('aria-valuenow', '184');
+
   await page.setViewportSize({ width: 1100, height: 900 });
   await expect(page.getByTestId('board-tabs')).toBeVisible();
   await page.setViewportSize({ width: 900, height: 900 });

@@ -8,7 +8,7 @@ import { cardTitleText, createOrthogonalConnectorPath, frameMembers, toggleRichT
 import { htmlRichTextCodec, markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
-import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -2369,85 +2369,102 @@ function usePendingText(
   };
 }
 
-function ResizeHandle({ testID, label, value, limits, direction, onChange }: {
+interface ResizeHandleProps {
   readonly testID: string;
   readonly label: string;
   readonly value: number;
   readonly limits: { readonly min: number; readonly max: number; readonly step: number };
   readonly direction: 1 | -1;
   readonly onChange: (value: number) => void;
-}) {
+}
+
+function ResizeHandle(props: ResizeHandleProps) {
+  return Platform.OS === 'web' ? <WebResizeHandle {...props} /> : <NativeResizeHandle {...props} />;
+}
+
+function WebResizeHandle({ testID, label, value, limits, direction, onChange }: ResizeHandleProps) {
   const { theme } = useTheme();
   const [focused, setFocused] = useState(false);
-  const valueRef = useRef(value);
-  const changeRef = useRef(onChange);
   const pointerRef = useRef<number | null>(null);
   const pointerOrigin = useRef({ x: 0, value });
-  valueRef.current = value;
-  changeRef.current = onChange;
-  let origin = value;
   const snap = (candidate: number) => {
     const clamped = Math.min(limits.max, Math.max(limits.min, candidate));
     return Math.min(limits.max, limits.min + Math.round((clamped - limits.min) / limits.step) * limits.step);
   };
-  const [responder] = useState(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_event, state) => Math.abs(state.dx) >= 2,
-    onPanResponderGrant: () => { origin = valueRef.current; },
-    onPanResponderMove: (_event, state) => changeRef.current(snap(origin + state.dx * direction)),
-    onPanResponderRelease: (_event, state) => changeRef.current(snap(origin + state.dx * direction)),
-    onPanResponderTerminationRequest: () => false,
-  }));
   const onKeyDown = (event: { key: string; preventDefault: () => void }) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const screenDelta = event.key === 'ArrowRight' ? limits.step : -limits.step;
-    changeRef.current(snap(valueRef.current + screenDelta * direction));
+    onChange(snap(value + screenDelta * direction));
   };
-  if (Platform.OS === 'web') {
-    const lineColor = focused ? theme.colors.selection : theme.colors.border;
-    return createElement('div', {
-      role: 'slider',
-      tabIndex: 0,
-      'data-testid': testID,
-      'aria-label': label,
-      'aria-valuemin': limits.min,
-      'aria-valuemax': limits.max,
-      'aria-valuenow': value,
-      'aria-valuetext': `${value} px`,
-      onFocus: () => setFocused(true),
-      onBlur: () => setFocused(false),
-      onKeyDown,
-      onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+  const lineColor = focused ? theme.colors.selection : theme.colors.border;
+  return (
+    <div role="slider" tabIndex={0} data-testid={testID} aria-label={label}
+      aria-valuemin={limits.min} aria-valuemax={limits.max} aria-valuenow={value} aria-valuetext={`${value} px`}
+      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onKeyDown={onKeyDown}
+      onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
         event.preventDefault();
         pointerRef.current = event.pointerId;
-        pointerOrigin.current = { x: event.clientX, value: valueRef.current };
+        pointerOrigin.current = { x: event.clientX, value };
         event.currentTarget.setPointerCapture(event.pointerId);
-      },
-      onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      }}
+      onPointerMove={(event: ReactPointerEvent<HTMLDivElement>) => {
         if (pointerRef.current !== event.pointerId) return;
-        changeRef.current(snap(pointerOrigin.current.value + (event.clientX - pointerOrigin.current.x) * direction));
-      },
-      onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => {
+        onChange(snap(pointerOrigin.current.value + (event.clientX - pointerOrigin.current.x) * direction));
+      }}
+      onPointerUp={(event: ReactPointerEvent<HTMLDivElement>) => {
         if (pointerRef.current !== event.pointerId) return;
-        changeRef.current(snap(pointerOrigin.current.value + (event.clientX - pointerOrigin.current.x) * direction));
+        onChange(snap(pointerOrigin.current.value + (event.clientX - pointerOrigin.current.x) * direction));
         pointerRef.current = null;
         event.currentTarget.releasePointerCapture(event.pointerId);
-      },
-      onPointerCancel: () => { pointerRef.current = null; },
-      style: {
+      }}
+      onPointerCancel={() => { pointerRef.current = null; }}
+      style={{
         width: 10, flex: '0 0 10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: 'col-resize', userSelect: 'none', touchAction: 'none', backgroundColor: theme.colors.surfaceRaised,
+      }}>
+      <div style={{ width: 2, height: '100%', backgroundColor: lineColor }} />
+    </div>
+  );
+}
+
+function NativeResizeHandle({ testID, label, value, limits, direction, onChange }: ResizeHandleProps) {
+  const { theme } = useTheme();
+  const [focused, setFocused] = useState(false);
+  const configRef = useRef({ value, limits, direction, onChange });
+  const [responder, setResponder] = useState<ReturnType<typeof PanResponder.create> | null>(null);
+  useEffect(() => {
+    configRef.current = { value, limits, direction, onChange };
+  }, [direction, limits, onChange, value]);
+  useEffect(() => {
+    const gesture = { origin: configRef.current.value };
+    const snap = (candidate: number) => {
+      const { limits: currentLimits } = configRef.current;
+      const clamped = Math.min(currentLimits.max, Math.max(currentLimits.min, candidate));
+      return Math.min(currentLimits.max, currentLimits.min + Math.round((clamped - currentLimits.min) / currentLimits.step) * currentLimits.step);
+    };
+    setResponder(PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_event, state) => Math.abs(state.dx) >= 2,
+      onPanResponderGrant: () => { gesture.origin = configRef.current.value; },
+      onPanResponderMove: (_event, state) => {
+        const current = configRef.current;
+        current.onChange(snap(gesture.origin + state.dx * current.direction));
       },
-    }, createElement('div', { style: { width: 2, height: '100%', backgroundColor: lineColor } }));
-  }
+      onPanResponderRelease: (_event, state) => {
+        const current = configRef.current;
+        current.onChange(snap(gesture.origin + state.dx * current.direction));
+      },
+      onPanResponderTerminationRequest: () => false,
+    }));
+  }, []);
   return (
     <Pressable
       testID={testID}
       accessibilityRole="adjustable"
       accessibilityLabel={label}
       accessibilityValue={{ min: limits.min, max: limits.max, now: value, text: `${value} px` }}
-      {...responder.panHandlers}
+      {...responder?.panHandlers}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       style={[styles.resizeHandle, { backgroundColor: theme.colors.surfaceRaised }]}
