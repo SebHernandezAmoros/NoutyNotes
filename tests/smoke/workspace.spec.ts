@@ -3376,26 +3376,56 @@ test('UX7-LAYOUT-CORRECTION: ninguna fila de cabecera vive sobre el lienzo; la b
   await expect(page.getByTestId('more-sheet').getByRole('button', { name: 'Cambiar de proyecto' })).toBeVisible();
 });
 
-test('las pestañas permiten renombrar y archivar un tablero con botón o menú contextual', async ({ page }, testInfo) => {
+test('UX7-A: las acciones individuales permiten renombrar, mover y archivar un tablero', async ({ page }, testInfo) => {
   await page.goto('./');
   await createWorkspace(page, 'Guion');
-  if (isCompact(page)) await button(page, 'Abrir un tablero').click();
-  await button(page, 'Crear un tablero').click();
+  for (let index = 0; index < 3; index += 1) {
+    if (isCompact(page)) await button(page, 'Abrir un tablero').click();
+    await button(page, 'Crear un tablero').click();
+  }
   await addCards(page, ['nota']);
 
+  await button(page, 'Opciones del tablero Tablero 3').click();
+  const actions = page.getByTestId('board-actions-dialog');
+  await expect(actions).toBeVisible();
+  await expect(actions.getByLabel('Nombre del tablero')).toHaveValue('Tablero 3');
+  await expect(actions.getByRole('button', { name: 'Guardar nombre', exact: true })).toBeDisabled();
+  await expect(actions.getByRole('button', { name: 'Mover antes', exact: true })).toBeEnabled();
+  await expect(actions.getByRole('button', { name: 'Mover después', exact: true })).toBeDisabled();
+  await actions.getByLabel('Nombre del tablero').fill('Escenas');
+  await page.screenshot({ path: `artifacts/ux7-a-board-actions-${testInfo.project.name}.png` });
+  await actions.getByRole('button', { name: 'Guardar nombre', exact: true }).click();
+  await expect(actions.getByRole('heading', { name: 'Acciones de Escenas', exact: true })).toBeVisible();
+  await expect(button(page, 'Deshacer: Tablero renombrado a «Escenas»')).toBeVisible();
+  await expect(button(page, 'Tablero Escenas')).toHaveAttribute('aria-pressed', 'true');
+
+  await actions.getByRole('button', { name: 'Mover antes', exact: true }).click();
+  const tabs = page.getByTestId(isCompact(page) ? 'open-tabs' : 'board-tabs');
+  const visibleTabOrder = () => tabs.getByRole('button', { name: /^Tablero / }).evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute('aria-label')),
+  );
+  if (!isCompact(page)) await expect.poll(visibleTabOrder).toEqual(['Tablero Tablero 1', 'Tablero Escenas', 'Tablero Tablero 2']);
+  await expect(button(page, 'Tablero Escenas')).toHaveAttribute('aria-pressed', 'true');
+
+  await actions.getByRole('button', { name: /^Cerrar acciones de escenas/ }).click();
   await button(page, 'Organizar tableros').click();
   const organizer = page.getByTestId('board-organizer-dialog');
-  await expect(organizer).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('board-organizer.png') });
-  await organizer.getByLabel('Nombre del tablero seleccionado').fill('Escenas');
-  await organizer.getByRole('button', { name: 'Guardar nombre', exact: true }).click();
+  await expect(organizer.getByRole('button', { name: 'Seleccionar tablero Escenas', exact: true })).toBeVisible();
+  const durableOrder = () => organizer.getByRole('button', { name: /^Seleccionar tablero / }).evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute('aria-label')),
+  );
+  await expect.poll(durableOrder).toEqual([
+    'Seleccionar tablero Tablero 1',
+    'Seleccionar tablero Escenas',
+    'Seleccionar tablero Tablero 2',
+  ]);
   await organizer.getByRole('button', { name: /^Cerrar organizar tableros/ }).click();
-  await expect(button(page, 'Deshacer: Tablero renombrado a «Escenas»')).toBeVisible();
-  await expect(button(page, 'Tablero Escenas')).toBeVisible();
 
   await button(page, 'Opciones del tablero Escenas').click();
-  await page.screenshot({ path: testInfo.outputPath('board-actions.png') });
-  await button(page, 'Archivar tablero').click();
+  await actions.getByRole('button', { name: 'Mover después', exact: true }).click();
+  if (!isCompact(page)) await expect.poll(visibleTabOrder).toEqual(['Tablero Tablero 1', 'Tablero Tablero 2', 'Tablero Escenas']);
+  await expect(actions.getByRole('button', { name: 'Mover después', exact: true })).toBeDisabled();
+  await actions.getByRole('button', { name: 'Archivar tablero', exact: true }).click();
   await expect(button(page, 'Deshacer: Tablero «Escenas» archivado con sus tarjetas')).toBeVisible();
   await expect(button(page, 'Tablero Escenas')).toHaveCount(0);
 });

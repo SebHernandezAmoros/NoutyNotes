@@ -901,7 +901,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       (storage, workspaceId) => renameBoardInWorkspace(storage, workspaceId, targetBoardId, title),
       { key: 'action.boardRenamed', params: { title: title.trim() } },
     );
-    if (result.ok) setBoardActionsId(null);
     return result.ok;
   };
   const reorderBoardById = async (targetBoardId: BoardId, targetIndex: number): Promise<boolean> => {
@@ -1802,11 +1801,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           ) : null}
           {boardActions ? (
             <BoardActionsDialog
-              key={`${boardActions.id}:${boardActions.title}`}
+              key={boardActions.id}
               board={boardActions}
+              boardIndex={workspace.boards.findIndex(({ id: candidateId }) => candidateId === boardActions.id)}
+              boardCount={workspace.boards.length}
               compact={compact}
               busy={saving}
               onClose={() => setBoardActionsId(null)}
+              onRename={(title) => renameBoardById(boardActions.id, title)}
+              onReorder={(targetIndex) => reorderBoardById(boardActions.id, targetIndex)}
               onArchive={() => archiveBoardById(boardActions.id)}
             />
           ) : null}
