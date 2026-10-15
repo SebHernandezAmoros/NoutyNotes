@@ -91,6 +91,45 @@ test('UX7-BOARD-ORDER: drag and accessible controls preserve order after reopeni
   await page.screenshot({ path: testInfo.outputPath('board-order-persisted.png') });
 });
 
+test('UX7-QA02: el organizador conserva el borrador al reordenar y lo reinicia al cambiar o reabrir', async ({ page }) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Estado del organizador');
+  for (let index = 0; index < 3; index += 1) {
+    if (isCompact(page)) await button(page, 'Abrir un tablero').click();
+    await button(page, 'Crear un tablero').click();
+  }
+
+  const openOrganizer = async () => {
+    await button(page, isCompact(page) ? 'Organizar tableros' : 'Opciones de tableros').click();
+    return page.getByTestId('board-organizer-dialog');
+  };
+  let organizer = await openOrganizer();
+  const title = organizer.getByLabel('Nombre del tablero seleccionado');
+  await expect(title).toHaveValue('Tablero 3');
+
+  await organizer.getByRole('button', { name: 'Seleccionar tablero Tablero 2', exact: true }).click();
+  await expect(title).toHaveValue('Tablero 2');
+  await title.fill('Borrador sin guardar');
+  await organizer.getByRole('button', { name: 'Mover antes', exact: true }).click();
+  await expect(title).toHaveValue('Borrador sin guardar');
+
+  await organizer.getByRole('button', { name: 'Seleccionar tablero Tablero 1', exact: true }).click();
+  await expect(title).toHaveValue('Tablero 1');
+  await title.fill('Otro borrador sin guardar');
+  await organizer.getByRole('button', { name: /^Cerrar organizar tableros/ }).click();
+
+  organizer = await openOrganizer();
+  const reopenedTitle = organizer.getByLabel('Nombre del tablero seleccionado');
+  await expect(reopenedTitle).toHaveValue('Tablero 3');
+  await organizer.getByRole('button', { name: 'Seleccionar tablero Tablero 2', exact: true }).click();
+  await expect(reopenedTitle).toHaveValue('Tablero 2');
+  await reopenedTitle.fill('Escenas');
+  await organizer.getByRole('button', { name: 'Guardar nombre', exact: true }).click();
+  await expect(organizer.getByText('Nombre guardado.', { exact: true })).toBeVisible();
+  await expect(organizer.getByRole('button', { name: 'Seleccionar tablero Escenas', exact: true })).toHaveCount(1);
+  await expect(reopenedTitle).toHaveValue('Escenas');
+});
+
 test('UX7-CONTEXT-MENUS: create and paste at the clicked canvas point, then duplicate a note', async ({ page }, testInfo) => {
   test.skip(isCompact(page), 'The pointer context menu belongs to the desktop canvas.');
   await page.goto('./');

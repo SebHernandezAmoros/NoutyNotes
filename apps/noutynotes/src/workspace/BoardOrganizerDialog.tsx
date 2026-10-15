@@ -1,6 +1,6 @@
 import type { Board, BoardId } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
-import { createElement, useEffect, useState } from 'react';
+import { createElement, useState } from 'react';
 import type { DragEvent } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -23,14 +23,12 @@ export function BoardOrganizerDialog({ boards, current, compact, busy, onClose, 
   const { theme } = useTheme();
   const colors = theme.colors;
   const [selectedId, setSelectedId] = useState<BoardId | undefined>(current ?? boards[0]?.id);
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(() => boards.find(({ id }) => id === (current ?? boards[0]?.id))?.title ?? '');
   const [draggingId, setDraggingId] = useState<BoardId | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [status, setStatus] = useState('');
   const selectedIndex = boards.findIndex(({ id }) => id === selectedId);
   const selected = selectedIndex >= 0 ? boards[selectedIndex] : boards[0];
-
-  useEffect(() => { setTitle(selected?.title ?? ''); }, [selected?.id, selected?.title]);
 
   const reorder = async (boardId: BoardId, targetIndex: number) => {
     const saved = await onReorder(boardId, targetIndex);
@@ -59,7 +57,11 @@ export function BoardOrganizerDialog({ boards, current, compact, busy, onClose, 
             }]}>
               <Text accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.handle, { color: colors.textSecondary }]}>≡</Text>
               <Pressable accessibilityRole="button" accessibilityLabel={`Seleccionar tablero ${board.title}`}
-                accessibilityState={{ selected: selectedRow }} onPress={() => { setSelectedId(board.id); setStatus(''); }} style={styles.nameButton}>
+                accessibilityState={{ selected: selectedRow }} onPress={() => {
+                  if (!selectedRow) setTitle(board.title);
+                  setSelectedId(board.id);
+                  setStatus('');
+                }} style={styles.nameButton}>
                 <Text numberOfLines={1} style={[styles.index, { color: colors.textSecondary }]}>{String(index + 1).padStart(2, '0')}</Text>
                 <Text numberOfLines={1} style={[styles.name, { color: colors.textPrimary }]}>{board.title}</Text>
               </Pressable>
