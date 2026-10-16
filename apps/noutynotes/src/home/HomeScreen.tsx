@@ -11,12 +11,13 @@ import { BrandMark } from '../components/BrandMark';
 import { TextField } from '../components/controls';
 import { useHydrated } from '../components/useHydrated';
 import { t } from '../i18n';
+import { resolveProjectStatus } from '../session/recentItems';
 import type { RecentFolderEntry, RecentProjectBackend, RecentProjectEntry } from '../session/recentItems';
 import { describeFailure } from '../session/messages';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions, singleFlight } from './actions';
 import { TemplatePicker } from './TemplatePicker';
-import { useRecentItems } from './useRecentItems';
+import { newFolderId, useRecentItems } from './useRecentItems';
 
 const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' | 'settings.theme.dark' | 'settings.theme.system'; accessibilityLabelKey: 'home.theme.light.label' | 'home.theme.dark.label' | 'home.theme.system.label' }[] = [
   { value: 'light', labelKey: 'settings.theme.light', accessibilityLabelKey: 'home.theme.light.label' },
@@ -24,18 +25,25 @@ const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' |
   { value: 'system', labelKey: 'settings.theme.system', accessibilityLabelKey: 'home.theme.system.label' },
 ];
 
-/** Espacios guardados en la memoria de esta sesión; se vuelven a leer al regresar a la pantalla. */
-function useSessionWorkspaces(): readonly WorkspaceSummary[] {
+/** Espacios guardados en la memoria de esta sesión; se vuelven a leer al regresar a la pantalla.
+ * UX7-E2A: expone también `loading` — mientras `storage.list()` del backend recién conectado sigue en
+ * curso, un proyecto reciente de esa misma carpeta no debe interpretarse como «Reconectar» (E2A-02):
+ * una lista todavía no cargada no es evidencia de que el proyecto o el permiso se perdieron. */
+function useSessionWorkspaces(): { readonly workspaces: readonly WorkspaceSummary[]; readonly loading: boolean } {
   const storage = useWorkspaceStorage();
   const [workspaces, setWorkspaces] = useState<readonly WorkspaceSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   useFocusEffect(useCallback(() => {
     let active = true;
+    setLoading(true);
     void storage.list().then((listed) => {
-      if (active && listed.ok) setWorkspaces(listed.value);
+      if (!active) return;
+      if (listed.ok) setWorkspaces(listed.value);
+      setLoading(false);
     });
     return () => { active = false; };
   }, [storage]));
-  return workspaces;
+  return { workspaces, loading };
 }
 
 export function HomeScreen() {
@@ -46,12 +54,19 @@ export function HomeScreen() {
   const [focusedTheme, setFocusedTheme] = useState<ThemePreference | null>(null);
   const storage = useWorkspaceStorage();
   const session = useWorkspaceSession();
-  const workspaces = useSessionWorkspaces();
+  const { workspaces, loading: workspacesLoading } = useSessionWorkspaces();
   const recent = useRecentItems();
   // UX7-E1: identidad del backend/carpeta activos, para registrar uso y para saber qué recientes
   // ya están disponibles ahora mismo sin necesitar reconexión.
   const currentBackend: RecentProjectBackend = session.mode === 'memory' ? 'memory' : (Platform.OS === 'web' ? 'web' : 'android');
-  const currentFolderKey = session.mode === 'folder' ? session.activeFolderKey : null;
+  // UX7-E2A: `session.activeFolderKey` es la señal cruda de la sesión (nombre en web, URI en Android;
+  // no persiste entre recargas). Aquí solo se usa para encontrar, entre los recientes YA GUARDADOS,
+  // cuál corresponde a la conexión activa — una comparación de conveniencia dentro de la sesión viva,
+  // no la identidad persistida (esa es siempre `entry.id`, opaco, nunca derivado del nombre: E2A-01).
+  const folderIsCurrent = (entry: RecentFolderEntry) => session.mode === 'folder' && (
+    entry.backend === 'android' ? entry.androidUri === session.activeFolderKey : entry.name === session.activeFolderKey
+  );
+  const currentFolderId = session.mode === 'folder' ? (recent.folders.find(folderIsCurrent)?.id ?? null) : null;
   const [draftName, setDraftName] = useState('');
   // En el HTML estático el campo no admite escritura: el render del cliente la perdería.
   const hydrated = useHydrated();
@@ -81,7 +96,7 @@ export function HomeScreen() {
       }
       setCreateError(null);
       setDraftName('');
-      recent.recordProjectUse({ workspaceId: created.value.id, name: created.value.name, backend: currentBackend, folderKey: currentFolderKey });
+      recent.recordProjectUse({ workspaceId: created.value.id, name: created.value.name, backend: currentBackend, folderId: currentFolderId });
       openWorkspace(created.value.id);
       navigated = true;
     } finally {
@@ -89,7 +104,29 @@ export function HomeScreen() {
     }
   };
 
-  const openFolder = async (): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
+  /**
+   * UX7-E2A: registra una conexión de carpeta reutilizando una entrada ya conocida solo cuando hay
+   * evidencia real: coincidencia de URI SAF (Android, prueba física verificable por la plataforma) o,
+   * si la conexión partió del botón «Reconectar» de una entrada concreta (`expectedEntryId`),
+   * coincidencia de nombre con ESA entrada exacta — intención explícita del usuario sobre un registro
+   * conocido, nunca una fusión automática entre dos conexiones distintas que solo comparten nombre
+   * (el defecto E2A-01: dos carpetas reales llamadas igual nunca deben compartir identidad). Cualquier
+   * otra conexión (el botón genérico «Abrir/Cambiar carpeta») recibe un id opaco nuevo.
+   */
+  const registerFolderConnection = (info: { readonly backend: 'web' | 'android'; readonly name: string; readonly androidUri: string | null }, expectedEntryId?: string): string => {
+    const byUri = info.androidUri !== null ? recent.folders.find((entry) => entry.androidUri === info.androidUri) : undefined;
+    const byExpectedName = !byUri && expectedEntryId
+      ? recent.folders.find((entry) => entry.id === expectedEntryId && entry.name === info.name)
+      : undefined;
+    const reused = byUri ?? byExpectedName;
+    const id = reused?.id ?? newFolderId(info.backend);
+    recent.recordFolderUse({ id, backend: info.backend, name: info.name, origin: 'created', androidUri: info.androidUri });
+    return id;
+  };
+
+  /** `expectedEntryId`: presente solo cuando la conexión partió de «Reconectar» sobre una entrada
+   * concreta — ver `registerFolderConnection`. */
+  const openFolder = async (expectedEntryId?: string): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
     // Abrir una carpeta cambia el almacenamiento de la sesión: los espacios del navegador sin exportar
     // dejarían de estar disponibles, así que nunca se descartan sin confirmación (ADR 0011).
     const pending = session.unexported.length;
@@ -103,52 +140,63 @@ export function HomeScreen() {
       }
     }
     const result = await session.connectFolder();
-    if (result.ok) recent.recordFolderUse({ backend: Platform.OS === 'web' ? 'web' : 'android', key: result.folder.key, name: result.folder.name });
-    setCreateError(result.ok ? null : result.message);
-    return result;
+    if (!result.ok) {
+      setCreateError(result.message);
+      return result;
+    }
+    setCreateError(null);
+    const backend: 'web' | 'android' = Platform.OS === 'web' ? 'web' : 'android';
+    const folderId = registerFolderConnection({ backend, name: result.folder.name, androidUri: backend === 'web' ? null : result.folder.key }, expectedEntryId);
+    return { ok: true, folderId };
   };
 
-  const reopenFolder = async (): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
+  const reopenFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
     const result = await session.reconnectFolder();
-    if (result.ok) recent.recordFolderUse({ backend: 'android', key: result.folder.key, name: result.folder.name });
-    setCreateError(result.ok ? null : result.message);
-    return result;
+    if (!result.ok) {
+      setCreateError(result.message);
+      return result;
+    }
+    setCreateError(null);
+    const folderId = registerFolderConnection({ backend: 'android', name: result.folder.name, androidUri: result.folder.key });
+    return { ok: true, folderId };
   };
 
-  /** UX7-E1: reconectar una carpeta concreta de Recientes — silenciosa si Android ya la recuerda,
-   * si no abre el selector habitual; nunca asocia una carpeta distinta a la entrada pulsada. */
+  /** UX7-E1/E2A: reconectar una carpeta concreta de Recientes — silenciosa si Android ya la recuerda,
+   * si no abre el selector habitual pasando el id de la entrada como pista de intención explícita;
+   * nunca asocia una carpeta distinta a la entrada pulsada si la evidencia no corresponde. */
   const reconnectFolderEntry = (entry: RecentFolderEntry) => (
-    entry.backend === 'android' && session.savedFolder?.uri === entry.key ? reopenFolder() : openFolder()
+    entry.backend === 'android' && session.savedFolder?.uri === entry.androidUri ? reopenFolder() : openFolder(entry.id)
   );
 
-  /** UX7-E1: abre un proyecto reciente si su backend ya está disponible; si no, reconecta primero su
-   * carpeta y solo abre si la carpeta reconectada corresponde exactamente a la que el proyecto espera. */
+  /** UX7-E1/E2A: abre un proyecto reciente si su carpeta ya está disponible; si no, reconecta primero
+   * y solo abre si la carpeta reconectada corresponde exactamente a la que el proyecto espera
+   * (comparación por `folderId` opaco, nunca por nombre). */
   const openRecentProject = async (entry: RecentProjectEntry) => {
-    const live = entry.backend === currentBackend && entry.folderKey === currentFolderKey
+    const live = entry.backend === currentBackend && entry.folderId === currentFolderId
       && workspaces.some((workspace) => workspace.id === entry.workspaceId);
     if (live) {
-      recent.recordProjectUse({ workspaceId: entry.workspaceId, name: entry.name, backend: entry.backend, folderKey: entry.folderKey });
+      recent.recordProjectUse({ workspaceId: entry.workspaceId, name: entry.name, backend: entry.backend, folderId: entry.folderId });
       openWorkspace(entry.workspaceId);
       return;
     }
     if (entry.backend === 'memory') return;
-    const folderEntry = recent.folders.find((folder) => folder.key === entry.folderKey);
+    const folderEntry = recent.folders.find((folder) => folder.id === entry.folderId);
     if (!folderEntry) return;
     const result = await reconnectFolderEntry(folderEntry);
-    if (result.ok && result.folder.key === entry.folderKey) {
-      recent.recordProjectUse({ workspaceId: entry.workspaceId, name: entry.name, backend: entry.backend, folderKey: entry.folderKey });
+    if (result.ok && result.folderId === entry.folderId) {
+      recent.recordProjectUse({ workspaceId: entry.workspaceId, name: entry.name, backend: entry.backend, folderId: entry.folderId });
       openWorkspace(entry.workspaceId);
     }
   };
 
-  const folderIsCurrent = (entry: RecentFolderEntry) => session.mode === 'folder' && currentFolderKey === entry.key;
-  type RecentProjectStatus = 'available' | 'reconnect' | 'unavailable' | 'temporary';
-  const projectStatus = (entry: RecentProjectEntry): RecentProjectStatus => {
-    if (entry.backend === currentBackend && entry.folderKey === currentFolderKey && workspaces.some((workspace) => workspace.id === entry.workspaceId)) return 'available';
-    if (entry.backend === 'memory') return 'temporary';
-    if (!recent.folders.some((folder) => folder.key === entry.folderKey)) return 'unavailable';
-    return 'reconnect';
-  };
+  // UX7-E2A: la decisión Disponible/Cargando/No encontrado/Reconectar/No disponible/Temporal es pura
+  // (`resolveProjectStatus`, `session/recentItems.ts`) — aquí solo se le pasan los hechos de esta
+  // pantalla, para poder probar la carrera E2A-02 sin depender de temporizadores reales.
+  const projectStatus = (entry: RecentProjectEntry) => resolveProjectStatus(entry, {
+    currentBackend, currentFolderId, workspacesLoading,
+    knownWorkspaceIds: workspaces.map((workspace) => workspace.id),
+    knownFolderIds: recent.folders.map((folder) => folder.id),
+  });
 
   const importZip = async () => {
     const outcome = await session.importArchive();
@@ -158,7 +206,7 @@ export function HomeScreen() {
       return;
     }
     setCreateError(null);
-    recent.recordProjectUse({ workspaceId: outcome.value.summary.id, name: outcome.value.summary.name, backend: 'memory', folderKey: null });
+    recent.recordProjectUse({ workspaceId: outcome.value.summary.id, name: outcome.value.summary.name, backend: 'memory', folderId: null });
     router.push({ pathname: '/workspace', params: { id: outcome.value.summary.id, notice: outcome.message } });
   };
 
@@ -377,7 +425,7 @@ export function HomeScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={t('home.workspace.open.label', locale, { name: workspace.name })}
                       {...(session.unexported.includes(workspace.id) ? { accessibilityHint: t('home.workspace.unexported.hint', locale) } : {})}
-                      onPress={() => { recent.recordProjectUse({ workspaceId: workspace.id, name: workspace.name, backend: currentBackend, folderKey: currentFolderKey }); openWorkspace(workspace.id); }}
+                      onPress={() => { recent.recordProjectUse({ workspaceId: workspace.id, name: workspace.name, backend: currentBackend, folderId: currentFolderId }); openWorkspace(workspace.id); }}
                       {...actionFocus(`open:${workspace.id}`)}
                       style={[styles.sessionItem, actionBorder(`open:${workspace.id}`)]}
                     >
@@ -461,8 +509,9 @@ export function HomeScreen() {
                               </Pressable>
                             ) : (
                               <Text testID={`recent-project-status-${entry.id}`} style={[styles.actionDescription, { color: colors.textSecondary }]}>
-                                {status === 'temporary'
-                                  ? `${t('home.recent.project.temporary', locale)} · ${t('home.recent.project.temporary.hint', locale)}`
+                                {status === 'loading' ? t('home.recent.project.loading', locale)
+                                  : status === 'missing' ? `${t('home.recent.project.missing', locale)} · ${t('home.recent.project.missing.hint', locale)}`
+                                  : status === 'temporary' ? `${t('home.recent.project.temporary', locale)} · ${t('home.recent.project.temporary.hint', locale)}`
                                   : `${t('home.recent.project.unavailable', locale)} · ${t('home.recent.project.unavailable.hint', locale)}`}
                               </Text>
                             )}
@@ -490,7 +539,7 @@ export function HomeScreen() {
         onClose={() => setTemplateOpen(false)}
         onCreated={(id, name) => {
           setTemplateOpen(false);
-          recent.recordProjectUse({ workspaceId: id, name, backend: currentBackend, folderKey: currentFolderKey });
+          recent.recordProjectUse({ workspaceId: id, name, backend: currentBackend, folderId: currentFolderId });
           openWorkspace(id);
         }}
       />

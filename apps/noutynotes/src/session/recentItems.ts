@@ -1,21 +1,34 @@
 /**
- * Historial local de carpetas y proyectos recientes (UX7-E1). Puro: sin React, DOM ni filesystem —
- * la lectura/escritura real vive en `recentItemsStore.ts`/`.android.ts`, igual que `preferences.ts`
- * frente a `viewPreferencesStore.ts`. Nunca sincroniza con la nube ni guarda contenido de proyectos;
- * solo nombre de presentación, backend y última apertura (ver `Docs/knowledge/UX7-PROJECTS.md`).
+ * Historial local de carpetas y proyectos recientes (UX7-E1, identidad corregida en UX7-E2A). Puro:
+ * sin React, DOM ni filesystem — la lectura/escritura real vive en `recentItemsStore.ts`/`.android.ts`,
+ * igual que `preferences.ts` frente a `viewPreferencesStore.ts`. Nunca sincroniza con la nube ni guarda
+ * contenido de proyectos; solo nombre de presentación, backend y última apertura.
+ *
+ * UX7-E2A — identidad de carpetas: antes de esta corrección, una carpeta web se identificaba por su
+ * `backend:nombre`, así que dos carpetas reales distintas con el mismo nombre («PROYECTOS») compartían
+ * la misma entrada (defecto E2A-01). Ahora cada conexión real recibe un `id` opaco, generado por quien
+ * llama (`recordFolderUse`/`reconnectFolderEntry` en `home/useRecentItems.ts`), nunca derivado del
+ * nombre. Este módulo no decide identidad física — solo almacena lo que la capa de sesión le entrega.
+ * `origin` distingue entradas creadas por este contrato (`'created'`) de las heredadas del formato
+ * anterior de E1 (`'legacy'`, migradas por `parseRegistry` la primera vez que se leen), sin inventar una
+ * equivalencia física que la plataforma no puede demostrar (Android sí tiene una URI SAF estable —
+ * `androidUri` — web no, por diseño: persistir su handle real queda reservado a UX7-E2B).
  */
 
 export type RecentFolderBackend = 'web' | 'android';
 export type RecentProjectBackend = RecentFolderBackend | 'memory';
+export type RecentFolderOrigin = 'created' | 'legacy';
 
 export interface RecentFolderEntry {
+  /** Opaco, generado una vez por conexión real reconocida; nunca derivado del nombre (E2A-01). */
   readonly id: string;
   readonly backend: RecentFolderBackend;
-  /** Nombre de la carpeta (web) o URI SAF (Android) — única señal de identidad disponible sin
-   * persistir handles (reservado a UX7-E2). En web dos carpetas con el mismo nombre comparten
-   * entrada: limitación conocida y documentada, no un intento de huella de ruta. */
-  readonly key: string;
   readonly name: string;
+  /** `'created'`: identidad asignada por el contrato de E2A. `'legacy'`: migrada del formato de E1,
+   * todavía sin una reconexión que la confirme — ver `parseRegistry`. */
+  readonly origin: RecentFolderOrigin;
+  /** URI SAF real y estable (Android); `null` en web, donde no hay handle persistido todavía (E2B). */
+  readonly androidUri: string | null;
   readonly lastUsedAt: number;
 }
 
@@ -24,10 +37,8 @@ export interface RecentProjectEntry {
   readonly workspaceId: string;
   readonly name: string;
   readonly backend: RecentProjectBackend;
-  /** Carpeta a la que pertenece (`RecentFolderEntry.key`); `null` solo para memoria/ZIP, que no
-   * tiene carpeta. Combinado con `workspaceId` evita confundir proyectos homónimos en carpetas
-   * distintas (dos carpetas pueden tener cada una un proyecto "demo"). */
-  readonly folderKey: string | null;
+  /** `RecentFolderEntry.id` al que pertenece; `null` solo para memoria/ZIP, que no tiene carpeta. */
+  readonly folderId: string | null;
   readonly lastUsedAt: number;
 }
 
@@ -46,21 +57,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isValidFolderEntry(value: unknown): value is RecentFolderEntry {
-  if (!isRecord(value)) return false;
-  return typeof value.id === 'string' && (value.backend === 'web' || value.backend === 'android')
-    && typeof value.key === 'string' && typeof value.name === 'string' && typeof value.lastUsedAt === 'number';
+function migrateFolderEntry(value: unknown): RecentFolderEntry | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.lastUsedAt !== 'number') return null;
+  if (value.backend !== 'web' && value.backend !== 'android') return null;
+  if (value.origin === 'created' || value.origin === 'legacy') {
+    const androidUri = typeof value.androidUri === 'string' ? value.androidUri : null;
+    return { id: value.id, backend: value.backend, name: value.name, origin: value.origin, androidUri, lastUsedAt: value.lastUsedAt };
+  }
+  // Formato E1 (sin `origin`): la identidad era `key` (nombre en web, URI SAF en Android). Se conserva
+  // el mismo `id` para que las referencias de proyectos ya guardadas (`migrateProjectEntry`) sigan
+  // resolviendo, pero se marca `'legacy'` — una reconexión real la confirma (UX7-E2A, sección 6).
+  if (typeof value.key !== 'string') return null;
+  return {
+    id: value.id,
+    backend: value.backend,
+    name: value.name,
+    origin: 'legacy',
+    androidUri: value.backend === 'android' ? value.key : null,
+    lastUsedAt: value.lastUsedAt,
+  };
 }
 
-function isValidProjectEntry(value: unknown): value is RecentProjectEntry {
-  if (!isRecord(value)) return false;
-  return typeof value.id === 'string' && typeof value.workspaceId === 'string' && typeof value.name === 'string'
-    && (value.backend === 'web' || value.backend === 'android' || value.backend === 'memory')
-    && (value.folderKey === null || typeof value.folderKey === 'string')
-    && typeof value.lastUsedAt === 'number';
+function migrateProjectEntry(value: unknown): RecentProjectEntry | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== 'string' || typeof value.workspaceId !== 'string' || typeof value.name !== 'string' || typeof value.lastUsedAt !== 'number') return null;
+  if (value.backend !== 'web' && value.backend !== 'android' && value.backend !== 'memory') return null;
+  if ('folderId' in value) {
+    if (value.folderId !== null && typeof value.folderId !== 'string') return null;
+    return { id: value.id, workspaceId: value.workspaceId, name: value.name, backend: value.backend, folderId: value.folderId ?? null, lastUsedAt: value.lastUsedAt };
+  }
+  // Formato E1 (`folderKey`, no `folderId`): el `id` de la carpeta antigua era determinista
+  // (`backend:key`), así que se reconstruye sin inventar una correspondencia nueva — es el mismo
+  // valor que `migrateFolderEntry` conserva para esa misma entrada.
+  if (value.folderKey !== null && typeof value.folderKey !== 'string') return null;
+  const folderId = value.folderKey === null || value.backend === 'memory' ? null : `${value.backend}:${value.folderKey}`;
+  return { id: value.id, workspaceId: value.workspaceId, name: value.name, backend: value.backend, folderId, lastUsedAt: value.lastUsedAt };
 }
 
-/** Lee lo guardado (JSON) sin confiar en él: datos ausentes, corruptos o con forma inválida caen al vacío. */
+/** Lee lo guardado (JSON) con tolerancia y migra el formato E1 la primera vez que lo encuentra. */
 export function parseRegistry(stored: string | null): RecentRegistry {
   let data: unknown = null;
   try {
@@ -69,8 +104,12 @@ export function parseRegistry(stored: string | null): RecentRegistry {
     data = null;
   }
   const record = isRecord(data) ? data : {};
-  const folders = Array.isArray(record.folders) ? record.folders.filter(isValidFolderEntry) : [];
-  const projects = Array.isArray(record.projects) ? record.projects.filter(isValidProjectEntry) : [];
+  const folders = Array.isArray(record.folders)
+    ? record.folders.map(migrateFolderEntry).filter((entry): entry is RecentFolderEntry => entry !== null)
+    : [];
+  const projects = Array.isArray(record.projects)
+    ? record.projects.map(migrateProjectEntry).filter((entry): entry is RecentProjectEntry => entry !== null)
+    : [];
   return { version: 1, folders, projects };
 }
 
@@ -79,21 +118,22 @@ export function serializeRegistry(registry: RecentRegistry): string {
 }
 
 /**
- * Registra el uso de una carpeta. El identificador es determinista (`backend:key`): reabrir la misma
- * carpeta actualiza su entrada en vez de duplicarla; nunca se genera al azar, así que no hace falta
- * un generador de IDs ni una fuente de aleatoriedad para mantener la identidad estable.
+ * Registra o actualiza una carpeta por su `id` exacto — quien llama ya decidió si es una conexión
+ * nueva (id recién generado) o la confirmación de una conocida (mismo id, con evidencia real:
+ * coincidencia de URI en Android, o intención explícita del usuario al reconectar una entrada
+ * concreta en web). Este módulo no decide esa identidad: solo la almacena (UX7-E2A, sección 4/5).
  */
-export function upsertFolder(registry: RecentRegistry, input: { readonly backend: RecentFolderBackend; readonly key: string; readonly name: string }, now: number): RecentRegistry {
-  const id = `${input.backend}:${input.key}`;
-  const entry: RecentFolderEntry = { id, backend: input.backend, key: input.key, name: input.name, lastUsedAt: now };
-  const folders = [entry, ...registry.folders.filter((existing) => existing.id !== id)].slice(0, MAX_ENTRIES);
+export function upsertFolder(registry: RecentRegistry, entry: Omit<RecentFolderEntry, 'lastUsedAt'>, now: number): RecentRegistry {
+  const next: RecentFolderEntry = { ...entry, lastUsedAt: now };
+  const folders = [next, ...registry.folders.filter((existing) => existing.id !== entry.id)].slice(0, MAX_ENTRIES);
   return { ...registry, folders };
 }
 
-/** Igual que `upsertFolder`, combinando backend + carpeta + `workspaceId` para no confundir homónimos. */
-export function upsertProject(registry: RecentRegistry, input: { readonly workspaceId: string; readonly name: string; readonly backend: RecentProjectBackend; readonly folderKey: string | null }, now: number): RecentRegistry {
-  const id = `${input.backend}:${input.folderKey ?? 'memory'}:${input.workspaceId}`;
-  const entry: RecentProjectEntry = { id, workspaceId: input.workspaceId, name: input.name, backend: input.backend, folderKey: input.folderKey, lastUsedAt: now };
+/** Igual que `upsertFolder`; el `id` compuesto (`backend:folderId:workspaceId`) ya usa un `folderId`
+ * opaco, así que dos proyectos homónimos en carpetas distintas nunca colisionan (E2A-03). */
+export function upsertProject(registry: RecentRegistry, input: { readonly workspaceId: string; readonly name: string; readonly backend: RecentProjectBackend; readonly folderId: string | null }, now: number): RecentRegistry {
+  const id = `${input.backend}:${input.folderId ?? 'memory'}:${input.workspaceId}`;
+  const entry: RecentProjectEntry = { id, workspaceId: input.workspaceId, name: input.name, backend: input.backend, folderId: input.folderId, lastUsedAt: now };
   const projects = [entry, ...registry.projects.filter((existing) => existing.id !== id)].slice(0, MAX_ENTRIES);
   return { ...registry, projects };
 }
@@ -107,11 +147,43 @@ export function forgetProject(registry: RecentRegistry, id: string): RecentRegis
   return { ...registry, projects: registry.projects.filter((entry) => entry.id !== id) };
 }
 
-/** Más reciente primero; el orden de guardado no es el de presentación (ADR de este módulo). */
+/** Más reciente primero; el orden de guardado no es el de presentación. */
 export function orderedFolders(registry: RecentRegistry): readonly RecentFolderEntry[] {
   return [...registry.folders].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
 }
 
 export function orderedProjects(registry: RecentRegistry): readonly RecentProjectEntry[] {
   return [...registry.projects].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+}
+
+export type RecentProjectStatus = 'available' | 'loading' | 'missing' | 'reconnect' | 'unavailable' | 'temporary';
+
+/**
+ * UX7-E2A (defecto E2A-02): antes, un proyecto de la carpeta YA conectada podía mostrarse como
+ * «Reconectar» mientras la lista de espacios del backend activo (asíncrona) todavía no había
+ * respondido — una lista sin cargar no es evidencia de que el proyecto o el permiso se perdieron.
+ * Esta función separa explícitamente «cargando» (`loading`) de «la carpeta correcta ya respondió y el
+ * proyecto no está» (`missing`), y es pura para poder probar la carrera de forma determinista, sin
+ * depender de los tiempos reales de un selector de carpetas o de Playwright.
+ *
+ * Memoria no sufre esta carrera (`ArchiveStorage.list()` resuelve de forma síncrona en la práctica) y
+ * conserva su contrato simple de UX7-E1: disponible solo dentro de la misma sesión en memoria.
+ */
+export function resolveProjectStatus(entry: RecentProjectEntry, context: {
+  readonly currentBackend: RecentProjectBackend;
+  readonly currentFolderId: string | null;
+  readonly knownWorkspaceIds: readonly string[];
+  readonly workspacesLoading: boolean;
+  readonly knownFolderIds: readonly string[];
+}): RecentProjectStatus {
+  if (entry.backend === 'memory') {
+    return context.currentBackend === 'memory' && context.knownWorkspaceIds.includes(entry.workspaceId) ? 'available' : 'temporary';
+  }
+  const sameFolder = context.currentFolderId !== null && entry.backend === context.currentBackend && entry.folderId === context.currentFolderId;
+  if (sameFolder) {
+    if (context.workspacesLoading) return 'loading';
+    return context.knownWorkspaceIds.includes(entry.workspaceId) ? 'available' : 'missing';
+  }
+  if (entry.folderId === null || !context.knownFolderIds.includes(entry.folderId)) return 'unavailable';
+  return 'reconnect';
 }
