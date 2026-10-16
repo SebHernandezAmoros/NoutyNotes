@@ -5,11 +5,12 @@ import type { AssetEntry, AssetKind, WorkspaceStorageResult } from '@noutynotes/
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
 import type { Locale } from '@noutynotes/ui';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { t } from '../i18n';
+import { isPdfFileName, isPdfSignature } from '../session/assetMime';
 import { activateCustomFont, supportsCustomFont } from '../session/customFont';
 import { downloadAssetFile, supportsAssetDownload } from '../session/downloadAsset';
 import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
@@ -20,6 +21,8 @@ import { openAssetFile, supportsOpenAsset } from '../session/openAsset';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
 import type { ViewPreferences } from './canvas/preferences';
 import { dataUri } from './dataUri';
+import { PdfPreview } from './PdfPreview';
+import type { PdfPreviewState } from './PdfPreview';
 import { useEscapeBack } from './useEscapeBack';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
@@ -271,6 +274,44 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     }
     openAssetFile(entry.name, read.value);
   };
+
+  // UX7-F: vista previa de PDF embebida (no sale de Assets ni del Workspace). `requestId` descarta una
+  // lectura en curso si se abre otro documento o se cierra el visor mientras tanto (PDF-05/06); el
+  // Blob URL anterior se revoca en el propio `useEffect` de limpieza, nunca aquí directamente.
+  // `pdfPreviewRaw` recuerda a qué workspace pertenece; `pdfPreview` (derivado, no estado propio) se
+  // anula solo con que `workspace.id` ya no coincida — así cambiar de proyecto nunca deja visible un
+  // PDF del Workspace anterior (sección 6 del encargo) sin tocar refs ni `setState` durante el render
+  // ni dentro de un efecto (ambos patrones prohibidos por las reglas de hooks de este proyecto).
+  const [pdfPreviewRaw, setPdfPreviewRaw] = useState<{ readonly workspaceId: string; readonly state: PdfPreviewState } | null>(null);
+  const pdfPreview = pdfPreviewRaw && pdfPreviewRaw.workspaceId === workspace.id ? pdfPreviewRaw.state : null;
+  const pdfRequestRef = useRef(0);
+  useEffect(() => {
+    if (pdfPreview?.status !== 'ready') return undefined;
+    const url = pdfPreview.url;
+    return () => URL.revokeObjectURL(url);
+  }, [pdfPreview]);
+  const openPdfPreview = async (entry: AssetEntry) => {
+    if (!assets) return;
+    const requestId = ++pdfRequestRef.current;
+    const workspaceId = workspace.id;
+    setPdfPreviewRaw({ workspaceId, state: { status: 'loading', name: entry.name } });
+    const read = await assets.readAsset(workspaceId, entry.ref as AssetRef);
+    if (pdfRequestRef.current !== requestId) return; // se cerró o se abrió otro documento mientras tanto
+    if (!read.ok) {
+      setPdfPreviewRaw({ workspaceId, state: { status: 'error', name: entry.name, message: read.issues[0]?.message ?? t('assets.error.readFailed', locale) } });
+      return;
+    }
+    if (!isPdfSignature(read.value)) {
+      setPdfPreviewRaw({ workspaceId, state: { status: 'error', name: entry.name, message: t('assets.pdf.error.invalid', locale) } });
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([read.value as BlobPart], { type: 'application/pdf' }));
+    setPdfPreviewRaw({ workspaceId, state: { status: 'ready', name: entry.name, url } });
+  };
+  const closePdfPreview = () => {
+    pdfRequestRef.current += 1;
+    setPdfPreviewRaw(null);
+  };
   const download = async (entry: AssetEntry) => {
     if (!assets) return;
     const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
@@ -332,6 +373,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         {Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard ? (
           <ActionButton label={copied ? t('assets.copyPath.copied', locale) : t('assets.copyPath', locale)} accessibilityLabel={t('assets.copyPath.accessibilityLabel', locale, { ref: current.ref })} onPress={() => void copy(current.ref)} />
         ) : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.copyPath.hint', locale)}</Text>}
+        {current.kind === 'document' && isPdfFileName(current.name) && !current.missing && Platform.OS === 'web' ? (
+          <ActionButton label={t('assets.pdf.preview.label', locale)} accessibilityLabel={t('assets.pdf.preview.accessibilityLabel', locale, { name: current.name })} onPress={() => void openPdfPreview(current)} />
+        ) : null}
         {!current.missing && supportsAssetDownload() ? (
           <ActionButton label={t('assets.download', locale)} accessibilityLabel={t('assets.download.accessibilityLabel', locale, { name: current.name })} onPress={() => void download(current)} />
         ) : null}
@@ -483,6 +527,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
           </ScrollView>
         </>
       )}
+      <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} />
     </View>
   );
 }
