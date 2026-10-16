@@ -11,7 +11,8 @@ import { useHydrated } from '../components/useHydrated';
 import { chooseAndroidFolder, forgetAndroidFolder, readSavedAndroidFolder, rememberAndroidFolder, reopenAndroidFolder, supportsAndroidFolders } from './androidFolder';
 import type { SavedFolder } from './androidFolder';
 import { downloadFile, pickZipFile, supportsArchiveFiles } from './archiveFiles';
-import { chooseFolder, supportsFolderAccess } from './folderAccess';
+import { chooseFolder, storageForHandle, supportsFolderAccess } from './folderAccess';
+import type { BrowserDirectory } from './folderAccess';
 import { chooseFolderInto, reopenRememberedInto } from './folderSession';
 import type { FolderState } from './folderSession';
 import { describeImport, describeImportFailure } from './messages';
@@ -30,12 +31,18 @@ interface Session {
   readonly archiveSupported: boolean;
   /** Espacios del navegador con cambios que no se han exportado a ZIP. */
   readonly unexported: readonly WorkspaceId[];
-  connectFolder(): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }>;
+  /** `webHandle` solo en éxito en web — identidad física real del handle recién elegido (UX7-E2A/B):
+   * sirve para comparar con `isSameEntry()` y, si corresponde, guardarlo para una reconexión futura. */
+  connectFolder(): Promise<{ ok: true; folder: { key: string; name: string }; webHandle: BrowserDirectory | null } | { ok: false; message: string }>;
+  /** UX7-E2B: conecta directamente un handle web ya obtenido (recordado o recién verificado), sin
+   * abrir el selector nativo. Misma garantía que `connectFolder`: solo cambia la sesión si `list()`
+   * de esa carpeta responde bien. */
+  connectFolderWithHandle(handle: BrowserDirectory): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }>;
   /** Android: carpeta elegida en una sesión anterior que se puede reabrir (ADR 0012). */
   readonly savedFolder: SavedFolder | null;
   /** Identidad local de la carpeta conectada ahora mismo (nombre en web, URI SAF en Android); `null`
    * en modo memoria. No persiste entre cargas — solo indica "ya conectada en esta sesión" para el
-   * historial de recientes (UX7-E1); persistir el handle real queda reservado a UX7-E2. */
+   * historial de recientes (UX7-E1). */
   readonly activeFolderKey: string | null;
   reconnectFolder(): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }>;
   /** `null` si el usuario cancela el selector. */
@@ -86,11 +93,12 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   };
 
   /** La sesión y la carpeta recordada solo cambian si la carpeta elegida se lee bien (folderSession.ts). */
-  const connectFolder = async (): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
-    // UX7-E1: captura por cierre la identidad de la carpeta elegida (nombre web / URI Android) para
-    // registrarla en el historial de recientes solo si `chooseFolderInto` confirma el éxito debajo.
-    // `box` evita la pérdida de estrechamiento de TypeScript sobre un `let` reasignado en un cierre.
-    const box: { chosen: { key: string; name: string } | null } = { chosen: null };
+  const connectFolder = async (): Promise<{ ok: true; folder: { key: string; name: string }; webHandle: BrowserDirectory | null } | { ok: false; message: string }> => {
+    // UX7-E1/E2B: captura por cierre la identidad de la carpeta elegida (nombre web / URI Android) y,
+    // en web, el handle real, para registrarla en Recientes y permitir guardarlo solo si
+    // `chooseFolderInto` confirma el éxito debajo. `box` evita la pérdida de estrechamiento de
+    // TypeScript sobre un `let` reasignado en un cierre.
+    const box: { chosen: { key: string; name: string } | null; webHandle: BrowserDirectory | null } = { chosen: null, webHandle: null };
     const choose = async () => {
       if (supportsAndroidFolders()) {
         const picked = await chooseAndroidFolder();
@@ -98,7 +106,10 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
         return picked;
       }
       const selected = await chooseFolder();
-      if (selected) box.chosen = { key: selected.name, name: selected.name };
+      if (selected) {
+        box.chosen = { key: selected.name, name: selected.name };
+        box.webHandle = selected.handle;
+      }
       return selected ? { storage: selected.storage, folder: null } : null;
     };
     const { state, result } = await chooseFolderInto({ storage, mode, saved: savedFolder }, choose, memory);
@@ -106,7 +117,19 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
     if (!result.ok) return result;
     if (!box.chosen) return { ok: false, message: 'No se pudo identificar la carpeta elegida.' };
     setActiveFolderKey(box.chosen.key);
-    return { ok: true, folder: box.chosen };
+    return { ok: true, folder: box.chosen, webHandle: box.webHandle };
+  };
+
+  /** UX7-E2B: igual que `connectFolder`, pero partiendo de un handle web ya obtenido (recordado en
+   * IndexedDB o recién verificado) — nunca abre el selector nativo. */
+  const connectFolderWithHandle = async (handle: BrowserDirectory): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
+    const candidate = storageForHandle(handle);
+    const listed = await candidate.list();
+    if (!listed.ok) return { ok: false, message: listed.issues[0]?.message ?? 'No se pudo leer la carpeta.' };
+    setStorage(candidate);
+    setMode('folder');
+    setActiveFolderKey(handle.name);
+    return { ok: true, folder: { key: handle.name, name: handle.name } };
   };
 
   /** Android: reabre la carpeta recordada; solo la olvida si se confirma la pérdida de acceso. */
@@ -166,7 +189,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
     <StorageContext.Provider value={{
       storage, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
       savedFolder: mode === 'memory' ? savedFolder : null, activeFolderKey: mode === 'folder' ? activeFolderKey : null, reconnectFolder,
-      unexported: mode === 'memory' ? unexported : [], connectFolder, importArchive, exportArchive, confirmExported,
+      unexported: mode === 'memory' ? unexported : [], connectFolder, connectFolderWithHandle, importArchive, exportArchive, confirmExported,
     }}
     >
       {children}

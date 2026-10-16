@@ -11,13 +11,12 @@ import { BrandMark } from '../components/BrandMark';
 import { TextField } from '../components/controls';
 import { useHydrated } from '../components/useHydrated';
 import { t } from '../i18n';
-import { resolveProjectStatus } from '../session/recentItems';
-import type { RecentFolderEntry, RecentProjectBackend, RecentProjectEntry } from '../session/recentItems';
+import type { RecentFolderEntry, RecentProjectEntry } from '../session/recentItems';
 import { describeFailure } from '../session/messages';
+import { useRecentConnections } from '../session/useRecentConnections';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions, singleFlight } from './actions';
 import { TemplatePicker } from './TemplatePicker';
-import { newFolderId, useRecentItems } from './useRecentItems';
 
 const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' | 'settings.theme.dark' | 'settings.theme.system'; accessibilityLabelKey: 'home.theme.light.label' | 'home.theme.dark.label' | 'home.theme.system.label' }[] = [
   { value: 'light', labelKey: 'settings.theme.light', accessibilityLabelKey: 'home.theme.light.label' },
@@ -55,18 +54,10 @@ export function HomeScreen() {
   const storage = useWorkspaceStorage();
   const session = useWorkspaceSession();
   const { workspaces, loading: workspacesLoading } = useSessionWorkspaces();
-  const recent = useRecentItems();
-  // UX7-E1: identidad del backend/carpeta activos, para registrar uso y para saber qué recientes
-  // ya están disponibles ahora mismo sin necesitar reconexión.
-  const currentBackend: RecentProjectBackend = session.mode === 'memory' ? 'memory' : (Platform.OS === 'web' ? 'web' : 'android');
-  // UX7-E2A: `session.activeFolderKey` es la señal cruda de la sesión (nombre en web, URI en Android;
-  // no persiste entre recargas). Aquí solo se usa para encontrar, entre los recientes YA GUARDADOS,
-  // cuál corresponde a la conexión activa — una comparación de conveniencia dentro de la sesión viva,
-  // no la identidad persistida (esa es siempre `entry.id`, opaco, nunca derivado del nombre: E2A-01).
-  const folderIsCurrent = (entry: RecentFolderEntry) => session.mode === 'folder' && (
-    entry.backend === 'android' ? entry.androidUri === session.activeFolderKey : entry.name === session.activeFolderKey
-  );
-  const currentFolderId = session.mode === 'folder' ? (recent.folders.find(folderIsCurrent)?.id ?? null) : null;
+  // UX7-E2B: identidad de carpetas, Recientes y reconexión por evidencia real — compartido con el
+  // catálogo de `ProjectSheet` (UX7-E2C) en `WorkspaceScreen.tsx`.
+  const recent = useRecentConnections();
+  const { currentBackend, currentFolderId } = recent;
   const [draftName, setDraftName] = useState('');
   // En el HTML estático el campo no admite escritura: el render del cliente la perdería.
   const hydrated = useHydrated();
@@ -104,31 +95,10 @@ export function HomeScreen() {
     }
   };
 
-  /**
-   * UX7-E2A: registra una conexión de carpeta reutilizando una entrada ya conocida solo cuando hay
-   * evidencia real: coincidencia de URI SAF (Android, prueba física verificable por la plataforma) o,
-   * si la conexión partió del botón «Reconectar» de una entrada concreta (`expectedEntryId`),
-   * coincidencia de nombre con ESA entrada exacta — intención explícita del usuario sobre un registro
-   * conocido, nunca una fusión automática entre dos conexiones distintas que solo comparten nombre
-   * (el defecto E2A-01: dos carpetas reales llamadas igual nunca deben compartir identidad). Cualquier
-   * otra conexión (el botón genérico «Abrir/Cambiar carpeta») recibe un id opaco nuevo.
-   */
-  const registerFolderConnection = (info: { readonly backend: 'web' | 'android'; readonly name: string; readonly androidUri: string | null }, expectedEntryId?: string): string => {
-    const byUri = info.androidUri !== null ? recent.folders.find((entry) => entry.androidUri === info.androidUri) : undefined;
-    const byExpectedName = !byUri && expectedEntryId
-      ? recent.folders.find((entry) => entry.id === expectedEntryId && entry.name === info.name)
-      : undefined;
-    const reused = byUri ?? byExpectedName;
-    const id = reused?.id ?? newFolderId(info.backend);
-    recent.recordFolderUse({ id, backend: info.backend, name: info.name, origin: 'created', androidUri: info.androidUri });
-    return id;
-  };
-
-  /** `expectedEntryId`: presente solo cuando la conexión partió de «Reconectar» sobre una entrada
-   * concreta — ver `registerFolderConnection`. */
-  const openFolder = async (expectedEntryId?: string): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
-    // Abrir una carpeta cambia el almacenamiento de la sesión: los espacios del navegador sin exportar
-    // dejarían de estar disponibles, así que nunca se descartan sin confirmación (ADR 0011).
+  /** Abrir una carpeta cambia el almacenamiento de la sesión: los espacios del navegador sin exportar
+   * dejarían de estar disponibles, así que nunca se descartan sin confirmación (ADR 0011). La
+   * identidad/reconexión real vive en `useRecentConnections` (UX7-E2A/B), compartida con `ProjectSheet`. */
+  const openFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
     const pending = session.unexported.length;
     if (pending > 0 && Platform.OS === 'web') {
       const pendingText = t(pending === 1 ? 'home.openFolder.pending.one' : 'home.openFolder.pending.many', locale, { count: String(pending) });
@@ -139,38 +109,26 @@ export function HomeScreen() {
         return { ok: false, message };
       }
     }
-    const result = await session.connectFolder();
-    if (!result.ok) {
-      setCreateError(result.message);
-      return result;
-    }
-    setCreateError(null);
-    const backend: 'web' | 'android' = Platform.OS === 'web' ? 'web' : 'android';
-    const folderId = registerFolderConnection({ backend, name: result.folder.name, androidUri: backend === 'web' ? null : result.folder.key }, expectedEntryId);
-    return { ok: true, folderId };
+    const result = await recent.connectNewFolder();
+    setCreateError(result.ok ? null : result.message);
+    return result;
   };
 
   const reopenFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
-    const result = await session.reconnectFolder();
-    if (!result.ok) {
-      setCreateError(result.message);
-      return result;
-    }
-    setCreateError(null);
-    const folderId = registerFolderConnection({ backend: 'android', name: result.folder.name, androidUri: result.folder.key });
-    return { ok: true, folderId };
+    const result = await recent.reopenSavedAndroidFolder();
+    setCreateError(result.ok ? null : result.message);
+    return result;
   };
 
-  /** UX7-E1/E2A: reconectar una carpeta concreta de Recientes — silenciosa si Android ya la recuerda,
-   * si no abre el selector habitual pasando el id de la entrada como pista de intención explícita;
-   * nunca asocia una carpeta distinta a la entrada pulsada si la evidencia no corresponde. */
-  const reconnectFolderEntry = (entry: RecentFolderEntry) => (
-    entry.backend === 'android' && session.savedFolder?.uri === entry.androidUri ? reopenFolder() : openFolder(entry.id)
-  );
+  const reconnectFolderEntry = async (entry: RecentFolderEntry) => {
+    const result = await recent.reconnectFolderEntry(entry);
+    setCreateError(result.ok ? null : result.message);
+    return result;
+  };
 
-  /** UX7-E1/E2A: abre un proyecto reciente si su carpeta ya está disponible; si no, reconecta primero
-   * y solo abre si la carpeta reconectada corresponde exactamente a la que el proyecto espera
-   * (comparación por `folderId` opaco, nunca por nombre). */
+  /** UX7-E1/E2B: abre un proyecto reciente si su carpeta ya está disponible; si no, reconecta primero
+   * (handle guardado, URI SAF o selector nativo, según corresponda) y solo abre si la carpeta
+   * reconectada corresponde exactamente a la que el proyecto espera (`folderId` opaco, nunca nombre). */
   const openRecentProject = async (entry: RecentProjectEntry) => {
     const live = entry.backend === currentBackend && entry.folderId === currentFolderId
       && workspaces.some((workspace) => workspace.id === entry.workspaceId);
@@ -189,14 +147,7 @@ export function HomeScreen() {
     }
   };
 
-  // UX7-E2A: la decisión Disponible/Cargando/No encontrado/Reconectar/No disponible/Temporal es pura
-  // (`resolveProjectStatus`, `session/recentItems.ts`) — aquí solo se le pasan los hechos de esta
-  // pantalla, para poder probar la carrera E2A-02 sin depender de temporizadores reales.
-  const projectStatus = (entry: RecentProjectEntry) => resolveProjectStatus(entry, {
-    currentBackend, currentFolderId, workspacesLoading,
-    knownWorkspaceIds: workspaces.map((workspace) => workspace.id),
-    knownFolderIds: recent.folders.map((folder) => folder.id),
-  });
+  const projectStatus = (entry: RecentProjectEntry) => recent.projectStatus(entry, workspaces.map((workspace) => workspace.id), workspacesLoading);
 
   const importZip = async () => {
     const outcome = await session.importArchive();
@@ -445,7 +396,7 @@ export function HomeScreen() {
                     <View style={styles.recentGroup}>
                       <Text style={[styles.recentGroupTitle, { color: colors.textSecondary }]}>{t('home.recent.folders.title', locale)}</Text>
                       {recent.folders.map((entry) => {
-                        const current = folderIsCurrent(entry);
+                        const current = entry.id === currentFolderId;
                         return (
                           <View key={entry.id} testID={`recent-folder-${entry.id}`} style={[styles.recentItem, { borderColor: colors.gridLine }]}>
                             <View style={styles.recentItemHeader}>

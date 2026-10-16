@@ -7,7 +7,9 @@ interface BrowserFile {
   getFile(): Promise<File>;
   createWritable(): Promise<{ write(data: Uint8Array): Promise<void>; close(): Promise<void> }>;
 }
-interface BrowserDirectory {
+/** También es el tipo real `FileSystemDirectoryHandle` en tiempo de ejecución (clonable
+ * estructuralmente, por eso puede guardarse en IndexedDB — ver `folderHandles.ts`, UX7-E2B). */
+export interface BrowserDirectory {
   kind: 'directory';
   name: string;
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<BrowserDirectory>;
@@ -15,6 +17,9 @@ interface BrowserDirectory {
   removeEntry(name: string): Promise<void>;
   entries(): AsyncIterable<[string, BrowserDirectory | { kind: 'file' }]>;
   queryPermission(options: { mode: 'readwrite' }): Promise<Permission>;
+  requestPermission(options: { mode: 'readwrite' }): Promise<Permission>;
+  /** Única prueba real de identidad física entre dos handles — nunca el nombre (UX7-E2A/D73). */
+  isSameEntry(other: BrowserDirectory): Promise<boolean>;
 }
 
 const parts = (path: string): string[] => path.split('/');
@@ -101,13 +106,48 @@ export function supportsFolderAccess(): boolean {
 }
 
 /**
- * Solo se invoca desde el gesto del botón; el handle no se guarda entre sesiones (persistirlo con
- * IndexedDB queda reservado a UX7-E2). El nombre de la carpeta sí se expone — ya estaba disponible en
- * el propio handle — para que la sesión pueda registrar el uso en el historial de recientes (UX7-E1).
+ * Solo se invoca desde el gesto del botón. El nombre y el handle se exponen — ya estaban disponibles
+ * en el objeto devuelto por el navegador — para que la sesión registre el uso en Recientes (UX7-E1) y,
+ * si corresponde, guarde el handle para una reconexión silenciosa futura (UX7-E2B).
  */
-export async function chooseFolder(): Promise<{ readonly storage: FolderStorage; readonly name: string } | null> {
+export async function chooseFolder(): Promise<{ readonly storage: FolderStorage; readonly name: string; readonly handle: BrowserDirectory } | null> {
   if (!supportsFolderAccess()) return null;
   const picker = (globalThis as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<BrowserDirectory> }).showDirectoryPicker;
   const root = await picker({ mode: 'readwrite' });
-  return { storage: new FolderStorage(new BrowserFolderPort(root)), name: root.name };
+  return { storage: storageForHandle(root), name: root.name, handle: root };
+}
+
+/** Misma envoltura que usa `chooseFolder`, reutilizable sobre un handle ya obtenido (recordado o
+ * recién verificado) sin volver a abrir el selector nativo. */
+export function storageForHandle(handle: BrowserDirectory): FolderStorage {
+  return new FolderStorage(new BrowserFolderPort(handle));
+}
+
+/**
+ * UX7-E2B: reabre un handle guardado sin selector nativo. Primero consulta el permiso (sin gesto); si
+ * no está concedido, lo solicita (requiere el gesto del usuario que ya disparó esta llamada — un clic
+ * en «Reconectar»). El navegador decide cuánta UI mostrar: nada si ya hay un permiso persistente, o un
+ * aviso ligero propio — nunca el selector de carpetas completo.
+ */
+export async function reopenHandle(handle: BrowserDirectory): Promise<
+  | { readonly ok: true; readonly storage: FolderStorage; readonly name: string }
+  | { readonly ok: false; readonly reason: 'denied' | 'invalid' }
+> {
+  try {
+    let permission = await handle.queryPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' });
+    if (permission !== 'granted') return { ok: false, reason: 'denied' };
+    return { ok: true, storage: storageForHandle(handle), name: handle.name };
+  } catch {
+    return { ok: false, reason: 'invalid' };
+  }
+}
+
+/** Única comparación de identidad física admitida (UX7-E2A/D73): nunca por nombre. */
+export async function sameEntry(a: BrowserDirectory, b: BrowserDirectory): Promise<boolean> {
+  try {
+    return await a.isSameEntry(b);
+  } catch {
+    return false;
+  }
 }

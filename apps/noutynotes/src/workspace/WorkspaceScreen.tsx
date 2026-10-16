@@ -31,6 +31,8 @@ import { printHtmlNative, supportsNativePrint } from '../session/printNative';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
+import { useRecentConnections } from '../session/useRecentConnections';
+import type { RecentProjectEntry } from '../session/recentItems';
 import { Board } from './Board';
 import { BoardRail } from './BoardTabs';
 import { BoardActionsDialog } from './BoardActionsDialog';
@@ -299,6 +301,34 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const openSpace = async (target: string) => {
     if (target === id || !await flushPendingText() || !await flushWorkspace()) return;
     router.replace({ pathname: '/workspace', params: { id: target } });
+  };
+
+  // UX7-E2C/D: identidad de carpetas, Recientes y reconexión por evidencia real — mismo hook que
+  // HomeScreen.tsx (UX7-E2A/B), para que el catálogo de `ProjectSheet` no duplique esa lógica.
+  const recentConnections = useRecentConnections();
+
+  /** UX7-E2D: un proyecto creado desde el panel permanece en la carpeta activa — ningún cambio de
+   * backend, así que basta reutilizar `openSpace` (ya protege el borrador del proyecto anterior). */
+  const onProjectCreated = (projectId: string, name: string) => {
+    recentConnections.recordProjectUse({ workspaceId: projectId, name, backend: recentConnections.currentBackend, folderId: recentConnections.currentFolderId });
+    void openSpace(projectId);
+  };
+
+  /** UX7-E2C: abrir un proyecto reciente de otra carpeta — protege primero la edición pendiente (igual
+   * que `openSpace`/`goHome`), reconecta esa carpeta concreta y solo navega si la reconexión
+   * corresponde exactamente a la que el proyecto espera (nunca por coincidencia de nombre). Si falla
+   * en cualquier punto, la sesión original queda intacta. */
+  const onOpenOtherProject = async (entry: RecentProjectEntry) => {
+    if (!await flushPendingText() || !await flushWorkspace()) return;
+    if (entry.backend !== 'memory') {
+      const folderEntry = recentConnections.folders.find((folder) => folder.id === entry.folderId);
+      if (!folderEntry) { setFeedback({ tone: 'error', text: t('project.sheet.other.reconnect.failed', locale) }); return; }
+      const result = await recentConnections.reconnectFolderEntry(folderEntry);
+      if (!result.ok) { setFeedback({ tone: 'error', text: result.message }); return; }
+      if (result.folderId !== entry.folderId) return; // carpeta distinta elegida: no abrir por error.
+    }
+    recentConnections.recordProjectUse({ workspaceId: entry.workspaceId, name: entry.name, backend: entry.backend, folderId: entry.folderId });
+    router.replace({ pathname: '/workspace', params: { id: entry.workspaceId } });
   };
 
   // Guardar ahora (UX7-SAVE): la misma infraestructura real que ya usan `goHome`/`openSpace` —
@@ -1837,7 +1867,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       </View>
       {workspace ? (
         <>
-          <ProjectSheet projects={summaries} currentId={id} onOpen={(next) => void openSpace(next)} onCreate={() => void goHome()} visible={projectsOpen} onClose={() => setProjectsOpen(false)} />
+          <ProjectSheet
+            projects={summaries}
+            currentId={id}
+            onOpen={(next) => void openSpace(next)}
+            storage={session.storage}
+            onCreated={onProjectCreated}
+            onOpenOtherProject={(entry) => void onOpenOtherProject(entry)}
+            locale={locale}
+            visible={projectsOpen}
+            onClose={() => setProjectsOpen(false)}
+          />
           {boardOrganizerOpen ? (
             <BoardOrganizerDialog
               boards={workspace.boards}

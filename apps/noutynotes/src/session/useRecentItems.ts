@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react';
 import {
   forgetFolder, forgetProject, orderedFolders, orderedProjects,
   parseRegistry, serializeRegistry, upsertFolder, upsertProject,
-} from '../session/recentItems';
+} from './recentItems';
 import type {
   RecentFolderBackend, RecentFolderEntry, RecentFolderOrigin, RecentProjectBackend, RecentProjectEntry, RecentRegistry,
-} from '../session/recentItems';
-import { loadRecentItems, saveRecentItems } from '../session/recentItemsStore';
+} from './recentItems';
+import { loadRecentItems, saveRecentItems } from './recentItemsStore';
 
 export interface RecentItemsApi {
   /** Ya ordenados por última apertura (más reciente primero). */
@@ -15,8 +15,8 @@ export interface RecentItemsApi {
   readonly projects: readonly RecentProjectEntry[];
   /** Registra o confirma una carpeta por su `id` exacto (UX7-E2A): quien llama decide si es una
    * conexión nueva (id recién generado, `origin:'created'`) o la confirmación de una entrada conocida
-   * (mismo id, tras verificar evidencia real — ver `reconnectFolderEntry` en `HomeScreen.tsx`). Este
-   * hook no inventa esa identidad, solo la almacena. */
+   * (mismo id, tras verificar evidencia real — ver `useRecentConnections` en `session/`). Este hook no
+   * inventa esa identidad, solo la almacena. */
   recordFolderUse(input: { readonly id: string; readonly backend: RecentFolderBackend; readonly name: string; readonly origin: RecentFolderOrigin; readonly androidUri: string | null }): void;
   recordProjectUse(input: { readonly workspaceId: string; readonly name: string; readonly backend: RecentProjectBackend; readonly folderId: string | null }): void;
   forgetFolderEntry(id: string): void;
@@ -33,7 +33,8 @@ export function newFolderId(backend: RecentFolderBackend): string {
  * Historial local de recientes (UX7-E1, identidad corregida en UX7-E2A): mismo patrón de
  * inicialización perezosa que `ViewPreferences` en `WorkspaceScreen.tsx`
  * (`useState(() => parsePreferences(loadViewPreferences()))`). Cada mutación persiste de inmediato;
- * nunca se registra un intento fallido ni un render repetido.
+ * nunca se registra un intento fallido ni un render repetido. Vive en `session/` (no en `home/`)
+ * porque `WorkspaceScreen.tsx` también lo consume desde UX7-E2C (catálogo global en `ProjectSheet`).
  */
 export function useRecentItems(): RecentItemsApi {
   const [registry, setRegistry] = useState<RecentRegistry>(() => parseRegistry(loadRecentItems()));
