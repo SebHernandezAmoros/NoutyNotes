@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addAssetToBoard, addNoteImage, addCardToBoard, buildAssetCatalog, createEmptyWorkspaceNamed, deleteUnusedAssets, editCardContent, importAssetImage,
-  importImageCard, importLibraryFile, importLibraryFont, noteImageRefs, removeNoteBlock, replaceAsset,
+  importImageCard, importImageCardAt, importLibraryFile, importLibraryFont, noteImageRefs, removeNoteBlock, replaceAsset,
 } from '../../packages/application/src/index';
 import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { AssetRef, WorkspaceId } from '../../packages/domain/src/index';
@@ -66,6 +66,31 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     expect(refused).toEqual({ removed: [ref], inUse: [replaced], failed: [] });
     expect((await storage.readAsset(id, ref as AssetRef)).ok).toBe(false);
     expect((await storage.readAsset(id, replaced as AssetRef)).ok).toBe(true);
+  });
+
+  it('importar con posición (UX7.1-IMAGES-FIX, pegar en el Canvas/menú contextual): escribe el archivo y coloca la tarjeta cerca del punto indicado', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Galería'));
+    const cardId = ok(await importImageCardAt(storage, storage, id, { bytes: PNG, fileName: 'captura.png', near: { x: 3, y: 2, columns: 2 } }));
+    const opened = ok(await storage.open(id));
+    const card = opened.cards.find((candidate) => candidate.id === cardId);
+    expect(card?.assetRefs).toEqual(['assets/images/captura.png']);
+    expect(ok(await storage.readAsset(id, 'assets/images/captura.png' as AssetRef))).toEqual(PNG);
+    const placement = opened.layouts[0]?.placements.find((candidate) => candidate.cardId === cardId);
+    expect(placement?.rect.x).toBe(3);
+    expect(placement?.rect.y).toBe(2);
+  });
+
+  it('importar con posición: un formato inválido no escribe nada; si la colocación falla, se retira el archivo recién escrito sin dejar huérfano', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Galería'));
+    const invalid = await importImageCardAt(storage, storage, id, { bytes: new TextEncoder().encode('hola'), fileName: 'x.png' });
+    expect(invalid.ok ? null : invalid.issues[0]?.code).toBe('invalid-asset');
+    expect(ok(await storage.listAssets(id))).toEqual([]);
+
+    const failed = await importImageCardAt(storage, storage, id, { bytes: PNG, fileName: 'captura.png', near: { x: 0, y: 0, columns: 0 } });
+    expect(failed.ok).toBe(false);
+    expect(ok(await storage.listAssets(id))).toEqual([]);
   });
 
   it('reemplazar con un archivo que no es imagen no escribe nada; si no se guarda, se retira el nuevo', async () => {

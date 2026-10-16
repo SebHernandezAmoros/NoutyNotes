@@ -1,6 +1,6 @@
-import type { RichTextCodec } from '@noutynotes/application';
+import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { cardTitleText } from '@noutynotes/domain';
-import type { Card, RichTextDocument } from '@noutynotes/domain';
+import type { AssetRef, Card, CardId, RichTextDocument, RichTextImage } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -9,14 +9,17 @@ import { ActionButton, TextField } from '../../components/controls';
 import { AppIcon } from '../../components/AppIcon';
 import { DialogCloseButton } from '../../components/Dialog';
 import { t } from '../../i18n';
+import { pickImageFile, supportsImageImport } from '../../session/imageFiles';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import type { EditableCardDraft } from '../editorialDraft';
+import { resolveMarkdownImagePlace } from '../noteImagePlacement';
+import type { MarkdownImagePlace, NoteImageSource, ResolvedNoteImageSource, VisualImagePlace } from '../noteImagePlacement';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
 
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
-interface InlineCardEditorProps {
+export interface InlineCardEditorProps {
   readonly card: Card;
   readonly box: ScreenBox;
   readonly richTextCodec: RichTextCodec;
@@ -28,13 +31,19 @@ interface InlineCardEditorProps {
   readonly initialDraft?: EditableCardDraft | undefined;
   readonly onDraftChange: (draft: EditableCardDraft) => void;
   readonly onSave: (draft: EditableCardDraft) => Promise<boolean>;
+  /** UX7.1-IMAGES (ASSET-04/06/07): edición rápida no tiene acceso a `storage`; estas tres vías
+   * estrechas (en vez de un `run` genérico) le dan justo lo que necesita para insertar una imagen
+   * nueva, una ya catalogada o una recién pegada — mismas operaciones que usa el Inspector completo. */
+  readonly onPickAssetImageRef: () => Promise<string | null>;
+  readonly onPlaceImage: (cardId: CardId, place: MarkdownImagePlace, content: string, source: ResolvedNoteImageSource) => Promise<WorkspaceStorageResult<{ readonly content: string; readonly ref: AssetRef }>>;
+  readonly onPlaceImageDocument: (cardId: CardId, place: VisualImagePlace, contentDocument: RichTextDocument, source: ResolvedNoteImageSource) => Promise<WorkspaceStorageResult<{ readonly contentDocument: RichTextDocument; readonly ref: AssetRef }>>;
   readonly onAdvanced: () => void;
   readonly onCollapse: () => void;
   readonly onClose: () => void;
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, noteImages, initialDraft, onDraftChange, onSave, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, noteImages, initialDraft, onDraftChange, onSave, onPickAssetImageRef, onPlaceImage, onPlaceImageDocument, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -113,6 +122,57 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
       } : {}) });
     }
   };
+  // UX7.1-IMAGES: mismas tres operaciones que el Inspector completo (`addNoteImage`/
+  // `addNoteImageDocument`/`insertExistingNoteImage*`), pero a través de los puertos estrechos que
+  // recibe por props en vez de `run` — edición rápida nunca conoce `storage` directamente.
+  const resolveImageFile = async (source: NoteImageSource): Promise<{ readonly bytes: Uint8Array; readonly name: string } | null> => {
+    if (source.kind === 'bytes') return { bytes: source.bytes, name: source.name };
+    if (source.kind === 'existing') return null;
+    if (!supportsImageImport()) { setImageProblem('Este entorno no permite elegir imágenes.'); return null; }
+    try {
+      return await pickImageFile();
+    } catch {
+      setImageProblem('No se pudo leer la imagen elegida.');
+      return null;
+    }
+  };
+  const [imageProblem, setImageProblem] = useState<string | null>(null);
+  const placeImage = async (place: MarkdownImagePlace, draft: string, source: NoteImageSource): Promise<RichTextImage | null> => {
+    setImageProblem(null);
+    const file = source.kind === 'existing' ? null : await resolveImageFile(source);
+    if (source.kind !== 'existing' && !file) return null;
+    const result = await onPlaceImage(card.id, place, draft, source.kind === 'existing' ? source : { kind: 'bytes', bytes: file!.bytes, name: file!.name });
+    if (!result.ok) { setImageProblem(result.issues[0]?.message ?? 'No se pudo insertar la imagen.'); return null; }
+    setContent(result.value.content);
+    onDraftChange({ cardId: card.id, title, content: result.value.content, titleDocument });
+    const parsed = richTextCodec.parse(result.value.content);
+    return parsed.ok ? parsed.value.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null : null;
+  };
+  const placeImageDocument = async (place: VisualImagePlace, draft: RichTextDocument, source: NoteImageSource): Promise<RichTextImage | null> => {
+    setImageProblem(null);
+    const file = source.kind === 'existing' ? null : await resolveImageFile(source);
+    if (source.kind !== 'existing' && !file) return null;
+    const result = await onPlaceImageDocument(card.id, place, draft, source.kind === 'existing' ? source : { kind: 'bytes', bytes: file!.bytes, name: file!.name });
+    if (!result.ok) { setImageProblem(result.issues[0]?.message ?? 'No se pudo insertar la imagen.'); return null; }
+    setHtmlAuthored(true);
+    setVisualDocument(supportsVisualDocument(result.value.contentDocument) ? result.value.contentDocument : visualDocument);
+    const encoded = htmlCodec.serialize(result.value.contentDocument);
+    const nextContent = encoded.ok ? encoded.value : content;
+    setContent(nextContent);
+    onDraftChange({ cardId: card.id, title, content: nextContent, titleDocument, bodySource: { format: 'html', value: nextContent }, bodyDocument: result.value.contentDocument, bodyValidation: { status: 'valid' } });
+    return result.value.contentDocument.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null;
+  };
+  const placeVisualImage = async (document: RichTextDocument, place: VisualImagePlace, source: NoteImageSource = { kind: 'upload' }): Promise<RichTextImage | null> => {
+    if (htmlAuthored) return placeImageDocument(place, document, source);
+    const resolved = resolveMarkdownImagePlace(document, place, richTextCodec);
+    if (!resolved) return null;
+    return placeImage(resolved.place, resolved.content, source);
+  };
+  const placeImageFromAssets = (document: RichTextDocument, afterBlock: number) => onPickAssetImageRef().then((ref) => (
+    ref === null ? null : placeVisualImage(document, { kind: 'insert', afterBlock }, { kind: 'existing', ref })
+  ));
+  const pasteImage = (document: RichTextDocument, afterBlock: number, file: { readonly bytes: Uint8Array; readonly name: string }) =>
+    placeVisualImage(document, { kind: 'insert', afterBlock }, { kind: 'bytes', bytes: file.bytes, name: file.name });
   const current = useRef({ title, content });
   const saved = useRef({ title: initialDraft?.title ?? cardTitleText(card), content: initialDraft?.content ?? card.content ?? '' });
   const queued = useRef<{ title: string; content: string } | null>(null);
@@ -242,7 +302,12 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
           </View>
         </View>
       ) : visualDocument ? (
-        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} images={noteImages} onOpenFullEditor={advanced} fontFamily={noteFontFamily} compact toolbarCollapsed={toolsCollapsed} />
+        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} images={noteImages} onOpenFullEditor={advanced} fontFamily={noteFontFamily} compact toolbarCollapsed={toolsCollapsed}
+          onInsertImage={(document, afterBlock) => placeVisualImage(document, { kind: 'insert', afterBlock })}
+          onReplaceImage={(document, blockIndex) => placeVisualImage(document, { kind: 'replace', blockIndex })}
+          onInsertImageFromAssets={placeImageFromAssets}
+          onPasteImage={pasteImage}
+          onPasteImageRejected={setImageProblem} />
       ) : (
         <View style={styles.unsupportedContent}>
           <Text style={[styles.modeHint, { color: colors.textSecondary }]}>Este contenido se edita desde Más opciones.</Text>
@@ -252,9 +317,9 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
           de la app desde UX7-LAYOUT-CORRECTION) — esta fila solo aparece ante un error real, nunca
           como mensaje rutinario. «Más opciones»/«Editar completo» ya vive en la cabecera (icono
           expandir); repetirlo aquí abajo desperdiciaba una fila entera para la misma acción. */}
-      {problem ? (
+      {problem || imageProblem ? (
         <View style={styles.footer}>
-          <Text accessibilityLiveRegion="assertive" style={[styles.status, { color: colors.danger }]}>{problem}</Text>
+          <Text accessibilityLiveRegion="assertive" style={[styles.status, { color: colors.danger }]}>{problem ?? imageProblem}</Text>
         </View>
       ) : null}
     </View>

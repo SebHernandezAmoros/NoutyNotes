@@ -1664,6 +1664,194 @@ test('UX7-IMAGE-DIRECT: selecciona, redimensiona y conserva la imagen en edició
   await expect(reopened.getByLabel(/^Leyenda/)).toHaveValue('Leyenda escrita bajo la imagen');
 });
 
+test('UX7.1-IMAGES: «Insertar desde Assets» reutiliza la misma imagen sin copiar bytes, en edición completa y rápida (ASSET-04)', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida se ofrece en escritorio.');
+  const { runtimeErrors } = trackProblems(page);
+  const png = {
+    name: 'portada.png', mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'),
+  };
+  await page.goto('./');
+  await createWorkspace(page, 'Insertar desde Assets');
+
+  // Primera nota: sube la imagen nueva; es el único archivo real de todo el recorrido.
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const chooser = page.waitForEvent('filechooser');
+  await button(page, 'Insertar una imagen').click();
+  await (await chooser).setFiles(png);
+  const firstImage = page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]');
+  await expect(firstImage).toHaveCount(1);
+  const testId = await firstImage.getAttribute('data-testid');
+  const ref = testId!.replace('rich-image-', '');
+  const name = ref.split('/').pop()!;
+  await closeEditor(page);
+
+  // Segunda nota, edición enfocada: «Insertar desde Assets» reutiliza la MISMA referencia, no crea otro archivo.
+  await addCards(page, ['nota']);
+  await tapCard(page, 2);
+  await button(page, 'Insertar desde Assets').click();
+  await page.getByTestId('asset-image-picker').getByTestId(`asset-image-picker-item-${name}`).click();
+  const secondImage = page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]');
+  await expect(secondImage).toHaveAttribute('data-testid', `rich-image-${ref}`);
+  // El aviso transitorio puede desaparecer antes de leerlo; el historial es la señal durable de que
+  // el caso de uso de guardado terminó (mismo criterio que el resto de esta suite).
+  await page.getByRole('button', { name: /^Deshacer: Imagen/ }).waitFor({ state: 'visible' });
+  await closeEditor(page);
+
+  // Reabrir confirma que la referencia persiste (sin copia): sigue siendo la misma, no una nueva.
+  await tapCard(page, 2);
+  await expect(page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]')).toHaveAttribute('data-testid', `rich-image-${ref}`);
+  await closeEditor(page);
+
+  // Tercera nota, edición rápida: misma acción, mismo resultado, sin una implementación distinta.
+  await addCards(page, ['nota']);
+  await openCardActions(page, card(page, 3), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  const inline = page.getByTestId('inline-card-editor');
+  // La edición rápida mantiene una sola fila estable (D22): enlace/imagen/tabla viven en «Más formato».
+  await inline.getByRole('button', { name: 'Más formato (enlace, imagen, tabla)', exact: true }).click();
+  await inline.getByRole('button', { name: 'Insertar desde Assets', exact: true }).click();
+  await page.getByTestId('asset-image-picker').getByTestId(`asset-image-picker-item-${name}`).click();
+  await expect(inline.locator('[data-testid^="rich-image-"]')).toHaveAttribute('data-testid', `rich-image-${ref}`);
+  await page.screenshot({ path: testInfo.outputPath('insert-from-assets.png') });
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+  expect(runtimeErrors).toEqual([]);
+});
+
+/** UX7.1-IMAGES-FIX: bytes reales en el portapapeles real del sistema (vía `navigator.clipboard.write`,
+ * con permiso concedido), pegados con un Ctrl+V real — no un `ClipboardEvent` sintético construido a
+ * mano. Es el único camino que demuestra que el navegador de verdad entrega la imagen al editor. */
+async function writeRealImageClipboard(page: Page, base64 = PNG_BASE64): Promise<void> {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.evaluate(async (data) => {
+    const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })]);
+  }, base64);
+}
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+test('UX7.1-IMAGES-FIX: Ctrl+V real con una imagen real en el portapapeles la guarda como Asset nuevo y la inserta en la Nota (ASSET-06/07)', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Pegado de imagen');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+
+  const visual = page.getByLabel('Contenido visual');
+  await visual.click();
+  await writeRealImageClipboard(page);
+  await page.keyboard.press('ControlOrMeta+KeyV');
+
+  const pasted = visual.locator('[data-testid^="rich-image-"]');
+  await expect(pasted).toHaveCount(1);
+  await page.getByRole('button', { name: /^Deshacer: Imagen/ }).waitFor({ state: 'visible' });
+  const testId = await pasted.getAttribute('data-testid');
+  expect(testId).toMatch(/^rich-image-assets\/images\/tarjeta-1-1\.png$/);
+  await page.screenshot({ path: testInfo.outputPath('paste-image.png') });
+  await closeEditor(page);
+
+  // Guardar/reabrir conserva la referencia pegada igual que cualquier otra imagen.
+  await tapCard(page, 1);
+  await expect(page.getByLabel('Contenido visual').locator('[data-testid^="rich-image-"]')).toHaveAttribute('data-testid', testId!);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('UX7.1-IMAGES-FIX: pegar HTML con una imagen remota sin bytes avisa en vez de perder la imagen en silencio', async ({ page }) => {
+  // Reproduce lo que entrega Chrome al copiar una imagen de otro origen sin poder extraer sus bytes
+  // (o al copiar una selección de página que incluye una imagen): solo `text/html` con un `<img>`, sin
+  // ningún `File` en `clipboardData.files`. Antes, el saneador descartaba la etiqueta y la imagen
+  // desaparecía sin ningún aviso; el texto alrededor debe conservarse igual.
+  await page.goto('./');
+  await createWorkspace(page, 'Pegado HTML sin bytes');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+
+  const visual = page.getByLabel('Contenido visual');
+  await visual.click();
+  await visual.evaluate((element) => {
+    const html = '<p>Texto antes</p><img src="https://example.com/photo.jpg" alt="Foto remota"><p>Texto despues</p>';
+    const clipboard = new DataTransfer();
+    clipboard.setData('text/html', html);
+    element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+  });
+
+  await expect(visual).toContainText('Texto antes');
+  await expect(visual).toContainText('Texto despues');
+  await expect(visual.locator('[data-testid^="rich-image-"]')).toHaveCount(0);
+  await expect(page.getByText('La imagen copiada no incluye sus bytes')).toBeVisible();
+});
+
+test('UX7.1-IMAGES-FIX: Ctrl+V con el foco en el lienzo crea una tarjeta de imagen, sin interferir con pegar dentro de una Nota', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'Ctrl+V sobre el fondo del lienzo es una interacción de escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Pegado en el lienzo');
+  await addCards(page, ['nota']);
+
+  // Dentro de la Nota, Ctrl+V sigue yendo al cuerpo (Corrección A), no crea una tarjeta nueva.
+  await tapCard(page, 1);
+  const expandEditor = button(page, 'Ampliar el editor');
+  if (await expandEditor.count() > 0) await expandEditor.click();
+  const visual = page.getByLabel('Contenido visual');
+  await visual.click();
+  await writeRealImageClipboard(page);
+  await page.keyboard.press('ControlOrMeta+KeyV');
+  await expect(visual.locator('[data-testid^="rich-image-"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(1);
+  await closeEditor(page);
+
+  // Con el foco en el fondo del lienzo (sin editor abierto), el mismo Ctrl+V crea una tarjeta de imagen.
+  await page.getByTestId('board-canvas').click({ position: { x: 700, y: 550 } });
+  await page.keyboard.press('ControlOrMeta+KeyV');
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
+  const kinds = await page.locator('[data-testid^="card-tarjeta-"]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label')));
+  expect(kinds.some((label) => label?.includes('image'))).toBe(true);
+});
+
+test('UX7.1-IMAGES-FIX: «Pegar imagen aquí» del menú contextual lee el portapapeles real y coloca la tarjeta cerca del clic', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'El clic derecho que abre el menú contextual es una interacción de escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Pegar imagen aqui');
+  await addCards(page, ['nota']);
+  await writeRealImageClipboard(page);
+
+  const canvas = page.getByTestId('board-canvas');
+  await canvas.click({ button: 'right', position: { x: 900, y: 650 } });
+  await page.getByTestId('canvas-context-menu').waitFor({ state: 'visible' });
+  const pasteImageButton = page.getByRole('button', { name: 'Pegar una imagen del portapapeles aquí', exact: true });
+  await expect(pasteImageButton).toBeVisible();
+  await pasteImageButton.click();
+
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
+  const box = await page.locator('[data-testid^="card-tarjeta-"]').nth(1).boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.abs((box!.x) - 900)).toBeLessThan(260);
+  expect(Math.abs((box!.y) - 650)).toBeLessThan(260);
+});
+
+test('UX7.1-IMAGES-FIX: «Pegar imagen aquí» sin una imagen compatible avisa y no crea nada', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'El clic derecho que abre el menú contextual es una interacción de escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Pegar imagen aqui vacio');
+  await addCards(page, ['nota']);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.evaluate(async () => {
+    await navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob(['hola'], { type: 'text/plain' }) })]);
+  });
+
+  const canvas = page.getByTestId('board-canvas');
+  await canvas.click({ button: 'right', position: { x: 900, y: 650 } });
+  await page.getByTestId('canvas-context-menu').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: 'Pegar una imagen del portapapeles aquí', exact: true }).click();
+
+  await expect(page.getByText('El portapapeles no tiene una imagen compatible')).toBeVisible();
+  await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(1);
+});
+
 test('UX7-QUICK-EDIT: conserva HTML válido al abrir el editor completo y bloquea la salida con HTML inválido', async ({ page }, testInfo) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida se ofrece en escritorio.');
   await page.goto('./');

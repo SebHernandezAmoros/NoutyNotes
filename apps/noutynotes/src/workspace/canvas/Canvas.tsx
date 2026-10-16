@@ -26,6 +26,7 @@ import { CONTROL_SIZE, chromeFor } from './cardChrome';
 import type { CardAction, Chrome } from './cardChrome';
 import { CardControls, CardMenu } from './CardControls';
 import { InlineCardEditor } from './InlineCardEditor';
+import type { InlineCardEditorProps } from './InlineCardEditor';
 import { connectTarget } from './connect';
 import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
 import { cardsInArea, contentBounds, fitView } from './overview';
@@ -120,6 +121,8 @@ interface CanvasProps {
   readonly onCreateAt: (point: GridPoint) => void;
   readonly canPaste: boolean;
   readonly onPasteAt: (point: GridPoint) => void;
+  /** UX7.1-IMAGES-FIX (Corrección C): «Pegar imagen aquí» — lee el portapapeles real al hacer clic. */
+  readonly onPasteImageAt: (point: GridPoint) => void;
   readonly boardTitle: string;
   /** Títulos de las tarjetas del tablero que su layout no coloca (v1 válido). */
   readonly unplaced: readonly string[];
@@ -137,6 +140,10 @@ interface CanvasProps {
   readonly inlineDraft?: EditableCardDraft | undefined;
   readonly onInlineDraftChange: (draft: EditableCardDraft) => void;
   readonly onInlineSave: (draft: EditableCardDraft) => Promise<boolean>;
+  /** UX7.1-IMAGES: mismas vías estrechas de `InlineCardEditor`, de paso hacia `WorkspaceScreen`. */
+  readonly onPickAssetImageRef: InlineCardEditorProps['onPickAssetImageRef'];
+  readonly onPlaceImage: InlineCardEditorProps['onPlaceImage'];
+  readonly onPlaceImageDocument: InlineCardEditorProps['onPlaceImageDocument'];
   readonly onInlineClose: () => void;
   readonly onInlineAdvanced: (cardId: CardId) => void;
   /** Botón «Editar» de la tarjeta seleccionada (auditoría de interacción, 2026-09-29): un solo clic ya
@@ -1029,6 +1036,9 @@ export function Canvas(props: CanvasProps) {
           initialDraft={props.inlineDraft?.cardId === inlineCard.id ? props.inlineDraft : undefined}
           onDraftChange={props.onInlineDraftChange}
           onSave={props.onInlineSave}
+          onPickAssetImageRef={props.onPickAssetImageRef}
+          onPlaceImage={props.onPlaceImage}
+          onPlaceImageDocument={props.onPlaceImageDocument}
           onAdvanced={() => props.onInlineAdvanced(inlineCard.id)}
           onCollapse={() => { props.onInlineClose(); props.onDisplay(inlineCard.id, 'collapsed'); }}
           onClose={props.onInlineClose}
@@ -1102,6 +1112,7 @@ export function Canvas(props: CanvasProps) {
           canPaste={props.canPaste}
           onCreate={() => { props.onCreateAt(canvasMenu.point); setCanvasMenu(null); }}
           onPaste={() => { props.onPasteAt(canvasMenu.point); setCanvasMenu(null); }}
+          onPasteImage={() => { props.onPasteImageAt(canvasMenu.point); setCanvasMenu(null); }}
           onClose={() => setCanvasMenu(null)}
         />
       ) : null}
@@ -1150,19 +1161,23 @@ export function Canvas(props: CanvasProps) {
   );
 }
 
-function CanvasContextMenu({ anchor, canPaste, onCreate, onPaste, onClose }: {
+function CanvasContextMenu({ anchor, canPaste, onCreate, onPaste, onPasteImage, onClose }: {
   readonly anchor: { readonly left: number; readonly top: number };
   readonly canPaste: boolean;
   readonly onCreate: () => void;
   readonly onPaste: () => void;
+  readonly onPasteImage: () => void;
   readonly onClose: () => void;
 }) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const screen = useWindowDimensions();
+  // UX7.1-IMAGES-FIX: «Pegar imagen aquí» solo tiene sentido en web (lee `navigator.clipboard`); en
+  // nativo no se promete un soporte que no se implementó ni validó.
+  const canPasteImage = Platform.OS === 'web';
   const width = Math.min(236, screen.width - 16);
   const left = Math.max(8, Math.min(anchor.left, screen.width - width - 8));
-  const top = Math.max(8, Math.min(anchor.top, screen.height - (canPaste ? 164 : 118)));
+  const top = Math.max(8, Math.min(anchor.top, screen.height - (118 + (canPaste ? 46 : 0) + (canPasteImage ? 46 : 0))));
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1184,6 +1199,7 @@ function CanvasContextMenu({ anchor, canPaste, onCreate, onPaste, onClose }: {
           </View>
           <CanvasMenuAction icon="note" label={t('canvasMenu.createNote', locale)} accessibilityLabel={t('canvasMenu.createNote.accessibilityLabel', locale)} onPress={onCreate} />
           {canPaste ? <CanvasMenuAction icon="paste" label={t('canvasMenu.paste', locale)} accessibilityLabel={t('canvasMenu.paste.accessibilityLabel', locale)} onPress={onPaste} /> : null}
+          {canPasteImage ? <CanvasMenuAction icon="image" label={t('canvasMenu.pasteImage', locale)} accessibilityLabel={t('canvasMenu.pasteImage.accessibilityLabel', locale)} onPress={onPasteImage} /> : null}
         </View>
       </View>
     </Modal>
@@ -1191,7 +1207,7 @@ function CanvasContextMenu({ anchor, canPaste, onCreate, onPaste, onClose }: {
 }
 
 function CanvasMenuAction({ icon, label, accessibilityLabel, onPress }: {
-  readonly icon: 'note' | 'paste';
+  readonly icon: 'note' | 'paste' | 'image';
   readonly label: string;
   readonly accessibilityLabel: string;
   readonly onPress: () => void;

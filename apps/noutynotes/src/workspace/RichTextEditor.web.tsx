@@ -189,7 +189,7 @@ function TableContextMenu({ anchor, actions, colors, onClose }: {
   );
 }
 
-function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, collapsed = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'titleOnly'> & { readonly compact?: boolean; readonly collapsed?: boolean }) {
+function EditorToolbar({ onInsertImage, onInsertImageFromAssets, titleOnly = false, compact = false, collapsed = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'onInsertImageFromAssets' | 'titleOnly'> & { readonly compact?: boolean; readonly collapsed?: boolean }) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -399,8 +399,9 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     { key: 'align-center', group: 'alignment', label: `${tableVerticalAlignment === 'center' ? '✓ ' : ''}Centrar celda verticalmente`, action: () => alignTableCell('center') },
     { key: 'align-bottom', group: 'alignment', label: `${tableVerticalAlignment === 'bottom' ? '✓ ' : ''}Alinear celda abajo`, action: () => alignTableCell('bottom') },
   ];
-  const insertImage = async () => {
-    if (!onInsertImage) return;
+  const insertImage = async (source: 'upload' | 'assets') => {
+    const handler = source === 'assets' ? onInsertImageFromAssets : onInsertImage;
+    if (!handler) return;
     const snapshot = editor.getEditorState().read(() => {
       const selection = $getSelection();
       const document = $readWebRichTextDocument();
@@ -416,7 +417,7 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
     });
     if (!snapshot) return;
     const { document, afterBlock } = snapshot;
-    const image = await onInsertImage(document, afterBlock);
+    const image = await handler(document, afterBlock);
     if (!image) return;
     editor.update(() => {
       const root = $getRoot();
@@ -448,9 +449,13 @@ function EditorToolbar({ onInsertImage, titleOnly = false, compact = false, coll
   // `compactFormat` afecta únicamente a la representación de la toolbar: no cambia comandos,
   // documento, selección ni sesión editorial.
   const compactFormat = compact && !titleOnly;
+  // UX7.1-IMAGES: «Insertar desde Assets» es un botón propio junto al ya existente «Insertar una
+  // imagen» — no una acción oculta detrás de él. «Insertar una imagen» sigue subiendo un archivo
+  // nuevo con un solo toque, exactamente como antes (no romper el flujo ni las pruebas existentes).
   const linkImageTableControls = [
     button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink, 'link'),
-    !titleOnly && onInsertImage ? button('▧', 'Insertar una imagen', false, false, () => { void insertImage(); }, 'image') : null,
+    !titleOnly && onInsertImage ? button('▧', t('editor.visual.image', locale), false, false, () => { void insertImage('upload'); }, 'image') : null,
+    !titleOnly && onInsertImageFromAssets ? button('▧+', t('editor.visual.image.fromAssets', locale), false, false, () => { void insertImage('assets'); }, 'image-from-assets') : null,
     titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open), 'table'),
   ];
   const alignmentControls = <View testID="editor-alignment-controls" accessibilityRole="toolbar" accessibilityLabel="Alineación horizontal" style={[styles.alignmentGroup, { borderColor: colors.gridLine }]}>{([
@@ -645,18 +650,63 @@ function ImageEditorBridge({ images, captionPosition, onReplaceImage, onOpenFull
   );
 }
 
-function SafePastePlugin({ titleOnly = false }: Pick<RichTextEditorProps, 'titleOnly'>) {
+/** Punto de inserción (bloque/documento tras el cursor) idéntico al de «Insertar imagen» (ASSET-04/06). */
+function readImageInsertionPoint(editor: ReturnType<typeof useLexicalComposerContext>[0]) {
+  return editor.getEditorState().read(() => {
+    const selection = $getSelection();
+    const document = $readWebRichTextDocument();
+    if (!document) return null;
+    if (!$isRangeSelection(selection)) return { document, afterBlock: $getRoot().getChildrenSize() - 1 };
+    const top = selection.anchor.getNode().getTopLevelElement();
+    const children = $getRoot().getChildren();
+    let afterBlock = top ? children.indexOf(top) : children.length - 1;
+    while ($isRichTextImageNode(children[afterBlock + 1])) afterBlock += 1;
+    return { document, afterBlock };
+  });
+}
+
+function SafePastePlugin({ titleOnly = false, onPasteImage, onPasteImageRejected }: Pick<RichTextEditorProps, 'titleOnly' | 'onPasteImage' | 'onPasteImageRejected'>) {
   const [editor] = useLexicalComposerContext();
+  const { locale } = useLocale();
   useEffect(() => editor.registerCommand(PASTE_COMMAND, (event) => {
     const clipboard = event instanceof ClipboardEvent ? event.clipboardData : event instanceof InputEvent ? event.dataTransfer : null;
     if (!clipboard) return false;
+    // UX7.1-IMAGES (ASSET-06/07): una imagen binaria en el portapapeles (archivo copiado, captura de
+    // pantalla o imagen copiada desde una página) siempre tiene prioridad sobre su HTML de origen —
+    // nunca se insertan ambos a la vez. `navigator.clipboard.read()` no es necesario: los bytes ya
+    // están en `clipboardData.files` del propio evento de pegado.
+    const pasteImage = onPasteImage;
+    const imageFile = !titleOnly && pasteImage ? [...clipboard.files].find((file) => file.type.startsWith('image/')) : undefined;
+    if (imageFile && pasteImage) {
+      event.preventDefault();
+      const point = readImageInsertionPoint(editor);
+      if (!point) return true;
+      void (async () => {
+        const bytes = new Uint8Array(await imageFile.arrayBuffer());
+        const image = await pasteImage(point.document, point.afterBlock, { bytes, name: imageFile.name || 'imagen-pegada' });
+        if (!image) return;
+        editor.update(() => {
+          const root = $getRoot();
+          const node = $createRichTextImageNode(image);
+          const target = root.getChildren()[point.afterBlock];
+          if (target) target.insertAfter(node);
+          else root.append(node);
+        });
+      })();
+      return true;
+    }
     const html = clipboard.getData('text/html');
     const text = clipboard.getData('text/plain');
     if (html === '' && text === '') return false;
+    // UX7.1-IMAGES-FIX: el portapapeles puede entregar solo `text/html` con una etiqueta `<img>` (imagen
+    // de otra página sin bytes reales accesibles, p. ej. recurso de otro origen). El sanitizador la
+    // descarta correctamente (nunca se descarga una URL remota como dato durable) — pero antes se
+    // perdía en silencio; ahora se avisa, sin bloquear el resto del texto pegado.
+    if (!titleOnly && !imageFile && /<img[\s>]/i.test(html)) onPasteImageRejected?.(t('editor.paste.imageUnavailable', locale));
     event.preventDefault();
     $insertNodes(titleOnly ? [$createTextNode(text.replace(/\s+/g, ' ').trim())] : $createWebRichTextNodes(parsePastedRichText(html, text)));
     return true;
-  }, COMMAND_PRIORITY_HIGH), [editor, titleOnly]);
+  }, COMMAND_PRIORITY_HIGH), [editor, titleOnly, onPasteImage, onPasteImageRejected, locale]);
   return null;
 }
 
@@ -715,7 +765,7 @@ const editorTheme = {
   tableCellHeader: 'nouty-table-cell-header',
 };
 
-export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, onOpenFullEditor, compact = false, toolbarCollapsed = false, titleOnly = false }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, onInsertImageFromAssets, onPasteImage, onPasteImageRejected, onOpenFullEditor, compact = false, toolbarCollapsed = false, titleOnly = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -753,7 +803,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
           importantForAccessibility={toolbarCollapsed ? 'no-hide-descendants' : 'auto'}
           style={toolbarCollapsed ? styles.toolbarCollapsed : null}
         >
-          <EditorToolbar onInsertImage={onInsertImage} titleOnly={titleOnly} compact={compact} collapsed={toolbarCollapsed} />
+          <EditorToolbar onInsertImage={onInsertImage} onInsertImageFromAssets={onInsertImageFromAssets} titleOnly={titleOnly} compact={compact} collapsed={toolbarCollapsed} />
         </View>
         <View testID="web-rich-text-scroll" style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
@@ -780,7 +830,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
         <CheckListPlugin />
         <LinkPlugin validateUrl={isLinkUrl} attributes={{ rel: 'noreferrer' }} />
         <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} hasTabHandler hasHorizontalScroll />
-        <SafePastePlugin titleOnly={titleOnly} />
+        <SafePastePlugin titleOnly={titleOnly} onPasteImage={onPasteImage} onPasteImageRejected={onPasteImageRejected} />
         <AutoFocusPlugin />
         <DocumentChanges document={document} initialDocument={initialDocument} onChange={onChange} />
         </ImageEditorBridge>

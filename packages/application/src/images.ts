@@ -209,3 +209,92 @@ export async function addNoteImageDocument(
   if (saved.ok) return { ok: true, value: { contentDocument, ref } };
   return withdraw(assets, workspaceId, ref, saved);
 }
+
+/** Extensiones que la inserción enriquecida sabe representar (ASSET-05): el catálogo de Assets puede
+ * clasificar SVG/AVIF/BMP como imagen, pero no son un formato que `inspectImage` admita. */
+const INSERTABLE_IMAGE_REF = /\.(png|jpe?g|gif|webp)$/i;
+
+/** Confirma que una referencia ya catalogada pertenece a este workspace, sigue en el almacenamiento y es
+ * un formato compatible con la inserción enriquecida — nunca copia bytes ni crea una referencia nueva. */
+async function resolveExistingImageRef(
+  assets: WorkspaceAssets, workspaceId: WorkspaceId, ref: unknown,
+): Promise<WorkspaceStorageResult<AssetRef>> {
+  if (!isValidAssetRef(ref)) return storageFailure('invalid-asset', 'ref', 'Esa referencia no pertenece a este proyecto.');
+  if (!INSERTABLE_IMAGE_REF.test(ref)) return storageFailure('invalid-asset', 'ref', 'Ese recurso no es una imagen compatible con la inserción enriquecida.');
+  const listed = await assets.listAssets(workspaceId);
+  if (!listed.ok) return { ok: false, issues: listed.issues };
+  if (!listed.value.includes(ref)) return storageFailure('invalid-asset', 'ref', 'Esa imagen ya no está disponible en este proyecto.');
+  return { ok: true, value: ref };
+}
+
+export interface InsertExistingNoteImageInput {
+  readonly ref: AssetRef;
+  /** Contenido actual del editor (puede tener cambios sin guardar): se guarda con la imagen. */
+  readonly content: string;
+  readonly place: { readonly kind: 'insert'; readonly caret?: number } | { readonly kind: 'replace'; readonly index: number };
+}
+
+/**
+ * Inserta en una nota (Markdown) una imagen YA catalogada en Assets, por referencia (ASSET-04): a
+ * diferencia de `addNoteImage`, nunca escribe un archivo nuevo — reutiliza el mismo `AssetRef` que ya
+ * usa otra tarjeta o ninguna. Sin escritura no hay archivo que retirar: un fallo al guardar deja la
+ * nota como estaba, sin ningún huérfano posible.
+ */
+export async function insertExistingNoteImage(
+  storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, input: InsertExistingNoteImageInput,
+): Promise<WorkspaceStorageResult<{ readonly content: string; readonly ref: AssetRef }>> {
+  if (typeof input.content !== 'string') return storageFailure('invalid-workspace', 'input', 'Falta el contenido de la nota.');
+  const resolved = await resolveExistingImageRef(assets, workspaceId, input.ref);
+  if (!resolved.ok) return resolved;
+  const ref = resolved.value;
+  const content = input.place.kind === 'insert'
+    ? insertImageBlock(input.content, input.place.caret, ref, titleFrom(ref.split('/').pop() ?? ref))
+    : replaceNoteImage(input.content, input.place.index, ref);
+  const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
+    const card = workspace.cards.find((candidate) => candidate.id === cardId);
+    if (!card) return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no existe en este proyecto.' }] };
+    if (content === input.content) return { ok: false, issues: [{ code: 'invalid-value', path: 'place', message: 'Ese bloque no es una imagen de la nota.' }] };
+    const refs = syncNoteAssetRefs(card.assetRefs, card.content ?? '', content);
+    const { assetRefs: _previous, ...rest } = card;
+    const next = { ...rest, content, ...(refs.length > 0 ? { assetRefs: refs } : {}) };
+    return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? next : candidate)) });
+  });
+  if (!saved.ok) return saved;
+  return { ok: true, value: { content, ref } };
+}
+
+export interface InsertExistingNoteImageDocumentInput {
+  readonly ref: AssetRef;
+  /** Documento HTML seguro actual del editor (puede tener cambios sin guardar): se guarda con la imagen. */
+  readonly contentDocument: RichTextDocument;
+  readonly place: { readonly kind: 'insert'; readonly afterBlock?: number } | { readonly kind: 'replace'; readonly blockIndex: number };
+}
+
+/** Misma reutilización que `insertExistingNoteImage`, pero para el cuerpo HTML seguro (ADR 0066): el
+ * bloque de imagen se inserta directamente en el documento estructurado, nunca pasando por `content`. */
+export async function insertExistingNoteImageDocument(
+  storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, input: InsertExistingNoteImageDocumentInput,
+): Promise<WorkspaceStorageResult<{ readonly contentDocument: RichTextDocument; readonly ref: AssetRef }>> {
+  const resolved = await resolveExistingImageRef(assets, workspaceId, input.ref);
+  if (!resolved.ok) return resolved;
+  const ref = resolved.value;
+  const blocks = [...input.contentDocument.blocks];
+  if (input.place.kind === 'replace') {
+    const existing = blocks[input.place.blockIndex];
+    if (existing?.type !== 'image') return storageFailure('invalid-workspace', 'place', 'Ese bloque no es una imagen de la nota.');
+    blocks[input.place.blockIndex] = { ...existing, assetRef: ref };
+  } else {
+    const image: RichTextImage = { type: 'image', assetRef: ref, alt: titleFrom(ref.split('/').pop() ?? ref) };
+    blocks.splice(Math.min(blocks.length, (input.place.afterBlock ?? blocks.length - 1) + 1), 0, image);
+  }
+  const contentDocument = { ...input.contentDocument, blocks };
+  const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
+    const card = workspace.cards.find((candidate) => candidate.id === cardId);
+    if (!card) return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no existe en este proyecto.' }] };
+    const refs = [...new Set(blocks.filter((block): block is RichTextImage => block.type === 'image').map((block) => block.assetRef))];
+    const next = { ...card, contentDocument, ...(refs.length > 0 ? { assetRefs: refs } : {}) };
+    return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? next : candidate)) });
+  });
+  if (!saved.ok) return saved;
+  return { ok: true, value: { contentDocument, ref } };
+}

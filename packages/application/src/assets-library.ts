@@ -48,6 +48,34 @@ export function addAssetToBoard(
   });
 }
 
+export interface ImportImageAtInput {
+  readonly bytes: Uint8Array;
+  readonly fileName: string;
+  readonly boardId?: BoardId;
+  /** Posición preferida en la grilla del tablero (UX7.1-IMAGES-FIX: pegar en el Canvas/menú contextual). */
+  readonly near?: AddCardInput['near'];
+  readonly createdAt?: string;
+}
+
+/**
+ * Importa una imagen nueva como tarjeta en una posición concreta (UX7.1-IMAGES-FIX): compone
+ * `importAssetImage` (escribe el archivo en la biblioteca, sin tarjeta) y `addAssetToBoard` (coloca una
+ * tarjeta que reutiliza esa referencia, con soporte de `near` que `importImageCard` no tiene). Si la
+ * colocación falla, retira el archivo recién escrito — igual que el resto de operaciones de imagen.
+ */
+export async function importImageCardAt(
+  storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, input: ImportImageAtInput,
+): Promise<WorkspaceStorageResult<CardId>> {
+  const written = await importAssetImage(storage, assets, workspaceId, { bytes: input.bytes, fileName: input.fileName });
+  if (!written.ok) return written;
+  const ref = written.value;
+  const saved = await addAssetToBoard(storage, workspaceId, {
+    ref, ...(input.boardId ? { boardId: input.boardId } : {}), ...(input.near ? { near: input.near } : {}), ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+  });
+  if (saved.ok) return saved;
+  return withdraw(assets, workspaceId, ref as AssetRef, saved);
+}
+
 /**
  * Reemplaza un asset por una imagen nueva: escribe el archivo (sin sobrescribir nada) y cambia todas las
  * referencias en una sola transacción. El anterior queda sin usar. Si no se guarda, se retira el nuevo.

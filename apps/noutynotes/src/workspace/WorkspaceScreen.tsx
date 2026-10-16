@@ -1,6 +1,6 @@
 import {
-  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardContent, editConnectorPath, importImageCard,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, updateConnection,
+  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, addNoteImage, addNoteImageDocument, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardContent, editConnectorPath, importImageCard, importImageCardAt, insertExistingNoteImage, insertExistingNoteImageDocument,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, Card, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
@@ -54,6 +54,7 @@ import { ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
 import { ArchiveView } from './ArchiveView';
 import { DiaryView } from './DiaryView';
+import { AssetImagePickerDialog } from './AssetImagePickerDialog';
 import { AssetsView } from './AssetsView';
 import { LinkDialog } from './LinkDialog';
 import { InsertMenu } from './InsertMenu';
@@ -61,6 +62,8 @@ import { SearchPanel } from './SearchPanel';
 import { RecoveryCenter } from './RecoveryCenter';
 import { TrashPanel } from './TrashPanel';
 import { useImagePreviews } from './useImagePreviews';
+import { useAssetImagePicker } from './useAssetImagePicker';
+import type { MarkdownImagePlace, ResolvedNoteImageSource, VisualImagePlace } from './noteImagePlacement';
 import { Toolbar } from './Toolbar';
 import type { BoardView } from './Toolbar';
 import { saveStatus } from './saveStatus';
@@ -212,6 +215,27 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const archiveCount = workspace?.archive?.length ?? 0;
   const summaries = useSessionSummaries(workspace);
   const previews = useImagePreviews(session.storage, workspace);
+  // UX7.1-IMAGES (ASSET-04): una sola instancia del selector «Insertar desde Assets» sirve tanto a la
+  // edición rápida como al Inspector completo — ninguna de las dos necesita conocer `storage` ni
+  // renderizar su propio diálogo (`onPickAssetImageRef`, más abajo).
+  const assetImagePicker = useAssetImagePicker(session.storage, workspace);
+  /** Mismas operaciones que ya usa el Inspector (`addNoteImage`/`insertExistingNoteImage`), expuestas
+   * como puerto estrecho para que la edición rápida (`InlineCardEditor`, sin acceso a `storage`) pueda
+   * insertar una imagen nueva, una ya catalogada o una recién pegada, exactamente igual. */
+  const placeInlineNoteImage = useCallback((cardId: CardId, place: MarkdownImagePlace, content: string, source: ResolvedNoteImageSource) => run<{ readonly content: string; readonly ref: AssetRef }>((storage, id) => {
+    const assets = assetsOf(storage);
+    if (!assets) return Promise.resolve(storageFailure('invalid-asset', 'storage', 'Este almacenamiento no guarda imágenes.'));
+    return source.kind === 'existing'
+      ? insertExistingNoteImage(storage, assets, id, cardId, { ref: source.ref as AssetRef, content, place })
+      : addNoteImage(storage, assets, id, cardId, { bytes: source.bytes, fileName: source.name, content, place });
+  }, place.kind === 'insert' ? 'action.noteImageInserted' : 'action.noteImageReplaced'), [run]);
+  const placeInlineNoteImageDocument = useCallback((cardId: CardId, place: VisualImagePlace, contentDocument: RichTextDocument, source: ResolvedNoteImageSource) => run<{ readonly contentDocument: RichTextDocument; readonly ref: AssetRef }>((storage, id) => {
+    const assets = assetsOf(storage);
+    if (!assets) return Promise.resolve(storageFailure('invalid-asset', 'storage', 'Este almacenamiento no guarda imágenes.'));
+    return source.kind === 'existing'
+      ? insertExistingNoteImageDocument(storage, assets, id, cardId, { ref: source.ref as AssetRef, contentDocument, place })
+      : addNoteImageDocument(storage, assets, id, cardId, { bytes: source.bytes, fileName: source.name, contentDocument, place });
+  }, place.kind === 'insert' ? 'action.noteImageInserted' : 'action.noteImageReplaced'), [run]);
 
   // Fuente personalizada (ADR 0041): el registro `FontFace` no sobrevive a recargar, así que se vuelve a
   // activar al abrir este workspace si la preferencia la sigue señalando. Si el archivo ya no está, se
@@ -668,7 +692,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const placeCard = () => {
     if (!placeOffer) return;
     const { cardId, boardId: target } = placeOffer;
-    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    const near = visibleCellsNow();
     void run((storage, workspaceId) => placeCardOnBoard(storage, workspaceId, { boardId: target, cardId, ...(near ? { near } : {}) }), 'action.cardPlaced')
       .then((result) => {
         if (!result.ok) return;
@@ -683,10 +707,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const removeProjectTag = async (tag: string) =>
     (await run((storage, workspaceId) => removeTagEverywhere(storage, workspaceId, tag), 'action.tagRemovedEverywhere')).ok;
 
-  // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2).
+  // Tamaño visible del lienzo: las tarjetas nuevas se colocan dentro de lo que se ve (P2). Función
+  // compartida (en vez de repetir la misma expresión en cada sitio de creación) para que `canvasSize`
+  // tenga un único punto de lectura.
   const canvasSize = useRef<{ width: number; height: number } | null>(null);
+  const visibleCellsNow = () => (boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined);
   const add = (kind: InsertablePrototypeKind, extra: { readonly url?: string; readonly title?: string; readonly content?: string } = {}, nearOverride?: { readonly x: number; readonly y: number; readonly columns: number }) => {
-    const near = nearOverride ?? (boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined);
+    const near = nearOverride ?? visibleCellsNow();
     // La fecha de creación la pone la interfaz (ADR 0024): application no usa el reloj.
     return run((storage, workspaceId) => addCardToBoard(storage, workspaceId, { kind, ...extra, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) }), additions[kind])
       .then((result) => {
@@ -706,7 +733,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       setFeedback({ tone: 'error', text: 'No se pudo preparar la tabla.' });
       return;
     }
-    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    const near = visibleCellsNow();
     const result = await run((storage, workspaceId) => addCardToBoard(storage, workspaceId, {
       kind: 'note', content: encoded.value, createdAt: new Date().toISOString(),
       size: { w: Math.max(4, Math.min(12, columns * 2)), h: Math.max(3, rows + 2) },
@@ -725,7 +752,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const createShortcut = (targetBoardId: BoardId) => {
     if (!board) return;
-    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    const near = visibleCellsNow();
     void run((storage, workspaceId) => addBoardShortcut(storage, workspaceId, {
       boardId: board.id, targetBoardId, createdAt: new Date().toISOString(), ...(near ? { near } : {}),
     }), { label: 'Acceso a tablero creado' }).then((result) => {
@@ -734,7 +761,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const assetPlacement = () => {
-    const near = boardView === 'canvas' && canvasSize.current ? visibleCells(pan, zoom, metrics, canvasSize.current) : undefined;
+    const near = visibleCellsNow();
     return { createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}) };
   };
 
@@ -812,8 +839,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Deshacer y rehacer (ADR 0026): antes se guarda el borrador, que es un paso más.
   const undoLast = async () => { if (await flushPendingText()) await undo(); };
   const redoLast = async () => { if (await flushPendingText()) await redo(); };
-  const shortcuts = useRef({ undoLast, redoLast, copyMany, cutMany, duplicateMany, pasteClipboard });
-  useLayoutEffect(() => { shortcuts.current = { undoLast, redoLast, copyMany, cutMany, duplicateMany, pasteClipboard }; });
+  const shortcuts = useRef({ undoLast, redoLast, copyMany, cutMany, duplicateMany, pasteClipboard, hasClipboard: clipboard !== null });
+  useLayoutEffect(() => { shortcuts.current = { undoLast, redoLast, copyMany, cutMany, duplicateMany, pasteClipboard, hasClipboard: clipboard !== null }; });
   // Ctrl/⌘ + Z, Ctrl/⌘ + Mayús + Z y Ctrl + Y fuera de los campos de texto; dentro deshacen el texto del campo.
   // Ctrl/⌘ + C/X/V/D (ADR 0052): copiar/cortar solo actúan con selección múltiple no vacía; pegar solo
   // con portapapeles no vacío — cada función ya se protege sola, el atajo no duplica esa comprobación.
@@ -829,7 +856,12 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       else if (key === 'c') { event.preventDefault(); shortcuts.current.copyMany(); }
       else if (key === 'x') { event.preventDefault(); void shortcuts.current.cutMany(); }
       else if (key === 'd') { event.preventDefault(); void shortcuts.current.duplicateMany(); }
-      else if (key === 'v') { event.preventDefault(); void shortcuts.current.pasteClipboard(); }
+      // UX7.1-IMAGES-FIX: solo se bloquea el pegado nativo del navegador cuando hay algo propio que
+      // pegar (una tarjeta copiada). Si no hay nada, se deja seguir su curso normal — eso es lo que
+      // permite que el evento `paste` real llegue después a `onPasteImageToCanvas` con una imagen del
+      // portapapeles del sistema operativo; antes, este `preventDefault()` incondicional lo bloqueaba
+      // siempre e impedía que Ctrl+V pegara una imagen sobre el lienzo.
+      else if (key === 'v' && shortcuts.current.hasClipboard) { event.preventDefault(); void shortcuts.current.pasteClipboard(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1094,6 +1126,74 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (result.ok) void select(result.value);
   };
 
+  /** UX7.1-IMAGES-FIX (Corrección B): Ctrl+V con el foco en el lienzo (no en un editor de texto) crea
+   * una tarjeta de imagen a partir de bytes ya extraídos del portapapeles real del sistema operativo. */
+  const pasteImageToCanvas = async (bytes: Uint8Array, fileName: string) => {
+    const overlayOpen = editingId !== null || insertOpen || searchOpen || settingsOpen || trashOpen || moreOpen
+      || projectsOpen || linkOpen || shortcutOpen || boardActionsId !== null || boardOrganizerOpen || presentOpen || frameId !== null || multiMoreOpen;
+    if (mainView !== 'board' || overlayOpen) return;
+    const assets = assetsOf(session.storage);
+    if (!assets) { setFeedback({ tone: 'error', text: 'Este almacenamiento no guarda imágenes.' }); return; }
+    // Un espacio recién creado todavía no tiene ningún tablero (se crea el del prototipo recién con la
+    // primera tarjeta, igual que ya hace `importImage` más arriba): sin `board`, se omite `boardId` y
+    // `importImageCardAt`/`addCardToBoard` lo crean solos, en vez de bloquear el pegado.
+    const near = visibleCellsNow();
+    const result = await run<CardId>((storage, workspaceId) => importImageCardAt(storage, assets, workspaceId, {
+      bytes, fileName, createdAt: new Date().toISOString(), ...(board ? { boardId: board.id } : {}), ...(near ? { near } : {}),
+    }), { key: 'action.imageImported', params: { name: fileName } });
+    if (result.ok) void select(result.value);
+  };
+  const pasteImageToCanvasRef = useRef(pasteImageToCanvas);
+  useLayoutEffect(() => { pasteImageToCanvasRef.current = pasteImageToCanvas; });
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const clipboardData = event.clipboardData;
+      if (!clipboardData) return;
+      const imageFile = [...clipboardData.files].find((file) => file.type.startsWith('image/'));
+      if (!imageFile) return;
+      event.preventDefault();
+      void imageFile.arrayBuffer().then((buffer) => pasteImageToCanvasRef.current(new Uint8Array(buffer), imageFile.name || 'imagen-pegada'));
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
+
+  /** UX7.1-IMAGES-FIX (Corrección C): «Pegar imagen aquí» del menú contextual del lienzo. Lectura
+   * explícita del portapapeles disparada por el propio clic del usuario (activación transitoria real,
+   * no asumida): si el navegador no la admite o se deniega el permiso, se avisa sin crear nada. */
+  const pasteImageAt = async (point: GridPoint) => {
+    if (!board) return;
+    const clipboardApi = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    if (!clipboardApi || typeof clipboardApi.read !== 'function') {
+      setFeedback({ tone: 'error', text: t('canvasMenu.pasteImage.unsupported', locale) });
+      return;
+    }
+    let items: ClipboardItems;
+    try {
+      items = await clipboardApi.read();
+    } catch {
+      setFeedback({ tone: 'error', text: t('canvasMenu.pasteImage.denied', locale) });
+      return;
+    }
+    const imageType = items.flatMap((item) => item.types).find((type) => type.startsWith('image/'));
+    const imageItem = imageType ? items.find((item) => item.types.includes(imageType)) : undefined;
+    if (!imageItem || !imageType) {
+      setFeedback({ tone: 'error', text: t('canvasMenu.pasteImage.empty', locale) });
+      return;
+    }
+    const assets = assetsOf(session.storage);
+    if (!assets) { setFeedback({ tone: 'error', text: 'Este almacenamiento no guarda imágenes.' }); return; }
+    const blob = await imageItem.getType(imageType);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const result = await run<CardId>((storage, workspaceId) => importImageCardAt(storage, assets, workspaceId, {
+      bytes, fileName: 'imagen-pegada', boardId: board.id, createdAt: new Date().toISOString(), near: { ...point, columns: 1 },
+    }), { key: 'action.imageImported', params: { name: 'imagen-pegada' } });
+    if (result.ok) void select(result.value);
+  };
+
   // Guarda una posición/tamaño optimista para una tarjeta hasta que su guardado termine (con o sin
   // éxito): sin esto, un redibujado de por medio la mostraría un instante en el layout aún sin guardar.
   const withPendingRect = useCallback(<T,>(cardId: CardId, rect: GridRect, action: Promise<T>): Promise<T> => {
@@ -1275,6 +1375,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       focused={focus}
       onToggleFocus={() => setFocus((current) => !current)}
       onOpenBoard={(target) => { setEditingId(null); setInlineEditing(false); void chooseBoard(target); }}
+      onPickAssetImageRef={assetImagePicker.pick}
     />
   ) : null;
   const inspector = frameInspector ?? cardInspector;
@@ -1589,6 +1690,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCreateAt={(point) => { void add('note', {}, { ...point, columns: 1 }); }}
         canPaste={clipboard !== null}
         onPasteAt={(point) => { void pasteClipboardAt(point); }}
+        onPasteImageAt={(point) => { void pasteImageAt(point); }}
         boardTitle={board?.title ?? 'sin tableros'}
         unplaced={unplaced}
         imageUris={previews.cards}
@@ -1600,6 +1702,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         inlineDraft={recoveredText?.cardId === editingId ? recoveredText : undefined}
         onInlineDraftChange={(draft) => { setPendingText(draft, authority); }}
         onInlineSave={saveInlineCard}
+        onPickAssetImageRef={assetImagePicker.pick}
+        onPlaceImage={placeInlineNoteImage}
+        onPlaceImageDocument={placeInlineNoteImageDocument}
         onInlineClose={() => { setEditingId(null); setInlineEditing(false); setFocus(false); }}
         onInlineAdvanced={(cardId) => {
           showCardInspector(cardId, 'content', true);
@@ -2009,6 +2114,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onClose={() => setRecoveryOpen(false)}
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
+          <AssetImagePickerDialog
+            visible={assetImagePicker.visible}
+            compact={compact}
+            entries={assetImagePicker.entries}
+            loading={assetImagePicker.loading}
+            onSelect={assetImagePicker.select}
+            onCancel={assetImagePicker.cancel}
+          />
           {multiMoreSheet}
           <InsertMenu
             visible={insertOpen}

@@ -55,8 +55,8 @@ export type {
 export type {
   ReactiveDispatch, ReactiveRunOptions, ReactiveSaveStatus, ReactiveWorkspaceAction, ReactiveWorkspaceSnapshot,
 } from './reactive-workspace';
-export { MAX_IMAGE_BYTES, addNoteImage, addNoteImageDocument, importImageCard, inspectImage } from './images';
-export type { AddNoteImageDocumentInput, AddNoteImageInput, ImageKind, ImportImageInput } from './images';
+export { MAX_IMAGE_BYTES, addNoteImage, addNoteImageDocument, importImageCard, insertExistingNoteImage, insertExistingNoteImageDocument, inspectImage } from './images';
+export type { AddNoteImageDocumentInput, AddNoteImageInput, ImageKind, ImportImageInput, InsertExistingNoteImageDocumentInput, InsertExistingNoteImageInput } from './images';
 export {
   insertImageBlock, moveNoteBlock, noteImageRefs, parseNoteBlocks, removeNoteBlock, replaceNoteImage, richTextImageRefs, serializeNoteBlocks, setNoteImageAlt, syncNoteAssetRefs,
 } from './note-blocks';
@@ -70,7 +70,7 @@ export type { GlobalSearch, ProjectResults, SearchResult } from './search';
 export { LINK_CARD_TYPE, linkCardTypeFor, setCardLink } from './links';
 export { assetKind, buildAssetCatalog, cardAssetRefs, replaceAssetReferences } from './assets-catalog';
 export type { AssetEntry, AssetKind, AssetUse } from './assets-catalog';
-export { addAssetToBoard, assetBaseName, deleteUnusedAssets, importAssetImage, replaceAsset } from './assets-library';
+export { addAssetToBoard, assetBaseName, deleteUnusedAssets, importAssetImage, importImageCardAt, replaceAsset } from './assets-library';
 export { MAX_LIBRARY_FILE_BYTES, importLibraryFile } from './asset-import';
 export type { LibraryFileInput } from './asset-import';
 
@@ -82,5 +82,5 @@ export { diaryExportText } from './diary-export';
 export type { DiaryExportResult } from './diary-export';
 export { openDiaryEntry } from './diary';
 export type { DiaryEntryInput } from './diary';
-export type { DeleteAssetsResult } from './assets-library';
+export type { DeleteAssetsResult, ImportImageAtInput } from './assets-library';
 export type { RichTextCodec, RichTextCodecResult } from './rich-text-codec';

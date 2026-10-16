@@ -1,7 +1,7 @@
-import { addCardTag, addNoteImage, addNoteImageDocument, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, parseNoteBlocks, removeCardTag, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
+import { addCardTag, addNoteImage, addNoteImageDocument, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, insertExistingNoteImage, insertExistingNoteImageDocument, removeCardTag, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { DraftSource, DraftValidation, RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, isFloatingTextCard, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
-import type { BoardId, Card, CardDisplayMode, CardIconName, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
+import type { AssetRef, BoardId, Card, CardDisplayMode, CardIconName, CardPlacement, RelationArrow, RelationId, RichTextDocument, RichTextImage, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -20,6 +20,8 @@ import { applyInlineMark, applyListCommand, normalizeListChange, parseChecklistL
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
 import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
+import { resolveMarkdownImagePlace } from './noteImagePlacement';
+import type { NoteImageSource } from './noteImagePlacement';
 import { RichTextEditor } from './RichTextEditor';
 import { PLACEHOLDER_TITLES } from './titlePlaceholders';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
@@ -55,6 +57,9 @@ interface CardInspectorProps {
   readonly inSheet?: boolean;
   /** Imágenes intercaladas en notas, por ruta (ADR 0021). */
   readonly noteImages: ReadonlyMap<string, string>;
+  /** UX7.1-IMAGES (ASSET-04): abre el selector «Insertar desde Assets» y resuelve con el `AssetRef`
+   * elegido, o `null` si se cancela. Una sola instancia del diálogo vive en `WorkspaceScreen`. */
+  readonly onPickAssetImageRef: () => Promise<string | null>;
   /** Tipografía de las notas (ADR 0030), ya resuelta para esta plataforma. */
   readonly noteFontFamily?: string | undefined;
   /** Implementación inyectada en la composición; el componente no conoce storage. */
@@ -106,7 +111,7 @@ function CardIconChoice({ icon, selected, onPress }: { readonly icon: CardIconNa
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, onBodyModeChange, flushPendingText, initialDraft, section: requestedSection, onSectionChange, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, htmlCodec, focused = false, onToggleFocus, onOpenBoard }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, onBodyModeChange, flushPendingText, initialDraft, section: requestedSection, onSectionChange, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, htmlCodec, focused = false, onToggleFocus, onOpenBoard, onPickAssetImageRef }: CardInspectorProps) {
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -380,15 +385,20 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       setImageProblem(t('assets.error.imageReadFailed', locale)); return null;
     }
   };
-  const placeImage = async (place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }, draft = content): Promise<RichTextImage | null> => {
-    const file = await pickImageOrFail();
-    if (!file) return null;
+  const placeImage = async (
+    place: { kind: 'insert'; caret?: number } | { kind: 'replace'; index: number }, draft = content, source: NoteImageSource = { kind: 'upload' },
+  ): Promise<RichTextImage | null> => {
+    const file = source.kind === 'existing' ? null : source.kind === 'bytes' ? source : await pickImageOrFail();
+    if (source.kind !== 'existing' && !file) return null;
     if (!await flushPendingText()) return null;
+    const displayName = source.kind === 'existing' ? (source.ref.split('/').pop() ?? source.ref) : file!.name;
     const result = await run((storage, id) => {
       const assets = assetsOf(storage);
       if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
-      return addNoteImage(storage, assets, id, card.id, { bytes: file.bytes, fileName: file.name, content: draft, place });
-    }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: file.name } } : { key: 'action.noteImageReplaced', params: { name: file.name } });
+      return source.kind === 'existing'
+        ? insertExistingNoteImage(storage, assets, id, card.id, { ref: source.ref as AssetRef, content: draft, place })
+        : addNoteImage(storage, assets, id, card.id, { bytes: file!.bytes, fileName: file!.name, content: draft, place });
+    }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: displayName } } : { key: 'action.noteImageReplaced', params: { name: displayName } });
     if (result.ok) {
       setContent(result.value.content);
       publishDraft({ title, content: result.value.content, titleDocument });
@@ -404,15 +414,20 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
    * documento estructurado (`addNoteImageDocument`), nunca pasando por `content`/Markdown — regla de
    * seguridad del proyecto: nunca convertir HTML nuevo a Markdown.
    */
-  const placeImageDocument = async (place: { kind: 'insert'; afterBlock?: number } | { kind: 'replace'; blockIndex: number }, draft: RichTextDocument): Promise<RichTextImage | null> => {
-    const file = await pickImageOrFail();
-    if (!file) return null;
+  const placeImageDocument = async (
+    place: { kind: 'insert'; afterBlock?: number } | { kind: 'replace'; blockIndex: number }, draft: RichTextDocument, source: NoteImageSource = { kind: 'upload' },
+  ): Promise<RichTextImage | null> => {
+    const file = source.kind === 'existing' ? null : source.kind === 'bytes' ? source : await pickImageOrFail();
+    if (source.kind !== 'existing' && !file) return null;
     if (!await flushPendingText()) return null;
+    const displayName = source.kind === 'existing' ? (source.ref.split('/').pop() ?? source.ref) : file!.name;
     const result = await run((storage, id) => {
       const assets = assetsOf(storage);
       if (!assets) return Promise.resolve({ ok: false as const, issues: [{ code: 'invalid-asset' as const, path: 'storage', message: 'Este almacenamiento no guarda imágenes.' }] });
-      return addNoteImageDocument(storage, assets, id, card.id, { bytes: file.bytes, fileName: file.name, contentDocument: draft, place });
-    }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: file.name } } : { key: 'action.noteImageReplaced', params: { name: file.name } });
+      return source.kind === 'existing'
+        ? insertExistingNoteImageDocument(storage, assets, id, card.id, { ref: source.ref as AssetRef, contentDocument: draft, place })
+        : addNoteImageDocument(storage, assets, id, card.id, { bytes: file!.bytes, fileName: file!.name, contentDocument: draft, place });
+    }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: displayName } } : { key: 'action.noteImageReplaced', params: { name: displayName } });
     if (result.ok) {
       setLastValidDocument(result.value.contentDocument);
       setHtmlValidation({ status: 'valid' });
@@ -426,43 +441,20 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     }
     return null;
   };
-  const placeVisualImage = async (document: RichTextDocument, place: { readonly kind: 'insert'; readonly afterBlock: number } | { readonly kind: 'replace'; readonly blockIndex: number }) => {
-    if (htmlAuthored) return placeImageDocument(place, document);
-    const encoded = richTextCodec.serialize(document);
-    if (!encoded.ok) return null;
-    const blocks = parseNoteBlocks(encoded.value);
-    if (place.kind === 'replace') {
-      const image = document.blocks[place.blockIndex];
-      if (image?.type !== 'image') return null;
-      const index = blocks.findIndex((block) => block.kind === 'image' && block.ref === image.assetRef);
-      return placeImage({ kind: 'replace', index }, encoded.value);
-    }
-    // La leyenda portable se serializa como un bloque técnico después de la imagen. Se cuenta como
-    // parte de esa imagen para que la inserción respete el orden que el usuario ve en el editor.
-    let rawIndex = -1;
-    let cursor = 0;
-    for (let index = 0; index <= place.afterBlock && index < document.blocks.length; index += 1) {
-      const visualBlock = document.blocks[index];
-      if (!visualBlock) continue;
-      if (visualBlock.type === 'image') {
-        const imageIndex = blocks.findIndex((block, candidate) => candidate >= cursor && block.kind === 'image' && block.ref === visualBlock.assetRef);
-        if (imageIndex >= 0) {
-          rawIndex = imageIndex;
-          cursor = imageIndex + 1;
-          const captionBlock = blocks[cursor];
-          if (visualBlock.caption && captionBlock?.kind === 'text' && captionBlock.text.startsWith('<!-- nouty-caption:v1:')) {
-            rawIndex = cursor;
-            cursor += 1;
-          }
-        }
-      } else {
-        const textIndex = blocks.findIndex((block, candidate) => candidate >= cursor && block.kind === 'text' && !block.text.startsWith('<!-- nouty-caption:v1:'));
-        if (textIndex >= 0) { rawIndex = textIndex; cursor = textIndex + 1; }
-      }
-    }
-    const caret = blocks[rawIndex]?.start ?? encoded.value.length;
-    return placeImage({ kind: 'insert', caret }, encoded.value);
+  const placeVisualImage = async (
+    document: RichTextDocument, place: { readonly kind: 'insert'; readonly afterBlock: number } | { readonly kind: 'replace'; readonly blockIndex: number },
+    source: NoteImageSource = { kind: 'upload' },
+  ): Promise<RichTextImage | null> => {
+    if (htmlAuthored) return placeImageDocument(place, document, source);
+    const resolved = resolveMarkdownImagePlace(document, place, richTextCodec);
+    if (!resolved) return null;
+    return placeImage(resolved.place, resolved.content, source);
   };
+  const placeImageFromAssets = (document: RichTextDocument, afterBlock: number) => onPickAssetImageRef().then((ref) => (
+    ref === null ? null : placeVisualImage(document, { kind: 'insert', afterBlock }, { kind: 'existing', ref })
+  ));
+  const pasteImage = (document: RichTextDocument, afterBlock: number, file: { readonly bytes: Uint8Array; readonly name: string }) =>
+    placeVisualImage(document, { kind: 'insert', afterBlock }, { kind: 'bytes', bytes: file.bytes, name: file.name });
   const toggleCheck = (line: number) => {
     const next = toggleChecklistLine(content, line);
     if (next !== null) {
@@ -666,7 +658,10 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily}
             images={noteImages} captionPosition={card.captionPosition ?? 'bottom'}
             onInsertImage={(document, afterBlock) => placeVisualImage(document, { kind: 'insert', afterBlock })}
-            onReplaceImage={(document, blockIndex) => placeVisualImage(document, { kind: 'replace', blockIndex })} />
+            onReplaceImage={(document, blockIndex) => placeVisualImage(document, { kind: 'replace', blockIndex })}
+            onInsertImageFromAssets={placeImageFromAssets}
+            onPasteImage={pasteImage}
+            onPasteImageRejected={setImageProblem} />
         ) : null}
         {Platform.OS === 'web' && bodyMode === 'html' ? (
           <View testID="html-source-editor" style={styles.htmlEditor}>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addCardToBoard, addNoteImage, addNoteImageDocument, createEmptyWorkspaceNamed, editCardContent, moveCardToTrash, noteImageRefs, purgeCardFromTrash, removeNoteBlock,
+  addCardToBoard, addNoteImage, addNoteImageDocument, createEmptyWorkspaceNamed, editCardContent, insertExistingNoteImage, insertExistingNoteImageDocument, moveCardToTrash, noteImageRefs, purgeCardFromTrash, removeNoteBlock,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { AssetRef, CardId, RichTextDocument } from '../../packages/domain/src/index';
@@ -86,6 +86,71 @@ describe('imágenes ordenadas dentro de una nota (ADR 0021)', () => {
     const purged = ok(await purgeCardFromTrash(storage, storage, id, card));
     expect(purged.removedAssets).toEqual(['assets/images/tarjeta-1-1.png']);
     expect((await storage.readAsset(id, 'assets/images/tarjeta-1-1.png' as AssetRef)).ok).toBe(false);
+  });
+});
+
+describe('reutilizar una imagen ya catalogada de Assets en una nota, sin copiar bytes (ASSET-04)', () => {
+  it('inserta la misma referencia en otra nota; no se escribe ningún archivo nuevo', async () => {
+    const { storage, id, card } = await noteWithText();
+    const other = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Otra' }));
+    ok(await editCardContent(storage, id, other, { content: 'Aparte.' }));
+    const origin = ok(await addNoteImage(storage, storage, id, card, { bytes: PNG, fileName: 'Pagoda.png', content: 'Llegada.', place: { kind: 'insert' } }));
+    const listedBefore = ok(await storage.listAssets(id));
+    const reused = ok(await insertExistingNoteImage(storage, storage, id, other, { ref: origin.ref, content: 'Aparte.', place: { kind: 'insert' } }));
+    expect(reused.ref).toBe(origin.ref);
+    expect(noteImageRefs(reused.content)).toEqual([origin.ref]);
+    const listedAfter = ok(await storage.listAssets(id));
+    expect(listedAfter.length).toBe(listedBefore.length);
+    expect((await cardOf(storage, id, other)).assetRefs).toEqual([origin.ref]);
+    // La tarjeta original conserva su propia referencia: dos notas comparten el mismo archivo.
+    expect((await cardOf(storage, id, card)).assetRefs).toEqual([origin.ref]);
+    expect(ok(await storage.readAsset(id, origin.ref as AssetRef))).toEqual(PNG);
+  });
+
+  it('reemplazar con una referencia existente conserva la posición sin tocar el archivo anterior', async () => {
+    const { storage, id, card } = await noteWithText();
+    const other = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Otra' }));
+    // El segundo archivo ya existe desde otra nota: reemplazar no debe copiarlo ni crear uno nuevo.
+    const second = ok(await addNoteImage(storage, storage, id, other, { bytes: JPEG, fileName: 'b.jpg', content: '', place: { kind: 'insert' } }));
+    const first = ok(await addNoteImage(storage, storage, id, card, { bytes: PNG, fileName: 'a.png', content: 'Llegada.', place: { kind: 'insert' } }));
+    const replaced = ok(await insertExistingNoteImage(storage, storage, id, card, { ref: second.ref, content: first.content, place: { kind: 'replace', index: 1 } }));
+    expect(noteImageRefs(replaced.content)).toEqual([second.ref]);
+    expect((await storage.readAsset(id, first.ref as AssetRef)).ok).toBe(true);
+  });
+
+  it('una referencia ausente del almacenamiento se rechaza sin modificar el documento', async () => {
+    const { storage, id, card } = await noteWithText();
+    const before = (await cardOf(storage, id, card)).content;
+    const result = await insertExistingNoteImage(storage, storage, id, card, { ref: 'assets/images/no-existe.png' as AssetRef, content: 'Llegada.', place: { kind: 'insert' } });
+    expect(result.ok ? null : result.issues[0]?.code).toBe('invalid-asset');
+    expect((await cardOf(storage, id, card)).content).toBe(before);
+  });
+
+  it('una referencia de un formato no admitido para inserción enriquecida se rechaza aunque exista en disco', async () => {
+    const { storage, id, card } = await noteWithText();
+    ok(await storage.writeAsset(id, 'assets/images/plano.svg' as AssetRef, new TextEncoder().encode('<svg></svg>')));
+    const result = await insertExistingNoteImage(storage, storage, id, card, { ref: 'assets/images/plano.svg' as AssetRef, content: 'Llegada.', place: { kind: 'insert' } });
+    expect(result.ok ? null : result.issues[0]?.code).toBe('invalid-asset');
+  });
+});
+
+describe('reutilizar una imagen ya catalogada en una nota con cuerpo HTML seguro (ADR 0066)', () => {
+  it('inserta la misma referencia en el documento estructurado sin escribir otro archivo', async () => {
+    const { storage, id, card, contentDocument } = await noteWithHtmlText();
+    const origin = ok(await addNoteImageDocument(storage, storage, id, card, { bytes: PNG, fileName: 'Pagoda.png', contentDocument, place: { kind: 'insert', afterBlock: 0 } }));
+    const listedBefore = ok(await storage.listAssets(id));
+    const reused = ok(await insertExistingNoteImageDocument(storage, storage, id, card, { ref: origin.ref, contentDocument: origin.contentDocument, place: { kind: 'insert' } }));
+    expect(reused.contentDocument.blocks.filter((block) => block.type === 'image')).toHaveLength(2);
+    expect(reused.ref).toBe(origin.ref);
+    const listedAfter = ok(await storage.listAssets(id));
+    expect(listedAfter.length).toBe(listedBefore.length);
+  });
+
+  it('una referencia ausente se rechaza sin modificar el documento', async () => {
+    const { storage, id, card, contentDocument } = await noteWithHtmlText();
+    const result = await insertExistingNoteImageDocument(storage, storage, id, card, { ref: 'assets/images/no-existe.png' as AssetRef, contentDocument, place: { kind: 'insert' } });
+    expect(result.ok ? null : result.issues[0]?.code).toBe('invalid-asset');
+    expect((await cardOf(storage, id, card)).contentDocument).toEqual(contentDocument);
   });
 });
 
