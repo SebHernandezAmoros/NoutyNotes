@@ -1605,7 +1605,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               {identityStatus}
             </View>
             {workspace ? (
-              <ScrollView testID="workspace-sidebar-nav" style={styles.sidebarNav} contentContainerStyle={styles.sidebarNavContent}>
+              <ScrollView testID="workspace-sidebar-nav"
+                style={[styles.sidebarNav, Platform.OS === 'web' ? { scrollbarGutter: 'stable' } as object : null]}
+                contentContainerStyle={styles.sidebarNavContent}>
                 {/* UX7-CONSOLIDATION (Hito C): orden definitivo de la región central por frecuencia de
                     uso (decisión de producto explícita) — Diario, Assets, Archivo, Presentar, Imprimir,
                     Papelera. Papelera pasa al final: es la sección de menor frecuencia de uso cotidiano,

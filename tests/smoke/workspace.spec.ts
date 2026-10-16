@@ -130,6 +130,218 @@ test('UX7-QA02: el organizador conserva el borrador al reordenar y lo reinicia a
   await expect(reopenedTitle).toHaveValue('Escenas');
 });
 
+test('UX7-SCROLL-C: las barras laterales comparten canal y estilo temático sin perder navegación', async ({ page }, testInfo) => {
+  test.skip(isCompact(page), 'Las dos barras laterales solo coinciden en el layout de escritorio.');
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1366, height: 600 });
+  await page.goto('./');
+  await button(page, 'Tema claro').click();
+  await createWorkspace(page, 'Scrollbars coherentes');
+  for (let index = 0; index < 12; index += 1) await button(page, 'Crear un tablero').click();
+
+  const left = page.getByTestId('workspace-sidebar-nav');
+  const right = page.getByTestId('board-tabs');
+  await Promise.all([left.evaluate((element) => { element.scrollTop = 0; }), right.evaluate((element) => { element.scrollTop = 0; })]);
+  const environment = await page.evaluate(async () => {
+    const scrollbarRules = Array.from(document.styleSheets).flatMap((sheet) => {
+      try {
+        return Array.from(sheet.cssRules).map((rule) => rule.cssText).filter((text) => text.includes('scrollbar'));
+      } catch {
+        return ['<stylesheet no accesible>'];
+      }
+    });
+    return {
+      url: location.href,
+      devicePixelRatio: window.devicePixelRatio,
+      visualViewportScale: window.visualViewport?.scale ?? null,
+      serviceWorkerController: navigator.serviceWorker?.controller?.scriptURL ?? null,
+      cacheKeys: typeof caches === 'undefined' ? [] : await caches.keys(),
+      scrollbarRules,
+    };
+  });
+  await testInfo.attach('scrollbars-before-environment.json', { body: JSON.stringify(environment, null, 2), contentType: 'application/json' });
+  console.log(`UX7-SCROLL-C environment ${JSON.stringify(environment)}`);
+  const measure = (testId: 'workspace-sidebar-nav' | 'board-tabs') => page.getByTestId(testId).evaluate((element, id) => {
+    const style = getComputedStyle(element);
+    const root = getComputedStyle(document.documentElement);
+    const webkitBar = getComputedStyle(element, '::-webkit-scrollbar');
+    const webkitTrack = getComputedStyle(element, '::-webkit-scrollbar-track');
+    const webkitThumb = getComputedStyle(element, '::-webkit-scrollbar-thumb');
+    const borderX = Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.borderRightWidth);
+    return {
+      node: `${element.tagName.toLowerCase()}[data-testid="${id}"]`,
+      className: element.className,
+      overflowY: style.overflowY,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      offsetWidth: (element as HTMLElement).offsetWidth,
+      clientWidth: element.clientWidth,
+      verticalChannel: (element as HTMLElement).offsetWidth - element.clientWidth - borderX,
+      scrollbarWidth: style.scrollbarWidth,
+      scrollbarColor: style.scrollbarColor,
+      scrollbarGutter: style.scrollbarGutter,
+      colorScheme: style.colorScheme,
+      backgroundColor: style.backgroundColor,
+      paddingRight: style.paddingRight,
+      borderLeft: `${style.borderLeftWidth} ${style.borderLeftStyle} ${style.borderLeftColor}`,
+      borderRight: `${style.borderRightWidth} ${style.borderRightStyle} ${style.borderRightColor}`,
+      thumbVariable: root.getPropertyValue('--nouty-scroll-thumb').trim(),
+      trackVariable: root.getPropertyValue('--nouty-scroll-track').trim(),
+      webkitScrollbarWidth: webkitBar.width,
+      webkitTrackBackground: webkitTrack.backgroundColor,
+      webkitThumbBackground: webkitThumb.backgroundColor,
+      webkitThumbBorder: webkitThumb.border,
+      scrollTop: element.scrollTop,
+    };
+  }, testId);
+
+  await expect.poll(async () => (await measure('workspace-sidebar-nav')).scrollHeight).toBeGreaterThan((await measure('workspace-sidebar-nav')).clientHeight);
+  await expect.poll(async () => (await measure('board-tabs')).scrollHeight).toBeGreaterThan((await measure('board-tabs')).clientHeight);
+  const light = { left: await measure('workspace-sidebar-nav'), right: await measure('board-tabs') };
+  await testInfo.attach('scrollbars-after-light.json', { body: JSON.stringify(light, null, 2), contentType: 'application/json' });
+  console.log(`UX7-SCROLL-C after light ${JSON.stringify(light)}`);
+  await page.screenshot({ path: 'artifacts/ux7-c-scrollbars-after-light.png', fullPage: true });
+
+  await openSettings(page);
+  await button(page, 'Usar el tema oscuro').click();
+  await page.getByTestId('settings-panel').getByRole('button', { name: /^Cerrar / }).click();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
+  const dark = { left: await measure('workspace-sidebar-nav'), right: await measure('board-tabs') };
+  await testInfo.attach('scrollbars-after-dark.json', { body: JSON.stringify(dark, null, 2), contentType: 'application/json' });
+  console.log(`UX7-SCROLL-C after dark ${JSON.stringify(dark)}`);
+  await page.screenshot({ path: 'artifacts/ux7-c-scrollbars-after-dark.png', fullPage: true });
+
+  await left.hover();
+  await page.mouse.wheel(0, 240);
+  await expect.poll(async () => (await measure('workspace-sidebar-nav')).scrollTop).toBeGreaterThan(0);
+  await page.screenshot({ path: 'artifacts/ux7-c-scrollbars-after-dark-left-active.png', fullPage: true });
+  await right.hover();
+  await page.mouse.wheel(0, 320);
+  await expect.poll(async () => (await measure('board-tabs')).scrollTop).toBeGreaterThan(0);
+  await page.screenshot({ path: 'artifacts/ux7-c-scrollbars-after-dark-right-active.png', fullPage: true });
+
+  await left.evaluate((element) => { element.scrollTop = 0; });
+  await left.getByRole('button', { name: 'Abrir el diario', exact: true }).focus();
+  await page.keyboard.press('PageDown');
+  await expect.poll(async () => (await measure('workspace-sidebar-nav')).scrollTop).toBeGreaterThan(0);
+  await right.evaluate((element) => { element.scrollTop = 0; });
+  await right.getByRole('button', { name: 'Tablero Tablero 1', exact: true }).focus();
+  await page.keyboard.press('PageDown');
+  await expect.poll(async () => (await measure('board-tabs')).scrollTop).toBeGreaterThan(0);
+
+  expect(light.left.scrollbarWidth).toBe(light.right.scrollbarWidth);
+  expect(light.left.scrollbarColor).toBe(light.right.scrollbarColor);
+  expect(light.left.scrollbarGutter).toBe(light.right.scrollbarGutter);
+});
+
+test('UX7-SCROLL-C-SURFACES: Assets, Diario e Inspector conservan scrollbars legibles en claro y oscuro', async ({ page }, testInfo) => {
+  test.skip(isCompact(page), 'La inspección UX7-C pendiente corresponde a las superficies de escritorio.');
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1366, height: 520 });
+  await page.goto('./');
+  await button(page, 'Tema claro').click();
+  await createWorkspace(page, 'Superficies con scroll');
+  for (let index = 0; index < 8; index += 1) await button(page, 'Crear un tablero').click();
+  await addCards(page, ['nota']);
+
+  const inspect = async (root: Locator, name: string) => {
+    const selector = `[data-ux7-scroll-inspect="${name}"]`;
+    const initial = await root.evaluate((container, marker) => {
+      document.querySelectorAll('[data-ux7-scroll-inspect]').forEach((element) => element.removeAttribute('data-ux7-scroll-inspect'));
+      const candidates = [container, ...Array.from(container.querySelectorAll('*'))];
+      const scrollable = candidates.find((element) => {
+        const style = getComputedStyle(element);
+        return /^(auto|scroll)$/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+      });
+      if (!(scrollable instanceof HTMLElement)) return null;
+      scrollable.dataset.ux7ScrollInspect = marker;
+      scrollable.scrollTop = 0;
+      const style = getComputedStyle(scrollable);
+      const webkitBar = getComputedStyle(scrollable, '::-webkit-scrollbar');
+      const webkitTrack = getComputedStyle(scrollable, '::-webkit-scrollbar-track');
+      const webkitThumb = getComputedStyle(scrollable, '::-webkit-scrollbar-thumb');
+      const borderX = Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.borderRightWidth);
+      return {
+        node: scrollable.tagName.toLowerCase(),
+        className: scrollable.className,
+        overflowY: style.overflowY,
+        overflowX: style.overflowX,
+        scrollHeight: scrollable.scrollHeight,
+        clientHeight: scrollable.clientHeight,
+        scrollWidth: scrollable.scrollWidth,
+        clientWidth: scrollable.clientWidth,
+        verticalChannel: scrollable.offsetWidth - scrollable.clientWidth - borderX,
+        scrollbarWidth: style.scrollbarWidth,
+        scrollbarColor: style.scrollbarColor,
+        scrollbarGutter: style.scrollbarGutter,
+        webkitScrollbarWidth: webkitBar.width,
+        webkitTrackBackground: webkitTrack.backgroundColor,
+        webkitThumbBackground: webkitThumb.backgroundColor,
+        webkitThumbBorder: webkitThumb.border,
+      };
+    }, name);
+    expect(initial, `${name} debe contener un scroller vertical real`).not.toBeNull();
+    expect(initial!.scrollHeight).toBeGreaterThan(initial!.clientHeight);
+    expect(initial!.scrollWidth).toBeLessThanOrEqual(initial!.clientWidth + 1);
+    const scroller = page.locator(selector);
+    await scroller.hover();
+    await page.mouse.wheel(0, 240);
+    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    return { ...initial!, scrollTop: await scroller.evaluate((element) => element.scrollTop) };
+  };
+
+  const inspectAssets = async (theme: 'light' | 'dark') => {
+    await button(page, 'Abrir los assets').click();
+    await expect(page.getByTestId('assets-view')).toBeVisible();
+    await button(page, 'Buscar una fuente en Google Fonts').click();
+    await expect(page.getByTestId('assets-google-search')).toBeVisible();
+    const result = await inspect(page.getByTestId('assets-view'), `assets-${theme}`);
+    await page.screenshot({ path: `artifacts/ux7-c-assets-${theme}.png`, fullPage: true });
+    await button(page, 'Volver al tablero').click();
+    return result;
+  };
+  const inspectDiary = async (theme: 'light' | 'dark') => {
+    await button(page, 'Abrir el diario').click();
+    await expect(page.getByTestId('diary-view')).toBeVisible();
+    await button(page, 'Buscar por fecha, tipo, etiqueta o tablero (ADR 0037)').click();
+    const result = await inspect(page.getByTestId('diary-view'), `diary-${theme}`);
+    await page.screenshot({ path: `artifacts/ux7-c-diary-${theme}.png`, fullPage: true });
+    await button(page, 'Volver al tablero').click();
+    return result;
+  };
+  const inspectInspector = async (theme: 'light' | 'dark') => {
+    await openFullCardEditor(page, card(page, 1));
+    const result = await inspect(page.getByTestId('inspector-panel'), `inspector-${theme}`);
+    await page.screenshot({ path: `artifacts/ux7-c-inspector-${theme}.png`, fullPage: true });
+    await closeEditor(page);
+    return result;
+  };
+
+  const light = {
+    assets: await inspectAssets('light'),
+    diary: await inspectDiary('light'),
+    inspector: await inspectInspector('light'),
+  };
+  await openSettings(page);
+  await button(page, 'Usar el tema oscuro').click();
+  await page.getByTestId('settings-panel').getByRole('button', { name: /^Cerrar / }).click();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
+  const dark = {
+    assets: await inspectAssets('dark'),
+    diary: await inspectDiary('dark'),
+    inspector: await inspectInspector('dark'),
+  };
+
+  await testInfo.attach('scrollbars-surfaces.json', { body: JSON.stringify({ light, dark }, null, 2), contentType: 'application/json' });
+  console.log(`UX7-SCROLL-C surfaces ${JSON.stringify({ light, dark })}`);
+  for (const result of [...Object.values(light), ...Object.values(dark)]) {
+    expect(result.scrollbarWidth).toBe('thin');
+    expect(result.webkitScrollbarWidth).toBe('10px');
+    expect(result.webkitTrackBackground).toBe('rgba(0, 0, 0, 0)');
+  }
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+});
+
 test('UX7-CONTEXT-MENUS: create and paste at the clicked canvas point, then duplicate a note', async ({ page }, testInfo) => {
   test.skip(isCompact(page), 'The pointer context menu belongs to the desktop canvas.');
   await page.goto('./');
