@@ -73,6 +73,8 @@ export const TRANSLATIONS = {
   'zoom': { es: 'Zoom', en: 'Zoom' },
   'zoom.in': { es: 'Acercar', en: 'Zoom in' },
   'zoom.reset.suffix': { es: ', restablecer a 100 %', en: ', reset to 100%' },
+  'nav.home': { es: 'Inicio', en: 'Home' },
+  'nav.home.open': { es: 'Ir a Inicio', en: 'Go to Home' },
   'nav.trash': { es: 'Papelera', en: 'Trash' },
   'nav.trash.open': { es: 'Abrir la Papelera', en: 'Open Trash' },
   'nav.diary': { es: 'Diario', en: 'Diary' },

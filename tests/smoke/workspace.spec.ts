@@ -18,6 +18,153 @@ const at = { width: 800, height: 900 };
 
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 const card = (page: Page, id: number) => page.getByTestId(`card-tarjeta-${id}`);
+
+async function openWorkspaceSection(page: Page, name: 'Abrir el diario' | 'Abrir los assets' | 'Abrir el archivo') {
+  if (isCompact(page)) await button(page, 'Más secciones').click();
+  if (name === 'Abrir el archivo') await page.getByRole('button', { name: /^Abrir el Archivo/ }).click();
+  else await button(page, name).click();
+}
+
+async function activateWorkspaceHome(page: Page) {
+  const contextualReturn = button(page, 'Volver al tablero');
+  if (await contextualReturn.isVisible()) {
+    await contextualReturn.focus();
+    await page.keyboard.press('Enter');
+    return;
+  }
+  if (isCompact(page)) await button(page, 'Más secciones').click();
+  const home = button(page, 'Ir a Inicio');
+  await home.focus();
+  await page.keyboard.press('Enter');
+}
+
+const canvasTransform = (page: Page) => page.getByTestId('canvas-content').evaluate((element) => {
+  const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+  return { scale: matrix.a, x: matrix.e, y: matrix.f };
+});
+
+test('UX7-D-FIX: Inicio conserva su jerarquía y es inerte cuando el lienzo ya está visible', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'La misma sesión desktop recorre la matriz responsive sin duplicarla en otro proyecto.');
+  await page.goto('./');
+  await createWorkspace(page, 'Navegación a Inicio');
+
+  for (const width of [1366, 1100, 900, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    if (width >= 1100) {
+      const navigation = page.getByTestId('workspace-sidebar-nav');
+      const home = navigation.getByRole('button', { name: 'Ir a Inicio', exact: true });
+      const diary = navigation.getByRole('button', { name: 'Abrir el diario', exact: true });
+      await expect(home).toBeVisible();
+      expect((await box(home)).y).toBeLessThan((await box(diary)).y);
+      await expect(button(page, 'Cambiar de proyecto')).toBeVisible();
+      if (width === 1366) await page.screenshot({ path: 'artifacts/ux7-d-home-sidebar.png' });
+    } else {
+      await button(page, 'Más secciones').click();
+      const more = page.getByTestId('more-sheet');
+      const home = more.getByRole('button', { name: 'Ir a Inicio', exact: true });
+      await expect(home).toBeVisible();
+      await expect(more.getByRole('button', { name: 'Cambiar de proyecto', exact: true })).toBeVisible();
+      if (width === 390) await page.screenshot({ path: 'artifacts/ux7-d-home-compact.png' });
+      await button(page, 'Cerrar más').click();
+    }
+  }
+
+  await page.setViewportSize(desktop);
+  await openSettings(page);
+  await button(page, 'Usar inglés').click();
+  await button(page, 'Close settings').click();
+  const home = page.getByTestId('workspace-sidebar-nav').getByRole('button', { name: 'Go to Home', exact: true });
+  await expect(home).toContainText('Home');
+  const route = page.url();
+  const transform = await canvasTransform(page);
+  await home.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('workspace-screen')).toBeVisible();
+  await expect(page.getByTestId('canvas-background')).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\?id=/);
+  expect(page.url()).toBe(route);
+  expect(await canvasTransform(page)).toEqual(transform);
+  await page.screenshot({ path: 'artifacts/ux7-d-fix-canvas-noop.png', fullPage: true });
+});
+
+test('UX7-D-FIX: el retorno desde Diario protege HTML inválido y confirma un borrador válido', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'La protección editorial se valida una vez sobre la entrada lateral.');
+  await page.goto('./');
+  await createWorkspace(page, 'Salida segura a Inicio');
+  await addCards(page, ['nota']);
+  await tapCard(page, 1);
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  const source = page.getByTestId('html-source-input');
+  const invalid = '<p><script>no permitido</script></p>';
+  await source.fill(invalid);
+  await expect(page.getByTestId('html-source-error')).toBeVisible();
+
+  await openWorkspaceSection(page, 'Abrir el diario');
+  await expect(page.getByTestId('diary-view')).toBeVisible();
+  const home = button(page, 'Ir a Inicio');
+  await expect(source).toHaveValue(invalid);
+  await home.evaluate((element) => {
+    element.click();
+    element.click();
+    element.click();
+  });
+  await expect(page.getByTestId('canvas-background')).toBeVisible();
+  await expect(source).toHaveValue(invalid);
+
+  await button(page, 'Descartar los cambios del código HTML').click();
+  await page.getByLabel('Contenido visual').fill('BORRADOR CONFIRMADO ANTES DE SALIR');
+  await openWorkspaceSection(page, 'Abrir el diario');
+  await expect(page.getByTestId('diary-view')).toBeVisible();
+  await home.evaluate((element) => {
+    element.click();
+    element.click();
+    element.click();
+  });
+  await expect(page.getByTestId('canvas-background')).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\?id=/);
+  await expect(page.getByTestId('card-body-content-tarjeta-1')).toContainText('BORRADOR CONFIRMADO ANTES DE SALIR');
+});
+
+test('UX7-D-FIX: Inicio vuelve desde Diario, Assets y Archivo al mismo tablero con su cámara', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Inicio interno');
+  await addCards(page, ['nota']);
+  await zoomBy(page, 'in');
+  const background = page.getByTestId('canvas-background');
+  if (isCompact(page)) {
+    await button(page, 'Herramienta Mano').click();
+    await touchDrag(page, background, 48, 36, false);
+    await button(page, 'Herramienta Seleccionar').click();
+  } else {
+    await middleDrag(page, background, 80, 60);
+  }
+  const route = page.url();
+  const transform = await canvasTransform(page);
+
+  await openWorkspaceSection(page, 'Abrir el diario');
+  await expect(page.getByTestId('diary-view')).toBeVisible();
+  await page.screenshot({ path: `artifacts/ux7-d-fix-diary-${testInfo.project.name}.png`, fullPage: true });
+  await activateWorkspaceHome(page);
+  await expect(background).toBeVisible();
+  await expect(card(page, 1)).toBeVisible();
+  expect(page.url()).toBe(route);
+  expect(await canvasTransform(page)).toEqual(transform);
+  await page.screenshot({ path: `artifacts/ux7-d-fix-canvas-${testInfo.project.name}.png`, fullPage: true });
+
+  await openWorkspaceSection(page, 'Abrir los assets');
+  await expect(page.getByTestId('assets-view')).toBeVisible();
+  await activateWorkspaceHome(page);
+  await expect(background).toBeVisible();
+  expect(page.url()).toBe(route);
+  expect(await canvasTransform(page)).toEqual(transform);
+
+  await openWorkspaceSection(page, 'Abrir el archivo');
+  await expect(page.getByTestId('archive-view')).toBeVisible();
+  await activateWorkspaceHome(page);
+  await expect(background).toBeVisible();
+  expect(page.url()).toBe(route);
+  expect(await canvasTransform(page)).toEqual(transform);
+});
 /**
  * Activar con el teclado una tarjeta que el pan o la barra de acciones pueden dejar fuera de la vista
  * o tapada: el foco la trae con el pan y Espacio dispara el mismo onPress que un toque. Un clic en su

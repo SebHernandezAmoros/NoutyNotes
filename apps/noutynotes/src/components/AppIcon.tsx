@@ -5,7 +5,7 @@ export type AppIconName =
   | 'select' | 'pan' | 'connect' | 'search' | 'list' | 'menu'
   | 'note' | 'text' | 'board' | 'link' | 'image' | 'upload'
   | 'trash' | 'undo' | 'redo' | 'minus' | 'plus'
-  | 'diary' | 'archive' | 'assets' | 'present' | 'print' | 'settings'
+  | 'home' | 'diary' | 'archive' | 'assets' | 'present' | 'print' | 'settings'
   | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star' | 'frame'
   | 'copy' | 'cut' | 'paste' | 'duplicate' | 'recover';
 
@@ -37,6 +37,13 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
     </View>
   );
   if (name === 'star') return <Text accessibilityElementsHidden style={{ color: ink, fontSize: size, lineHeight: size, fontWeight: '700' }}>★</Text>;
+  if (name === 'home') return (
+    <View accessibilityElementsHidden style={[styles.root, box]}>
+      <View style={[styles.homeRoof, { borderLeftWidth: size * 0.42, borderRightWidth: size * 0.42, borderBottomWidth: size * 0.36, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: ink }]} />
+      <View style={[styles.homeBody, common]} />
+      <View style={[styles.homeDoor, fill]} />
+    </View>
+  );
   if (name === 'folder') return (
     <View accessibilityElementsHidden style={[styles.root, box]}>
       <View style={[styles.folder, common]} /><View style={[styles.folderTab, common, { borderBottomWidth: 0 }]} />
@@ -189,6 +196,9 @@ const styles = StyleSheet.create({
   checkLong: { position: 'absolute', left: '32%', width: '62%', transform: [{ rotate: '-45deg' }] },
   folder: { position: 'absolute', left: '4%', right: '4%', top: '30%', bottom: '5%', backgroundColor: 'transparent' },
   folderTab: { position: 'absolute', left: '4%', top: '12%', width: '44%', height: '22%', backgroundColor: 'transparent' },
+  homeRoof: { position: 'absolute', top: '2%', width: 0, height: 0 },
+  homeBody: { position: 'absolute', left: '18%', right: '18%', top: '38%', bottom: '6%', backgroundColor: 'transparent' },
+  homeDoor: { position: 'absolute', left: '44%', width: '20%', top: '62%', bottom: '6%' },
   frameH: { position: 'absolute' },
   frameV: { position: 'absolute' },
   copyBack: { position: 'absolute', right: '8%', top: '8%', width: '68%', height: '68%', borderRadius: 3, backgroundColor: 'transparent' },

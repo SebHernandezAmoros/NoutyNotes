@@ -242,10 +242,58 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // el lienzo (`draftExpanded`/`discardConfirming`), ahora dentro de `RecoveryCenter.tsx`.
   const [recoveryOpen, setRecoveryOpen] = useState(false);
 
+  // UX7-D: la salida segura puede esperar un borrador y la cola durable. La ref bloquea incluso tres
+  // activaciones ocurridas antes del siguiente render; el estado comunica la espera a todos los
+  // accesos equivalentes. Si una protección rechaza la salida, se habilitan de nuevo sin navegar.
+  const leavingHomeRef = useRef(false);
+  const [leavingHome, setLeavingHome] = useState(false);
   const goHome = async () => {
-    if (!await flushPendingText() || !await flushWorkspace()) return;
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
+    if (leavingHomeRef.current) return;
+    leavingHomeRef.current = true;
+    setLeavingHome(true);
+    let navigated = false;
+    try {
+      if (!await flushPendingText() || !await flushWorkspace()) return;
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+      navigated = true;
+    } finally {
+      if (!navigated) {
+        leavingHomeRef.current = false;
+        setLeavingHome(false);
+      }
+    }
+  };
+
+  // UX7-D-FIX: «Inicio» es navegación interna al lienzo del tablero activo. No comparte `goHome`,
+  // que sigue siendo la salida explícita de «Volver a mis espacios». `mainView` es la única fuente
+  // de verdad de la superficie principal; cambiarla no toca boardId, cámara, zoom ni geometría.
+  // Antes de ocultar una vista auxiliar se intenta confirmar el borrador con el coordinador ya
+  // existente. Si la validación o la persistencia lo rechazan, el lienzo sigue montado y el retorno
+  // revela el editor con su fuente intacta para corregirla; a diferencia de `goHome`, aquí no hay
+  // desmontaje que justifique bloquear a la persona en la vista auxiliar. La ref evita transiciones
+  // repetidas antes del siguiente render.
+  const returningToBoardRef = useRef(false);
+  const [returningToBoard, setReturningToBoard] = useState(false);
+  const returnToBoard = async () => {
+    setMoreOpen(false);
+    const overlayOpen = settingsOpen || trashOpen || presentOpen || projectsOpen || recoveryOpen;
+    if (mainView === 'board' && !overlayOpen) return;
+    if (returningToBoardRef.current) return;
+    returningToBoardRef.current = true;
+    setReturningToBoard(true);
+    try {
+      await flushPendingText();
+      setMainView('board');
+      setSettingsOpen(false);
+      setTrashOpen(false);
+      setPresentOpen(false);
+      setProjectsOpen(false);
+      setRecoveryOpen(false);
+    } finally {
+      returningToBoardRef.current = false;
+      setReturningToBoard(false);
+    }
   };
 
   const openSpace = async (target: string) => {
@@ -1248,7 +1296,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
    * lateral). Ningún texto/aviso de guardado se declara antes de que `saveStatus()` confirme que
    * corresponde (ver `saveStatus.ts`).
    */
-  const backButton = <ActionButton label="←" accessibilityLabel="Volver a mis espacios" onPress={() => void goHome()} />;
+  const backButton = <ActionButton label="←" accessibilityLabel="Volver a mis espacios" disabled={leavingHome} onPress={() => void goHome()} />;
   const identityHeading = workspace ? (
     <Text accessibilityRole="header" numberOfLines={1} style={[styles.identityTitle, { color: colors.textPrimary }]}>
       {workspace.metadata.name}
@@ -1608,10 +1656,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
               <ScrollView testID="workspace-sidebar-nav"
                 style={[styles.sidebarNav, Platform.OS === 'web' ? { scrollbarGutter: 'stable' } as object : null]}
                 contentContainerStyle={styles.sidebarNavContent}>
-                {/* UX7-CONSOLIDATION (Hito C): orden definitivo de la región central por frecuencia de
-                    uso (decisión de producto explícita) — Diario, Assets, Archivo, Presentar, Imprimir,
+                {/* UX7-CONSOLIDATION (Hito C) + UX7-D-FIX: Inicio vuelve al lienzo del tablero activo;
+                    el resto conserva su orden por frecuencia — Diario, Assets, Archivo, Presentar, Imprimir,
                     Papelera. Papelera pasa al final: es la sección de menor frecuencia de uso cotidiano,
                     no la primera que alguien busca al abrir la barra. */}
+                <NavItem testID="nav-home" icon="home" label={t("nav.home", locale)} accessibilityLabel={t("nav.home.open", locale)} disabled={returningToBoard} onPress={() => void returnToBoard()} />
                 <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => openView('diary')} />
                 <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
                 <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
@@ -1676,7 +1725,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 workspace={workspace}
                 run={run}
                 onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
-                onBack={() => setMainView('board')}
+                onBack={() => void returnToBoard()}
               />
             </View>
           ) : null}
@@ -1690,7 +1739,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 placement={assetPlacement}
                 onAdded={(cardId) => void select(cardId)}
                 onGo={(cardId) => { void flushPendingText().then((ok) => { if (ok) revealCard(cardId); }); }}
-                onBack={() => setMainView('board')}
+                onBack={() => void returnToBoard()}
                 preferences={preferences}
                 onPreferencesChange={setPreferences}
               />
@@ -1709,7 +1758,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 onSendSelectionToTrash={archivedSelectionToTrash}
                 onExportSelection={(cardIds) => void exportArchivedSelection(cardIds)}
                 onRestoreBoard={(boardId, title) => void restoreArchivedBoardById(boardId, title)}
-                onBack={() => setMainView('board')}
+                onBack={() => void returnToBoard()}
               />
             </View>
           ) : null}
@@ -1830,27 +1879,30 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             recoverableCount={recoverableCount}
             onClose={() => setSettingsOpen(false)}
           />
-          {/* Móvil: «Más» reúne las secciones que no caben en la barra (ADR 0022). */}
+          {/* Sin barra lateral, «Más» reúne Inicio y las secciones/acciones que no caben (ADR 0022). */}
           <Dialog visible={moreOpen} title={t('more', locale)} compact={compact} onClose={() => setMoreOpen(false)} testID="more-sheet">
             {/* UX7-LAYOUT-CORRECTION: entre 800 y 1099 px no hay barra lateral y la barra de
                 herramientas ya inlinea Papelera/Diario/Archivo/Assets/Presentar/Imprimir/
                 Configuración (no caben en una barra lateral que no existe a este ancho) — así que
-                aquí solo viven identidad/estado, para no duplicar nada. UX7-CONSOLIDATION:
+                aquí solo viven identidad/estado y la salida explícita a Inicio, para no duplicar
+                las demás secciones. UX7-CONSOLIDATION:
                 «Recuperación» ya no es una entrada propia; su incidencia (si la hay) ya se anuncia en
                 `identityStatus`, y el acceso estable vive dentro de Configuración. */}
             {!sidebar && !compact ? (
               <View style={styles.toolbarExtras}>
-                {backButton}
                 {identityHeading}
                 {identityStatus}
               </View>
             ) : null}
-            {/* UX7-CONSOLIDATION (Hito C): mismo orden que la barra lateral de escritorio — Diario,
+            {/* UX7-CONSOLIDATION (Hito C) + UX7-D: mismo orden que la barra lateral — Inicio, Diario,
                 Assets, Archivo, Presentar, Imprimir; «Archivar este tablero» es una acción puntual del
                 tablero actual, no una sección de navegación, y se conserva junto a las demás acciones
                 de tablero. Configuración pasa al final, después de Proyectos/Guardar, igual que en la
                 región inferior fija de escritorio — antes aparecía antes de Proyectos/Guardar aquí, un
                 orden distinto al de escritorio sin motivo. */}
+            {!sidebar ? (
+              <NavItem testID="more-nav-home" icon="home" label={t("nav.home", locale)} accessibilityLabel={t("nav.home.open", locale)} disabled={returningToBoard} onPress={() => void returnToBoard()} />
+            ) : null}
             {compact ? (
               <>
                 <NavItem icon="diary" label={t("nav.diary", locale)} accessibilityLabel={t("nav.diary.open", locale)} onPress={() => { setMoreOpen(false); openView('diary'); }} />
@@ -1960,7 +2012,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 }
 
 /** Entrada de la barra lateral: solo secciones que funcionan (ADR 0016). */
-function NavItem({ icon, label, count, attention, testID, accessibilityLabel, onPress }: {
+function NavItem({ icon, label, count, attention, testID, accessibilityLabel, disabled = false, onPress }: {
   readonly icon: AppIconName;
   readonly label: string;
   readonly count?: number;
@@ -1972,6 +2024,7 @@ function NavItem({ icon, label, count, attention, testID, accessibilityLabel, on
   readonly attention?: string | undefined;
   readonly testID?: string;
   readonly accessibilityLabel: string;
+  readonly disabled?: boolean;
   readonly onPress: () => void;
 }) {
   const { theme } = useTheme();
@@ -1982,10 +2035,12 @@ function NavItem({ icon, label, count, attention, testID, accessibilityLabel, on
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={({ pressed }) => [styles.navItem, { borderColor: focused ? colors.selection : 'transparent', backgroundColor: pressed ? colors.surfaceRaised : 'transparent' }]}
+      style={({ pressed }) => [styles.navItem, disabled ? styles.navItemDisabled : null, { borderColor: focused ? colors.selection : 'transparent', backgroundColor: pressed ? colors.surfaceRaised : 'transparent' }]}
     >
       <View style={styles.navGlyph}><AppIcon name={icon} size={20} color={colors.textPrimary} /></View>
       <Text numberOfLines={1} style={[styles.navLabel, { color: colors.textPrimary }]}>{label}</Text>
@@ -2498,6 +2553,7 @@ const styles = StyleSheet.create({
   sectionLabel: { fontFamily: mono, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 8 },
   navRule: { height: 2, marginVertical: 8 },
   navItem: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, borderWidth: 2 },
+  navItemDisabled: { opacity: 0.55 },
   navGlyph: { width: 22, fontSize: 17, textAlign: 'center' },
   navLabel: { flex: 1, fontSize: 16, fontWeight: '800' },
   navCount: { fontSize: 13, fontWeight: '800' },
