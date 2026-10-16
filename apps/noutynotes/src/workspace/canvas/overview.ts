@@ -71,6 +71,25 @@ export function minimap(content: PixelBox | null, view: PixelBox, size: Size, pa
   };
 }
 
+/**
+ * UX7.3-A: ¿debe el efecto de ajuste inicial del Canvas consumir ya este `fitRequest`? En el primer
+ * render, `useWindowWidth()` (paquete `ui`) no tiene todavía la medida real de la ventana — se resuelve
+ * en modo compacto sin barra lateral por diseño (coincide con el HTML estático) — así que el `<View
+ * onLayout>` del lienzo puede medir, una sola vez, un ancho transitoriamente mayor que el real antes de
+ * que la barra/rail monten. Consumir el `fitRequest` con esa medida deja la cámara calculada para un
+ * encuadre que ya no existe y que nunca se vuelve a corregir (D57: solo un ajuste por apertura). Esperar
+ * a que `layoutReady` sea cierto (la misma señal que ya decide compacto/ancho) antes de consumirlo evita
+ * la carrera sin tocar `useWindowWidth`, sin `setTimeout` y sin cambiar el contrato de un solo ajuste.
+ */
+export function shouldConsumeFitRequest(input: {
+  readonly layoutReady: boolean;
+  readonly fitRequest: number;
+  readonly handledFitRequest: number;
+  readonly viewport: Size;
+}): boolean {
+  return input.layoutReady && input.fitRequest !== input.handledFitRequest && input.viewport.width > 0 && input.viewport.height > 0;
+}
+
 /** Tarjetas que toca el rectángulo (en cualquier sentido del arrastre), en el orden del layout. */
 export function cardsInArea(layout: BoardLayout | undefined, metrics: CanvasMetrics, area: PixelBox): CardId[] {
   const left = Math.min(area.left, area.left + area.width);

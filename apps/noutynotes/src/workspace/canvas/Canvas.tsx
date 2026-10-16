@@ -29,7 +29,7 @@ import { InlineCardEditor } from './InlineCardEditor';
 import type { InlineCardEditorProps } from './InlineCardEditor';
 import { connectTarget } from './connect';
 import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
-import { cardsInArea, contentBounds, fitView } from './overview';
+import { cardsInArea, contentBounds, fitView, shouldConsumeFitRequest } from './overview';
 import type { CanvasMetrics, PixelBox, PlacementCheck, ResizeHandle } from './geometry';
 import { formatDay } from '../dates';
 import { clampZoom, panToRevealWorld, renderBase, visibleGridLines, worldPan, zoomAroundPoint, zoomIn, zoomOut } from './viewport';
@@ -93,6 +93,10 @@ interface CanvasProps {
   readonly onView: (zoom: number, pan: Point) => void;
   /** Cambia al abrir un tablero. El lienzo encuadra su contenido una sola vez cuando ya conoce el viewport. */
   readonly fitRequest: number;
+  /** UX7.3-A: la medida real de la ventana ya está disponible (no la del primer render sin barra
+   * lateral) — hasta entonces, un `fitRequest` pendiente espera en vez de consumirse con un ancho
+   * transitorio. Misma señal que ya decide `compact`/`sidebar` en `WorkspaceScreen`. */
+  readonly layoutReady: boolean;
   readonly onResetView: () => void;
   readonly onAreaSelect: (cardIds: readonly CardId[]) => void;
   /** Fecha de creación en el pie de las fichas (ADR 0029). */
@@ -156,6 +160,9 @@ interface CanvasProps {
   readonly onCardCopy: (cardId: CardId) => void;
   readonly onCardDuplicate: (cardId: CardId) => void;
   readonly onCardPaste: () => void;
+  /** UX7.3-B: binario del menú contextual — alterna `frameOverride` entre 'visible' y 'hidden' según
+   * el estado EFECTIVO actual (ya resuelta la preferencia global `hideFrames`). */
+  readonly onCardToggleFrame: (cardId: CardId) => void;
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
@@ -218,7 +225,7 @@ function rejection(check: PlacementCheck, names: ReadonlyMap<CardId, string>): s
  */
 export function Canvas(props: CanvasProps) {
   const { workspace, layout, metrics, zoom, pan, tool, snap, showGrid, selectedId, connectSource, boardTitle,
-    fitRequest, onResetView, onView } = props;
+    fitRequest, layoutReady, onResetView, onView } = props;
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -226,7 +233,9 @@ export function Canvas(props: CanvasProps) {
   const handledFitRequest = useRef(0);
   const [gesture, setGesture] = useState<Gesture | null>(null);
   useEffect(() => {
-    if (fitRequest === handledFitRequest.current || viewport.width <= 0 || viewport.height <= 0 || !layout) return;
+    // UX7.3-A: con `layoutReady` todavía falso, esta medida puede ser la transitoria del primer render
+    // sin barra lateral — se espera a la siguiente, ya estable, en vez de consumir la petición ahora.
+    if (!shouldConsumeFitRequest({ layoutReady, fitRequest, handledFitRequest: handledFitRequest.current, viewport }) || !layout) return;
     handledFitRequest.current = fitRequest;
     const bounds = contentBounds(layout, metrics);
     if (!bounds) {
@@ -237,7 +246,7 @@ export function Canvas(props: CanvasProps) {
     // reduce el texto a una escala microscópica. La cámara cambia; las coordenadas durables no.
     const fitted = fitView(bounds, viewport, 64);
     onView(fitted.zoom, fitted.pan);
-  }, [fitRequest, layout, metrics, onResetView, onView, viewport]);
+  }, [fitRequest, layoutReady, layout, metrics, onResetView, onView, viewport]);
   // Puente local al soltar (auditoría de interacción, 2026-09-29): `setGesture(null)` de aquí y el
   // `pendingRects` que llega por props desde `WorkspaceScreen` no tienen garantizado el mismo ciclo de
   // render (son componentes distintos). Reproducido: sin este puente, un redibujado entre ambos mostraba
@@ -1092,6 +1101,7 @@ export function Canvas(props: CanvasProps) {
           compact={props.compact}
           canQuickEdit={canQuickEditMenuCard}
           canPaste={props.canPaste}
+          frameHidden={Boolean(menuCard?.frameOverride === 'hidden' || (props.hideFrames && menuCard?.frameOverride !== 'visible'))}
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
           onQuickEdit={() => props.onCardOpen(menuPlacement.cardId)}
@@ -1103,6 +1113,7 @@ export function Canvas(props: CanvasProps) {
           onSelectMany={() => props.onSelectMany(menuPlacement.cardId)}
           onArchive={() => props.onArchive(menuPlacement.cardId)}
           onAction={(action) => runAction(menuPlacement.cardId, action)}
+          onToggleFrame={() => props.onCardToggleFrame(menuPlacement.cardId)}
           onClose={() => setMenuFor(null)}
         />
       ) : null}

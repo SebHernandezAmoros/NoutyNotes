@@ -558,8 +558,6 @@ test('UX7 consolidación: pliega solo la toolbar de edición rápida y conserva 
   await toggle.click();
   await expect(toolbar).toBeHidden();
   await expect(page.getByTestId('inline-body-mode-switch')).toBeVisible();
-  await expect(button(page, 'Editar el cuerpo visualmente')).toHaveCount(0);
-  await expect(button(page, 'Editar el código HTML del cuerpo')).toHaveCount(0);
   await expect(inline).toBeVisible();
   await expect(content).toContainText('Documento que no debe desmontarse');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -575,6 +573,39 @@ test('UX7 consolidación: pliega solo la toolbar de edición rápida y conserva 
   await button(page, 'Contraer Nota').click();
   await expect(inline).toHaveCount(0);
   await expect(page.getByTestId('collapsed-tarjeta-1')).toBeVisible();
+});
+
+test('D-HTML: el modo HTML solo existe en el editor enfocado; la edición rápida es siempre visual y no pierde contenido ya autorado como HTML', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida solo existe en escritorio.');
+  await page.goto('./');
+  await createWorkspace(page, 'Solo HTML enfocado');
+  await insertFromMenu(page, 'Insertar nota');
+
+  // Autorar HTML desde el editor enfocado (el único lugar donde ese modo existe): un atributo que
+  // exige HTML real (alineación), no representable en el Markdown que usa la edición rápida por
+  // defecto, para comprobar que la visual de edición rápida lo sigue mostrando sin perderlo.
+  await openFullCardEditor(page, card(page, 1));
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await page.getByTestId('html-source-input').fill('<p data-nouty-align="center">Centrado desde HTML</p>');
+  await button(page, 'Validar y aplicar el código HTML').click();
+  await button(page, 'Editar el cuerpo visualmente').click();
+  await button(page, 'Guardar texto').click();
+  await closeEditor(page);
+
+  // Edición rápida: nunca ofrece cambiar a HTML, pero el contenido ya autorado como HTML se ve
+  // intacto en su editor visual — D-HTML no permite perderlo ni transformarlo automáticamente.
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await button(page, 'Editar Nueva nota dentro de la ficha').click();
+  await expect(button(page, 'Editar el cuerpo visualmente')).toHaveCount(0);
+  await expect(button(page, 'Editar el código HTML del cuerpo')).toHaveCount(0);
+  await expect(page.getByLabel('Contenido visual')).toContainText('Centrado desde HTML');
+  await button(page, 'Guardar y cerrar la edición rápida').click();
+
+  // El editor enfocado conserva su modo HTML sin cambios, con el mismo documento.
+  await openFullCardEditor(page, card(page, 1));
+  await expect(button(page, 'Editar el código HTML del cuerpo')).toBeVisible();
+  await button(page, 'Editar el código HTML del cuerpo').click();
+  await expect(page.getByTestId('html-source-input')).toHaveValue(/data-nouty-align="center">Centrado desde HTML/);
 });
 
 test('controles de cabecera: −, contraer/expandir y ×, sin seleccionar; menú «⋯» si no caben; 44 px con cualquier zoom (ADR 0016)', async ({ page }, testInfo) => {

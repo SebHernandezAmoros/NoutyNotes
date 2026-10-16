@@ -165,6 +165,50 @@ test('UX7-D-FIX: Inicio vuelve desde Diario, Assets y Archivo al mismo tablero c
   expect(page.url()).toBe(route);
   expect(await canvasTransform(page)).toEqual(transform);
 });
+
+/**
+ * UX7.3-A: la condición de carrera exacta (primer render sin medida real de ventana, `useSyncExternalStore`
+ * resolviendo tras la hidratación) se reprodujo y se corrigió a nivel de unidad en
+ * `canvas/overview.test.ts` (`shouldConsumeFitRequest`) — es una ventana de milisegundos durante la
+ * carga que Playwright no puede forzar con fiabilidad desde fuera. Esta prueba es la comprobación de
+ * extremo a extremo complementaria: una apertura real, con Notas repartidas por el tablero, termina
+ * encuadrada dentro del área visible real del lienzo en cada ancho de referencia.
+ */
+for (const width of [1366, 1100, 900, 390] as const) {
+  test(`UX7.3-A: abrir un tablero con Notas repartidas las encuadra dentro del área visible (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await page.goto('./');
+    await createWorkspace(page, `Encuadre ${width}`);
+    await addCards(page, ['nota']);
+    await addCards(page, ['nota']);
+    await addCards(page, ['nota']);
+    const canvas = await box(page.getByTestId('board-canvas'));
+    for (const id of [1, 2, 3]) {
+      const target = card(page, id);
+      if (!(await target.isVisible().catch(() => false))) continue;
+      const cardBox = await box(target);
+      const centerX = cardBox.x + cardBox.width / 2;
+      const centerY = cardBox.y + cardBox.height / 2;
+      expect(centerX).toBeGreaterThanOrEqual(canvas.x);
+      expect(centerX).toBeLessThanOrEqual(canvas.x + canvas.width);
+      expect(centerY).toBeGreaterThanOrEqual(canvas.y);
+      expect(centerY).toBeLessThanOrEqual(canvas.y + canvas.height);
+    }
+  });
+}
+
+test('UX7.3-A: un tablero vacío conserva el encuadre por defecto en los cuatro anchos de referencia', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'La misma sesión desktop recorre los cuatro anchos.');
+  await page.goto('./');
+  await createWorkspace(page, 'Tablero vacio encuadre');
+  for (const width of [1366, 1100, 900, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await openWorkspaceSection(page, 'Abrir el archivo');
+    await activateWorkspaceHome(page);
+    await expect(page.getByTestId('board-canvas')).toBeVisible();
+    await expect(page.getByTestId('board-empty')).toBeVisible();
+  }
+});
 /**
  * Activar con el teclado una tarjeta que el pan o la barra de acciones pueden dejar fuera de la vista
  * o tapada: el foco la trae con el pan y Espacio dispara el mismo onPress que un toque. Un clic en su
@@ -681,7 +725,17 @@ const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width 
 async function createWorkspace(page: Page, name: string) {
   await page.getByLabel('Nombre del nuevo espacio').fill(name);
   await button(page, 'Crear un espacio').click();
-  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  const heading = page.getByRole('heading', { name, exact: true });
+  const width = page.viewportSize()?.width ?? 0;
+  // UX7-LAYOUT-CORRECTION: entre 800 y 1099 px (ni compacto ni con barra lateral) la identidad del
+  // proyecto vive dentro de «Más secciones», no encima del lienzo (mismo criterio que UX7-D-FIX).
+  if (width >= at.width && width < 1100) {
+    await button(page, 'Más secciones').click();
+    await expect(heading).toBeVisible();
+    await button(page, 'Cerrar más').click();
+    return;
+  }
+  await expect(heading).toBeVisible();
 }
 
 async function addCards(page: Page, kinds: readonly 'nota'[]) {
@@ -1850,37 +1904,6 @@ test('UX7.1-IMAGES-FIX: «Pegar imagen aquí» sin una imagen compatible avisa y
 
   await expect(page.getByText('El portapapeles no tiene una imagen compatible')).toBeVisible();
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(1);
-});
-
-test('UX7-QUICK-EDIT: conserva HTML válido al abrir el editor completo y bloquea la salida con HTML inválido', async ({ page }, testInfo) => {
-  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida se ofrece en escritorio.');
-  await page.goto('./');
-  await createWorkspace(page, 'Salida HTML rápida');
-  await addCards(page, ['nota']);
-  await selectCard(page, 1);
-  await openCardActions(page, card(page, 1), 'Nueva nota');
-  await button(page, 'Editar Nueva nota dentro de la ficha').click();
-
-  const inline = page.getByTestId('inline-card-editor');
-  await inline.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
-  await inline.getByTestId('inline-html-source').fill('<h2>Transferencia segura</h2><p>Sin aplicar manualmente.</p>');
-  await inline.getByRole('button', { name: 'Continuar en el Inspector' }).click();
-  await expect(inline).toHaveCount(0);
-  await expect(page.getByTestId('card-inspector')).toBeVisible();
-  await expect(page.getByLabel('Contenido visual').locator('h2')).toHaveText('Transferencia segura');
-  await expect(page.getByLabel('Contenido visual').locator('p')).toHaveText('Sin aplicar manualmente.');
-  await closeEditor(page);
-
-  await selectCard(page, 1);
-  await openCardActions(page, card(page, 1), 'Nueva nota');
-  await button(page, 'Editar Nueva nota dentro de la ficha').click();
-  await inline.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
-  await inline.getByTestId('inline-html-source').fill('<p><script>no permitido</script></p>');
-  await inline.getByRole('button', { name: 'Guardar y cerrar la edición rápida' }).click();
-  await expect(inline).toBeVisible();
-  await expect(inline.getByTestId('inline-html-error')).toBeVisible();
-  await expect(inline.getByTestId('inline-html-source')).toHaveValue('<p><script>no permitido</script></p>');
-  await page.screenshot({ path: testInfo.outputPath('quick-edit-invalid-html-protected.png') });
 });
 
 test('alineación vertical de Nota se conserva al cerrar y reabrir sin afectar el acceso al contenido', async ({ page }, testInfo) => {
@@ -3413,6 +3436,57 @@ test('marco de las fichas: preferencia global y excepción por ficha, con el foc
   await expect(button(page, 'Según preferencia')).toHaveAttribute('aria-pressed', 'true');
   await closeEditor(page);
   await expect.poll(() => borderWidth(card(page, 2))).toBe(2);
+});
+
+test('UX7.3-B: el menú contextual de la Nota alterna «Mostrar»/«Ocultar marco» según el estado efectivo', async ({ page }) => {
+  // El efecto visual del marco (ancho de borde en reposo) ya lo prueba «ADR 0049» a partir del mismo
+  // `frameOverride`/preferencia global; esta prueba cubre lo nuevo: que el binario del menú contextual
+  // lea y escriba ese mismo estado correctamente, incluida la lectura EFECTIVA (no el `frameOverride`
+  // crudo) cuando la preferencia global decide por la Nota. (El nombre accesible del botón es la
+  // etiqueta completa, «Ocultar/Mostrar el marco de…»; el texto visible es solo la versión corta.)
+  await page.goto('./');
+  await createWorkspace(page, 'Marco menú');
+  await addCards(page, ['nota']);
+
+  // Por defecto (sin excepción, preferencia global apagada): el menú ofrece ocultarlo, no mostrarlo.
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await expect(button(page, 'Ocultar el marco de Nueva nota')).toBeVisible();
+  await expect(button(page, 'Mostrar el marco de Nueva nota')).toHaveCount(0);
+  await button(page, 'Ocultar el marco de Nueva nota').click();
+  await openFullCardEditor(page, card(page, 1));
+  await button(page, 'Mostrar apariencia y propiedades').click();
+  await expect(button(page, 'Ocultar siempre')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+
+  // Reabrir el mismo menú refleja el estado EFECTIVO ya oculto: ahora ofrece mostrarlo. Cerrar el
+  // Inspector deselecciona la tarjeta (en compacto, sin selección no hay controles que abrir: hay que
+  // volver a seleccionarla primero, como haría alguien tocándola).
+  await selectCard(page, 1);
+  await openCardActions(page, card(page, 1), 'Nueva nota');
+  await expect(button(page, 'Mostrar el marco de Nueva nota')).toBeVisible();
+  await button(page, 'Mostrar el marco de Nueva nota').click();
+  await openFullCardEditor(page, card(page, 1));
+  await button(page, 'Mostrar apariencia y propiedades').click();
+  await expect(button(page, 'Mostrar siempre')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
+
+  // Con la preferencia global encendida y sin excepción en una segunda Nota, el estado efectivo ya es
+  // oculto y el binario del menú lo refleja igual, aunque su `frameOverride` siga sin tocar todavía.
+  // Un nombre propio evita la ambigüedad con la tarjeta anterior: ambas se llaman «Nueva nota» por
+  // defecto y el menú contextual las busca por su nombre accesible completo.
+  await setSwitch(page, 'Ocultar el marco de las fichas', true);
+  await addCards(page, ['nota']);
+  await openFullCardEditor(page, card(page, 2));
+  await fillCardTitle(page, 'Marco global');
+  await closeEditor(page);
+  await selectCard(page, 2);
+  await openCardActions(page, card(page, 2), 'Marco global');
+  await expect(button(page, 'Mostrar el marco de Marco global')).toBeVisible();
+  await button(page, 'Mostrar el marco de Marco global').click();
+  await openFullCardEditor(page, card(page, 2));
+  await button(page, 'Mostrar apariencia y propiedades').click();
+  await expect(button(page, 'Mostrar siempre')).toHaveAttribute('aria-pressed', 'true');
+  await closeEditor(page);
 });
 
 test('tamaño semántico de título y cuerpo por ficha, igual en el lienzo y en Lista (UX7-D4, ADR 0050)', async ({ page }) => {

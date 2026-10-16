@@ -1,7 +1,7 @@
 import type { BoardId, BoardLayout, CardId } from '@noutynotes/domain';
 import { describe, expect, it } from 'vitest';
 
-import { cardsInArea, contentBounds, fitView, minimap, panToCenter, visibleWorld } from './overview';
+import { cardsInArea, contentBounds, fitView, minimap, panToCenter, shouldConsumeFitRequest, visibleWorld } from './overview';
 
 const metrics = { cell: 100, row: 50, gap: 0 };
 const place = (cardId: string, x: number, y: number, w: number, h: number, display: 'expanded' | 'minimized' = 'expanded') =>
@@ -48,5 +48,26 @@ describe('vista general del lienzo (ADR 0028)', () => {
   it('el rectángulo de selección toma las tarjetas que toca, en cualquier sentido del arrastre', () => {
     expect(cardsInArea(layout, metrics, { left: 150, top: 80, width: -100, height: -60 })).toEqual(['a']);
     expect(cardsInArea(layout, metrics, { left: 500, top: 500, width: 10, height: 10 })).toEqual([]);
+  });
+});
+
+describe('UX7.3-A: cuándo el ajuste inicial puede consumir un fitRequest (condición de carrera del encuadre)', () => {
+  const base = { fitRequest: 1, handledFitRequest: 0, viewport: { width: 800, height: 600 } };
+
+  it('con el layout todavía sin resolver (primer render sin medida real de ventana), espera', () => {
+    expect(shouldConsumeFitRequest({ ...base, layoutReady: false })).toBe(false);
+  });
+
+  it('con el layout ya resuelto, consume la petición pendiente', () => {
+    expect(shouldConsumeFitRequest({ ...base, layoutReady: true })).toBe(true);
+  });
+
+  it('una petición ya atendida no se vuelve a consumir, aunque el layout cambie', () => {
+    expect(shouldConsumeFitRequest({ ...base, layoutReady: true, fitRequest: 1, handledFitRequest: 1 })).toBe(false);
+  });
+
+  it('sin una medida real del lienzo todavía (ancho o alto en 0), espera', () => {
+    expect(shouldConsumeFitRequest({ ...base, layoutReady: true, viewport: { width: 0, height: 600 } })).toBe(false);
+    expect(shouldConsumeFitRequest({ ...base, layoutReady: true, viewport: { width: 800, height: 0 } })).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import {
-  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, addNoteImage, addNoteImageDocument, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardContent, editConnectorPath, importImageCard, importImageCardAt, insertExistingNoteImage, insertExistingNoteImageDocument,
+  PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, addNoteImage, addNoteImageDocument, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardAppearance, editCardContent, editConnectorPath, importImageCard, importImageCardAt, insertExistingNoteImage, insertExistingNoteImageDocument,
   groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
@@ -602,6 +602,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const duplicateCard = async (cardId: CardId) => {
     if (!board) return;
     await run((storage, workspaceId) => duplicateSelection(storage, workspaceId, board.id, [cardId]), 'action.selectionDuplicated');
+  };
+  /** UX7.3-B: binario del menú contextual — alterna el estado EFECTIVO (override + preferencia
+   * global `hideFrames`), nunca lo reinicia a «según preferencia» (eso sigue siendo exclusivo del
+   * selector de 3 vías del Inspector). */
+  const toggleCardFrame = async (cardId: CardId) => {
+    const card = workspace?.cards.find((candidate) => candidate.id === cardId);
+    if (!card) return;
+    const effectivelyHidden = card.frameOverride === 'hidden' || (preferences.hideFrames && card.frameOverride !== 'visible');
+    const frameOverride = effectivelyHidden ? 'visible' : 'hidden';
+    await run((storage, id) => editCardAppearance(storage, id, cardId, { frameOverride }), { label: 'Apariencia actualizada' }, { reactive: true });
   };
   const pasteClipboardAt = async (point: GridPoint) => {
     if (!board || !clipboard) return;
@@ -1658,6 +1668,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onFrameMove={moveFrame}
         onZoom={setZoom}
         fitRequest={boardFitRequest}
+        layoutReady={width !== null}
         onView={(nextZoom, nextPan) => { setZoom(nextZoom); setPan(nextPan); }}
         onResetView={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
         onAreaSelect={(cardIds) => void startMulti(cardIds)}
@@ -1712,6 +1723,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onDisplay={(cardId, display) => changeDisplay(cardId, display)}
         onCardCopy={copyCard}
         onCardDuplicate={(cardId) => { void duplicateCard(cardId); }}
+        onCardToggleFrame={(cardId) => { void toggleCardFrame(cardId); }}
         onCardPaste={() => { void pasteClipboard(); }}
         onTrash={(cardId) => void sendToTrash(cardId)}
         onArchive={(cardId) => void archiveSelected(cardId)}
@@ -1944,9 +1956,17 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                   <ScrollView ref={sheetScroll} onScroll={onSheetScroll} scrollEventThrottle={32} style={sheetHidden ? styles.hidden : null} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">{inspector}</ScrollView>
                 </View>
               ) : null}
-              {/* UX7-LAYOUT-CORRECTION: la barra ya no se oculta al enfocar una tarjeta — es la única
-                  vía compacta hacia «Más secciones» (Proyectos/Guardar/Recuperación no viven en
-                  ninguna fila permanente encima; deben seguir alcanzables incluso editando). */}
+              {/* UX7-LAYOUT-CORRECTION: la barra ya no se oculta solo por enfocar/seleccionar una
+                  tarjeta — es la única vía compacta hacia «Más secciones» (Proyectos/Guardar/
+                  Recuperación no viven en ninguna fila permanente encima). UX7.3-C (defecto
+                  confirmado, pendiente de decisión de producto): `typing` solo puede ser cierto en
+                  nativo (`useKeyboardInset` devuelve siempre 0 en web; aquí, con el teclado real del
+                  sistema cubriendo pantalla, la barra completa SÍ se oculta — y con ella la única vía
+                  a «Más secciones» — para dejar sitio a la hoja del editor). En web esta rama nunca se
+                  activa, así que no hay forma de confirmarla ni corregirla con una prueba de
+                  navegador; sin un dispositivo Android/iOS real no se puede afirmar qué ocurre ahí.
+                  Qué (si algo) debería seguir accesible durante ese tramo no está decidido todavía;
+                  ver Docs/knowledge/UX7-CANVAS-EXPERIENCE.md (sección I, inventario de la barra). */}
               {compact && !typing ? toolbar : null}
             </View>
           ) : null}

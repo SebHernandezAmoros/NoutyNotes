@@ -5,7 +5,6 @@ import { useLocale, useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { ActionButton, TextField } from '../../components/controls';
 import { AppIcon } from '../../components/AppIcon';
 import { DialogCloseButton } from '../../components/Dialog';
 import { t } from '../../i18n';
@@ -16,8 +15,6 @@ import { resolveMarkdownImagePlace } from '../noteImagePlacement';
 import type { MarkdownImagePlace, NoteImageSource, ResolvedNoteImageSource, VisualImagePlace } from '../noteImagePlacement';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
-
-const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
 export interface InlineCardEditorProps {
   readonly card: Card;
@@ -70,39 +67,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   // silencioso); `setSaving` se conserva porque `persist()` todavía lo usa para no solapar guardados.
   const [, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  // UX7-CONSOLIDATION: Visual/HTML en edición rápida reutiliza los dos mecanismos seguros ya
-  // existentes: `htmlCodec` (mismo codec HTML v1/lista blanca que `CardInspector.tsx`) para leer,
-  // validar y persistir el HTML de origen, y `richTextCodec` para conservar la lectura Markdown.
-  const [bodyMode, setBodyMode] = useState<'visual' | 'html'>('visual');
-  const [htmlDraft, setHtmlDraft] = useState('');
-  const [htmlIssue, setHtmlIssue] = useState<string | null>(null);
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
-  const openHtml = () => {
-    const source = visualDocument ? htmlCodec.serialize(visualDocument) : null;
-    setHtmlDraft(source?.ok ? source.value : '');
-    setHtmlIssue(null);
-    setBodyMode('html');
-  };
-  const changeHtml = (value: string) => { setHtmlDraft(value); if (htmlIssue) setHtmlIssue(null); };
-  const discardHtml = () => { setHtmlIssue(null); setBodyMode('visual'); };
-  const commitHtmlDraft = (): EditableCardDraft | null => {
-    const parsed = htmlCodec.parse(htmlDraft);
-    if (!parsed.ok) { setHtmlIssue(parsed.issues[0]?.message ?? 'El código HTML no es válido.'); return null; }
-    const encoded = htmlCodec.serialize(parsed.value);
-    if (!encoded.ok) { setHtmlIssue(encoded.issues[0]?.message ?? 'No se pudo aplicar el código.'); return null; }
-    const draft: EditableCardDraft = { cardId: card.id, title, content: encoded.value, titleDocument,
-      bodySource: { format: 'html', value: encoded.value }, bodyDocument: parsed.value, bodyValidation: { status: 'valid' } };
-    setHtmlAuthored(true);
-    setContent(encoded.value);
-    setVisualDocument(supportsVisualDocument(parsed.value) ? parsed.value : null);
-    onDraftChange(draft);
-    setHtmlIssue(null);
-    return draft;
-  };
-  const applyHtml = () => {
-    if (commitHtmlDraft() === null) return;
-    setBodyMode('visual');
-  };
   // UX7-VISUAL-FINALIZATION: el título se conserva en la sesión y en el guardado, pero se edita como
   // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
@@ -218,20 +183,9 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     return () => window.removeEventListener('beforeunload', warn);
   }, []);
 
-  const close = () => {
-    const draft = bodyMode === 'html' ? commitHtmlDraft() : undefined;
-    if (draft === null) return;
-    void persist(draft).then((ok) => { if (ok) onClose(); });
-  };
-  const collapse = () => {
-    const draft = bodyMode === 'html' ? commitHtmlDraft() : undefined;
-    if (draft === null) return;
-    void persist(draft).then((ok) => { if (ok) onCollapse(); });
-  };
-  const advanced = () => {
-    if (bodyMode === 'html' && commitHtmlDraft() === null) return;
-    onAdvanced();
-  };
+  const close = () => { void persist().then((ok) => { if (ok) onClose(); }); };
+  const collapse = () => { void persist().then((ok) => { if (ok) onCollapse(); }); };
+  const advanced = () => onAdvanced();
   return (
     <View
       testID="inline-card-editor"
@@ -273,8 +227,6 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
           >
             <Text style={[styles.toolsToggleText, { color: colors.cardText }]}>{toolsCollapsed ? '+ Mostrar herramientas' : '− Ocultar herramientas'}</Text>
           </Pressable>
-          {toolsCollapsed ? null : <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => { if (bodyMode === 'html') applyHtml(); }} />}
-          {toolsCollapsed ? null : <ActionButton label="HTML" accessibilityLabel="Editar el código HTML del cuerpo" pressed={bodyMode === 'html'} onPress={openHtml} />}
         </View>
       ) : null}
       {floatingText ? (
@@ -290,17 +242,6 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
           placeholderTextColor={colors.textSecondary}
           style={[styles.plainText, { color: colors.cardText }, noteFontFamily === undefined ? null : { fontFamily: noteFontFamily }]}
         />
-      ) : bodyMode === 'html' ? (
-        <View testID="inline-html-editor" style={styles.htmlEditor}>
-          <TextField testID="inline-html-source" label="Código HTML del cuerpo" value={htmlDraft} onChangeText={changeHtml} multiline fontFamily={mono} />
-          {htmlIssue ? (
-            <Text testID="inline-html-error" accessibilityLiveRegion="assertive" style={[styles.modeHint, { color: colors.danger }]}>{htmlIssue}</Text>
-          ) : null}
-          <View style={styles.modeRow}>
-            <ActionButton label="Aplicar HTML" accessibilityLabel="Validar y aplicar el código HTML" tone="primary" onPress={applyHtml} />
-            <ActionButton label="Descartar" accessibilityLabel="Descartar los cambios del código HTML" onPress={discardHtml} />
-          </View>
-        </View>
       ) : visualDocument ? (
         <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} images={noteImages} onOpenFullEditor={advanced} fontFamily={noteFontFamily} compact toolbarCollapsed={toolsCollapsed}
           onInsertImage={(document, afterBlock) => placeVisualImage(document, { kind: 'insert', afterBlock })}

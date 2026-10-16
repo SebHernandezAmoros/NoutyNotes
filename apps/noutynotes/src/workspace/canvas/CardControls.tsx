@@ -76,7 +76,7 @@ function Control({ testID, icon, label, danger = false, floating = false, contai
 }
 
 /** Acciones cercanas a la tarjeta en escritorio; hoja temporal en móvil. */
-export function CardMenu({ title, display, compact, canQuickEdit, canPaste, anchor, onEdit, onQuickEdit, onTags, onConnect, onCopy, onDuplicate, onPaste, onSelectMany, onArchive, onAction, onClose }: {
+export function CardMenu({ title, display, compact, canQuickEdit, canPaste, frameHidden, anchor, onEdit, onQuickEdit, onTags, onConnect, onCopy, onDuplicate, onPaste, onSelectMany, onArchive, onAction, onToggleFrame, onClose }: {
   readonly title: string;
   readonly display: CardDisplayMode;
   readonly compact: boolean;
@@ -87,6 +87,9 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, anch
    * deja de mostrarse cuando llevaría exactamente al mismo sitio que «Completo». */
   readonly canQuickEdit: boolean;
   readonly canPaste: boolean;
+  /** UX7.3-B: estado EFECTIVO del marco (ya resuelta la preferencia global, no solo `frameOverride`
+   * crudo) — decide si este botón ofrece «Mostrar marco» u «Ocultar marco». */
+  readonly frameHidden: boolean;
   readonly anchor: { readonly left: number; readonly top: number } | null;
   readonly onEdit: () => void;
   readonly onQuickEdit: () => void;
@@ -98,6 +101,7 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, anch
   readonly onSelectMany: () => void;
   readonly onArchive: () => void;
   readonly onAction: (action: CardAction) => void;
+  readonly onToggleFrame: () => void;
   readonly onClose: () => void;
 }) {
   const { theme } = useTheme();
@@ -135,6 +139,11 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, anch
             accessibilityLabel={actionLabel(action, title, locale)} onPress={() => { onClose(); onAction(action); }} />
         ))}
       </View>
+      {/* UX7.3-B: fila propia, no un tercer hueco en `menuDisplayRow` — a 248 px (el ancho real del
+          popover de escritorio) tres acciones iguales ya truncaban su texto a una letra. */}
+      <MenuAction icon="frame" label={t(frameHidden ? 'cardMenu.frame.show' : 'cardMenu.frame.hide', locale)}
+        accessibilityLabel={t(frameHidden ? 'cardMenu.frame.show.accessibilityLabel' : 'cardMenu.frame.hide.accessibilityLabel', locale, { title })}
+        onPress={() => { onClose(); onToggleFrame(); }} />
       <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
       <Text style={[styles.menuSection, { color: colors.textSecondary }]}>{t('cardMenu.section.organize', locale)}</Text>
       <View style={styles.menuGrid}>
