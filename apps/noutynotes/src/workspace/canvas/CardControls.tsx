@@ -120,48 +120,44 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
     window.addEventListener('keydown', escape);
     return () => { cancelAnimationFrame(first); window.removeEventListener('keydown', escape); opener?.focus(); };
   }, [compact, onClose]);
+  // UX7.3-MENU: lista vertical de una sola columna — sin recuadro propio por acción ni encabezados de
+  // sección repetidos (TRABAJAR/APARIENCIA/ORGANIZAR). El orden conserva las mismas 12-13 acciones de
+  // siempre, agrupadas solo por su posición; un único divisor separa la acción destructiva del resto.
   const content = (
     <View style={styles.menu}>
-      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>{t('cardMenu.section.work', locale)}</Text>
-      <View style={styles.menuGrid}>
-        {canQuickEdit ? (
-          <MenuAction half icon="edit" label={t('cardMenu.edit', locale)} accessibilityLabel={quickEditLabel} onPress={() => { onClose(); onQuickEdit(); }} />
-        ) : null}
-        <MenuAction half={canQuickEdit} icon="expand" label={t('cardMenu.full', locale)} accessibilityLabel={t('cardMenu.full.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onEdit(); }} />
-        <MenuAction half icon="star" label={t('cardMenu.tags', locale)} accessibilityLabel={t('cardMenu.tags.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onTags(); }} />
-        <MenuAction half icon="connect" label={t('cardMenu.connect', locale)} accessibilityLabel={t('cardMenu.connect.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onConnect(); }} />
-      </View>
-      <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
-      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>{t('cardMenu.section.appearance', locale)}</Text>
-      <View style={styles.menuDisplayRow}>
-        {displayActions.map((action) => (
-          <MenuAction key={action.kind} compact icon={action.kind === 'minimized' ? 'minus' : action.kind === 'collapsed' ? 'collapse' : 'expand'} label={actionVerb(action, locale)}
-            accessibilityLabel={actionLabel(action, title, locale)} onPress={() => { onClose(); onAction(action); }} />
-        ))}
-      </View>
-      {/* UX7.3-B: fila propia, no un tercer hueco en `menuDisplayRow` — a 248 px (el ancho real del
-          popover de escritorio) tres acciones iguales ya truncaban su texto a una letra. */}
-      <MenuAction icon="frame" label={t(frameHidden ? 'cardMenu.frame.show' : 'cardMenu.frame.hide', locale)}
+      {canQuickEdit ? (
+        <MenuRow icon="edit" label={t('cardMenu.edit', locale)} accessibilityLabel={quickEditLabel} onPress={() => { onClose(); onQuickEdit(); }} />
+      ) : null}
+      <MenuRow icon="expand" label={t('cardMenu.full', locale)} accessibilityLabel={t('cardMenu.full.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onEdit(); }} />
+      <MenuRow icon="star" label={t('cardMenu.tags', locale)} accessibilityLabel={t('cardMenu.tags.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onTags(); }} />
+      <MenuRow icon="connect" label={t('cardMenu.connect', locale)} accessibilityLabel={t('cardMenu.connect.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onConnect(); }} />
+      {displayActions.map((action) => (
+        <MenuRow key={action.kind} icon={action.kind === 'minimized' ? 'minus' : action.kind === 'collapsed' ? 'collapse' : 'expand'} label={actionVerb(action, locale)}
+          accessibilityLabel={actionLabel(action, title, locale)} onPress={() => { onClose(); onAction(action); }} />
+      ))}
+      <MenuRow icon="frame" label={t(frameHidden ? 'cardMenu.frame.show' : 'cardMenu.frame.hide', locale)}
         accessibilityLabel={t(frameHidden ? 'cardMenu.frame.show.accessibilityLabel' : 'cardMenu.frame.hide.accessibilityLabel', locale, { title })}
         onPress={() => { onClose(); onToggleFrame(); }} />
-      <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
-      <Text style={[styles.menuSection, { color: colors.textSecondary }]}>{t('cardMenu.section.organize', locale)}</Text>
-      <View style={styles.menuGrid}>
-        <MenuAction half icon="copy" label={t('cardMenu.copy', locale)} accessibilityLabel={t('cardMenu.copy.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onCopy(); }} />
-        <MenuAction half icon="duplicate" label={t('cardMenu.duplicate', locale)} accessibilityLabel={t('cardMenu.duplicate.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onDuplicate(); }} />
-        {canPaste ? <MenuAction half icon="paste" label={t('cardMenu.paste', locale)} accessibilityLabel={t('cardMenu.paste.accessibilityLabel', locale)} onPress={() => { onClose(); onPaste(); }} /> : null}
-        <MenuAction half icon="select" label={t('cardMenu.selectMany', locale)} accessibilityLabel={t('cardMenu.selectMany.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onSelectMany(); }} />
-        <MenuAction half icon="archive" label={t('cardMenu.archive', locale)} accessibilityLabel={t('cardMenu.archive.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onArchive(); }} />
-      </View>
-      {trash ? <MenuAction icon="trash" danger label={actionVerb(trash, locale)} accessibilityLabel={actionLabel(trash, title, locale)} onPress={() => { onClose(); onAction(trash); }} /> : null}
+      <MenuRow icon="copy" label={t('cardMenu.copy', locale)} accessibilityLabel={t('cardMenu.copy.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onCopy(); }} />
+      <MenuRow icon="duplicate" label={t('cardMenu.duplicate', locale)} accessibilityLabel={t('cardMenu.duplicate.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onDuplicate(); }} />
+      {canPaste ? <MenuRow icon="paste" label={t('cardMenu.paste', locale)} accessibilityLabel={t('cardMenu.paste.accessibilityLabel', locale)} onPress={() => { onClose(); onPaste(); }} /> : null}
+      <MenuRow icon="select" label={t('cardMenu.selectMany', locale)} accessibilityLabel={t('cardMenu.selectMany.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onSelectMany(); }} />
+      <MenuRow icon="archive" label={t('cardMenu.archive', locale)} accessibilityLabel={t('cardMenu.archive.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onArchive(); }} />
+      {trash ? (
+        <>
+          <View style={[styles.menuRule, { backgroundColor: colors.gridLine }]} />
+          <MenuRow icon="trash" danger label={actionVerb(trash, locale)} accessibilityLabel={actionLabel(trash, title, locale)} onPress={() => { onClose(); onAction(trash); }} />
+        </>
+      ) : null}
     </View>
   );
   const menuTitle = t('cardControls.actionsOf', locale, { title });
   if (compact) return <Dialog visible title={menuTitle} compact onClose={onClose} testID="card-menu">{content}</Dialog>;
-  const width = Math.min(248, screen.width - 16);
-  // Incluye las dos filas de organización (copiar/duplicar/pegar/selección) para que el cálculo
-  // coloque el menú completo encima del ancla cuando se abre cerca del borde inferior.
-  const height = 470;
+  const width = Math.min(220, screen.width - 16);
+  // Altura real estimada a partir del número de filas visibles (antes, un valor fijo de 470 pensado
+  // para la cuadrícula anterior) — decide si el menú se abre encima o debajo del ancla.
+  const rowCount = (canQuickEdit ? 1 : 0) + 3 + displayActions.length + 1 + 2 + (canPaste ? 1 : 0) + 2 + (trash ? 1 : 0);
+  const height = Math.min(screen.height - 16, 52 + rowCount * 40 + (trash ? 9 : 0));
   const left = Math.max(8, Math.min(anchor?.left ?? 8, screen.width - width - 8));
   const below = (anchor?.top ?? 8) + CONTROL_SIZE + 4;
   const top = below + height <= screen.height - 8 ? below : Math.max(8, (anchor?.top ?? 8) - height - 4);
@@ -183,29 +179,32 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
   );
 }
 
-function MenuAction({ icon, label, accessibilityLabel, onPress, compact = false, half = false, danger = false }: {
+/** UX7.3-MENU: fila de ancho completo, sin recuadro propio — el resaltado de foco/presión basta para
+ * distinguirla, igual que un menú contextual nativo del sistema. */
+function MenuRow({ icon, label, accessibilityLabel, onPress, danger = false }: {
   readonly icon: AppIconName;
   readonly label: string;
   readonly accessibilityLabel: string;
   readonly onPress: () => void;
-  readonly compact?: boolean;
-  readonly half?: boolean;
   readonly danger?: boolean;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
+  const [focused, setFocused] = useState(false);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
-      style={({ pressed }) => [styles.menuAction, compact ? styles.menuActionCompact : null, half ? styles.menuActionHalf : null, {
-        borderColor: colors.gridLine,
-        backgroundColor: pressed ? colors.surfaceRaised : colors.surface,
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={({ pressed }) => [styles.menuRow, {
+        borderColor: focused ? colors.selection : 'transparent',
+        backgroundColor: pressed ? colors.surfaceRaised : 'transparent',
       }]}
     >
       <AppIcon name={icon} size={17} color={danger ? colors.danger : colors.textPrimary} />
-      <Text numberOfLines={1} style={[styles.menuActionText, { color: danger ? colors.danger : colors.textPrimary }]}>{label}</Text>
+      <Text numberOfLines={1} style={[styles.menuRowText, { color: danger ? colors.danger : colors.textPrimary }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -214,17 +213,12 @@ const styles = StyleSheet.create({
   row: { position: 'absolute', flexDirection: 'row', zIndex: 30 },
   control: { width: CONTROL_SIZE, height: CONTROL_SIZE, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   glyph: { fontSize: 22, lineHeight: 26, fontWeight: '900' },
-  menu: { gap: 5 },
-  menuGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
-  menuDisplayRow: { flexDirection: 'row', gap: 5 },
-  menuAction: { minHeight: 38, borderWidth: 1, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  menuActionCompact: { flex: 1, minWidth: 0, paddingHorizontal: 7 },
-  menuActionHalf: { flexBasis: '48%', flexGrow: 1, minWidth: 0, paddingHorizontal: 7 },
-  menuActionText: { flexShrink: 1, fontSize: 13, lineHeight: 17, fontWeight: '800' },
-  menuRule: { height: 1, marginVertical: 4 },
+  menu: { gap: 2 },
+  menuRow: { minHeight: 38, borderWidth: 2, borderRadius: 4, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  menuRowText: { flexShrink: 1, fontSize: 14, lineHeight: 18, fontWeight: '700' },
+  menuRule: { height: 1, marginVertical: 5 },
   backdrop: { flex: 1 },
-  popover: { position: 'absolute', borderWidth: 2, padding: 10, gap: 8 },
+  popover: { position: 'absolute', borderWidth: 2, padding: 8, gap: 8 },
   menuHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   menuTitle: { flex: 1, fontWeight: '900', fontSize: 16 },
-  menuSection: { fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: 1 },
 });
