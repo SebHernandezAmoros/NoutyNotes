@@ -2087,8 +2087,10 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
     if (isCompactWidth(page)) {
       await button(page, 'Más secciones').click();
       await expect(page.getByTestId('more-sheet')).toBeVisible();
+      await page.getByTestId('more-sheet').getByRole('button', { name: 'Abrir el diario', exact: true }).click();
+    } else {
+      await button(page, 'Abrir el diario').click();
     }
-    await button(page, 'Abrir el diario').click();
     await expect(page.getByTestId('diary-view')).toBeVisible();
   };
   await openDiary();
@@ -2096,15 +2098,25 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
   await expect(page.getByTestId('log-summary')).toHaveText('0 ENTRADAS · 1 TARJETA CREADA · 0 ARCHIVADAS');
   await expect(page.getByTestId('log-created-tarjeta-1')).toContainText('CREADA · NOTA');
   await button(page, 'Escribir la nota de hoy').click();
-  await expect(feedback(page)).toHaveText('Entrada del diario lista. Guardado en memoria.');
-  await page.getByLabel('Texto de la entrada').fill('Hoy empecé el plan.');
+  const diaryEditor = page.getByTestId('web-rich-text-content');
+  await expect(page.getByTestId('web-rich-text-editor')).toBeVisible();
+  await expect(button(page, 'HTML')).toHaveCount(0);
+  await diaryEditor.fill('Hoy empecé el plan con ñandú y <seguro>.');
+  await diaryEditor.press('ControlOrMeta+A');
+  await button(page, 'Negrita').click();
   await button(page, 'Guardar entrada').click();
-  await expect(feedback(page)).toHaveText('Entrada del diario guardada. Guardado en memoria.');
   await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 1 TARJETA CREADA · 0 ARCHIVADAS');
   // «Escribir la nota de hoy» no crea otra.
   await button(page, 'Escribir la nota de hoy').click();
-  await expect(page.getByLabel('Texto de la entrada')).toHaveValue('Hoy empecé el plan.');
-  await button(page, 'Cancelar la edición de la entrada').click();
+  await expect(diaryEditor).toContainText('Hoy empecé el plan con ñandú y <seguro>.');
+  await expect(diaryEditor.locator('strong')).toContainText('Hoy empecé el plan');
+  await diaryEditor.press('End');
+  await diaryEditor.press('Enter');
+  await diaryEditor.pressSequentially('Cambio pendiente al navegar.');
+  await button(page, 'Día anterior').click();
+  await expect(page.getByTestId('log-summary')).toHaveText('SIN ACTIVIDAD REGISTRADA');
+  await button(page, 'Ir a hoy').click();
+  await expect(page.getByText(/Cambio pendiente al navegar/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('daily-log.png') });
 
   // Un día sin datos no muestra cifras inventadas.
@@ -2116,6 +2128,7 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
   await expect(card(page, 1)).toHaveAttribute('aria-pressed', 'true');
   if (isCompactWidth(page)) {
     await openCardEditor(page, 1);
+    await button(page, 'Mostrar organización y opciones adicionales').click();
     await button(page, 'Archivar la tarjeta Idea del día').click();
   } else {
     await openCardActions(page, card(page, 1), 'Idea del día');
@@ -2124,6 +2137,57 @@ test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivada
   await openDiary();
   await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 0 TARJETAS CREADAS · 1 ARCHIVADA');
   await expect(page.getByTestId('log-archived-tarjeta-1')).toContainText('ARCHIVADA · NOTA');
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('UX7.2 C1/C2: una entrada enriquecida pendiente pasa por Papelera y vuelve al Diario', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Diario recuperable');
+
+  const openDiary = async () => {
+    if (isCompactWidth(page)) {
+      await button(page, 'Más secciones').click();
+      await expect(page.getByTestId('more-sheet')).toBeVisible();
+      await page.getByTestId('more-sheet').getByRole('button', { name: 'Abrir el diario', exact: true }).click();
+    } else {
+      await button(page, 'Abrir el diario').click();
+    }
+    await expect(page.getByTestId('diary-view')).toBeVisible();
+  };
+  await openDiary();
+  await button(page, 'Escribir la nota de hoy').click();
+  await page.getByLabel('Título de la entrada').fill('Entrada recuperable');
+  const editor = page.getByTestId('web-rich-text-content');
+  await editor.fill('Texto enriquecido antes de Papelera: ñ, <seguro> y varias líneas.');
+  await editor.press('ControlOrMeta+A');
+  await button(page, 'Negrita').click();
+
+  // La acción destructiva guarda primero el documento pendiente y pide una confirmación distinta.
+  await button(page, 'Enviar Entrada recuperable a la Papelera').click();
+  await expect(page.getByTestId(/diary-trash-confirmation-/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('diary-trash-confirmation.png') });
+  await button(page, 'Sí, enviar').click();
+  await expect(page.getByText('Entrada recuperable', { exact: true })).toHaveCount(0);
+
+  await button(page, 'Volver al tablero').click();
+  await button(page, 'Abrir la Papelera (1)').click();
+  await expect(page.getByTestId('trash-panel')).toContainText('Entrada recuperable');
+  await page.screenshot({ path: testInfo.outputPath('diary-in-trash.png') });
+  await button(page, 'Restaurar Entrada recuperable').click();
+  await expect(page.getByTestId('trash-empty')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card(page, 1)).toHaveCount(0);
+
+  await openDiary();
+  await expect(page.getByText('Entrada recuperable', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Texto enriquecido antes de Papelera/)).toBeVisible();
+  await button(page, 'Editar Entrada recuperable').click();
+  await expect(page.getByTestId('web-rich-text-content').locator('strong')).toContainText('Texto enriquecido antes de Papelera');
+  await page.screenshot({ path: testInfo.outputPath('diary-restored-rich-text.png') });
+
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
 });

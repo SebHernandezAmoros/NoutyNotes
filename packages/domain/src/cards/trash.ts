@@ -98,7 +98,11 @@ export function restoreSnapshot(
   const boardIds = new Set(workspace.boards.map((board) => board.id));
   let memberships = entry.boards.filter((membership) => boardIds.has(membership.boardId));
   let placements = entry.placements.filter((placement) => boardIds.has(placement.boardId));
-  const addedToFallback = memberships.length === 0;
+  // Una entrada del Diario vive deliberadamente fuera de todos los tableros. Una instantánea sin
+  // pertenencias no ha "perdido" su tablero y debe recuperar esa ausencia, no aparecer en el lienzo.
+  // El tablero de reserva sigue aplicando cuando sí existían pertenencias, pero esos tableros ya no.
+  const originallyUnassigned = entry.boards.length === 0;
+  const addedToFallback = !originallyUnassigned && memberships.length === 0;
   if (addedToFallback) {
     if (!boardIds.has(options.fallbackBoardId)) return failure([issue('missing-reference', 'fallbackBoardId', 'No existe el tablero donde restaurar.')]);
     const [first] = entry.placements;

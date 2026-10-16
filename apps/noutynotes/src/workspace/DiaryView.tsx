@@ -1,16 +1,20 @@
-import { activeDays, dailyLog, dailyLogRange, diaryExportText, editCardContent, fold, isDay, localDay, openDiaryEntry, shiftDay } from '@noutynotes/application';
+import { activeDays, dailyLog, dailyLogRange, diaryExportText, editCardContent, fold, isDay, localDay, moveCardToTrash, openDiaryEntry, shiftDay } from '@noutynotes/application';
 import type { RangeLogItem, TimedCard, WorkspaceStorageResult } from '@noutynotes/application';
-import { cardTitleText } from '@noutynotes/domain';
-import type { BoardId, Card, CardId, CardTypeId, Workspace } from '@noutynotes/domain';
+import { cardTitleText, createEmptyRichTextDocument, richTextDocumentText } from '@noutynotes/domain';
+import type { BoardId, Card, CardId, CardTypeId, RichTextDocument, Workspace } from '@noutynotes/domain';
+import { markdownRichTextCodec } from '@noutynotes/storage';
 import type { Locale } from '@noutynotes/ui';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { t } from '../i18n';
 import { downloadTextFile, supportsTextDownload } from '../session/textDownload';
+import { diaryEditingDirty, persistLatestDiaryRevision } from './diaryEditing';
+import type { DiaryEditing } from './diaryEditing';
 import { markdownExcerpt } from './markdownLists';
+import { RichTextEditor } from './RichTextEditor';
 import { useEscapeBack } from './useEscapeBack';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
@@ -45,7 +49,14 @@ type SummaryUnit = 'entries' | 'created' | 'archived';
 const summaryUnit = (base: SummaryUnit, count: number, locale: Locale) =>
   t(count === 1 ? `diary.summary.${base}.one` : `diary.summary.${base}.many`, locale, { count: String(count) });
 const resultUnit = (count: number, locale: Locale) => t(count === 1 ? 'unit.resultUpper.one' : 'unit.resultUpper.many', locale, { count: String(count) });
-
+const documentFor = (card: Card | undefined): RichTextDocument => {
+  if (card?.contentDocument) return card.contentDocument;
+  const parsed = markdownRichTextCodec.parse(card?.content ?? '');
+  return parsed.ok ? parsed.value : createEmptyRichTextDocument();
+};
+const bodyText = (card: Card) => card.contentDocument
+  ? richTextDocumentText(card.contentDocument)
+  : markdownExcerpt(card.content ?? '');
 /**
  * Diario (ADR 0024, ADR 0036): vista de trabajo real a pantalla completa, no un diálogo estrecho.
  * Entradas del día y cronología con fechas reales (tarjetas creadas desde esta versión y archivadas).
@@ -55,10 +66,13 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
-  useEscapeBack(active, onBack);
   const [day, setDay] = useState(today);
   const [dayDraft, setDayDraft] = useState(day);
-  const [editing, setEditing] = useState<{ id: CardId; title: string; content: string } | null>(null);
+  const [editing, setEditing] = useState<DiaryEditing | null>(null);
+  const editingRef = useRef<DiaryEditing | null>(null);
+  const persistQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const [discarding, setDiscarding] = useState(false);
+  const [trashing, setTrashing] = useState<CardId | null>(null);
   const [mode, setMode] = useState<'day' | 'search'>('day');
   const [rangeFrom, setRangeFrom] = useState(today);
   const [rangeTo, setRangeTo] = useState(today);
@@ -82,7 +96,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const filteredItems = rangeItems.filter((item) => (searchTypeId === null || item.card.typeId === searchTypeId)
     && (searchTag === null || (item.card.tags ?? []).includes(searchTag))
     && (searchBoardId === null || item.boardIds.includes(searchBoardId))
-    && (searchFold === '' || fold([cardTitleText(item.card), item.card.content ?? '', (item.card.tags ?? []).join(' ')].join('\n')).includes(searchFold)));
+    && (searchFold === '' || fold([cardTitleText(item.card), bodyText(item.card), (item.card.tags ?? []).join(' ')].join('\n')).includes(searchFold)));
   const rangeVerb: Readonly<Record<RangeLogItem['kind'], string>> = {
     entry: t('diary.verb.entry', locale), created: t('diary.verb.created', locale), archived: t('diary.verb.archived', locale),
   };
@@ -101,49 +115,104 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
   const firstWeekday = (new Date(`${month}-01T00:00:00.000Z`).getUTCDay() + 6) % 7;
   const monthDays = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
 
-  const go = (next: string) => {
+  const setEdit = (next: DiaryEditing | null) => {
+    editingRef.current = next;
+    setEditing(next);
+    if (next === null) setDiscarding(false);
+  };
+  const beginEditing = (card: Card | undefined, cardId: CardId, fallbackTitle: string) => {
+    const title = card?.title ?? fallbackTitle;
+    const document = documentFor(card);
+    setEdit({ id: cardId, title, document, initialTitle: title, initialDocument: document });
+  };
+  const persistEditing = (close: boolean): Promise<boolean> => {
+    const task = persistQueueRef.current.then(async () => {
+      const current = editingRef.current;
+      if (!current) return true;
+      if (!diaryEditingDirty(current)) {
+        if (close) setEdit(null);
+        return true;
+      }
+      const saved = await persistLatestDiaryRevision(current, () => editingRef.current, async (revision) => {
+        const result = await run(
+          (storage, workspaceId) => editCardContent(storage, workspaceId, revision.id, { title: revision.title, contentDocument: revision.document }),
+          'action.diaryEntrySaved', { reactive: true },
+        );
+        return result.ok;
+      });
+      if (!saved) return false;
+      const latest = editingRef.current;
+      if (close) setEdit(null);
+      else if (latest) setEdit({ ...latest, initialTitle: latest.title, initialDocument: latest.document });
+      return true;
+    });
+    persistQueueRef.current = task;
+    return task;
+  };
+  const go = async (next: string) => {
+    if (!await persistEditing(true)) return;
     setDay(next);
     setDayDraft(next);
-    setEditing(null);
   };
   const write = async (reuse: boolean) => {
+    if (!await persistEditing(true)) return;
     const result = await run((storage, id) => openDiaryEntry(storage, id, { day, createdAt: new Date().toISOString(), reuse }),
       reuse ? 'action.diaryEntryReady' : 'action.diaryEntryNew');
     if (!result.ok) return;
     const existing = workspace.cards.find((card) => card.id === result.value);
-    setEditing({ id: result.value, title: existing?.title ?? `Diario ${day}`, content: existing?.content ?? '' });
+    beginEditing(existing, result.value, `Diario ${day}`);
   };
-  const save = () => {
-    if (!editing) return;
-    const { id, title, content } = editing;
-    void run((storage, workspaceId) => editCardContent(storage, workspaceId, id, { title, content }), 'action.diaryEntrySaved', { reactive: true })
-      .then((result) => { if (result.ok) setEditing(null); });
+  const back = async () => {
+    if (await persistEditing(true)) onBack();
   };
+  const changeMode = async (next: 'day' | 'search') => {
+    if (next === mode || await persistEditing(true)) setMode(next);
+  };
+  const trashEntry = async (cardId: CardId) => {
+    if (editingRef.current?.id === cardId && !await persistEditing(false)) return;
+    const result = await run((storage, workspaceId) => moveCardToTrash(storage, workspaceId, cardId), 'action.cardTrashed');
+    if (!result.ok) return;
+    if (editingRef.current?.id === cardId) setEdit(null);
+    setTrashing(null);
+  };
+  const goToCard = async (cardId: CardId) => {
+    if (!await persistEditing(true)) return;
+    onBack();
+    onGo(cardId);
+  };
+  useEscapeBack(active, () => { void back(); });
+  useEffect(() => { editingRef.current = editing; }, [editing]);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !diaryEditingDirty(editing)) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [editing]);
   const timeline = (items: readonly TimedCard[], verb: string, testID: string) => items.map(({ card, time }) => (
     <View key={`${testID}-${card.id}`} testID={`${testID}-${card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${time} · ${verb} · ${typeLabel(card).toUpperCase()}`}</Text>
       <Text style={[styles.title, { color: colors.textPrimary }]}>{cardTitleText(card) || t('trash.item.untitled', locale)}</Text>
       {(card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
-      {card.content ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(card.content).replace(/\s+/g, ' ').trim()}</Text> : null}
-      {testID === 'log-created' && onBoard(card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: cardTitleText(card) || t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(card.id); }} /> : null}
+      {bodyText(card) ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{bodyText(card).replace(/\s+/g, ' ').trim()}</Text> : null}
+      {testID === 'log-created' && onBoard(card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: cardTitleText(card) || t('trash.item.untitled', locale) })} onPress={() => { void goToCard(card.id); }} /> : null}
     </View>
   ));
 
   return (
     <View testID="diary-view" style={styles.screen}>
       <View style={[styles.header, { borderColor: colors.gridLine }]}>
-        <ActionButton label="←" accessibilityLabel={t('workview.back', locale)} onPress={onBack} />
+        <ActionButton label="←" accessibilityLabel={t('workview.back', locale)} onPress={() => { void back(); }} />
         <Text accessibilityRole="header" style={[styles.heading, { color: colors.textPrimary }]}>{t('nav.diary', locale)}</Text>
       </View>
       {/* Barra contextual: navegación de fecha y escritura, propias de esta vista (ADR 0036). */}
       <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
-        <ActionButton label={t('diary.mode.day', locale)} pressed={mode === 'day'} accessibilityLabel={t('diary.mode.day.accessibilityLabel', locale)} onPress={() => setMode('day')} />
-        <ActionButton label={t('tool.search', locale)} pressed={mode === 'search'} accessibilityLabel={t('diary.mode.search.accessibilityLabel', locale)} onPress={() => setMode('search')} />
+        <ActionButton label={t('diary.mode.day', locale)} pressed={mode === 'day'} accessibilityLabel={t('diary.mode.day.accessibilityLabel', locale)} onPress={() => { void changeMode('day'); }} />
+        <ActionButton label={t('tool.search', locale)} pressed={mode === 'search'} accessibilityLabel={t('diary.mode.search.accessibilityLabel', locale)} onPress={() => { void changeMode('search'); }} />
         {mode === 'day' ? (
           <>
-            <ActionButton label="←" accessibilityLabel={t('diary.day.prev.accessibilityLabel', locale)} onPress={() => go(shiftDay(day, -1))} />
-            <ActionButton label={t('diary.day.today', locale)} pressed={isToday} accessibilityLabel={t('diary.day.today.accessibilityLabel', locale)} onPress={() => go(today())} />
-            <ActionButton label="→" accessibilityLabel={t('diary.day.next.accessibilityLabel', locale)} onPress={() => go(shiftDay(day, 1))} />
+            <ActionButton label="←" accessibilityLabel={t('diary.day.prev.accessibilityLabel', locale)} onPress={() => { void go(shiftDay(day, -1)); }} />
+            <ActionButton label={t('diary.day.today', locale)} pressed={isToday} accessibilityLabel={t('diary.day.today.accessibilityLabel', locale)} onPress={() => { void go(today()); }} />
+            <ActionButton label="→" accessibilityLabel={t('diary.day.next.accessibilityLabel', locale)} onPress={() => { void go(shiftDay(day, 1)); }} />
             <ActionButton label={isToday ? t('diary.write.today', locale) : t('diary.write.day', locale)} tone="primary"
               accessibilityLabel={isToday ? t('diary.write.today', locale) : t('diary.write.day.accessibilityLabel', locale, { day: longDay(day, locale) })} onPress={() => void write(true)} />
             {log.entries.length > 0 ? <ActionButton label={t('diary.write.new', locale)} accessibilityLabel={t('diary.write.new.accessibilityLabel', locale)} onPress={() => void write(false)} /> : null}
@@ -194,8 +263,8 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
               <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${item.day} ${item.time} · ${rangeVerb[item.kind]} · ${typeLabel(item.card).toUpperCase()}`}</Text>
               <Text style={[styles.title, { color: colors.textPrimary }]}>{cardTitleText(item.card) || t('trash.item.untitled', locale)}</Text>
               {(item.card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(item.card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
-              {item.card.content ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(item.card.content).replace(/\s+/g, ' ').trim()}</Text> : null}
-              {item.kind === 'created' && onBoard(item.card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: cardTitleText(item.card) || t('trash.item.untitled', locale) })} onPress={() => { onBack(); onGo(item.card.id); }} /> : null}
+              {bodyText(item.card) ? <Text numberOfLines={2} style={[styles.body, { color: colors.textPrimary }]}>{bodyText(item.card).replace(/\s+/g, ' ').trim()}</Text> : null}
+              {item.kind === 'created' && onBoard(item.card.id) ? <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: cardTitleText(item.card) || t('trash.item.untitled', locale) })} onPress={() => { void goToCard(item.card.id); }} /> : null}
             </View>
           ))}
         </ScrollView>
@@ -204,7 +273,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
         <View style={compact ? styles.column : styles.mainColumn}>
           <Text accessibilityRole="header" testID="log-day" style={[styles.day, { color: colors.textPrimary }]}>{`${longDay(day, locale)}${isToday ? t('diary.day.todaySuffix', locale) : ''}`}</Text>
           <TextField label={t('diary.day.goto.label', locale)} value={dayDraft} onChangeText={setDayDraft} testID="log-date-input"
-            onSubmitEditing={() => { if (isDay(dayDraft.trim())) go(dayDraft.trim()); }} placeholder="2026-09-26" />
+            onSubmitEditing={() => { if (isDay(dayDraft.trim())) void go(dayDraft.trim()); }} placeholder="2026-09-26" />
           {dayDraft.trim() !== day && !isDay(dayDraft.trim()) && dayDraft.trim().length >= 10 ? (
             <Text style={[styles.hint, { color: colors.danger }]}>{t('diary.day.invalid', locale)}</Text>
           ) : null}
@@ -223,20 +292,54 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
             <View key={entry.id} testID={`log-entry-${entry.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               {editing?.id === entry.id ? (
                 <>
-                  <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => setEditing({ ...editing, title })} />
-                  <TextField label={t('diary.entry.content.label', locale)} value={editing.content} multiline onChangeText={(content) => setEditing({ ...editing, content })} placeholder={t('diary.entry.content.placeholder', locale)} />
+                  <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => setEdit({ ...editing, title })} />
+                  <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>{t('diary.entry.content.label', locale)}</Text>
+                  <RichTextEditor
+                    key={editing.id}
+                    cardId={editing.id}
+                    document={editing.document}
+                    codec={markdownRichTextCodec}
+                    onChange={(document) => {
+                      const current = editingRef.current;
+                      if (current) setEdit({ ...current, document });
+                    }}
+                  />
                   <View style={styles.row}>
-                    <ActionButton label={t('diary.entry.save', locale)} tone="primary" onPress={save} />
-                    <ActionButton label={t('trash.cancel', locale)} accessibilityLabel={t('diary.entry.cancel.accessibilityLabel', locale)} onPress={() => setEditing(null)} />
+                    <ActionButton label={t('diary.entry.save', locale)} tone="primary" onPress={() => { void persistEditing(true); }} />
+                    <ActionButton label={diaryEditingDirty(editing) ? t('diary.entry.discard', locale) : t('trash.cancel', locale)} accessibilityLabel={t('diary.entry.cancel.accessibilityLabel', locale)}
+                      onPress={() => { if (diaryEditingDirty(editing)) setDiscarding(true); else setEdit(null); }} />
+                    <ActionButton label={t('diary.entry.trash', locale)} accessibilityLabel={t('diary.entry.trash.accessibilityLabel', locale, { title: editing.title || t('trash.item.untitled', locale) })}
+                      onPress={() => setTrashing(entry.id)} />
                   </View>
+                  {discarding ? (
+                    <View testID="diary-discard-confirmation" style={[styles.confirm, { borderColor: colors.danger }]}>
+                      <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{t('diary.entry.discard.confirm', locale)}</Text>
+                      <View style={styles.row}>
+                        <ActionButton label={t('diary.entry.keepEditing', locale)} tone="primary" onPress={() => setDiscarding(false)} />
+                        <ActionButton label={t('diary.entry.discard.confirmLabel', locale)} onPress={() => setEdit(null)} />
+                      </View>
+                    </View>
+                  ) : null}
                 </>
               ) : (
                 <>
                   <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.title ?? t('trash.item.untitled', locale)}</Text>
-                  {entry.content ? <Text numberOfLines={4} style={[styles.body, { color: colors.textPrimary }]}>{markdownExcerpt(entry.content)}</Text> : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entry.empty', locale)}</Text>}
-                  <ActionButton label={t('diary.entry.edit', locale)} accessibilityLabel={t('diary.entry.edit.accessibilityLabel', locale, { title: entry.title ?? t('diary.entry.fallback', locale) })} onPress={() => setEditing({ id: entry.id, title: entry.title ?? '', content: entry.content ?? '' })} />
+                  {bodyText(entry) ? <Text numberOfLines={4} style={[styles.body, { color: colors.textPrimary }]}>{bodyText(entry)}</Text> : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entry.empty', locale)}</Text>}
+                  <View style={styles.row}>
+                    <ActionButton label={t('diary.entry.edit', locale)} accessibilityLabel={t('diary.entry.edit.accessibilityLabel', locale, { title: entry.title ?? t('diary.entry.fallback', locale) })} onPress={() => beginEditing(entry, entry.id, '')} />
+                    <ActionButton label={t('diary.entry.trash', locale)} accessibilityLabel={t('diary.entry.trash.accessibilityLabel', locale, { title: entry.title ?? t('trash.item.untitled', locale) })} onPress={() => setTrashing(entry.id)} />
+                  </View>
                 </>
               )}
+              {trashing === entry.id ? (
+                <View testID={`diary-trash-confirmation-${entry.id}`} style={[styles.confirm, { borderColor: colors.danger }]}>
+                  <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{t('diary.entry.trash.confirm', locale, { title: entry.title ?? t('trash.item.untitled', locale) })}</Text>
+                  <View style={styles.row}>
+                    <ActionButton label={t('diary.entry.trash.confirmLabel', locale)} onPress={() => { void trashEntry(entry.id); }} />
+                    <ActionButton label={t('trash.cancel', locale)} onPress={() => setTrashing(null)} />
+                  </View>
+                </View>
+              ) : null}
             </View>
           ))}
 
@@ -265,7 +368,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
               return (
                 <View key={value} style={styles.cell}>
                   <ActionButton label={`${index + 1}${has ? '•' : ''}`} pressed={value === day}
-                    accessibilityLabel={`${longDay(value, locale)}${has ? t('diary.calendar.day.activity', locale) : ''}`} onPress={() => go(value)} style={styles.dayButton} />
+                    accessibilityLabel={`${longDay(value, locale)}${has ? t('diary.calendar.day.activity', locale) : ''}`} onPress={() => { void go(value); }} style={styles.dayButton} />
                 </View>
               );
             })}
@@ -290,6 +393,9 @@ const styles = StyleSheet.create({
   mainColumn: { flex: 1, gap: 8, minWidth: 0 },
   sideColumn: { width: 300, flexShrink: 0, gap: 8 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  editorLabel: { fontSize: 13, fontWeight: '700' },
+  confirm: { borderWidth: 2, padding: 10, gap: 8 },
+  warning: { fontSize: 14, lineHeight: 19, fontWeight: '700' },
   day: { fontSize: 20, fontWeight: '900' },
   section: { fontFamily: mono, fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginTop: 8 },
   hint: { fontSize: 13, lineHeight: 18 },

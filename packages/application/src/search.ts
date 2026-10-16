@@ -2,7 +2,7 @@
  * Búsqueda dentro del proyecto abierto (ADR 0019) y en todos los proyectos (ADR 0020). Consulta pura:
  * no escribe, no crea índices y nunca interpreta el contenido (el extracto es texto literal).
  */
-import { cardTitleText, normalizeTag } from '@noutynotes/domain';
+import { cardTitleText, normalizeTag, richTextDocumentText } from '@noutynotes/domain';
 import type { BoardId, CardId, CardTypeId, Workspace, WorkspaceId } from '@noutynotes/domain';
 
 import type { WorkspaceStorage } from './workspace-storage';
@@ -65,16 +65,17 @@ export function searchWorkspace(workspace: Workspace, query: string, options: { 
     const title = cardTitleText(card) || 'Sin título';
     const type = types.get(card.typeId);
     const typeLabel = type?.label ?? card.typeId;
+    const content = card.contentDocument ? richTextDocumentText(card.contentDocument) : card.content ?? '';
     // Los enlaces (campos `url`) también se buscan: «ejemplo.com» encuentra su tarjeta.
     const links = (type?.fields ?? []).filter((field) => field.kind === 'url')
       .map((field) => card.fields[field.key]).filter((value): value is string => typeof value === 'string');
-    const haystack = fold([title, card.content ?? '', tags.join(' '), typeLabel, ...links].join('\n'));
+    const haystack = fold([title, content, tags.join(' '), typeLabel, ...links].join('\n'));
     if (!words.every((word) => haystack.includes(word))) continue;
     const foldedTitle = fold(title);
     results.push({
       cardId: card.id, title, typeId: card.typeId, typeLabel, tags,
       boards: workspace.boards.filter((board) => board.cardIds.includes(card.id)).map((board) => ({ boardId: board.id, title: board.title })),
-      excerpt: excerptOf(card.content ?? '', words),
+      excerpt: excerptOf(content, words),
       // Primero las que coinciden en el título; después, por título.
       rank: words.length > 0 && words.every((word) => foldedTitle.includes(word)) ? 0 : 1,
     });

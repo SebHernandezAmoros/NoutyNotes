@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addCardToBoard, createEmptyWorkspaceNamed, dailyLog, importImageCard, moveCardToArchive, openDiaryEntry, searchWorkspace,
+  addCardToBoard, createEmptyWorkspaceNamed, dailyLog, editCardContent, importImageCard, moveCardToArchive, moveCardToTrash, openDiaryEntry, restoreCardFromTrash, searchWorkspace,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
-import { ArchiveStorage } from '../../packages/storage/src/index';
+import type { BoardId } from '../../packages/domain/src/index';
+import { MemoryDocumentTree } from '../../packages/storage/src/__fixtures__/document-tree';
+import { ArchiveStorage, DocumentTreeFolderPort, FolderStorage } from '../../packages/storage/src/index';
 
 function ok<T>(result: WorkspaceStorageResult<T>): T {
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
@@ -36,6 +38,41 @@ describe('Daily Log con fechas reales (ADR 0024)', () => {
     // Las entradas se buscan como cualquier tarjeta.
     expect(searchWorkspace(workspace, 'diario').map((result) => result.cardId)).toEqual(expect.arrayContaining([today, second]));
     expect(codes(await openDiaryEntry(storage, id, { day: '26/09/2026', createdAt: '2026-09-26T10:00:00.000Z', reuse: true }))).toContain('invalid-workspace');
+  });
+
+  it('conserva una entrada enriquecida al enviarla a Papelera, reabrir y restaurar al Diario', async () => {
+    const tree = new MemoryDocumentTree();
+    const storage = new FolderStorage(new DocumentTreeFolderPort(tree));
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Diario seguro'));
+    const entryId = ok(await openDiaryEntry(storage, id, {
+      day: '2026-10-16', createdAt: '2026-10-16T18:00:00.000Z', reuse: false,
+    }));
+    ok(await editCardContent(storage, id, entryId, { title: 'Legada', content: 'Primera línea\nSegunda <línea> con ñ.' }));
+    const beforeOpen = tree.snapshot();
+    expect(ok(await openDiaryEntry(storage, id, {
+      day: '2026-10-16', createdAt: '2026-10-16T19:00:00.000Z', reuse: true,
+    }))).toBe(entryId);
+    expect(tree.snapshot()).toEqual(beforeOpen);
+
+    const document = {
+      schemaVersion: 1 as const,
+      blocks: [
+        { type: 'heading' as const, level: 2 as const, content: [{ type: 'text' as const, text: 'Balance' }] },
+        { type: 'paragraph' as const, content: [{ type: 'text' as const, text: 'Árbol, ñandú y <seguro>', marks: ['bold' as const] }] },
+      ],
+    };
+    ok(await editCardContent(storage, id, entryId, { title: 'Día especial', contentDocument: document }));
+    expect(searchWorkspace(ok(await storage.open(id)), 'ñandu')[0]).toMatchObject({ cardId: entryId, excerpt: expect.stringContaining('Árbol') });
+
+    ok(await moveCardToTrash(storage, id, entryId));
+    const reopenedTrash = new FolderStorage(new DocumentTreeFolderPort(tree));
+    expect(ok(await reopenedTrash.open(id)).trash?.[0]?.card).toMatchObject({ id: entryId, contentDocument: document, fields: { fecha: '2026-10-16' } });
+
+    const report = ok(await restoreCardFromTrash(reopenedTrash, id, { cardId: entryId, fallbackBoardId: 'principal' as BoardId }));
+    expect(report).toEqual({ relocated: [], addedToFallback: false, skippedRelations: 0 });
+    const restored = ok(await new FolderStorage(new DocumentTreeFolderPort(tree)).open(id));
+    expect(restored.cards.find((card) => card.id === entryId)).toMatchObject({ title: 'Día especial', contentDocument: document, fields: { fecha: '2026-10-16' } });
+    expect(restored.boards.every((board) => !board.cardIds.includes(entryId))).toBe(true);
   });
 });
 

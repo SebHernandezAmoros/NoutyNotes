@@ -76,6 +76,37 @@ describe('Papelera de tarjetas (ADR 0015)', () => {
     expect(fallback.workspace.layouts[0]?.placements[0]).toEqual({ cardId: 'idea-b', rect: { x: 4, y: 0, w: 4, h: 2 }, display: 'minimized' });
   });
 
+  it('restaura una tarjeta que originalmente vivía fuera de los tableros sin asignarla al tablero de reserva', () => {
+    const source = validWorkspace();
+    const { content: _legacyContent, ...ideaWithoutLegacyContent } = ideaA;
+    const diaryType = {
+      id: 'diario', label: 'Entrada del diario', base: 'note' as const,
+      fields: [{ key: 'fecha', kind: 'date' as const, label: 'Fecha', required: true }],
+    };
+    const diary = {
+      ...ideaWithoutLegacyContent,
+      id: id<CardId>('diario-1'),
+      typeId: diaryType.id,
+      title: '16 de octubre',
+      fields: { fecha: '2026-10-16' },
+      contentDocument: {
+        schemaVersion: 1 as const,
+        blocks: [{ type: 'paragraph' as const, content: [{ type: 'text' as const, text: 'Entrada enriquecida' }] }],
+      },
+      assetRefs: [asset('assets/images/a.png')],
+    };
+    const withDiary: Workspace = { ...source, cardTypes: [...source.cardTypes, diaryType], cards: [...source.cards, diary] };
+
+    const trashed = ok(trashCard(withDiary, diary.id));
+    expect(trashed.trash?.[0]).toMatchObject({ card: diary, boards: [], placements: [] });
+
+    const restored = ok(restoreTrashedCard(trashed, diary.id, { fallbackBoardId: overview, config: DESKTOP_GRID }));
+    expect(restored.report).toEqual({ relocated: [], addedToFallback: false, skippedRelations: 0 });
+    expect(restored.workspace.cards.find((card) => card.id === diary.id)).toEqual(diary);
+    expect(restored.workspace.boards.every((board) => !board.cardIds.includes(diary.id))).toBe(true);
+    expect(restored.workspace.layouts.every((layout) => layout.placements.every((placement) => placement.cardId !== diary.id))).toBe(true);
+  });
+
   it('eliminar definitivamente libera solo los assets que nadie más usa', () => {
     const shared = { ...ideaB, assetRefs: [asset('assets/images/a.png')] };
     const source: Workspace = { ...validWorkspace(), cards: [ideaA, shared] };

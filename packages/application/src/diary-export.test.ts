@@ -39,4 +39,29 @@ describe('Exportación del Diario (ADR 0037)', () => {
   it('un rango inválido falla igual que dailyLogRange', () => {
     expect(diaryExportText(workspace, '2026-09-27', '2026-09-25', madrid)).toMatchObject({ ok: false });
   });
+
+  it('exporta el contenido enriquecido de una entrada sin depender del Markdown heredado', () => {
+    const richWorkspace = {
+      ...workspace,
+      cards: [
+        ...workspace.cards.filter((item) => item.id !== 'd1'),
+        entry('d1', '2026-09-26', {
+          title: 'Hoy enriquecido',
+          createdAt: '2026-09-26T18:00:00.000Z',
+          contentDocument: {
+            schemaVersion: 1,
+            blocks: [
+              { type: 'heading', level: 2, content: [{ type: 'text', text: 'Hallazgos' }] },
+              { type: 'list', style: 'checklist', items: [{ checked: true, content: [{ type: 'text', text: 'Guardar sin perder formato' }] }] },
+            ],
+          },
+        }),
+      ],
+    } as Workspace;
+
+    const result = diaryExportText(richWorkspace, '2026-09-26', '2026-09-26', madrid);
+    if (!result.ok) throw new Error('se esperaba un documento válido');
+    expect(result.text).toContain('Hallazgos');
+    expect(result.text).toContain('[x] Guardar sin perder formato');
+  });
 });

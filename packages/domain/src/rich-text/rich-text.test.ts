@@ -7,6 +7,7 @@ import {
   MAX_RICH_TEXT_LIST_DEPTH,
   createEmptyRichTextDocument,
   normalizeRichTextDocument,
+  richTextDocumentText,
   validateRichTextDocument,
 } from './rich-text';
 import type { RichTextDocument } from './rich-text';
@@ -58,6 +59,17 @@ function representativeDocument(): RichTextDocument {
 }
 
 describe('RichTextDocument (ADR 0053, UX7 P02)', () => {
+  it('proyecta a texto legible todos los bloques para búsqueda, resumen y exportación', () => {
+    expect(richTextDocumentText(representativeDocument())).toBe([
+      'Plan',
+      'Consulta la fuente\ny continúa.',
+      '[ ] Revisar\n[x] Publicar\n  - Anexo',
+      'Portada\nVersión final',
+      'Nombre\tEstado\nDiseño\tListo',
+      ':::extension\nvalor: exacto\n:::',
+    ].join('\n'));
+  });
+
   it('acepta el documento representativo con todos los nodos de P02 y conserva su identidad', () => {
     const document = representativeDocument();
     expect(validateRichTextDocument(document)).toEqual({ ok: true, value: document });

@@ -339,6 +339,35 @@ export function createEmptyRichTextDocument(): RichTextDocument {
   return { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: [{ type: 'paragraph', content: [] }] };
 }
 
+function readableInlines(inlines: readonly RichTextInline[] | undefined): string {
+  return (inlines ?? []).map((inline) => inline.type === 'hard-break' ? '\n'
+    : inline.type === 'link' ? readableInlines(inline.content) : inline.text).join('');
+}
+
+function readableList(list: RichTextList, depth = 0): string[] {
+  return list.items.flatMap((item, index) => {
+    const marker = list.style === 'checklist' ? `[${item.checked ? 'x' : ' '}] `
+      : list.style === 'ordered' ? `${index + 1}. ` : '- ';
+    const line = `${'  '.repeat(depth)}${marker}${readableInlines(item.content)}`;
+    return [line, ...(item.children ?? []).flatMap((child) => readableList(child, depth + 1))];
+  });
+}
+
+/** Proyección legible y sin formato para búsqueda, resúmenes y exportaciones de texto. */
+export function richTextDocumentText(document: RichTextDocument): string {
+  return document.blocks.map((block) => {
+    switch (block.type) {
+      case 'paragraph':
+      case 'heading': return readableInlines(block.content);
+      case 'list': return readableList(block).join('\n');
+      case 'image': return [block.alt, readableInlines(block.caption)].filter(Boolean).join('\n');
+      case 'table': return [...(block.header ? [block.header] : []), ...block.rows]
+        .map((row) => row.cells.map((cell) => readableInlines(cell.content)).join('\t')).join('\n');
+      case 'opaque-markdown': return block.source;
+    }
+  }).join('\n');
+}
+
 function canonicalMarks(marks: readonly RichTextMark[] | undefined): readonly RichTextMark[] | undefined {
   if (!marks || marks.length === 0) return undefined;
   const result = richTextMarks.filter((mark) => marks.includes(mark));
