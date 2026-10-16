@@ -11,10 +11,12 @@ import { BrandMark } from '../components/BrandMark';
 import { TextField } from '../components/controls';
 import { useHydrated } from '../components/useHydrated';
 import { t } from '../i18n';
+import type { RecentFolderEntry, RecentProjectBackend, RecentProjectEntry } from '../session/recentItems';
 import { describeFailure } from '../session/messages';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions, singleFlight } from './actions';
 import { TemplatePicker } from './TemplatePicker';
+import { useRecentItems } from './useRecentItems';
 
 const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' | 'settings.theme.dark' | 'settings.theme.system'; accessibilityLabelKey: 'home.theme.light.label' | 'home.theme.dark.label' | 'home.theme.system.label' }[] = [
   { value: 'light', labelKey: 'settings.theme.light', accessibilityLabelKey: 'home.theme.light.label' },
@@ -45,6 +47,11 @@ export function HomeScreen() {
   const storage = useWorkspaceStorage();
   const session = useWorkspaceSession();
   const workspaces = useSessionWorkspaces();
+  const recent = useRecentItems();
+  // UX7-E1: identidad del backend/carpeta activos, para registrar uso y para saber qué recientes
+  // ya están disponibles ahora mismo sin necesitar reconexión.
+  const currentBackend: RecentProjectBackend = session.mode === 'memory' ? 'memory' : (Platform.OS === 'web' ? 'web' : 'android');
+  const currentFolderKey = session.mode === 'folder' ? session.activeFolderKey : null;
   const [draftName, setDraftName] = useState('');
   // En el HTML estático el campo no admite escritura: el render del cliente la perdería.
   const hydrated = useHydrated();
@@ -74,6 +81,7 @@ export function HomeScreen() {
       }
       setCreateError(null);
       setDraftName('');
+      recent.recordProjectUse({ workspaceId: created.value.id, name: created.value.name, backend: currentBackend, folderKey: currentFolderKey });
       openWorkspace(created.value.id);
       navigated = true;
     } finally {
@@ -81,7 +89,7 @@ export function HomeScreen() {
     }
   };
 
-  const openFolder = async () => {
+  const openFolder = async (): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
     // Abrir una carpeta cambia el almacenamiento de la sesión: los espacios del navegador sin exportar
     // dejarían de estar disponibles, así que nunca se descartan sin confirmación (ADR 0011).
     const pending = session.unexported.length;
@@ -89,17 +97,57 @@ export function HomeScreen() {
       const pendingText = t(pending === 1 ? 'home.openFolder.pending.one' : 'home.openFolder.pending.many', locale, { count: String(pending) });
       const confirmed = window.confirm(t('home.openFolder.confirm', locale, { pending: pendingText }));
       if (!confirmed) {
-        setCreateError(t('home.openFolder.cancelled', locale));
-        return;
+        const message = t('home.openFolder.cancelled', locale);
+        setCreateError(message);
+        return { ok: false, message };
       }
     }
     const result = await session.connectFolder();
+    if (result.ok) recent.recordFolderUse({ backend: Platform.OS === 'web' ? 'web' : 'android', key: result.folder.key, name: result.folder.name });
     setCreateError(result.ok ? null : result.message);
+    return result;
   };
 
-  const reopenFolder = async () => {
+  const reopenFolder = async (): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
     const result = await session.reconnectFolder();
+    if (result.ok) recent.recordFolderUse({ backend: 'android', key: result.folder.key, name: result.folder.name });
     setCreateError(result.ok ? null : result.message);
+    return result;
+  };
+
+  /** UX7-E1: reconectar una carpeta concreta de Recientes — silenciosa si Android ya la recuerda,
+   * si no abre el selector habitual; nunca asocia una carpeta distinta a la entrada pulsada. */
+  const reconnectFolderEntry = (entry: RecentFolderEntry) => (
+    entry.backend === 'android' && session.savedFolder?.uri === entry.key ? reopenFolder() : openFolder()
+  );
+
+  /** UX7-E1: abre un proyecto reciente si su backend ya está disponible; si no, reconecta primero su
+   * carpeta y solo abre si la carpeta reconectada corresponde exactamente a la que el proyecto espera. */
+  const openRecentProject = async (entry: RecentProjectEntry) => {
+    const live = entry.backend === currentBackend && entry.folderKey === currentFolderKey
+      && workspaces.some((workspace) => workspace.id === entry.workspaceId);
+    if (live) {
+      recent.recordProjectUse({ workspaceId: entry.workspaceId, name: entry.name, backend: entry.backend, folderKey: entry.folderKey });
+      openWorkspace(entry.workspaceId);
+      return;
+    }
+    if (entry.backend === 'memory') return;
+    const folderEntry = recent.folders.find((folder) => folder.key === entry.folderKey);
+    if (!folderEntry) return;
+    const result = await reconnectFolderEntry(folderEntry);
+    if (result.ok && result.folder.key === entry.folderKey) {
+      recent.recordProjectUse({ workspaceId: entry.workspaceId, name: entry.name, backend: entry.backend, folderKey: entry.folderKey });
+      openWorkspace(entry.workspaceId);
+    }
+  };
+
+  const folderIsCurrent = (entry: RecentFolderEntry) => session.mode === 'folder' && currentFolderKey === entry.key;
+  type RecentProjectStatus = 'available' | 'reconnect' | 'unavailable' | 'temporary';
+  const projectStatus = (entry: RecentProjectEntry): RecentProjectStatus => {
+    if (entry.backend === currentBackend && entry.folderKey === currentFolderKey && workspaces.some((workspace) => workspace.id === entry.workspaceId)) return 'available';
+    if (entry.backend === 'memory') return 'temporary';
+    if (!recent.folders.some((folder) => folder.key === entry.folderKey)) return 'unavailable';
+    return 'reconnect';
   };
 
   const importZip = async () => {
@@ -110,6 +158,7 @@ export function HomeScreen() {
       return;
     }
     setCreateError(null);
+    recent.recordProjectUse({ workspaceId: outcome.value.summary.id, name: outcome.value.summary.name, backend: 'memory', folderKey: null });
     router.push({ pathname: '/workspace', params: { id: outcome.value.summary.id, notice: outcome.message } });
   };
 
@@ -328,7 +377,7 @@ export function HomeScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={t('home.workspace.open.label', locale, { name: workspace.name })}
                       {...(session.unexported.includes(workspace.id) ? { accessibilityHint: t('home.workspace.unexported.hint', locale) } : {})}
-                      onPress={() => openWorkspace(workspace.id)}
+                      onPress={() => { recent.recordProjectUse({ workspaceId: workspace.id, name: workspace.name, backend: currentBackend, folderKey: currentFolderKey }); openWorkspace(workspace.id); }}
                       {...actionFocus(`open:${workspace.id}`)}
                       style={[styles.sessionItem, actionBorder(`open:${workspace.id}`)]}
                     >
@@ -341,6 +390,89 @@ export function HomeScreen() {
                   ))
                 )}
               </View>
+              {recent.folders.length > 0 || recent.projects.length > 0 ? (
+                <View testID="home-recent" style={styles.recentSection}>
+                  <Text accessibilityRole="header" style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('home.recent.title', locale)}</Text>
+                  {recent.folders.length > 0 ? (
+                    <View style={styles.recentGroup}>
+                      <Text style={[styles.recentGroupTitle, { color: colors.textSecondary }]}>{t('home.recent.folders.title', locale)}</Text>
+                      {recent.folders.map((entry) => {
+                        const current = folderIsCurrent(entry);
+                        return (
+                          <View key={entry.id} testID={`recent-folder-${entry.id}`} style={[styles.recentItem, { borderColor: colors.gridLine }]}>
+                            <View style={styles.recentItemHeader}>
+                              <Text numberOfLines={1} style={[styles.actionTitle, styles.sessionName, { color: colors.textPrimary }]}>{entry.name}</Text>
+                              <Pressable
+                                testID={`recent-folder-forget-${entry.id}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('home.recent.forget.folder.accessibilityLabel', locale, { name: entry.name })}
+                                onPress={() => recent.forgetFolderEntry(entry.id)}
+                                style={styles.recentForget}
+                              >
+                                <Text style={[styles.recentForgetText, { color: colors.textSecondary }]}>{t('home.recent.forget.label', locale)}</Text>
+                              </Pressable>
+                            </View>
+                            {current ? (
+                              <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.recent.folder.current.hint', locale)}</Text>
+                            ) : (
+                              <Pressable
+                                testID={`recent-folder-reconnect-${entry.id}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('home.recent.folder.reconnect.accessibilityLabel', locale, { name: entry.name })}
+                                onPress={() => void reconnectFolderEntry(entry)}
+                                style={styles.recentAction}
+                              >
+                                <Text style={[styles.recentActionText, { color: colors.textPrimary }]}>{t('home.recent.folder.reconnect.label', locale)}</Text>
+                              </Pressable>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                  {recent.projects.length > 0 ? (
+                    <View style={styles.recentGroup}>
+                      <Text style={[styles.recentGroupTitle, { color: colors.textSecondary }]}>{t('home.recent.projects.title', locale)}</Text>
+                      {recent.projects.map((entry) => {
+                        const status = projectStatus(entry);
+                        return (
+                          <View key={entry.id} testID={`recent-project-${entry.id}`} style={[styles.recentItem, { borderColor: colors.gridLine }]}>
+                            <View style={styles.recentItemHeader}>
+                              <Text numberOfLines={1} style={[styles.actionTitle, styles.sessionName, { color: colors.textPrimary }]}>{entry.name}</Text>
+                              <Pressable
+                                testID={`recent-project-forget-${entry.id}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('home.recent.forget.project.accessibilityLabel', locale, { name: entry.name })}
+                                onPress={() => recent.forgetProjectEntry(entry.id)}
+                                style={styles.recentForget}
+                              >
+                                <Text style={[styles.recentForgetText, { color: colors.textSecondary }]}>{t('home.recent.forget.label', locale)}</Text>
+                              </Pressable>
+                            </View>
+                            {status === 'available' || status === 'reconnect' ? (
+                              <Pressable
+                                testID={`recent-project-action-${entry.id}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={t(status === 'available' ? 'home.recent.project.open.accessibilityLabel' : 'home.recent.project.reconnect.accessibilityLabel', locale, { name: entry.name })}
+                                onPress={() => void openRecentProject(entry)}
+                                style={styles.recentAction}
+                              >
+                                <Text style={[styles.recentActionText, { color: colors.textPrimary }]}>{t(status === 'available' ? 'home.recent.project.open.label' : 'home.recent.project.reconnect.label', locale)}</Text>
+                              </Pressable>
+                            ) : (
+                              <Text testID={`recent-project-status-${entry.id}`} style={[styles.actionDescription, { color: colors.textSecondary }]}>
+                                {status === 'temporary'
+                                  ? `${t('home.recent.project.temporary', locale)} · ${t('home.recent.project.temporary.hint', locale)}`
+                                  : `${t('home.recent.project.unavailable', locale)} · ${t('home.recent.project.unavailable.hint', locale)}`}
+                              </Text>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
@@ -356,7 +488,11 @@ export function HomeScreen() {
         storage={storage}
         locale={locale}
         onClose={() => setTemplateOpen(false)}
-        onCreated={(id) => { setTemplateOpen(false); openWorkspace(id); }}
+        onCreated={(id, name) => {
+          setTemplateOpen(false);
+          recent.recordProjectUse({ workspaceId: id, name, backend: currentBackend, folderKey: currentFolderKey });
+          openWorkspace(id);
+        }}
       />
     </SafeAreaView>
   );
@@ -398,6 +534,17 @@ const styles = StyleSheet.create({
   actionBadge: { width: 36, height: 36, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   sessionList: { marginTop: 24, gap: 8 },
   sessionName: { flex: 1, minWidth: 0 },
+  recentSection: { marginTop: 24, gap: 12 },
+  recentGroup: { gap: 6 },
+  recentGroupTitle: { fontFamily: mono, fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginTop: 4 },
+  // Fila en dos líneas (nombre arriba, estado/acción abajo): un estado largo ("Sesión temporal…") no
+  // debe recortar el nombre a una sola letra compitiendo por ancho en una sola fila (UX7-E1).
+  recentItem: { borderWidth: 2, paddingHorizontal: 10, paddingVertical: 8, gap: 4 },
+  recentItemHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  recentAction: { alignSelf: 'flex-start', minHeight: 32, paddingHorizontal: 8, justifyContent: 'center' },
+  recentActionText: { fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
+  recentForget: { minHeight: 32, paddingHorizontal: 6, justifyContent: 'center' },
+  recentForgetText: { fontSize: 11, fontWeight: '600' },
   unexported: { fontFamily: mono, fontSize: 11, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 3 },
   sessionItem: { minHeight: 48, borderWidth: 2, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   actionNumber: { fontFamily: mono, fontSize: 11 },

@@ -100,10 +100,14 @@ export function supportsFolderAccess(): boolean {
   return Platform.OS === 'web' && typeof (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function';
 }
 
-/** Solo se invoca desde el gesto del botón; el handle no se guarda entre sesiones. */
-export async function chooseFolder(): Promise<FolderStorage | null> {
+/**
+ * Solo se invoca desde el gesto del botón; el handle no se guarda entre sesiones (persistirlo con
+ * IndexedDB queda reservado a UX7-E2). El nombre de la carpeta sí se expone — ya estaba disponible en
+ * el propio handle — para que la sesión pueda registrar el uso en el historial de recientes (UX7-E1).
+ */
+export async function chooseFolder(): Promise<{ readonly storage: FolderStorage; readonly name: string } | null> {
   if (!supportsFolderAccess()) return null;
   const picker = (globalThis as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<BrowserDirectory> }).showDirectoryPicker;
   const root = await picker({ mode: 'readwrite' });
-  return new FolderStorage(new BrowserFolderPort(root));
+  return { storage: new FolderStorage(new BrowserFolderPort(root)), name: root.name };
 }

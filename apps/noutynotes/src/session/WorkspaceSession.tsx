@@ -30,10 +30,14 @@ interface Session {
   readonly archiveSupported: boolean;
   /** Espacios del navegador con cambios que no se han exportado a ZIP. */
   readonly unexported: readonly WorkspaceId[];
-  connectFolder(): Promise<{ ok: true } | { ok: false; message: string }>;
+  connectFolder(): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }>;
   /** Android: carpeta elegida en una sesión anterior que se puede reabrir (ADR 0012). */
   readonly savedFolder: SavedFolder | null;
-  reconnectFolder(): Promise<{ ok: true } | { ok: false; message: string }>;
+  /** Identidad local de la carpeta conectada ahora mismo (nombre en web, URI SAF en Android); `null`
+   * en modo memoria. No persiste entre cargas — solo indica "ya conectada en esta sesión" para el
+   * historial de recientes (UX7-E1); persistir el handle real queda reservado a UX7-E2. */
+  readonly activeFolderKey: string | null;
+  reconnectFolder(): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }>;
   /** `null` si el usuario cancela el selector. */
   importArchive(): Promise<Outcome<ArchiveImport> | null>;
   /** Inicia la descarga. No da por conservado nada: devuelve la revisión que el usuario podrá confirmar. */
@@ -59,6 +63,9 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   const [unexported, setUnexported] = useState<readonly WorkspaceId[]>([]);
   // Fuera de Android siempre es null (el sustituto no lee nada), también en el HTML estático.
   const [savedFolder, setSavedFolder] = useState<SavedFolder | null>(() => readSavedAndroidFolder());
+  // UX7-E1: identidad local de la carpeta activa, solo para saber "ya conectada en esta sesión" en
+  // el historial de recientes; no es un handle persistente ni sustituye a `savedFolder` (Android).
+  const [activeFolderKey, setActiveFolderKey] = useState<string | null>(null);
 
   useEffect(() => archive.subscribe(() => setUnexported(archive.unexportedIds())), [archive]);
 
@@ -79,22 +86,36 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   };
 
   /** La sesión y la carpeta recordada solo cambian si la carpeta elegida se lee bien (folderSession.ts). */
-  const connectFolder = async (): Promise<{ ok: true } | { ok: false; message: string }> => {
+  const connectFolder = async (): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
+    // UX7-E1: captura por cierre la identidad de la carpeta elegida (nombre web / URI Android) para
+    // registrarla en el historial de recientes solo si `chooseFolderInto` confirma el éxito debajo.
+    // `box` evita la pérdida de estrechamiento de TypeScript sobre un `let` reasignado en un cierre.
+    const box: { chosen: { key: string; name: string } | null } = { chosen: null };
     const choose = async () => {
-      if (supportsAndroidFolders()) return chooseAndroidFolder();
+      if (supportsAndroidFolders()) {
+        const picked = await chooseAndroidFolder();
+        if (picked) box.chosen = { key: picked.folder.uri, name: picked.folder.name };
+        return picked;
+      }
       const selected = await chooseFolder();
-      return selected ? { storage: selected, folder: null } : null;
+      if (selected) box.chosen = { key: selected.name, name: selected.name };
+      return selected ? { storage: selected.storage, folder: null } : null;
     };
     const { state, result } = await chooseFolderInto({ storage, mode, saved: savedFolder }, choose, memory);
     apply(state);
-    return result;
+    if (!result.ok) return result;
+    if (!box.chosen) return { ok: false, message: 'No se pudo identificar la carpeta elegida.' };
+    setActiveFolderKey(box.chosen.key);
+    return { ok: true, folder: box.chosen };
   };
 
   /** Android: reabre la carpeta recordada; solo la olvida si se confirma la pérdida de acceso. */
-  const reconnectFolder = async (): Promise<{ ok: true } | { ok: false; message: string }> => {
+  const reconnectFolder = async (): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
     const { state, result } = await reopenRememberedInto({ storage, mode, saved: savedFolder }, reopenAndroidFolder, memory);
     apply(state);
-    return result;
+    if (!result.ok || !state.saved) return result.ok ? { ok: false, message: 'No se pudo identificar la carpeta reabierta.' } : result;
+    setActiveFolderKey(state.saved.uri);
+    return { ok: true, folder: { key: state.saved.uri, name: state.saved.name } };
   };
 
   const importArchive = async (): Promise<Outcome<ArchiveImport> | null> => {
@@ -144,7 +165,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   return (
     <StorageContext.Provider value={{
       storage, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
-      savedFolder: mode === 'memory' ? savedFolder : null, reconnectFolder,
+      savedFolder: mode === 'memory' ? savedFolder : null, activeFolderKey: mode === 'folder' ? activeFolderKey : null, reconnectFolder,
       unexported: mode === 'memory' ? unexported : [], connectFolder, importArchive, exportArchive, confirmExported,
     }}
     >

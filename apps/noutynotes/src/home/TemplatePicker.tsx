@@ -19,7 +19,7 @@ interface TemplatePickerProps {
   readonly storage: WorkspaceStorage;
   readonly locale: Locale;
   readonly onClose: () => void;
-  readonly onCreated: (workspaceId: string) => void;
+  readonly onCreated: (workspaceId: string, name: string) => void;
 }
 
 /**
@@ -79,7 +79,7 @@ export function TemplatePicker({ visible, compact, storage, locale, onClose, onC
       }
       setDraftName('');
       setError(null);
-      onCreated(result.value.id);
+      onCreated(result.value.id, name);
     } finally {
       setCreating(false);
     }
