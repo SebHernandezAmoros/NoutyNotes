@@ -247,7 +247,8 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
     await openCardActions(page, card(page, 1), 'Primera');
     await button(page, 'Minimizar Primera').click();
   }
-  await expect(feedback(page)).toHaveText('Tarjeta minimizada. Guardado en memoria.');
+  // UX7-MASTER/D03: un éxito rutinario ya no anuncia nada en `workspace-feedback` — el efecto real
+  // (aria-label/testID de la ficha minimizada) se comprueba más abajo.
   if (compact) {
     // El tamaño expandido se conserva aunque la huella sea 2 × 2; en móvil se comprueba antes de
     // volver al tablero porque el editor enfocado ocupa la pantalla completa. En escritorio se
@@ -311,7 +312,8 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
   await expect(page.getByTestId('relocate-offer')).toBeVisible();
   await expect(page.getByTestId('minimized-tarjeta-1')).toBeVisible();
   await button(page, 'Expandir en un hueco libre').click();
-  await expect(feedback(page)).toHaveText('Tarjeta expandida en un hueco libre. Guardado en memoria.');
+  // UX7-MASTER/D03: éxito rutinario sin franja — el efecto real (ya no minimizada, geometría del hueco
+  // libre) se comprueba aquí y más abajo.
   await expect(page.getByTestId('minimized-tarjeta-1')).toHaveCount(0);
   // Ya expandida, «Editar» abre su editor (antes minimizada, sin ese botón, ver `tapCard`). El primer
   // hueco libre queda tras Segunda (columnas 2-5): columna 6.
@@ -332,7 +334,8 @@ test('minimizar, contraer y expandir: cabecera e inspector; la colisión al expa
     await openCardActions(page, card(page, 1), 'Primera');
     await button(page, 'Conectar desde Primera').click();
     await tapConnectTarget(page, 2);
-    await expect(feedback(page)).toHaveText('Tarjetas conectadas. Guardado en memoria.');
+    // UX7-MASTER/D03: éxito rutinario sin franja — la relación creada se confirma más abajo
+    // (`relation-line-`), evidencia real de que «Conectar» completó la conexión, no solo la inició.
     await openCardActions(page, card(page, 1), 'Primera');
     await button(page, 'Contraer Primera').click();
     await expect(card(page, 1)).toHaveAttribute('aria-label', 'Tarjeta Primera, contraída');

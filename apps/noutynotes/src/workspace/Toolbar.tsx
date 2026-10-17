@@ -91,7 +91,7 @@ export function Toolbar(props: ToolbarProps) {
   const create = (
     group('toolbar-group-create', t('toolbar.group.create', locale), <>
       <ToolButton testID="open-insert" icon="plus" label={t('insert.title', locale)} accessibilityLabel={t('insert.open', locale)} accessibilityHint={t('insert.open.hint', locale)} onPress={props.onOpenInsert} style={cell} />
-      <ToolButton testID="insert-board-shortcut" icon="board" label="Acceso" accessibilityLabel="Crear acceso rápido a un tablero" onPress={props.onInsertShortcut} style={cell} />
+      <ToolButton testID="insert-board-shortcut" icon="board" label={t('toolbar.shortcut.label', locale)} accessibilityLabel={t('toolbar.shortcut.accessibilityLabel', locale)} onPress={props.onInsertShortcut} style={cell} />
       {props.compact ? (
         <ToolButton icon="trash" label={trashLabel} accessibilityLabel={trashOpenLabel} onPress={props.onOpenTrash} style={cell} />
       ) : null}

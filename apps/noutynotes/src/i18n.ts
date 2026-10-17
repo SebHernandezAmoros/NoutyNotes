@@ -44,6 +44,10 @@ export const TRANSLATIONS = {
   'insert.group.content': { es: 'Contenido', en: 'Content' },
   'insert.group.diagram': { es: 'Diagrama', en: 'Diagram' },
   'insert.open': { es: 'Abrir menú Insertar', en: 'Open Insert menu' },
+  // UX7.3-D/E (I18N-03): «Acceso» (atajo directo a un tablero) estaba fijo en español en `Toolbar.tsx`,
+  // ignorando el idioma de la interfaz.
+  'toolbar.shortcut.label': { es: 'Acceso', en: 'Shortcut' },
+  'toolbar.shortcut.accessibilityLabel': { es: 'Crear acceso rápido a un tablero', en: 'Create a quick shortcut to a board' },
   'insert.open.hint': { es: 'Crea contenido en el tablero desde un único menú', en: 'Create board content from one menu' },
   'insert.note': { es: 'Insertar nota', en: 'Insert note' },
   'insert.note.hint': { es: 'Crea una nota vacía', en: 'Create an empty note' },

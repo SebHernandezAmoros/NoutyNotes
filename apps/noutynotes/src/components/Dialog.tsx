@@ -38,6 +38,21 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
     return () => window.removeEventListener('keydown', onKey);
   }, [visible, onClose]);
 
+  // UX7.3-D/E (A11Y-01): ningún diálogo compartido movía el foco al abrir ni lo devolvía al disparador
+  // al cerrar — confirmado leyendo este archivo, sin ningún efecto de foco. Mismo patrón ya probado en
+  // `CardMenu` (`canvas/CardControls.tsx`): solo escritorio ancho (`compact` usa una hoja con su propia
+  // semántica táctil/de teclado nativo, igual que decidió `CardMenu`), primer elemento enfocable del
+  // propio diálogo, y restaura el foco a quien lo abrió al desmontar.
+  useEffect(() => {
+    if (compact || Platform.OS !== 'web' || !visible) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const first = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-testid="${testID}"] button, [data-testid="${testID}"] input, [data-testid="${testID}"] textarea, [data-testid="${testID}"] [href]`)?.focus();
+    });
+    return () => { cancelAnimationFrame(first); opener?.focus(); };
+  }, [compact, visible, testID]);
+
+
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={[styles.backdrop, compact ? styles.backdropCompact : styles.backdropWide, typing ? { paddingBottom: keyboard } : null]}>
