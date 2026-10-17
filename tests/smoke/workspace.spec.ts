@@ -723,8 +723,9 @@ const geometry = (page: Page) => page.getByTestId('card-geometry');
 const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 48, y: 48 } : { x: 40, y: 40 });
 
 async function createWorkspace(page: Page, name: string) {
-  await page.getByLabel('Nombre del nuevo espacio').fill(name);
-  await button(page, 'Crear un espacio').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill(name);
+  await button(page, 'Crear proyecto').click();
   const heading = page.getByRole('heading', { name, exact: true });
   const width = page.viewportSize()?.width ?? 0;
   // UX7-LAYOUT-CORRECTION: entre 800 y 1099 px (ni compacto ni con barra lateral) la identidad del
@@ -1153,12 +1154,12 @@ test('flujo principal: estado vacío, crear, editar, conectar, mover con botones
 
   // 6. Volver, crear otro, cambiar de tema y reabrir el primero con su estado.
   await button(page, 'Volver a mis espacios').click();
-  await expect(button(page, 'Abrir Guion corto')).toBeVisible();
+  await expect(button(page, 'Abrir el proyecto Guion corto')).toBeVisible();
   await createWorkspace(page, 'Otro espacio');
   await addCards(page, ['nota']);
   await button(page, 'Volver a mis espacios').click();
   await button(page, 'Tema oscuro').click();
-  await button(page, 'Abrir Guion corto').click();
+  await button(page, 'Abrir el proyecto Guion corto').click();
   await expect(page.getByRole('heading', { name: 'Guion corto', exact: true })).toBeVisible();
   await expect(page.getByTestId('workspace-screen')).toHaveCSS('background-color', rgb(themeColors.dark.background));
   await expect(page.getByTestId('board-canvas')).toHaveCSS('background-color', rgb(themeColors.dark.canvas));
@@ -2922,7 +2923,7 @@ test('checklist en el lienzo: un toque marca la línea sin abrir el editor ni ar
   // espacio solo vive en memoria (sin ZIP exportado), así que la prueba usa el mismo camino que ya
   // cubre la persistencia del resto de la edición (volver a la lista y reabrir), no una recarga dura.
   await button(page, 'Volver a mis espacios').click();
-  await button(page, 'Abrir Checklist en ficha').click();
+  await button(page, 'Abrir el proyecto Checklist en ficha').click();
   await expect(page.getByTestId('check-tarjeta-1-0')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('check-tarjeta-1-1')).toHaveAttribute('aria-checked', 'false');
 });
@@ -3136,7 +3137,7 @@ test('portapapeles: duplicar en un solo paso; cortar envía a la Papelera de inm
 
   // Sobrevive a reabrir el espacio (memoria, igual que el resto de UX7).
   await button(page, 'Volver a mis espacios').click();
-  await button(page, 'Abrir Duplicar y cortar').click();
+  await button(page, 'Abrir el proyecto Duplicar y cortar').click();
   await expect(page.locator('[data-testid^="card-tarjeta-"]')).toHaveCount(2);
 });
 

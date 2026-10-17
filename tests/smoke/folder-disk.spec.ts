@@ -117,10 +117,11 @@ test('carpeta física en disco: nota, edición rápida, cierre inmediato, recarg
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
 
-  await page.getByRole('button', { name: 'Abrir una carpeta', exact: true }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
   await expect(page.getByTestId('memory-notice')).toContainText('CARPETA LOCAL');
-  await page.getByLabel('Nombre del nuevo espacio').fill('prueba');
-  await page.getByRole('button', { name: 'Crear un espacio', exact: true }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('prueba');
+  await page.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'prueba', exact: true })).toBeVisible();
   expect(filesUnder(notes)).toEqual(['prueba/.nouty/layout.yaml', 'prueba/.nouty/relations.yaml', 'prueba/.nouty/workspace.yaml']);
 
@@ -148,8 +149,8 @@ test('carpeta física en disco: nota, edición rápida, cierre inmediato, recarg
   await page.reload();
   await expect(page.getByTestId('workspace-missing')).toBeVisible();
   await page.getByRole('button', { name: 'Volver a mis espacios', exact: true }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta', exact: true }).click();
-  await page.getByRole('button', { name: 'Abrir prueba', exact: true }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto prueba', exact: true }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota en disco');
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
   await page.screenshot({ path: testInfo.outputPath('disk-reconnected.png') });

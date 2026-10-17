@@ -67,11 +67,12 @@ async function openCardEditor(page: Page, id: number) {
 test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas', async ({ page }, testInfo) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await expect(page.getByRole('button', { name: 'Abrir una carpeta' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await expect(page.getByRole('button', { name: 'Abrir proyecto' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   await expect(page.getByTestId('memory-notice')).toContainText('CARPETA LOCAL');
-  await page.getByLabel('Nombre del nuevo espacio').fill('Mi carpeta');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Mi carpeta');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await expect(page.getByRole('heading', { name: 'Mi carpeta' })).toBeVisible();
   await insertFromMenu(page, 'Insertar nota');
   await expect(page.getByTestId('card-tarjeta-1')).toBeVisible();
@@ -84,9 +85,9 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await page.reload();
   await expect(page.getByTestId('workspace-missing')).toBeVisible();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await expect(page.getByRole('button', { name: 'Abrir Mi carpeta' })).toBeVisible();
-  await page.getByRole('button', { name: 'Abrir Mi carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await expect(page.getByRole('button', { name: 'Abrir el proyecto Mi carpeta' })).toBeVisible();
+  await page.getByRole('button', { name: 'Abrir el proyecto Mi carpeta' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota persistente');
   await page.screenshot({ path: testInfo.outputPath('folder-reconnected.png'), fullPage: true });
 });
@@ -97,9 +98,10 @@ test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y 
   const status = page.getByTestId('workspace-memory');
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Estado de guardado');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Estado de guardado');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await expect(status).toContainText('CAMBIOS GUARDADOS');
@@ -125,8 +127,8 @@ test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y 
 
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Estado de guardado').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Estado de guardado').click();
   await openCardEditor(page, 1);
   await expect(page.getByLabel('Contenido visual')).toContainText('Segunda línea por Ctrl+S');
   // UX7-SIDEBAR: «Recuperación» es ahora una opción estable, siempre presente — ya no indica por
@@ -139,9 +141,10 @@ test('UX7-CONSOLIDATION: un fallo de escritura se revisa bajo el proyecto sin pe
   test.skip((page.viewportSize()?.width ?? 0) < 1100, 'La ubicación bajo el proyecto corresponde a la navegación lateral de escritorio.');
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Guardado protegido');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Guardado protegido');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
 
@@ -169,9 +172,10 @@ test('UX7-CONSOLIDATION: un fallo de escritura se revisa bajo el proyecto sin pe
 test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin alterar la nota durable', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Recuperación privada');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Recuperación privada');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR PRIVADO TRAS REINICIO');
@@ -186,8 +190,8 @@ test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin al
   await page.reload();
   await expect(page.getByTestId('workspace-missing')).toBeVisible();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Recuperación privada' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Recuperación privada' }).click();
   await expect(page.getByTestId('recovery-badge')).toBeVisible();
   await page.getByTestId('recovery-badge').click();
   await page.getByRole('button', { name: 'Recuperar el borrador de Nueva nota' }).click();
@@ -198,9 +202,10 @@ test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin al
 test('P18-E3-B2: alternar Visual y HTML sin editar no reescribe el archivo durable', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Alternancia inerte');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Alternancia inerte');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   const before = await page.evaluate(() => localStorage.getItem('nouty-test-folder'));
@@ -218,9 +223,10 @@ test('P18-E3-B2: alternar Visual y HTML sin editar no reescribe el archivo durab
 test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durable y permite descartarlo', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('HTML inválido');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('HTML inválido');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByRole('button', { name: 'Editar el código HTML del cuerpo' }).click();
@@ -242,8 +248,8 @@ test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durabl
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir HTML inválido' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto HTML inválido' }).click();
   await expect(page.getByTestId('recovery-badge')).toBeVisible();
   await page.getByTestId('recovery-badge').click();
   await page.getByRole('button', { name: 'Recuperar el borrador de Nueva nota' }).click();
@@ -264,9 +270,10 @@ test('P18-E0/UX7-SAVE: borrador de una nota archivada explica el Archivo y no of
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Archivo con borrador');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Archivo con borrador');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR DE NOTA ARCHIVADA');
@@ -275,8 +282,8 @@ test('P18-E0/UX7-SAVE: borrador de una nota archivada explica el Archivo y no of
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Archivo con borrador').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Archivo con borrador').click();
   await expect(page.getByTestId('recovery-badge')).toBeVisible();
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Archivar Nueva nota').click();
@@ -294,9 +301,10 @@ test('P18-E0/UX7-SAVE: borrador de una nota en la Papelera explica la Papelera; 
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Papelera con borrador');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Papelera con borrador');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR DE NOTA EN PAPELERA');
@@ -304,8 +312,8 @@ test('P18-E0/UX7-SAVE: borrador de una nota en la Papelera explica la Papelera; 
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Papelera con borrador').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Papelera con borrador').click();
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Enviar Nueva nota a la Papelera').click();
   await expect(page.getByTestId('workspace-feedback')).toHaveText('Tarjeta enviada a la Papelera. Guardado en la carpeta.');
@@ -330,9 +338,10 @@ test('P18-E0/UX7-SAVE: descartar un borrador huérfano cierra la insignia para s
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Descarte sin fantasma');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Descarte sin fantasma');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR QUE SE VA A DESCARTAR');
@@ -340,8 +349,8 @@ test('P18-E0/UX7-SAVE: descartar un borrador huérfano cierra la insignia para s
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Descarte sin fantasma').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Descarte sin fantasma').click();
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Enviar Nueva nota a la Papelera').click();
   await page.getByTestId('recovery-badge').click();
@@ -372,9 +381,10 @@ test('P18-E0/UX7-SAVE: eliminar definitivamente una nota desde la Papelera desca
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Purga con borrador');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Purga con borrador');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR QUE DEBE DESAPARECER');
@@ -382,8 +392,8 @@ test('P18-E0/UX7-SAVE: eliminar definitivamente una nota desde la Papelera desca
   page.once('dialog', (dialog) => void dialog.accept());
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Purga con borrador').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Purga con borrador').click();
   await openCardActions(page, page.getByTestId('card-tarjeta-1'), 'Nueva nota');
   await button('Enviar Nueva nota a la Papelera').click();
   await expect(page.getByTestId('recovery-badge')).toBeVisible();
@@ -399,9 +409,10 @@ test('P18-E0/UX7-SAVE: eliminar definitivamente una nota desde la Papelera desca
 test('P18-E0/UX7-SAVE: cerrar el Centro de recuperación no descarta el borrador y no se reabre solo', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Cierre temporal');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Cierre temporal');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   await page.getByLabel('Contenido visual').fill('BORRADOR TRAS CIERRE TEMPORAL');
@@ -420,9 +431,10 @@ test('P18-E0/UX7-SAVE: cerrar el Centro de recuperación no descarta el borrador
 test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga y la reconexión', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Documento avanzado');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Documento avanzado');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openCardEditor(page, 1);
   const expand = page.getByRole('button', { name: 'Ampliar el editor' });
@@ -439,8 +451,8 @@ test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga 
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Documento avanzado' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Documento avanzado' }).click();
   await openCardEditor(page, 1);
   const expandReopened = page.getByRole('button', { name: 'Ampliar el editor' });
   if (await expandReopened.count() > 0) await expandReopened.click();
@@ -454,9 +466,10 @@ test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga 
 test('arrastre con escritura retenida: la tarjeta permanece en destino hasta confirmar el guardado', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Arrastre pendiente');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Arrastre pendiente');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   const card = page.getByTestId('card-tarjeta-1');
   const origin = await card.boundingBox();
@@ -501,9 +514,10 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
     const bytes = files['mundo/.nouty/layout.yaml'];
     return bytes ? new TextDecoder().decode(new Uint8Array(bytes)) : '';
   });
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Mundo');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Mundo');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await expect(page.getByTestId('card-tarjeta-1')).toHaveAttribute('aria-pressed', 'true');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
@@ -542,8 +556,8 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Mundo' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Mundo' }).click();
   // La cámara arranca en el origen: la lejana no se ve hasta enfocarla; el foco la trae con el pan.
   const canvas = await page.getByTestId('board-canvas').boundingBox();
   if (!canvas) throw new Error('Sin lienzo');
@@ -569,9 +583,10 @@ test('P2: una tarjeta a casi un millón de celdas se pinta con coordenadas peque
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   const press = (name: string) => page.getByRole('button', { name, exact: true }).click();
-  await press('Abrir una carpeta');
-  await page.getByLabel('Nombre del nuevo espacio').fill('Lejos');
-  await press('Crear un espacio');
+  await press('Abrir proyecto');
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Lejos');
+  await press('Crear proyecto');
   await insertFromMenu(page, 'Insertar nota');
   await expect(page.getByTestId('workspace-memory')).toHaveText('CARPETA LOCAL · CAMBIOS GUARDADOS');
   // Otra aplicación (o un editor de texto) deja la tarjeta en x = 999 000, y = -999 000 con layout v2.
@@ -584,8 +599,8 @@ test('P2: una tarjeta a casi un millón de celdas se pinta con coordenadas peque
   });
   await page.reload();
   await press('Volver a mis espacios');
-  await press('Abrir una carpeta');
-  await press('Abrir Lejos');
+  await press('Abrir proyecto');
+  await press('Abrir el proyecto Lejos');
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Space');
   await openCardEditor(page, 1);
@@ -607,9 +622,10 @@ test('P2: una tarjeta a casi un millón de celdas se pinta con coordenadas peque
 test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la carpeta', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Editorial');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Editorial');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar título flotante');
   await expect(page.getByTestId('unified-content-tarjeta-1')).toBeVisible();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
@@ -635,8 +651,8 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   })).toEqual([expect.stringContaining('Proyecto Solace'), expect.stringContaining('data-nouty-checked="true">Primera')]);
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Editorial' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Editorial' }).click();
   await expect(page.getByTestId('unified-content-tarjeta-1')).toContainText('Proyecto Solace');
   // En la cabecera, no en el cuerpo: con la ficha mostrando su checklist (UX7-B2), un clic en el centro
   // caería sobre una fila y la marcaría/desmarcaría en vez de solo seleccionar la tarjeta.
@@ -648,7 +664,7 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
 test('cancelar el selector conserva el modo de memoria y muestra un aviso', async ({ page }) => {
   await page.addInitScript({ content: `window.showDirectoryPicker = async () => { throw Object.assign(new Error('Cancelado'), { name: 'AbortError' }); };` });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   await expect(page.getByRole('alert')).toHaveText('No se seleccionó ninguna carpeta.');
   await expect(page.getByTestId('memory-notice')).toContainText('SOLO EN MEMORIA');
 });
@@ -656,9 +672,10 @@ test('cancelar el selector conserva el modo de memoria y muestra un aviso', asyn
 test('un cambio externo bloquea el siguiente guardado y conserva sus bytes', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Conflicto');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Conflicto');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   const changed = await page.evaluate(() => {
     const files = JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>;
     const path = 'conflicto/.nouty/workspace.yaml';
@@ -684,31 +701,33 @@ test('un cambio externo bloquea el siguiente guardado y conserva sus bytes', asy
 test('salir del editor inmediatamente conserva el texto pendiente en la carpeta', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Salida rápida');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Salida rápida');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await fillCardTitle(page, 'Título pendiente');
   await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta' }).click();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir Salida rápida' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Salida rápida' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Título pendiente');
 });
 
 test('volver al inicio inmediatamente espera al guardado del borrador', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Navegación');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Navegación');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await fillCardTitle(page, 'Antes de salir');
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir Navegación' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Navegación' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Antes de salir');
 });
 
@@ -716,10 +735,11 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   const files = () => page.evaluate(() => JSON.parse(localStorage.getItem('nouty-test-folder') ?? '{}') as Record<string, number[]>);
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   for (const name of ['Uno', 'Dos']) {
-    await page.getByLabel('Nombre del nuevo espacio').fill(name);
-    await page.getByRole('button', { name: 'Crear un espacio' }).click();
+    await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+    await page.getByLabel('Nombre del proyecto').fill(name);
+    await page.getByRole('button', { name: 'Crear proyecto' }).click();
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
     if (name === 'Uno') await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   }
@@ -744,9 +764,10 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
 test('recargar con texto pendiente exige confirmar la salida', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Recarga');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Recarga');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -762,9 +783,10 @@ test('recargar con texto pendiente exige confirmar la salida', async ({ page }) 
 test('un fallo al guardar el borrador mantiene abierto el editor y conserva el texto', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Borrador en conflicto');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Borrador en conflicto');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -787,9 +809,10 @@ test('un fallo al guardar el borrador mantiene abierto el editor y conserva el t
 test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ningún archivo (ADR 0013)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Lienzo');
-  await page.getByRole('button', { name: 'Crear un espacio', exact: true }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Lienzo');
+  await page.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Lienzo', exact: true })).toBeVisible();
   for (const id of [1, 2]) {
     await insertFromMenu(page, 'Insertar nota');
@@ -865,9 +888,10 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Galería');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Galería');
+  await button('Crear proyecto').click();
   await expect(page.getByRole('heading', { name: 'Galería', exact: true })).toBeVisible();
   const chooser = page.waitForEvent('filechooser');
   await insertFromMenu(page, 'Importar una imagen');
@@ -899,8 +923,8 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
   // Recargar y reconectar: todo sale de los archivos de la carpeta.
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Galería').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Galería').click();
   await expect(page.getByTestId('note-preview-tarjeta-1-image-0')).toBeVisible();
   await expect(page.getByTestId('minimized-tarjeta-2')).toBeVisible();
   await button('Abrir la Papelera (1)').click();
@@ -922,9 +946,10 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
 test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a recargar y al quitarlas vuelve a v1 (ADR 0019)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Rutas');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Rutas');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -957,8 +982,8 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Rutas' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Rutas' }).click();
   await expect(page.getByTestId('card-tags-tarjeta-1')).toHaveText('#japón');
   await page.getByRole('button', { name: 'Abrir la búsqueda' }).click();
   await page.getByTestId('search-input').fill('#japon');
@@ -972,9 +997,10 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
 test('carpeta: la excepción de marco por ficha se guarda en la tarjeta como v5, sobrevive a recargar y, al quitarla, vuelve a la versión anterior (UX7-D3, ADR 0049)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Marcos');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Marcos');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await page.getByRole('button', { name: 'Ocultar siempre' }).click();
@@ -991,8 +1017,8 @@ test('carpeta: la excepción de marco por ficha se guarda en la tarjeta como v5,
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Marcos' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Marcos' }).click();
   await expect.poll(() => borderWidth(page.getByTestId('card-tarjeta-1'))).toBe(0);
 
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -1006,9 +1032,10 @@ test('carpeta: la excepción de marco por ficha se guarda en la tarjeta como v5,
 test('carpeta: el tamaño de título/cuerpo por ficha se guarda en la tarjeta como v6, sobrevive a recargar y, al volver a mediano, vuelve a la versión anterior (UX7-D4, ADR 0050)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Medidas');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Medidas');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   await fillCardTitle(page, 'Medidas');
@@ -1026,8 +1053,8 @@ test('carpeta: el tamaño de título/cuerpo por ficha se guarda en la tarjeta co
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Medidas' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Medidas' }).click();
   await expect.poll(() => fontSize(page.getByTestId('card-tarjeta-1').getByText('Medidas'))).toBe(20);
 
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -1044,9 +1071,10 @@ test('carpeta: el tamaño de título/cuerpo por ficha se guarda en la tarjeta co
 test('carpeta: la posición de la leyenda por ficha se guarda en la tarjeta como v7, sobrevive a recargar y, al volver a debajo, vuelve a la versión anterior (ADR 0051)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Leyendas');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Leyendas');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
   // Más alta: a la densidad por defecto (UX7-D1) el presupuesto vertical de la ficha no deja sitio
@@ -1070,8 +1098,8 @@ test('carpeta: la posición de la leyenda por ficha se guarda en la tarjeta como
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Leyendas' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Leyendas' }).click();
   // Nota HTML con imagen (ADR 0063): se previsualiza con RichNotePreview, no con NotePreview.
   const image = page.getByTestId('rich-note-preview-tarjeta-1').locator('[aria-label*="Imagen no disponible"]');
   const caption = page.getByTestId('rich-note-preview-tarjeta-1').getByText('Vista del lago', { exact: true });
@@ -1090,9 +1118,10 @@ test('carpeta: la posición de la leyenda por ficha se guarda en la tarjeta como
 test('carpeta: el enlace se guarda en fields de la tarjeta y la búsqueda global lee los proyectos de la carpeta (ADR 0020)', async ({ page }) => {
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Fuentes');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Fuentes');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar enlace');
   await page.getByTestId('link-url-input').fill('https://archivo.example.org/mapa');
   await page.getByTestId('link-title-input').fill('Mapa antiguo');
@@ -1105,15 +1134,16 @@ test('carpeta: el enlace se guarda en fields de la tarjeta y la búsqueda global
   await expect.poll(file).toContain('url: https://archivo.example.org/mapa');
   expect(await file()).toContain('schemaVersion: 3');
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Notas');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Notas');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await expect(page.getByRole('heading', { name: 'Notas', exact: true })).toBeVisible();
 
   // Otra sesión: recargar y reconectar la carpeta; la búsqueda global encuentra el enlace por su dirección.
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Notas' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Notas' }).click();
   await page.getByRole('button', { name: 'Abrir la búsqueda' }).click();
   await page.getByRole('button', { name: 'Buscar en todos los proyectos (2)' }).click();
   await page.getByTestId('search-input').fill('archivo.example');
@@ -1132,9 +1162,10 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   const text = async (path: string) => new TextDecoder().decode(new Uint8Array((await files())[path] ?? []));
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Diario');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Diario');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -1161,8 +1192,8 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Diario' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Diario' }).click();
   // Con la densidad de UX7-D1 (fila de 48 px en ancho, 40 en compacto; antes 56/48) ya no queda sitio
   // para ninguna imagen junto al texto en ningún ancho (el archivo y sus assetRefs no cambian por
   // esto). En escritorio todavía cabe el párrafo («+2 bloques más»); en compacto la fila de partida es
@@ -1185,9 +1216,10 @@ test('carpeta: la biblioteca lista lo que hay en assets/ (también lo que nada u
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Material');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Material');
+  await button('Crear proyecto').click();
   await expect(page.getByRole('heading', { name: 'Material', exact: true })).toBeVisible();
   await openMore(page);
   await button('Abrir los assets').click();
@@ -1201,8 +1233,8 @@ test('carpeta: la biblioteca lista lo que hay en assets/ (también lo que nada u
   // Otra sesión: tras recargar y reconectar, el archivo sigue listado (sin tarjeta que lo use).
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Material').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Material').click();
   await openMore(page);
   await button('Abrir los assets').click();
   await expect(page.getByTestId('assets-count')).toHaveText('1 ARCHIVO');
@@ -1218,9 +1250,10 @@ test('carpeta: archivar crea .nouty/archive.yaml, sobrevive a recargar y restaur
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Cajón');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Cajón');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -1240,8 +1273,8 @@ test('carpeta: archivar crea .nouty/archive.yaml, sobrevive a recargar y restaur
 
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Cajón').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Cajón').click();
   await openMore(page);
   await button('Abrir el Archivo (1)').click();
   await button('Restaurar Idea aparcada del Archivo').click();
@@ -1260,9 +1293,10 @@ test('carpeta: la entrada del diario y la fecha de creación se guardan en el Ma
   };
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Bitácora');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Bitácora');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): la fecha de
   // creación ya queda guardada por el propio alta, sin necesidad de abrir ni cerrar su editor.
   await insertFromMenu(page, 'Insertar nota');
@@ -1281,8 +1315,8 @@ test('carpeta: la entrada del diario y la fecha de creación se guardan en el Ma
 
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Bitácora' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Bitácora' }).click();
   await openDiary();
   await expect(page.getByTestId('log-summary')).toHaveText('1 ENTRADA · 1 TARJETA CREADA · 0 ARCHIVADAS');
   await expect(page.getByTestId('log-entry-tarjeta-2')).toContainText('Guardado en disco.');
@@ -1304,9 +1338,10 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   };
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Grupo');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Grupo');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   await insertFromMenu(page, 'Insertar nota');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-2'));
@@ -1328,8 +1363,8 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
 
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Grupo').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Grupo').click();
   expect([await where(1), await where(2)]).toEqual(before.map(lower));
 });
 
@@ -1338,9 +1373,10 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Vuelta');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Vuelta');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -1357,8 +1393,8 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
 
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Vuelta').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Vuelta').click();
   await page.getByTestId('card-tarjeta-1').focus();
   await page.keyboard.press('Enter');
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -1374,9 +1410,10 @@ test('carpeta: el marco se guarda en layout.yaml (v3) y reaparece al recargar; q
   });
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
-  await button('Abrir una carpeta').click();
-  await page.getByLabel('Nombre del nuevo espacio').fill('Álbum');
-  await button('Crear un espacio').click();
+  await button('Abrir proyecto').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Álbum');
+  await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
@@ -1392,8 +1429,8 @@ test('carpeta: el marco se guarda en layout.yaml (v3) y reaparece al recargar; q
 
   await page.reload();
   await button('Volver a mis espacios').click();
-  await button('Abrir una carpeta').click();
-  await button('Abrir Álbum').click();
+  await button('Abrir proyecto').click();
+  await button('Abrir el proyecto Álbum').click();
   await expect(page.getByTestId('frame-header-marco-1')).toContainText('Viaje');
   await page.getByTestId('frame-header-marco-1').focus();
   await page.keyboard.press('Enter');

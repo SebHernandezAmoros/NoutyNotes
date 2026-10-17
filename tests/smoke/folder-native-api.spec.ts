@@ -9,10 +9,11 @@ test('los handles reales de Chromium guardan y reabren un workspace v1', async (
   // Sustituye solo el diálogo del sistema: lectura, escritura y directorios son handles nativos.
   await page.addInitScript({ content: `window.showDirectoryPicker = async () => await navigator.storage.getDirectory();` });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   await expect(page.getByTestId('memory-notice')).toContainText('CARPETA LOCAL');
-  await page.getByLabel('Nombre del nuevo espacio').fill('Handle real');
-  await page.getByRole('button', { name: 'Crear un espacio' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Handle real');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): «Editar» sí.
   await openFullCardEditor(page, page.getByTestId('card-tarjeta-1'));
@@ -30,7 +31,7 @@ test('los handles reales de Chromium guardan y reabren un workspace v1', async (
   expect(files.card).toContain('Persistió');
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir una carpeta' }).click();
-  await page.getByRole('button', { name: 'Abrir Handle real' }).click();
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Abrir el proyecto Handle real' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Persistió');
 });

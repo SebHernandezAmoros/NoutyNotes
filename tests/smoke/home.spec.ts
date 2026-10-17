@@ -71,16 +71,16 @@ test('inicio responsive, temas y las acciones activas: crear, carpeta/ZIP y plan
   await expectArrangement(page, modeFor(initialWidth));
   await page.screenshot({ path: testInfo.outputPath('home-initial.png'), fullPage: true });
 
-  await expect(page.getByRole('button', { name: 'Crear un espacio', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Nuevo proyecto', exact: true })).toBeEnabled();
   await expect(page.getByTestId('memory-notice')).toContainText('se pierden al recargar o cerrar la pestaña');
-  // «Abrir una carpeta» depende de File System Access: Chromium debe ofrecerla; sin la API (Firefox,
+  // «Abrir proyecto» depende de File System Access: Chromium debe ofrecerla; sin la API (Firefox,
   // Safari, móviles) queda desactivada con la alternativa ZIP (ADR 0011).
   const folderApi = await page.evaluate(() => typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function');
   if (browserName === 'chromium') expect(folderApi).toBe(true);
   if (folderApi) {
-    await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Abrir proyecto', exact: true })).toBeEnabled();
   } else {
-    await expect(page.getByRole('button', { name: 'Abrir una carpeta', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Abrir proyecto', exact: true })).toBeDisabled();
     await expect(page.getByTestId('open-folder')).toContainText('Usa «Importar un ZIP»');
     await expect(page.getByRole('button', { name: 'Importar un ZIP', exact: true })).toBeEnabled();
   }
@@ -177,9 +177,8 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   const light = page.getByRole('button', { name: 'Tema claro', exact: true });
   const dark = page.getByRole('button', { name: 'Tema oscuro', exact: true });
   const system = page.getByRole('button', { name: 'Tema sistema', exact: true });
-  const actions = ['Crear un espacio', 'Abrir una carpeta', 'Usar una plantilla'];
-  const nameField = page.getByLabel('Nombre del nuevo espacio');
-  const create = page.getByRole('button', { name: 'Crear un espacio', exact: true });
+  const actions = ['Nuevo proyecto', 'Abrir proyecto', 'Usar una plantilla'];
+  const create = page.getByRole('button', { name: 'Nuevo proyecto', exact: true });
   const screen = page.getByTestId('home-screen');
   await expect(page.getByRole('heading', { name: /Dale un lugar/ })).toBeVisible();
 
@@ -194,7 +193,7 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
 
-  // Orden de tabulación: los tres temas, el nombre y «Crear».
+  // Orden de tabulación: los tres temas y la primera acción principal.
   const unfocused = await borderColor(system);
   if (browserName === 'firefox') {
     // Firefox hace enfocable con el teclado el contenedor desplazable de la página (el ScrollView), para
@@ -233,15 +232,10 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   await expect(system).toBeFocused();
   await expect.poll(() => borderColor(dark)).toBe(rgb(themeColors.dark.surface));
   await page.keyboard.press('Tab');
-  await expect(nameField).toBeFocused();
-  await expect.poll(() => borderColor(nameField)).toBe(rgb(themeColors.dark.selection));
-  await page.keyboard.press('Tab');
   await expect(create).toBeFocused();
   await expect.poll(() => borderColor(create)).toBe(rgb(themeColors.dark.selection));
 
-  // Activación con Espacio, volviendo atrás con Shift+Tab (el foco ya está en «Crear»).
-  await page.keyboard.press('Shift+Tab');
-  await expect(nameField).toBeFocused();
+  // Volver atrás desde la acción principal conserva el orden de foco de los temas.
   await page.keyboard.press('Shift+Tab');
   await expect(system).toBeFocused();
   await page.keyboard.press('Shift+Tab');
@@ -253,7 +247,7 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   await expect(screen).toHaveCSS('background-color', rgb(themeColors.light.background));
 });
 
-test('antes de cargar JavaScript el nombre no admite escritura que luego se perdería', async ({ page }) => {
+test('antes de cargar JavaScript no se puede abrir un modal que perdería sus datos al hidratar', async ({ page }) => {
   // Retiene el bundle para reproducir de forma determinista la ventana previa al render del cliente,
   // que reemplaza (desarrollo) o hidrata (export) el HTML estático.
   let release = () => {};
@@ -264,14 +258,17 @@ test('antes de cargar JavaScript el nombre no admite escritura que luego se perd
   });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./', { waitUntil: 'commit' });
-  const field = page.getByLabel('Nombre del nuevo espacio');
-  await expect(field).toBeVisible();
-  await expect(field).not.toBeEditable();
+  const trigger = page.getByRole('button', { name: 'Nuevo proyecto', exact: true });
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toBeDisabled();
 
   release();
+  await expect(trigger).toBeEnabled();
+  await trigger.click();
+  const field = page.getByLabel('Nombre del proyecto');
   await field.fill('Primera idea');
   await expect(page.getByRole('heading', { name: /Dale un lugar/ })).toBeVisible();
   await expect(field).toHaveValue('Primera idea');
-  await page.getByRole('button', { name: 'Crear un espacio', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Primera idea', exact: true })).toBeVisible();
 });

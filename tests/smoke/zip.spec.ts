@@ -81,7 +81,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   await page.goto('./');
 
   // El navegador no bloquea la app: la carpeta queda desactivada y se ofrece la vía ZIP.
-  await expect(button(page, 'Abrir una carpeta')).toBeDisabled();
+  await expect(button(page, 'Abrir proyecto')).toBeDisabled();
   await expect(page.getByTestId('open-folder')).toContainText('Usa «Importar un ZIP»');
   await expect(page.getByTestId('memory-notice')).toContainText('Exporta cada espacio como ZIP');
   await expect(button(page, 'Importar un ZIP')).toBeEnabled();
@@ -129,7 +129,7 @@ test('sin API de carpetas: importar ZIP, editar, exportar y reimportar tras reca
   // Cambiar de espacio no descarta nada y la lista marca lo pendiente.
   await button(page, 'Volver a mis espacios').click();
   await expect(page.getByTestId('unexported-demo')).toHaveText('SIN EXPORTAR');
-  await button(page, 'Abrir Demo').click();
+  await button(page, 'Abrir el proyecto Demo').click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota del ZIP');
   await page.screenshot({ path: testInfo.outputPath('zip-pending.png') });
 
@@ -218,7 +218,7 @@ test('una importación inválida explica el motivo y no sobrescribe ni deja esta
   await page.screenshot({ path: testInfo.outputPath('zip-invalid.png') });
 
   // El espacio válido sigue intacto, con su edición pendiente de exportar.
-  await expect(page.getByRole('button', { name: /^Abrir Demo/ })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /^Abrir el proyecto Demo/ })).toHaveCount(1);
   await expect(page.getByTestId('unexported-demo')).toBeVisible();
 
   // Mismo ID: se importa como copia sin tocar el original.
@@ -228,7 +228,7 @@ test('una importación inválida explica el motivo y no sobrescribe ni deja esta
   await expect(page).toHaveURL(/id=demo-2/);
   await expect(page.getByTestId('card-idea-a')).toContainText('Idea A');
   await button(page, 'Volver a mis espacios').click();
-  await button(page, 'Abrir Demo').first().click();
+  await button(page, 'Abrir el proyecto Demo').first().click();
   await expect(page.getByTestId('card-idea-a')).toContainText('Editada antes del error');
 });
 
@@ -244,8 +244,9 @@ test('los cambios sin exportar no se descartan en silencio al salir ni al abrir 
   await page.addInitScript({ content: `window.showDirectoryPicker = async () => { window.__pickerUsed = true; throw Object.assign(new Error('x'), { name: 'AbortError' }); };` });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
-  await page.getByLabel('Nombre del nuevo espacio').fill('Pendiente');
-  await button(page, 'Crear un espacio').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Pendiente');
+  await button(page, 'Crear proyecto').click();
   await expect(page.getByTestId('export-status')).toContainText('CAMBIOS SIN EXPORTAR');
 
   // Recargar con cambios pendientes pide confirmación; al cancelar, todo sigue.
@@ -257,12 +258,12 @@ test('los cambios sin exportar no se descartan en silencio al salir ni al abrir 
   await warning.dismiss();
   await expect(page.getByRole('heading', { name: 'Pendiente', exact: true })).toBeVisible();
 
-  // Abrir una carpeta pediría sustituir los espacios del navegador: exige confirmación.
+  // Abrir proyecto pediría sustituir los espacios del navegador: exige confirmación.
   await button(page, 'Volver a mis espacios').click();
   // confirm() bloquea el clic hasta responder: se atiende con un manejador registrado antes.
   const questions: { type: string; message: string }[] = [];
   page.once('dialog', (dialog) => { questions.push({ type: dialog.type(), message: dialog.message() }); void dialog.dismiss(); });
-  await button(page, 'Abrir una carpeta').click();
+  await button(page, 'Abrir proyecto').click();
   await expect.poll(() => questions.length).toBe(1);
   expect(questions[0]?.type).toBe('confirm');
   expect(questions[0]?.message).toContain('1 espacio del navegador sin exportar');
@@ -271,7 +272,7 @@ test('los cambios sin exportar no se descartan en silencio al salir ni al abrir 
   await expect(page.getByTestId('memory-notice')).toContainText('SOLO EN MEMORIA');
 
   // Tras exportar ya no hay nada pendiente: recargar no pregunta.
-  await button(page, 'Abrir Pendiente').click();
+  await button(page, 'Abrir el proyecto Pendiente').click();
   const download = page.waitForEvent('download');
   await button(page, 'Exportar este espacio como ZIP').click();
   await download;
@@ -406,8 +407,9 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   const icon = fileURLToPath(new URL('../../apps/noutynotes/assets/branding/app-icon.png', import.meta.url));
   await page.addInitScript({ content: withoutFolderAccess });
   await page.goto('./');
-  await page.getByLabel('Nombre del nuevo espacio').fill('Viaje');
-  await button(page, 'Crear un espacio').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Viaje');
+  await button(page, 'Crear proyecto').click();
   const chooser = page.waitForEvent('filechooser');
   await insertFromMenu(page, 'Importar una imagen');
   await (await chooser).setFiles(icon);

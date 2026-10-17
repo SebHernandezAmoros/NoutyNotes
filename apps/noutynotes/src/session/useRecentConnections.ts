@@ -21,6 +21,9 @@ export interface RecentConnectionsApi {
    * reutiliza su `id`. En cualquier otro caso crea una identidad nueva.
    */
   connectNewFolder(): Promise<{ readonly ok: true; readonly folderId: string } | { readonly ok: false; readonly message: string }>;
+  /** Activa un handle que otra UI ya eligió y validó. No debe llamarse durante la selección: solo al
+   * confirmar una operación que necesita cambiar la sesión (por ejemplo, crear un proyecto allí). */
+  connectSelectedWebFolder(handle: BrowserDirectory, name: string): Promise<{ readonly ok: true; readonly folderId: string } | { readonly ok: false; readonly message: string }>;
   /** Android: reabre `session.savedFolder` (el botón «Reabrir» independiente de Recientes) y registra
    * el uso con la misma evidencia real (URI) que `reconnectFolderEntry`. */
   reopenSavedAndroidFolder(): Promise<{ readonly ok: true; readonly folderId: string } | { readonly ok: false; readonly message: string }>;
@@ -83,6 +86,12 @@ export function useRecentConnections(): RecentConnectionsApi {
     return { ok: true, folderId };
   };
 
+  const connectSelectedWebFolder = async (handle: BrowserDirectory, name: string): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
+    const result = await session.connectFolderWithHandle(handle);
+    if (!result.ok) return result;
+    return { ok: true, folderId: await registerWebConnection(handle, name) };
+  };
+
   const reopenSavedAndroidFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
     const result = await session.reconnectFolder();
     if (!result.ok) return result;
@@ -125,6 +134,7 @@ export function useRecentConnections(): RecentConnectionsApi {
     currentBackend,
     currentFolderId,
     connectNewFolder,
+    connectSelectedWebFolder,
     reopenSavedAndroidFolder,
     reconnectFolderEntry,
     recordProjectUse: recent.recordProjectUse,

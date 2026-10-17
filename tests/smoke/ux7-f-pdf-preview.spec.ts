@@ -4,8 +4,9 @@ import type { Page } from '@playwright/test';
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 
 async function createWorkspace(page: Page, name: string) {
-  await page.getByLabel('Nombre del nuevo espacio').fill(name);
-  await button(page, 'Crear un espacio').click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill(name);
+  await button(page, 'Crear proyecto').click();
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
 }
 
