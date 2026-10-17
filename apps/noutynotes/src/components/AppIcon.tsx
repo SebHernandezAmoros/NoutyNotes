@@ -96,7 +96,7 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
   if (name === 'document') return (
     <View accessibilityElementsHidden style={[styles.root, box]}>
       <View style={[styles.page, common]} />
-      <View style={[styles.pageFold, { borderColor: ink, borderWidth: line, backgroundColor: theme.colors.surface }]} />
+      <View style={[styles.pageFold, { borderColor: ink, borderWidth: line }]} />
       {[0.5, 0.72].map((top) => <View key={top} style={[styles.pageLine, fill, { top: size * top, height: line }]} />)}
     </View>
   );
@@ -187,10 +187,14 @@ const styles = StyleSheet.create({
   diagonal: { position: 'absolute', left: '18%', right: '18%', transform: [{ rotate: '-35deg' }] }, node: { position: 'absolute', backgroundColor: 'transparent' },
   palm: { position: 'absolute', left: '20%', bottom: '5%', backgroundColor: 'transparent' }, finger: { position: 'absolute', backgroundColor: 'transparent' },
   page: { position: 'absolute', left: '18%', top: '4%', width: '64%', height: '92%', backgroundColor: 'transparent' }, pageLine: { position: 'absolute', left: '30%', right: '28%' },
-  // Esquina doblada (icono «document»): un rombo del color de la superficie, apoyado sobre el borde
-  // superior derecho de `page`, simula el pliegue clásico de un documento sin salir del sistema de
-  // líneas (ADR 0047, sin SVG ni fuentes de iconos).
-  pageFold: { position: 'absolute', top: '2%', right: '20%', width: '20%', height: '20%', transform: [{ rotate: '45deg' }] },
+  // Esquina doblada (icono «document»): un rombo sin relleno (igual que el resto del catálogo — `page`,
+  // `homeBody`, `folder`… siempre `backgroundColor: 'transparent'`) apoyado sobre el borde superior
+  // derecho de `page`, simula el pliegue clásico de un documento sin salir del sistema de líneas (ADR
+  // 0047, sin SVG ni fuentes de iconos). UX7.1-A4-FIX: antes rellenaba con `theme.colors.surface` para
+  // imitar el recorte — un color fijo que no coincide con el fondo real tras el icono (cabecera de
+  // tarjeta, tarjeta sin cabecera…) y lo volvía invisible o manchado en tema oscuro; sin relleno, el
+  // rombo siempre deja ver el fondo verdadero, cualquiera que sea.
+  pageFold: { position: 'absolute', top: '2%', right: '20%', width: '20%', height: '20%', backgroundColor: 'transparent', transform: [{ rotate: '45deg' }] },
   bin: { position: 'absolute', left: '24%', top: '27%', width: '52%', height: '67%', backgroundColor: 'transparent' }, lid: { position: 'absolute', left: '17%', right: '17%', top: '20%' }, handle: { position: 'absolute', left: '39%', right: '39%', top: '7%', height: '14%' },
   archiveBox: { position: 'absolute', left: '8%', top: '26%', width: '84%', height: '62%' },
   printer: { position: 'absolute', left: '7%', right: '7%', top: '40%', height: '42%', backgroundColor: 'transparent' },

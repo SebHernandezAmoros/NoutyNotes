@@ -435,7 +435,11 @@ export function CanvasCard(props: CanvasCardProps) {
           <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
         ) : document && display === 'expanded' ? (
           <View testID={`document-${card.id}`} style={[styles.documentWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
-            {icon ? <CardIcon kind={icon} testID={`document-icon-${card.id}`} /> : null}
+            {/* UX7.1-A4-FIX: esta cara no tiene cabecera de color propio — se dibuja directamente sobre
+                `cardSurface`, que se mantiene clara en ambos temas. El icono por defecto usa el texto
+                general de la interfaz (claro en tema oscuro) y se volvía invisible; `cardText` es el
+                mismo tono oscuro constante que ya usa el nombre del archivo justo debajo. */}
+            {icon ? <CardIcon kind={icon} color={colors.cardText} testID={`document-icon-${card.id}`} /> : null}
             {cardDisplayTitle(card) ? (
               <Text testID={`document-title-${card.id}`} numberOfLines={3} style={[styles.title, styles.documentTitle, { color: colors.cardText, fontSize: titleSize, lineHeight: typography.titleLineHeight }]}>
                 {cardDisplayTitle(card)}
