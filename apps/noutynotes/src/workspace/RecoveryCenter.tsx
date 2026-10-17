@@ -84,6 +84,7 @@ interface RecoveryCenterProps {
   readonly saveProblemKind: 'conflict' | 'reselect' | 'retry' | null;
   readonly onRetrySave: () => void;
   readonly onRecoverExternal: () => void;
+  readonly onReconnectFolder: () => void;
   readonly onReselectFolder: () => void;
   readonly onRecover: (cardId: CardId) => void;
   readonly onDiscard: (cardId: CardId) => void;
@@ -95,7 +96,7 @@ interface RecoveryCenterProps {
  * JSON crudo como contenido principal (solo bajo «Ver fuente exacta», para copiar); nunca ofrece
  * «Recuperar» cuando no puede funcionar — la persona usuaria ve de inmediato por qué, sin intentarlo.
  */
-export function RecoveryCenter({ visible, compact, workspace, drafts, problem, saveProblem, saveProblemKind, onRetrySave, onRecoverExternal, onReselectFolder, onRecover, onDiscard, onClose }: RecoveryCenterProps) {
+export function RecoveryCenter({ visible, compact, workspace, drafts, problem, saveProblem, saveProblemKind, onRetrySave, onRecoverExternal, onReconnectFolder, onReselectFolder, onRecover, onDiscard, onClose }: RecoveryCenterProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [confirming, setConfirming] = useState<CardId | null>(null);
@@ -124,7 +125,10 @@ export function RecoveryCenter({ visible, compact, workspace, drafts, problem, s
               <ActionButton label="Reintentar" accessibilityLabel="Reintentar los cambios pendientes" tone="primary" onPress={onRetrySave} />
             ) : null}
             {saveProblemKind === 'retry' || saveProblemKind === 'reselect' ? (
-              <ActionButton label="Volver a seleccionar" accessibilityLabel="Volver a seleccionar la carpeta" onPress={onReselectFolder} />
+              <>
+                <ActionButton label="Reconectar" accessibilityLabel="Reconectar la carpeta conocida" onPress={onReconnectFolder} />
+                <ActionButton label="Elegir otra carpeta" accessibilityLabel="Elegir otra carpeta" onPress={onReselectFolder} />
+              </>
             ) : null}
           </View>
         </View>

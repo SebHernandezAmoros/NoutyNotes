@@ -34,6 +34,10 @@ export interface RecentConnectionsApi {
    * selector nativo completo (`connectNewFolder`, con la misma verificación por evidencia real).
    */
   reconnectFolderEntry(entry: RecentFolderEntry): Promise<{ readonly ok: true; readonly folderId: string } | { readonly ok: false; readonly message: string }>;
+  /** Recovery: intenta exclusivamente la identidad de carpeta activa ya conocida. En web reutiliza
+   * su handle persistido y solicita permiso sobre él; nunca abre el selector ni cambia a otra carpeta
+   * como efecto secundario. La selección manual permanece como una acción separada de la UI. */
+  reconnectCurrentFolder(): Promise<{ readonly ok: true; readonly folderId: string } | { readonly ok: false; readonly message: string }>;
   recordProjectUse(input: { readonly workspaceId: string; readonly name: string; readonly backend: RecentProjectBackend; readonly folderId: string | null }): void;
   forgetFolderEntry(id: string): void;
   forgetProjectEntry(id: string): void;
@@ -123,6 +127,33 @@ export function useRecentConnections(): RecentConnectionsApi {
     return connectNewFolder();
   };
 
+  const reconnectCurrentFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
+    const entry = currentFolderId ? recent.folders.find((candidate) => candidate.id === currentFolderId) : null;
+    if (!entry) return { ok: false, message: 'No hay una carpeta activa conocida que se pueda reconectar. Elige la carpeta manualmente.' };
+    if (entry.backend === 'android') {
+      if (session.savedFolder?.uri !== entry.androidUri) {
+        return { ok: false, message: 'La carpeta activa ya no tiene un permiso guardado. Elige la carpeta manualmente.' };
+      }
+      return reopenSavedAndroidFolder();
+    }
+    const handle = await loadFolderHandle(entry.id);
+    if (!handle) return { ok: false, message: 'No hay un handle guardado para esta carpeta. Elige la carpeta manualmente.' };
+    const reopened = await reopenHandle(handle);
+    if (!reopened.ok) {
+      if (reopened.reason === 'invalid') await deleteFolderHandle(entry.id);
+      return {
+        ok: false,
+        message: reopened.reason === 'denied'
+          ? 'El permiso de la carpeta sigue denegado. Autorízalo o elige la carpeta manualmente.'
+          : 'La carpeta conocida ya no está disponible. Elige la carpeta manualmente.',
+      };
+    }
+    const result = await session.connectFolderWithHandle(handle);
+    if (!result.ok) return result;
+    recent.recordFolderUse({ id: entry.id, backend: 'web', name: reopened.name, origin: 'created', androidUri: null });
+    return { ok: true, folderId: entry.id };
+  };
+
   const projectStatus = (entry: RecentProjectEntry, knownWorkspaceIds: readonly string[], workspacesLoading: boolean) => resolveProjectStatus(entry, {
     currentBackend, currentFolderId, workspacesLoading, knownWorkspaceIds,
     knownFolderIds: recent.folders.map((folder) => folder.id),
@@ -137,6 +168,7 @@ export function useRecentConnections(): RecentConnectionsApi {
     connectSelectedWebFolder,
     reopenSavedAndroidFolder,
     reconnectFolderEntry,
+    reconnectCurrentFolder,
     recordProjectUse: recent.recordProjectUse,
     forgetFolderEntry: recent.forgetFolderEntry,
     forgetProjectEntry: recent.forgetProjectEntry,

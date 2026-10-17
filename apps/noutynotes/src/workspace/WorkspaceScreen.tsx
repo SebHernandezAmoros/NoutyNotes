@@ -2130,8 +2130,14 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             saveProblemKind={saveProblemKind}
             onRetrySave={() => { void retry(); }}
             onRecoverExternal={() => { void recoverExternal(); }}
+            onReconnectFolder={() => {
+              void recentConnections.reconnectCurrentFolder().then((result) => {
+                if (result.ok) setRecoveryOpen(false);
+                else setFeedback({ tone: 'error', text: result.message });
+              });
+            }}
             onReselectFolder={() => {
-              void session.connectFolder().then((result) => {
+              void recentConnections.connectNewFolder().then((result) => {
                 if (result.ok) setRecoveryOpen(false);
                 else setFeedback({ tone: 'error', text: result.message });
               });

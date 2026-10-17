@@ -165,8 +165,50 @@ test('UX7-CONSOLIDATION: un fallo de escritura se revisa bajo el proyecto sin pe
   await issue.click();
   await expect(page.getByTestId('recovery-save-problem')).toContainText('ruta');
   await expect(page.getByRole('button', { name: 'Reintentar los cambios pendientes' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Volver a seleccionar la carpeta' })).toBeVisible();
+  // UX7.2-C3: Recovery distingue reautorizar la carpeta conocida (sin selector completo) de elegir
+  // deliberadamente otro destino. Antes solo existía la segunda ruta y se forzaba el picker incluso
+  // cuando el handle persistido podía recuperar el permiso.
+  await expect(page.getByRole('button', { name: 'Reconectar la carpeta conocida' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Elegir otra carpeta' })).toBeVisible();
   await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR CONSERVADO TRAS ERROR');
+
+  await page.evaluate(() => {
+    const state = window as typeof window & { __recoveryPickerUsed?: boolean };
+    state.__recoveryPickerUsed = false;
+    (window as typeof window & { showDirectoryPicker?: () => Promise<never> }).showDirectoryPicker = async () => {
+      state.__recoveryPickerUsed = true;
+      throw Object.assign(new Error('cancelled'), { name: 'AbortError' });
+    };
+  });
+  await page.getByRole('button', { name: 'Reconectar la carpeta conocida' }).click();
+  await expect(page.getByTestId('workspace-feedback')).toContainText('handle guardado');
+  expect(await page.evaluate(() => (window as typeof window & { __recoveryPickerUsed?: boolean }).__recoveryPickerUsed)).toBe(false);
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR CONSERVADO TRAS ERROR');
+
+  await page.getByRole('button', { name: 'Elegir otra carpeta' }).click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __recoveryPickerUsed?: boolean }).__recoveryPickerUsed)).toBe(true);
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('BORRADOR CONSERVADO TRAS ERROR');
+});
+
+test('UX7.2-C3: Recovery separa reconexión conocida y selección manual sin perder el borrador', async ({ page }, testInfo) => {
+  await page.addInitScript({ content: fakeFolder });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByLabel('Nombre del proyecto').fill('Recovery C3');
+  await page.getByRole('button', { name: 'Crear proyecto' }).click();
+  await insertFromMenu(page, 'Insertar nota');
+  await openCardEditor(page, 1);
+
+  await page.evaluate(() => { (window as typeof window & { __failNoutyWrite?: boolean }).__failNoutyWrite = true; });
+  await page.getByLabel('Contenido visual').fill('C3 CONSERVA ESTE BORRADOR');
+  await page.getByRole('button', { name: 'Guardar texto' }).click();
+  await page.getByTestId('save-issue').click();
+
+  await expect(page.getByRole('button', { name: 'Reconectar la carpeta conocida' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Elegir otra carpeta' })).toBeVisible();
+  await expect(page.getByTestId('recovery-preview-tarjeta-1')).toContainText('C3 CONSERVA ESTE BORRADOR');
+  await page.screenshot({ path: testInfo.outputPath('recovery-folder-actions.png'), fullPage: true });
 });
 
 test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin alterar la nota durable', async ({ page }) => {
