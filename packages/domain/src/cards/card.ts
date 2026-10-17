@@ -80,7 +80,7 @@ export interface Card {
  * ficha, que es identidad, con una acción o un estado.
  */
 export const cardIconNames = [
-  'note', 'image', 'folder', 'link', 'check', 'star',
+  'note', 'image', 'document', 'folder', 'link', 'check', 'star',
   'text', 'board', 'diary', 'assets', 'present', 'print', 'settings',
 ] as const;
 export type CardIconName = (typeof cardIconNames)[number];

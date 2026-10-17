@@ -49,6 +49,8 @@ import { visibleCells, zoomIn, zoomOut } from './canvas/viewport';
 import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
 import type { CardInspectorSection } from './CardInspector';
+import { PdfPreview } from './PdfPreview';
+import { usePdfPreview } from './usePdfPreview';
 import { FrameInspector } from './FrameInspector';
 import { ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
@@ -93,7 +95,9 @@ const displayMessages: Readonly<Record<CardDisplayMode, ActionSuccess>> = {
   minimized: 'action.cardMinimized',
 };
 
-type InsertablePrototypeKind = Exclude<PrototypeCardKind, 'image'>;
+// UX7.1-A4: un documento, como una imagen, nunca se crea desde el menú genérico de Insertar — solo se
+// añade un PDF ya catalogado desde Assets («Añadir al tablero»), con su propio mensaje de confirmación.
+type InsertablePrototypeKind = Exclude<PrototypeCardKind, 'image' | 'document'>;
 
 const additions: Readonly<Record<InsertablePrototypeKind, ActionSuccess>> = {
   note: 'action.noteAdded',
@@ -211,6 +215,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Editor enfocado (ADR 0021): el mismo editor ocupa el sitio del lienzo; el borrador no se pierde.
   const [focus, setFocus] = useState(false);
   const workspace = view.kind === 'ready' ? view.workspace : null;
+  // UX7.1-A4: mismo visor y mismo hook de ciclo de vida que Assets — una tarjeta de documento abre su
+  // PDF ya catalogado, sin un segundo sistema de vista previa.
+  const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assetsOf(session.storage), workspace?.id);
   const boardActions = workspace?.boards.find((candidate) => candidate.id === boardActionsId) ?? null;
   const archiveCount = workspace?.archive?.length ?? 0;
   const summaries = useSessionSummaries(workspace);
@@ -458,6 +465,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     // de 75 % y el tamaño por defecto (4 × 3 celdas de 56 px), la huella real es 168 × 126 px, por debajo
     // del umbral antiguo, así que «Editar dentro de la ficha» abría el editor completo sin avisarlo.
     const base = workspace?.cardTypes.find((candidate) => candidate.id === card?.typeId)?.base;
+    // UX7.1-A4: una tarjeta de documento no abre edición ni inspector al activarla — abre el PDF ya
+    // catalogado que referencia, igual que «Vista previa» en Assets (mismo visor, mismo hook).
+    if (base === 'file') {
+      const ref = card?.assetRefs?.[0];
+      if (ref) void openPdfPreview({ ref, name: cardTitleText(card) || t('card.untitled', locale) });
+      return;
+    }
     // Formas y conectores no tienen cuerpo de nota: su edición pertenece al inspector de propiedades.
     // El editor rápido comparte la misma autoridad Visual/HTML y puede conservar documentos HTML
     // compatibles; el propio editor deriva al inspector completo si encuentra bloques no soportados.
@@ -2134,6 +2148,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onClose={() => setRecoveryOpen(false)}
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
+          <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} />
           <AssetImagePickerDialog
             visible={assetImagePicker.visible}
             compact={compact}

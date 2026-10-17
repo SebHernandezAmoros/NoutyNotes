@@ -819,8 +819,10 @@ export function Canvas(props: CanvasProps) {
   // que esa superficie no representa se derivan desde el propio editor.
   const menuCard = menuPlacement ? cards.get(menuPlacement.cardId) : undefined;
   const menuCardBase = menuCard ? workspace.cardTypes.find((candidate) => candidate.id === menuCard.typeId)?.base : undefined;
+  // UX7.1-A4: una tarjeta de documento tampoco entra en edición rápida — «Editar» abre el Inspector
+  // (identidad/apariencia); el PDF se abre con su propia interacción («Abrir»/doble toque).
   const canQuickEditMenuCard = Boolean(menuPlacement && !props.compact && menuPlacement.display === 'expanded'
-    && menuCardBase !== 'shape' && menuCardBase !== 'connector');
+    && menuCardBase !== 'shape' && menuCardBase !== 'connector' && menuCardBase !== 'file');
   const inlinePlacement = props.inlineEditingId ? placements.find((placement) => placement.cardId === props.inlineEditingId) : undefined;
   const inlineCard = inlinePlacement ? cards.get(inlinePlacement.cardId) : undefined;
   const inlineBox = inlinePlacement ? (() => {

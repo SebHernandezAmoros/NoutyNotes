@@ -962,6 +962,7 @@ export const TRANSLATIONS = {
     en: '“{name}” replaced with “{newName}” in {cards}; the previous file is left unused',
   },
   'action.assetAddedToBoard': { es: '«{name}» añadido al tablero sin copiar el archivo', en: '“{name}” added to the board without copying the file' },
+  'action.documentAddedToBoard': { es: '«{name}» añadido al tablero sin copiar el archivo', en: '“{name}” added to the board without copying the file' },
   'action.frameCreated.one': { es: 'Marco creado con 1 tarjeta', en: 'Frame created with 1 card' },
   'action.frameCreated.many': { es: 'Marco creado con {count} tarjetas', en: 'Frame created with {count} cards' },
   'action.cardsMoved.many': { es: '{count} tarjetas movidas', en: '{count} cards moved' },

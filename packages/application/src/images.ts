@@ -56,9 +56,9 @@ export async function withdraw<T>(assets: WorkspaceAssets, workspaceId: Workspac
 }
 
 /** Título legible a partir del nombre del archivo, sin extensión. */
-export function titleFrom(fileName: string): string {
+export function titleFrom(fileName: string, fallback = 'Imagen'): string {
   const base = fileName.replace(/\.[^./\\]*$/, '').trim().slice(0, 80);
-  return base === '' ? 'Imagen' : base;
+  return base === '' ? fallback : base;
 }
 
 export interface ImportImageInput {

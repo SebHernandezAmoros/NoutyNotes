@@ -50,9 +50,12 @@ describe('controles que no caben dentro de la tarjeta', () => {
 });
 
 describe('cara de una ficha minimizada', () => {
-  it('nota e imagen tienen icono propio; los demás tipos muestran solo el título', () => {
+  it('nota, imagen y documento tienen icono propio; los demás tipos muestran solo el título', () => {
     expect(miniIcon('note')).toBe('note');
     expect(miniIcon('image')).toBe('image');
+    // UX7.1-A4: una tarjeta de documento (base `file`) reutiliza el icono de «documento», distinto
+    // del de «nota», para identificarse incluso minimizada o contraída.
+    expect(miniIcon('file')).toBe('document');
     expect(miniIcon('link')).toBeNull();
     expect(miniIcon(undefined)).toBeNull();
   });

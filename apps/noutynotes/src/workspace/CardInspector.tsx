@@ -79,7 +79,7 @@ const displayKeys: readonly { display: CardDisplayMode; labelKey: 'inspector.dis
 
 /** Catálogo ampliado de iconos de ficha (UX7-D5): mismo nombre que en `AppIcon`, con su etiqueta en español (ADR 0032: el editor de tarjeta no se traduce). */
 const iconLabels: Record<CardIconName, string> = {
-  note: 'Nota', image: 'Imagen', folder: 'Carpeta', link: 'Enlace', check: 'Tarea', star: 'Estrella',
+  note: 'Nota', image: 'Imagen', document: 'Documento', folder: 'Carpeta', link: 'Enlace', check: 'Tarea', star: 'Estrella',
   text: 'Texto', board: 'Tablero', diary: 'Diario', assets: 'Archivos', present: 'Presentar', print: 'Imprimir', settings: 'Ajustes',
 };
 
@@ -121,7 +121,10 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const floatingText = isFloatingTextCard(card, cardBase);
   const shape = cardBase === 'shape';
   const connector = cardBase === 'connector';
-  const section = requestedSection === 'content' && (shape || connector) ? 'appearance' : requestedSection;
+  // UX7.1-A4: una tarjeta de documento no tiene cuerpo de texto que editar ni visibilidad que alternar
+  // (su identidad es el archivo referenciado); el título sigue siendo renombrable como en imagen/enlace.
+  const documentCard = cardBase === 'file';
+  const section = requestedSection === 'content' && (shape || connector || documentCard) ? 'appearance' : requestedSection;
   const connectorPath = placement?.connectorPath;
   const saveConnectorPath = (path: readonly { readonly x: number; readonly y: number }[]) =>
     run((storage, id) => editConnectorPath(storage, id, { boardId, cardId: card.id, connectorPath: path }), { label: 'Ruta del conector actualizada' }, { reactive: true });
@@ -166,7 +169,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const [htmlModified, setHtmlModified] = useState(initialDraft?.bodySource?.format === 'html' && initialDraft.bodyValidation?.status !== 'valid');
   // El texto flotante es una primitiva propia (P13-P16), no una nota: conserva su campo de texto simple
   // y nunca adopta el editor Visual/HTML (ADR 0066), que es del cuerpo de una nota.
-  const supportsVisualEditor = !shape && !connector && (Platform.OS === 'web' || Platform.OS === 'android');
+  const supportsVisualEditor = !shape && !connector && !documentCard && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
     : isNativeRichTextDocument(document);
@@ -683,19 +686,19 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             {t('inspector.visual.fallback', locale)}
           </Text>
         ) : null}
-        {visualEditing || bodyMode === 'html' || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
+        {visualEditing || bodyMode === 'html' || floatingText || shape || connector || documentCard ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.format.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.format.section', locale)}</Text>
           <ActionButton label="B" accessibilityLabel={t('inspector.format.bold.accessibilityLabel', locale)} onPress={() => applyFormat('bold')} style={styles.listButton} />
           <ActionButton label="I" accessibilityLabel={t('inspector.format.italic.accessibilityLabel', locale)} onPress={() => applyFormat('italic')} style={styles.listButton} />
         </View>}
-        {visualEditing || bodyMode === 'html' || floatingText || shape || connector ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
+        {visualEditing || bodyMode === 'html' || floatingText || shape || connector || documentCard ? null : <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.lists.accessibilityLabel', locale)}>
           <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.lists.section', locale)}</Text>
           <ActionButton label="−" accessibilityLabel={t('inspector.list.dash.accessibilityLabel', locale)} onPress={() => insertList('dash')} style={styles.listButton} />
           <ActionButton label="•" accessibilityLabel={t('inspector.list.bullet.accessibilityLabel', locale)} onPress={() => insertList('bullet')} style={styles.listButton} />
           <ActionButton label="1." accessibilityLabel={t('inspector.list.number.accessibilityLabel', locale)} onPress={() => insertList('number')} style={styles.listButton} />
           <ActionButton label="☐" accessibilityLabel={t('inspector.list.check.accessibilityLabel', locale)} onPress={() => insertList('check')} style={styles.listButton} />
         </View>}
-        {presentation.body === 'hidden' || visualEditing || bodyMode === 'html' || nativeHtmlReadOnly || shape || connector ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
+        {presentation.body === 'hidden' || visualEditing || bodyMode === 'html' || nativeHtmlReadOnly || shape || connector || documentCard ? null : <TextField label={floatingText ? t('inspector.floatingText.label', locale) : t('inspector.content.label', locale)} value={content} onChangeText={changeContent} multiline placeholder={t('inspector.content.placeholder', locale)}
           fontFamily={noteFontFamily}
           selection={forcedSelection}
           onKeyPress={onContentKeyPress}
@@ -709,7 +712,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             onReplace={(index) => void placeImage({ kind: 'replace', index })} />
         ) : null}
         {imageProblem ? <Text testID="note-image-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{imageProblem}</Text> : null}
-        {!visualEditing && bodyMode !== 'html' && !floatingText && !shape && content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
+        {!visualEditing && bodyMode !== 'html' && !floatingText && !shape && !documentCard && content.split('\n').some((line) => parseChecklistLine(line) !== null) ? (
           <View testID="checklist-preview" style={styles.preview}>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.checklist.section', locale)}</Text>
             {content.split('\n').map((line, index) => {
@@ -723,7 +726,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             })}
           </View>
         ) : null}
-        {!shape && !connector ? <View style={styles.row}>
+        {!shape && !connector && !documentCard ? <View style={styles.row}>
           <ActionButton
             label={t('inspector.save', locale)}
             tone="primary"
@@ -784,7 +787,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           <ActionButton label={t('inspector.frame.hidden', locale)} pressed={card.frameOverride === 'hidden'}
             onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'hidden' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
         </View>
-        {!shape && !connector ? (
+        {!shape && !connector && !documentCard ? (
           <>
             <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.contentVisibility.section', locale)}</Text>
             <View style={styles.row}>

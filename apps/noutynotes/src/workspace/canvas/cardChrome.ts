@@ -93,7 +93,8 @@ export function chromeFor(display: CardDisplayMode, box: ScreenBox, selected: bo
 }
 
 /** Icono propio de la ficha minimizada según la primitiva del tipo; sin él se muestra el título. */
-export function miniIcon(base: BaseCardKind | undefined): 'note' | 'image' | null {
-  return base === 'note' || base === 'image' ? base : null;
+export function miniIcon(base: BaseCardKind | undefined): 'note' | 'image' | 'document' | null {
+  if (base === 'note' || base === 'image') return base;
+  return base === 'file' ? 'document' : null;
 }
 

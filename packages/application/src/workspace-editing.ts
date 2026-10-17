@@ -34,7 +34,7 @@ export function editableCardContent(card: Card, base: CardTypeDefinition['base']
   return (card.assetRefs ?? []).reduce((content, ref) => insertImageBlock(content, undefined, ref, card.title ?? 'Imagen'), '');
 }
 
-export type PrototypeCardKind = 'note' | 'text' | 'shape' | 'connector' | 'image' | 'title' | 'link';
+export type PrototypeCardKind = 'note' | 'text' | 'shape' | 'connector' | 'image' | 'title' | 'link' | 'document';
 
 interface CardPreset {
   readonly type: CardTypeDefinition;
@@ -77,6 +77,11 @@ export const PROTOTYPE_CARD_PRESETS: Readonly<Record<PrototypeCardKind, CardPres
   title: { type: { id: 'nota' as CardTypeId, label: 'Nota', base: 'note', fields: [] }, title: 'Nuevo título', content: '', size: { w: 6, h: 2 }, frameOverride: 'hidden', titleVisibility: 'visible', bodyVisibility: 'hidden' },
   // El tipo real se elige por proyecto (`linkCardTypeFor`, ADR 0020); este es el que se añade si no hay ninguno.
   link: { type: LINK_CARD_TYPE, title: 'Enlace' },
+  // UX7.1-A4: tarjeta de documento (hoy, solo PDF) que referencia un Asset existente por `assetRefs`,
+  // igual que una imagen — nunca copia bytes. `base: 'file'` ya estaba declarado en el dominio
+  // (`baseCardKinds`) sin ningún consumidor hasta ahora. Sin cuerpo editable: el título es el nombre
+  // visible del archivo, y «ver» el documento abre su vista previa, no un editor de contenido.
+  document: { type: { id: 'documento' as CardTypeId, label: 'Documento', base: 'file', fields: [] }, title: 'Documento', size: { w: 4, h: 3 }, titleVisibility: 'visible', bodyVisibility: 'hidden' },
 };
 
 export interface AddCardInput {
@@ -198,19 +203,19 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   if (createdAt !== undefined && !isArchiveInstant(createdAt)) return storageFailure('invalid-workspace', 'createdAt', 'La fecha de creación debe ser ISO 8601 en UTC.');
   const validNear = near === undefined || (isObject(near) && Number.isSafeInteger(ownValue(near, 'x')) && Number.isSafeInteger(ownValue(near, 'y'))
     && Number.isSafeInteger(ownValue(near, 'columns')) && (ownValue(near, 'columns') as number) >= 1);
-  if ((kind !== 'note' && kind !== 'text' && kind !== 'shape' && kind !== 'connector' && kind !== 'image' && kind !== 'title' && kind !== 'link') || (title !== undefined && typeof title !== 'string')
+  if ((kind !== 'note' && kind !== 'text' && kind !== 'shape' && kind !== 'connector' && kind !== 'image' && kind !== 'title' && kind !== 'link' && kind !== 'document') || (title !== undefined && typeof title !== 'string')
     || (content !== undefined && ((kind !== 'note' && kind !== 'text') || typeof content !== 'string'))
     || (requestedBoard !== undefined && typeof requestedBoard !== 'string') || !validNear
     || (connectorPath !== undefined && (kind !== 'connector' || !Array.isArray(connectorPath)))
     || (connectorStartCardId !== undefined && (kind !== 'connector' || typeof connectorStartCardId !== 'string'))
     || (connectorEndCardId !== undefined && (kind !== 'connector' || typeof connectorEndCardId !== 'string'))) {
-    return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen, título o enlace) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
+    return storageFailure('invalid-workspace', 'input', 'Indica el tipo de tarjeta (nota, imagen, documento, título o enlace) y, opcionalmente, un título, un tablero de texto y una zona con enteros.');
   }
   const zone = near === undefined ? undefined : near as NonNullable<AddCardInput['near']>;
   const url = kind === 'link' ? normalizeLinkUrl(typeof rawUrl === 'string' ? rawUrl : '') : undefined;
   if (url && !url.ok) return storageFailure('invalid-workspace', 'input', 'El enlace no es válido.', url.issues);
-  if (assetRef !== undefined && (kind !== 'image' || typeof assetRef !== 'string' || !isValidAssetRef(assetRef) || !assetRef.startsWith('assets/'))) {
-    return storageFailure('invalid-asset', 'assetRef', 'Solo una imagen del proyecto (bajo assets/) puede añadirse como tarjeta de imagen.');
+  if (assetRef !== undefined && ((kind !== 'image' && kind !== 'document') || typeof assetRef !== 'string' || !isValidAssetRef(assetRef) || !assetRef.startsWith('assets/'))) {
+    return storageFailure('invalid-asset', 'assetRef', 'Solo una imagen o un documento del proyecto (bajo assets/) puede añadirse como tarjeta de imagen o de documento.');
   }
   const preset = PROTOTYPE_CARD_PRESETS[kind];
   if (connectorPath !== undefined) {

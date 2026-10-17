@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addAssetToBoard, addNoteImage, addCardToBoard, buildAssetCatalog, createEmptyWorkspaceNamed, deleteUnusedAssets, editCardContent, importAssetImage,
-  importImageCard, importImageCardAt, importLibraryFile, importLibraryFont, noteImageRefs, removeNoteBlock, replaceAsset,
+  addAssetToBoard, addDocumentToBoard, addNoteImage, addCardToBoard, buildAssetCatalog, createEmptyWorkspaceNamed, deleteUnusedAssets, duplicateSelection,
+  editCardContent, importAssetImage, importImageCard, importImageCardAt, importLibraryFile, importLibraryFont, moveCardToTrash, noteImageRefs,
+  removeNoteBlock, replaceAsset, restoreCardFromTrash,
 } from '../../packages/application/src/index';
 import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult } from '../../packages/application/src/index';
-import type { AssetRef, WorkspaceId } from '../../packages/domain/src/index';
+import type { AssetRef, BoardId, WorkspaceId } from '../../packages/domain/src/index';
 import { MemoryDocumentTree } from '../../packages/storage/src/__fixtures__/document-tree';
-import { ArchiveStorage, DocumentTreeFolderPort, FolderStorage } from '../../packages/storage/src/index';
+import { ArchiveStorage, DocumentTreeFolderPort, FolderStorage, readWorkspaceArchive } from '../../packages/storage/src/index';
 
 function ok<T>(result: WorkspaceStorageResult<T>): T {
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
@@ -162,5 +163,70 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     const google = ok(await importLibraryFont(storage, storage, id, { bytes: woff2Bytes, fileName: 'Roboto.woff2' }));
     expect(google).toEqual({ ref: 'assets/fonts/roboto.woff2' });
     expect(buildAssetCatalog(ok(await storage.open(id)), ok(await storage.listAssets(id))).find((entry) => entry.ref === google.ref)?.kind).toBe('font');
+  });
+
+  it('UX7.1-A4: una tarjeta de documento referencia un PDF ya catalogado sin copiarlo; rechaza formatos que no son PDF y referencias de otro tipo', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Documentos'));
+    const pdfBytes = Uint8Array.from([37, 80, 68, 70, 1, 2, 3]);
+    const ref = ok(await importLibraryFile(storage, storage, id, { bytes: pdfBytes, fileName: 'Guion Final.pdf' }));
+    expect(ref).toBe('assets/documents/guion-final.pdf');
+
+    const cardId = ok(await addDocumentToBoard(storage, id, { ref }));
+    const opened = ok(await storage.open(id));
+    const card = opened.cards.find((candidate) => candidate.id === cardId);
+    // El título sale del nombre del Asset ya catalogado (portable-slug de `importLibraryFile`), igual
+    // que ya hace `addAssetToBoard` para imágenes — no del nombre original que escribió la persona.
+    expect(card).toMatchObject({ title: 'guion-final', assetRefs: [ref] });
+    const type = opened.cardTypes.find((candidate) => candidate.id === card?.typeId);
+    expect(type?.base).toBe('file');
+    // Sin copia: el mismo archivo sigue siendo el único bajo assets/, sin un segundo PDF.
+    expect([...ok(await storage.listAssets(id))]).toEqual([ref]);
+    expect(ok(await storage.readAsset(id, ref as AssetRef))).toEqual(pdfBytes);
+
+    // Un documento que no es PDF (mismo `assetKind` «document») se rechaza — este bloque es solo PDF.
+    const txtRef = ok(await importLibraryFile(storage, storage, id, { bytes: new TextEncoder().encode('notas'), fileName: 'notas.txt' }));
+    const rejectedKind = await addDocumentToBoard(storage, id, { ref: txtRef });
+    expect(rejectedKind.ok ? null : rejectedKind.issues[0]?.code).toBe('invalid-asset');
+
+    // Una referencia de imagen tampoco puede añadirse como tarjeta de documento.
+    const imgRef = ok(await importAssetImage(storage, storage, id, { bytes: Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]), fileName: 'mapa.png' }));
+    const rejectedImage = await addDocumentToBoard(storage, id, { ref: imgRef });
+    expect(rejectedImage.ok ? null : rejectedImage.issues[0]?.code).toBe('invalid-asset');
+  });
+
+  it('UX7.1-A4: duplicar comparte la misma referencia sin copiar bytes; Papelera y restauración conservan la tarjeta; el ZIP exportado incluye el PDF', async () => {
+    const { storage, put } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Documentos'));
+    const pdfBytes = Uint8Array.from([37, 80, 68, 70, 9, 9, 9]);
+    const ref = ok(await importLibraryFile(storage, storage, id, { bytes: pdfBytes, fileName: 'informe.pdf' }));
+    const cardId = ok(await addDocumentToBoard(storage, id, { ref }));
+    const boardId = ok(await storage.open(id)).layouts[0]?.boardId as BoardId;
+
+    // Duplicar: segunda tarjeta, misma referencia — el PDF no se copia (sigue habiendo un solo archivo).
+    ok(await duplicateSelection(storage, id, boardId, [cardId]));
+    const afterDuplicate = ok(await storage.open(id));
+    expect(afterDuplicate.cards).toHaveLength(2);
+    expect(afterDuplicate.cards.every((card) => card.assetRefs?.includes(ref))).toBe(true);
+    expect([...ok(await storage.listAssets(id))]).toEqual([ref]);
+
+    // Papelera y restauración de la tarjeta original: conserva título, tipo y la misma referencia; el
+    // archivo sigue intacto porque la copia duplicada todavía lo usa.
+    ok(await moveCardToTrash(storage, id, cardId));
+    expect(ok(await storage.open(id)).cards.map((card) => card.id)).not.toContain(cardId);
+    ok(await restoreCardFromTrash(storage, id, { cardId, fallbackBoardId: boardId }));
+    const restored = ok(await storage.open(id)).cards.find((card) => card.id === cardId);
+    expect(restored).toMatchObject({ title: 'informe', assetRefs: [ref] });
+    expect(ok(await storage.readAsset(id, ref as AssetRef))).toEqual(pdfBytes);
+
+    // Eliminar lo sin usar no toca el PDF: ambas tarjetas (original restaurada y duplicada) lo referencian.
+    expect(ok(await deleteUnusedAssets(storage, storage, id, [ref])).inUse).toEqual([ref]);
+
+    // Ciclo completo de portabilidad (solo ZIP/memoria: la carpeta no exporta a archivo en esta prueba):
+    // el ZIP exportado contiene el PDF, no solo la tarjeta que lo referencia.
+    if (!put) {
+      const archive = readWorkspaceArchive(ok((storage as ArchiveStorage).exportArchive(id)).bytes);
+      expect(archive.ok && archive.value.assets[ref]).toEqual(pdfBytes);
+    }
   });
 });

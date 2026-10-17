@@ -1,16 +1,16 @@
 import {
-  addAssetToBoard, assetKind, assetsOf, buildAssetCatalog, deleteUnusedAssets, fold, importAssetImage, importLibraryFile, importLibraryFont, inspectFont, inspectImage, replaceAsset,
+  addAssetToBoard, addDocumentToBoard, assetKind, assetsOf, buildAssetCatalog, deleteUnusedAssets, fold, importAssetImage, importLibraryFile, importLibraryFont, inspectFont, inspectImage, replaceAsset,
 } from '@noutynotes/application';
 import type { AssetEntry, AssetKind, WorkspaceStorageResult } from '@noutynotes/application';
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
 import type { Locale } from '@noutynotes/ui';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { t } from '../i18n';
-import { isPdfFileName, isPdfSignature } from '../session/assetMime';
+import { isPdfFileName } from '../session/assetMime';
 import { activateCustomFont, supportsCustomFont } from '../session/customFont';
 import { downloadAssetFile, supportsAssetDownload } from '../session/downloadAsset';
 import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
@@ -22,8 +22,8 @@ import { useWorkspaceSession } from '../session/WorkspaceSession';
 import type { ViewPreferences } from './canvas/preferences';
 import { dataUri } from './dataUri';
 import { PdfPreview } from './PdfPreview';
-import type { PdfPreviewState } from './PdfPreview';
 import { useEscapeBack } from './useEscapeBack';
+import { usePdfPreview } from './usePdfPreview';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
@@ -275,43 +275,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     openAssetFile(entry.name, read.value);
   };
 
-  // UX7-F: vista previa de PDF embebida (no sale de Assets ni del Workspace). `requestId` descarta una
-  // lectura en curso si se abre otro documento o se cierra el visor mientras tanto (PDF-05/06); el
-  // Blob URL anterior se revoca en el propio `useEffect` de limpieza, nunca aquí directamente.
-  // `pdfPreviewRaw` recuerda a qué workspace pertenece; `pdfPreview` (derivado, no estado propio) se
-  // anula solo con que `workspace.id` ya no coincida — así cambiar de proyecto nunca deja visible un
-  // PDF del Workspace anterior (sección 6 del encargo) sin tocar refs ni `setState` durante el render
-  // ni dentro de un efecto (ambos patrones prohibidos por las reglas de hooks de este proyecto).
-  const [pdfPreviewRaw, setPdfPreviewRaw] = useState<{ readonly workspaceId: string; readonly state: PdfPreviewState } | null>(null);
-  const pdfPreview = pdfPreviewRaw && pdfPreviewRaw.workspaceId === workspace.id ? pdfPreviewRaw.state : null;
-  const pdfRequestRef = useRef(0);
-  useEffect(() => {
-    if (pdfPreview?.status !== 'ready') return undefined;
-    const url = pdfPreview.url;
-    return () => URL.revokeObjectURL(url);
-  }, [pdfPreview]);
-  const openPdfPreview = async (entry: AssetEntry) => {
-    if (!assets) return;
-    const requestId = ++pdfRequestRef.current;
-    const workspaceId = workspace.id;
-    setPdfPreviewRaw({ workspaceId, state: { status: 'loading', name: entry.name } });
-    const read = await assets.readAsset(workspaceId, entry.ref as AssetRef);
-    if (pdfRequestRef.current !== requestId) return; // se cerró o se abrió otro documento mientras tanto
-    if (!read.ok) {
-      setPdfPreviewRaw({ workspaceId, state: { status: 'error', name: entry.name, message: read.issues[0]?.message ?? t('assets.error.readFailed', locale) } });
-      return;
-    }
-    if (!isPdfSignature(read.value)) {
-      setPdfPreviewRaw({ workspaceId, state: { status: 'error', name: entry.name, message: t('assets.pdf.error.invalid', locale) } });
-      return;
-    }
-    const url = URL.createObjectURL(new Blob([read.value as BlobPart], { type: 'application/pdf' }));
-    setPdfPreviewRaw({ workspaceId, state: { status: 'ready', name: entry.name, url } });
-  };
-  const closePdfPreview = () => {
-    pdfRequestRef.current += 1;
-    setPdfPreviewRaw(null);
-  };
+  // UX7-F/UX7.1-A4: vista previa de PDF embebida (no sale de Assets ni del Workspace); el ciclo de vida
+  // del Blob URL vive en `usePdfPreview`, compartido con la tarjeta de documento del Canvas.
+  const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assets, workspace.id);
   const download = async (entry: AssetEntry) => {
     if (!assets) return;
     const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
@@ -334,7 +300,11 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   };
   const addToBoard = async (entry: AssetEntry) => {
     const where = placement();
-    const result = await run((store, id) => addAssetToBoard(store, id, { ref: entry.ref, ...where }), { key: 'action.assetAddedToBoard', params: { name: entry.name } });
+    // UX7.1-A4: mismo botón de siempre, ahora también para un PDF (`entry.kind === 'document'`) — la
+    // función de aplicación que valida y coloca la tarjeta es distinta, el resto del flujo es idéntico.
+    const result = entry.kind === 'document'
+      ? await run((store, id) => addDocumentToBoard(store, id, { ref: entry.ref, ...where }), { key: 'action.documentAddedToBoard', params: { name: entry.name } })
+      : await run((store, id) => addAssetToBoard(store, id, { ref: entry.ref, ...where }), { key: 'action.assetAddedToBoard', params: { name: entry.name } });
     if (result.ok) {
       onBack();
       onAdded(result.value);
@@ -379,10 +349,10 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         {!current.missing && supportsAssetDownload() ? (
           <ActionButton label={t('assets.download', locale)} accessibilityLabel={t('assets.download.accessibilityLabel', locale, { name: current.name })} onPress={() => void download(current)} />
         ) : null}
-        {current.kind === 'image' && !current.missing ? (
+        {(current.kind === 'image' || (current.kind === 'document' && isPdfFileName(current.name))) && !current.missing ? (
           <>
             <ActionButton label={t('assets.addToBoard', locale)} accessibilityLabel={t('assets.addToBoard.accessibilityLabel', locale, { name: current.name })} onPress={() => void addToBoard(current)} />
-            <ActionButton label={t('assets.replace', locale)} accessibilityLabel={t('assets.replace.accessibilityLabel', locale, { name: current.name })} onPress={() => void replace(current)} />
+            {current.kind === 'image' ? <ActionButton label={t('assets.replace', locale)} accessibilityLabel={t('assets.replace.accessibilityLabel', locale, { name: current.name })} onPress={() => void replace(current)} /> : null}
           </>
         ) : null}
         {(current.kind === 'document' || current.kind === 'audio') && !current.missing && supportsOpenAsset() ? (

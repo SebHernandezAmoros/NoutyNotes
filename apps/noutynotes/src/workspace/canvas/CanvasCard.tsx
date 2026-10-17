@@ -258,6 +258,9 @@ export function CanvasCard(props: CanvasCardProps) {
   const shape = type?.base === 'shape';
   const connector = type?.base === 'connector';
   const note = type?.base === 'note';
+  // UX7.1-A4: una tarjeta de documento referencia un PDF ya catalogado (sin copiarlo) y solo muestra su
+  // identidad (icono + nombre) — el visor real se abre con doble toque, reutilizando `PdfPreview`.
+  const document = type?.base === 'file';
   const hint = connectHints[connectRole];
   const borderColor = colliding ? colors.danger : selected || focused || connectRole === 'source' ? colors.selection : colors.border;
   // Sin marco en reposo (ADR 0049): selección, foco, colisión, arrastre y conexión en curso lo mantienen
@@ -430,6 +433,15 @@ export function CanvasCard(props: CanvasCardProps) {
           </View>
         ) : connector && display === 'expanded' ? (
           <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
+        ) : document && display === 'expanded' ? (
+          <View testID={`document-${card.id}`} style={[styles.documentWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+            {icon ? <CardIcon kind={icon} testID={`document-icon-${card.id}`} /> : null}
+            {cardDisplayTitle(card) ? (
+              <Text testID={`document-title-${card.id}`} numberOfLines={3} style={[styles.title, styles.documentTitle, { color: colors.cardText, fontSize: titleSize, lineHeight: typography.titleLineHeight }]}>
+                {cardDisplayTitle(card)}
+              </Text>
+            ) : null}
+          </View>
         ) : display === 'collapsed' ? (
           <View testID={`collapsed-${card.id}`} style={styles.collapsedShell}>
             <View style={[styles.header, styles.headerCollapsed, collapsedBodyLines < 1 ? styles.headerCollapsedOnly : null, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
@@ -650,6 +662,8 @@ const styles = StyleSheet.create({
   floatingTitle: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8 },
   floatingTextWrap: { flex: 1, padding: 8, paddingTop: 36 },
   shapeWrap: { flex: 1, padding: 10, paddingTop: 36 },
+  documentWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, paddingTop: 36 },
+  documentTitle: { textAlign: 'center' },
   // En una sola fila no se añade relleno vertical: RN Web lo suma al tamaño flex y deformaba la grilla.
   shapeWrapCompact: { padding: 0, paddingTop: 0, paddingHorizontal: 0, minHeight: 0, minWidth: 0 },
   // Si aun así no cabe, cede el texto y no el pie.

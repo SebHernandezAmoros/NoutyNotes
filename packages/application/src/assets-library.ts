@@ -48,6 +48,25 @@ export function addAssetToBoard(
   });
 }
 
+/**
+ * Tarjeta de documento que referencia un PDF ya catalogado en Assets, sin copiarlo (UX7.1-A4). Igual
+ * patrón que `addAssetToBoard` para imágenes: la validación de qué puede añadirse vive aquí, no en
+ * `addCardToBoard` (genérico para cualquier tipo). Solo PDF — `assetKind` también clasifica otros
+ * formatos de documento (docx, txt, md…) bajo `'document'`, pero este bloque es exclusivamente PDF.
+ */
+export function addDocumentToBoard(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, input: { readonly ref: string; readonly boardId?: BoardId; readonly near?: AddCardInput['near']; readonly createdAt?: string },
+): Promise<WorkspaceStorageResult<CardId>> {
+  if (typeof input.ref !== 'string' || assetKind(input.ref) !== 'document' || !/\.pdf$/i.test(input.ref)) {
+    return Promise.resolve(storageFailure('invalid-asset', 'ref', 'Solo un PDF del proyecto puede añadirse al tablero como tarjeta de documento.'));
+  }
+  const name = input.ref.split('/').pop() ?? input.ref;
+  return addCardToBoard(storage, workspaceId, {
+    kind: 'document', assetRef: input.ref, title: titleFrom(name, 'Documento'),
+    ...(input.boardId ? { boardId: input.boardId } : {}), ...(input.near ? { near: input.near } : {}), ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+  });
+}
+
 export interface ImportImageAtInput {
   readonly bytes: Uint8Array;
   readonly fileName: string;
