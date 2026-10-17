@@ -86,14 +86,11 @@ type TableMenuAction = {
   readonly group: 'rows' | 'columns' | 'structure' | 'alignment';
 };
 
-const tableMenuGroupLabels: Readonly<Record<TableMenuAction['group'], string>> = {
-  rows: 'Filas', columns: 'Columnas', structure: 'Estructura', alignment: 'Alineación vertical',
-};
-
-function TableContextMenu({ anchor, actions, colors, onClose }: {
+function TableContextMenu({ anchor, actions, colors, groupLabels, onClose }: {
   readonly anchor: HTMLElement;
   readonly actions: readonly TableMenuAction[];
   readonly colors: { readonly border: string; readonly surface: string; readonly textPrimary: string; readonly gridLine: string };
+  readonly groupLabels: Readonly<Record<TableMenuAction['group'], string>>;
   readonly onClose: (restoreFocus: boolean) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -164,8 +161,8 @@ function TableContextMenu({ anchor, actions, colors, onClose }: {
     >
       <div style={{ display: 'grid', gridTemplateColumns: position.width >= 340 ? 'repeat(2,minmax(0,1fr))' : '1fr', gap: 8 }}>
         {groups.map(({ group, actions: groupActions }) => (
-          <div key={group} role="group" aria-label={tableMenuGroupLabels[group]} style={{ minWidth: 0 }}>
-            <div style={{ padding: '4px 8px', borderBottom: `1px solid ${colors.gridLine}`, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>{tableMenuGroupLabels[group]}</div>
+          <div key={group} role="group" aria-label={groupLabels[group]} style={{ minWidth: 0 }}>
+            <div style={{ padding: '4px 8px', borderBottom: `1px solid ${colors.gridLine}`, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>{groupLabels[group]}</div>
             {groupActions.map((item) => (
               <button
                 key={item.key}
@@ -387,6 +384,12 @@ function EditorToolbar({ onInsertImage, onInsertImageFromAssets, titleOnly = fal
     cellNode.setVerticalAlign(alignment === 'center' ? 'middle' : alignment === 'bottom' ? 'bottom' : null);
     setTableVerticalAlignment(alignment);
   });
+  const tableMenuGroupLabels: Readonly<Record<TableMenuAction['group'], string>> = {
+    rows: t('editor.visual.table.group.rows', locale),
+    columns: t('editor.visual.table.group.columns', locale),
+    structure: t('editor.visual.table.group.structure', locale),
+    alignment: t('editor.visual.table.group.alignment', locale),
+  };
   const tableMenuActions: readonly TableMenuAction[] = [
     { key: 'row-above', group: 'rows', label: t('editor.visual.table.addRowAbove', locale), action: () => insertTableRow(false) },
     { key: 'row-below', group: 'rows', label: t('editor.visual.table.addRowBelow', locale), action: () => insertTableRow(true) },
@@ -395,9 +398,9 @@ function EditorToolbar({ onInsertImage, onInsertImageFromAssets, titleOnly = fal
     { key: 'remove-row', group: 'structure', label: t('editor.visual.table.removeRow', locale), action: deleteTableRow, disabled: tableRowCount <= 1 },
     { key: 'remove-column', group: 'structure', label: t('editor.visual.table.removeColumn', locale), action: deleteTableColumn, disabled: tableColumnCount <= 1 },
     { key: 'toggle-header', group: 'structure', label: t('editor.visual.table.toggleHeader', locale), action: toggleTableHeader },
-    { key: 'align-top', group: 'alignment', label: `${tableVerticalAlignment === 'top' ? '✓ ' : ''}Alinear celda arriba`, action: () => alignTableCell('top') },
-    { key: 'align-center', group: 'alignment', label: `${tableVerticalAlignment === 'center' ? '✓ ' : ''}Centrar celda verticalmente`, action: () => alignTableCell('center') },
-    { key: 'align-bottom', group: 'alignment', label: `${tableVerticalAlignment === 'bottom' ? '✓ ' : ''}Alinear celda abajo`, action: () => alignTableCell('bottom') },
+    { key: 'align-top', group: 'alignment', label: `${tableVerticalAlignment === 'top' ? '✓ ' : ''}${t('editor.visual.table.align.top', locale)}`, action: () => alignTableCell('top') },
+    { key: 'align-center', group: 'alignment', label: `${tableVerticalAlignment === 'center' ? '✓ ' : ''}${t('editor.visual.table.align.center', locale)}`, action: () => alignTableCell('center') },
+    { key: 'align-bottom', group: 'alignment', label: `${tableVerticalAlignment === 'bottom' ? '✓ ' : ''}${t('editor.visual.table.align.bottom', locale)}`, action: () => alignTableCell('bottom') },
   ];
   const insertImage = async (source: 'upload' | 'assets') => {
     const handler = source === 'assets' ? onInsertImageFromAssets : onInsertImage;
@@ -458,11 +461,11 @@ function EditorToolbar({ onInsertImage, onInsertImageFromAssets, titleOnly = fal
     !titleOnly && onInsertImageFromAssets ? button('▧+', t('editor.visual.image.fromAssets', locale), false, false, () => { void insertImage('assets'); }, 'image-from-assets') : null,
     titleOnly ? null : button('▦', t('editor.visual.table', locale), false, false, () => setTableOpen((open) => !open), 'table'),
   ];
-  const alignmentControls = <View testID="editor-alignment-controls" accessibilityRole="toolbar" accessibilityLabel="Alineación horizontal" style={[styles.alignmentGroup, { borderColor: colors.gridLine }]}>{([
-    ['left', 'Alinear a la izquierda'],
-    ['center', 'Centrar'],
-    ['right', 'Alinear a la derecha'],
-    ['justify', 'Justificar'],
+  const alignmentControls = <View testID="editor-alignment-controls" accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.alignment.group', locale)} style={[styles.alignmentGroup, { borderColor: colors.gridLine }]}>{([
+    ['left', t('editor.visual.align.left', locale)],
+    ['center', t('editor.visual.align.center', locale)],
+    ['right', t('editor.visual.align.right', locale)],
+    ['justify', t('editor.visual.align.justify', locale)],
   ] as const).map(([value, accessibilityLabel]) => (
     <div key={`align-${value}`} title={accessibilityLabel} style={{ display: 'flex' }}>
     <Pressable
@@ -516,6 +519,7 @@ function EditorToolbar({ onInsertImage, onInsertImageFromAssets, titleOnly = fal
           anchor={tableMenuAnchor}
           actions={tableMenuActions}
           colors={colors}
+          groupLabels={tableMenuGroupLabels}
           onClose={(restoreFocus) => {
             setTableMenuOpen(false);
             if (restoreFocus) requestAnimationFrame(() => tableMenuAnchor.querySelector<HTMLElement>('[data-testid="editor-table-menu-toggle"]')?.focus());

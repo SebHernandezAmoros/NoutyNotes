@@ -27,6 +27,7 @@ interface SettingsPanelProps {
    * navegación propia; esta es la vía siempre disponible, con o sin incidencia real. */
   readonly onOpenRecovery: () => void;
   readonly recoverableCount: number;
+  readonly customFontStatus: 'inactive' | 'loading' | 'active' | 'missing' | 'failed' | 'unsupported';
   readonly onClose: () => void;
 }
 
@@ -50,6 +51,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const { locale, setLocale } = useLocale();
   const colors = theme.colors;
   const { preferences } = props;
+  const customFontName = preferences.customFontRef?.split('/').pop() ?? t('settings.font.custom', locale);
+  const customFontStatusKey = props.customFontStatus === 'loading' ? 'settings.font.custom.status.loading'
+    : props.customFontStatus === 'active' ? 'settings.font.custom.status.active'
+      : props.customFontStatus === 'missing' ? 'settings.font.custom.status.missing'
+        : props.customFontStatus === 'failed' ? 'settings.font.custom.status.failed'
+          : props.customFontStatus === 'unsupported' ? 'settings.font.custom.status.unsupported'
+            : null;
   return (
     <Dialog visible={props.visible} title={t('settings.title', locale)} compact={props.compact} onClose={props.onClose} testID="settings-panel">
       <View style={styles.section}>
@@ -88,10 +96,15 @@ export function SettingsPanel(props: SettingsPanelProps) {
           ))}
           {/* Solo si ya hay una fuente activada en este workspace (ADR 0041): sin eso, un botón sin función. */}
           {preferences.customFontRef !== null ? (
-            <ActionButton label={t('settings.font.custom', locale)} accessibilityLabel={t('settings.font.use.custom', locale)}
+            <ActionButton label={t('settings.font.custom.named', locale, { name: customFontName })} accessibilityLabel={t('settings.font.use.custom.named', locale, { name: customFontName })}
               pressed={preferences.noteFont === 'custom'} onPress={() => props.onChange({ ...preferences, noteFont: 'custom' })} />
           ) : null}
         </View>
+        {preferences.noteFont === 'custom' && customFontStatusKey ? (
+          <Text testID="settings-custom-font-status" accessibilityLiveRegion="polite" style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>
+            {t(customFontStatusKey, locale, { name: customFontName })}
+          </Text>
+        ) : null}
         <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.fonts.note', locale)}</Text>
         <ActionButton label={t('settings.fonts.library', locale)} accessibilityLabel={t('settings.fonts.library.accessibilityLabel', locale)} onPress={props.onOpenFontLibrary} />
       </View>

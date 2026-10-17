@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { themeColors } from '../../packages/ui/src/theme';
-import { fillCardTitle, hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, rgb, trackProblems, openSettings } from './support';
+import { fillCardTitle, hasHorizontalOverflow, insertFromMenu, isCompactWidth, openCardActions, openFullCardEditor, rgb, seedBodyHtml, trackProblems, openSettings } from './support';
 
 // Configuración (ADR 0014), representación de tarjetas, imágenes reales y Papelera (ADR 0015).
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -1799,6 +1799,65 @@ test('Assets: importar una fuente TTF/OTF con consentimiento de licencia y activ
 
   expect(await hasHorizontalOverflow(page)).toBe(false);
   expect(runtimeErrors).toEqual([]);
+});
+
+test('UX7.1-B3: una fuente personalizada ausente identifica el archivo y comunica el fallback', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('noutynotes.view.v1', JSON.stringify({
+    noteFont: 'custom', customFontRef: 'assets/fonts/fuente-ausente.ttf',
+  })));
+  await page.goto('./');
+  await createWorkspace(page, 'Fuente ausente');
+  await openSettings(page);
+
+  await expect(button(page, 'Usar fuente-ausente.ttf como tipografía personalizada de las notas')).toHaveAttribute('aria-pressed', 'true');
+  const status = page.getByTestId('settings-custom-font-status');
+  await expect(status).toContainText('No se encontró fuente-ausente.ttf');
+  await expect(status).toContainText('Se usa una tipografía alternativa');
+  await status.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('custom-font-fallback.png'), fullPage: true });
+});
+
+test('UX7.1-B2: las herramientas contextuales de tabla respetan el idioma inglés', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await createWorkspace(page, 'Table tools');
+  await addNote(page, 'Table note');
+  await seedBodyHtml(page, '<table><thead><tr><th>Name</th><th>Status</th></tr></thead><tbody><tr><td>Idea</td><td>Open</td></tr></tbody></table>');
+  await closeEditor(page);
+  await openSettings(page);
+  await button(page, 'Usar inglés').click();
+  await button(page, 'Close settings').click();
+  await openFullCardEditor(page, card(page, 1));
+
+  const visual = page.getByLabel('Visual content');
+  await expect(page.getByRole('toolbar', { name: 'Horizontal alignment', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Align left', exact: true })).toBeVisible();
+  await visual.locator('td').first().click();
+  await button(page, 'Table options').click();
+  await expect(page.getByRole('group', { name: 'Rows', exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Columns', exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Structure', exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Vertical alignment', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /Align cell to top/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('focused-editor-table-tools-en.png'), fullPage: true });
+});
+
+test('UX7.1-B2: la edición rápida describe y muestra todas las herramientas secundarias', async ({ page }, testInfo) => {
+  test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida vive en escritorio; móvil usa el editor enfocado.');
+  await page.goto('./');
+  await createWorkspace(page, 'Herramientas rápidas');
+  await addNote(page, 'Idea breve');
+  await closeEditor(page);
+  await openCardActions(page, card(page, 1), 'Idea breve');
+  await button(page, 'Editar Idea breve dentro de la ficha').click();
+
+  const inline = page.getByTestId('inline-card-editor');
+  await inline.getByRole('button', { name: 'Más herramientas de formato', exact: true }).click();
+  await expect(inline.getByRole('button', { name: 'Lista con viñetas', exact: true })).toBeVisible();
+  await expect(inline.getByRole('toolbar', { name: 'Alineación horizontal', exact: true })).toBeVisible();
+  await expect(inline.getByRole('button', { name: 'Editar enlace', exact: true })).toBeVisible();
+  await expect(inline.getByRole('button', { name: 'Insertar una tabla', exact: true })).toBeVisible();
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('quick-editor-more-tools.png'), fullPage: true });
 });
 
 test('Assets: Google Fonts, descarga explícita con la API pública css2 (sin clave), familia inexistente, consentimiento con nota de licencia pre-rellenada y exportar el archivo individual (ADR 0042, ADR 0043)', async ({ page }, testInfo) => {

@@ -1765,7 +1765,7 @@ test('UX7.1-IMAGES: «Insertar desde Assets» reutiliza la misma imagen sin copi
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
   const inline = page.getByTestId('inline-card-editor');
   // La edición rápida mantiene una sola fila estable (D22): enlace/imagen/tabla viven en «Más formato».
-  await inline.getByRole('button', { name: 'Más formato (enlace, imagen, tabla)', exact: true }).click();
+  await inline.getByRole('button', { name: 'Más herramientas de formato', exact: true }).click();
   await inline.getByRole('button', { name: 'Insertar desde Assets', exact: true }).click();
   await page.getByTestId('asset-image-picker').getByTestId(`asset-image-picker-item-${name}`).click();
   await expect(inline.locator('[data-testid^="rich-image-"]')).toHaveAttribute('data-testid', `rich-image-${ref}`);

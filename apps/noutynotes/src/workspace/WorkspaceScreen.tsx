@@ -250,16 +250,34 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const customFontRef = preferences.noteFont === 'custom' ? preferences.customFontRef : null;
   const customFontFamily = customFontRef ? customFontFamilyName(customFontRef) : undefined;
   const workspaceIdForFont = workspace?.id ?? null;
+  const customFontKey = workspaceIdForFont && customFontRef ? `${workspaceIdForFont}:${customFontRef}` : null;
+  const customFontAssets = workspaceIdForFont ? assetsOf(session.storage) : null;
+  const customFontSupported = supportsCustomFont();
+  const [customFontActivation, setCustomFontActivation] = useState<{
+    readonly key: string;
+    readonly status: 'active' | 'missing' | 'failed';
+  } | null>(null);
+  const customFontStatus: 'inactive' | 'loading' | 'active' | 'missing' | 'failed' | 'unsupported' = !customFontRef
+    ? 'inactive'
+    : !workspaceIdForFont ? 'loading'
+      : !customFontSupported ? 'unsupported'
+        : !customFontAssets ? 'missing'
+          : customFontActivation?.key === customFontKey ? customFontActivation.status : 'loading';
   useEffect(() => {
-    if (!workspaceIdForFont || !customFontRef || !supportsCustomFont()) return undefined;
-    const assets = assetsOf(session.storage);
-    if (!assets) return undefined;
+    if (!workspaceIdForFont || !customFontRef || !customFontKey || !customFontSupported || !customFontAssets) return undefined;
     let active = true;
-    void assets.readAsset(workspaceIdForFont, customFontRef as AssetRef).then((read) => {
-      if (active && read.ok) void activateCustomFont(customFontRef, read.value);
+    void customFontAssets.readAsset(workspaceIdForFont, customFontRef as AssetRef).then((read) => {
+      if (!active) return;
+      if (!read.ok) {
+        setCustomFontActivation({ key: customFontKey, status: 'missing' });
+        return;
+      }
+      void activateCustomFont(customFontRef, read.value).then((activated) => {
+        if (active) setCustomFontActivation({ key: customFontKey, status: activated ? 'active' : 'failed' });
+      });
     });
     return () => { active = false; };
-  }, [workspaceIdForFont, customFontRef, session.storage]);
+  }, [workspaceIdForFont, customFontRef, customFontKey, customFontSupported, customFontAssets]);
 
   const {
     flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText, hasPendingEdit,
@@ -2056,6 +2074,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onOpenFontLibrary={() => { setSettingsOpen(false); openView('assets'); }}
             onOpenRecovery={() => { setSettingsOpen(false); setRecoveryOpen(true); }}
             recoverableCount={recoverableCount}
+            customFontStatus={customFontStatus}
             onClose={() => setSettingsOpen(false)}
           />
           {/* Sin barra lateral, «Más» reúne Inicio y las secciones/acciones que no caben (ADR 0022). */}
