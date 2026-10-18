@@ -28,6 +28,7 @@ import { CardControls, CardMenu } from './CardControls';
 import { InlineCardEditor } from './InlineCardEditor';
 import type { InlineCardEditorProps } from './InlineCardEditor';
 import { connectTarget } from './connect';
+import type { ImageResourceState } from '../imageResources';
 import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
 import { cardsInArea, contentBounds, fitView, shouldConsumeFitRequest } from './overview';
 import type { CanvasMetrics, PixelBox, PlacementCheck, ResizeHandle } from './geometry';
@@ -130,10 +131,12 @@ interface CanvasProps {
   readonly boardTitle: string;
   /** Títulos de las tarjetas del tablero que su layout no coloca (v1 válido). */
   readonly unplaced: readonly string[];
-  /** Vistas previas de imágenes importadas por tarjeta. */
-  readonly imageUris: ReadonlyMap<CardId, string>;
   /** Imágenes intercaladas en notas, por ruta (ADR 0021). */
   readonly noteImages: ReadonlyMap<string, string>;
+  /** Estado de disponibilidad por tarjeta de imagen (OBS-N2-IMAGE-FIT-F2): distingue carga/listo/ausente. */
+  readonly imageResources: ReadonlyMap<CardId, ImageResourceState>;
+  /** Estado de disponibilidad de las imágenes intercaladas en notas, por ruta (OBS-N2-IMAGE-FIT-F2). */
+  readonly noteImageResources: ReadonlyMap<string, ImageResourceState>;
   /** Doble toque o doble clic: edición rápida o editor enfocado según el espacio disponible (ADR 0047). */
   readonly onCardOpen: (cardId: CardId) => void;
   /** Tarjeta cuya edición rápida está superpuesta sobre la propia ficha (ADR 0047). */
@@ -928,8 +931,8 @@ export function Canvas(props: CanvasProps) {
               colliding={colliding.has(card.id)}
               connectRole={tool === 'connect' ? connectTarget(connectSource, card.id, workspace.relations) : 'none'}
               connectSourceName={connectSource ? names.get(connectSource) ?? '' : ''}
-              imageUri={props.imageUris.get(card.id)}
-              noteImages={props.noteImages}
+              imageResource={props.imageResources.get(card.id)}
+              noteImageResources={props.noteImageResources}
               onPress={() => props.onCardPress(card.id)}
               onToggleCheck={props.onToggleCheck}
               onFocus={() => reveal(card.id)}

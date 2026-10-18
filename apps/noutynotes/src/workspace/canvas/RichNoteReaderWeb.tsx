@@ -1,9 +1,12 @@
-import type { CaptionPosition, ContentLayout, RichTextDocument, RichTextInline, RichTextList, TextSize } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import type { CaptionPosition, ImageFit, RichTextDocument, RichTextInline, RichTextList, TextSize } from '@noutynotes/domain';
+import { useLocale, useTheme } from '@noutynotes/ui';
+import type { Locale } from '@noutynotes/ui';
 import { memo, useMemo, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode, UIEvent } from 'react';
 
+import { t } from '../../i18n';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
+import type { ImageResourceState } from '../imageResources';
 
 const OVERSCAN = 10;
 const IMAGE_HEIGHT = 120;
@@ -52,10 +55,11 @@ function listNode(list: RichTextList, key: string): ReactNode {
 
 function blockNode(block: RichTextBlock, index: number, props: {
   readonly document: RichTextDocument;
-  readonly images: ReadonlyMap<string, string>;
+  readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   readonly testID: string;
   readonly captionPosition: CaptionPosition;
-  readonly layout: ContentLayout;
+  readonly imageFit: ImageFit;
+  readonly locale: Locale;
 }) {
   const common = { margin: 0 } satisfies CSSProperties;
   if (block.type === 'paragraph') return <p style={{ ...common, textAlign: block.alignment ?? 'left' }}>{inlineNodes(block.content, `${index}`)}</p>;
@@ -78,28 +82,33 @@ function blockNode(block: RichTextBlock, index: number, props: {
       </table>
     );
   }
-  const source = props.images.get(block.assetRef);
+  const resource = props.imageResources.get(block.assetRef);
   const caption = block.caption && block.caption.length > 0 ? block.caption : block.alt ? [{ type: 'text' as const, text: block.alt }] : [];
   const width = block.size === 'small' ? '25%' : block.size === 'medium' ? '50%' : block.size === 'large' ? '75%' : '100%';
   const marginInline = block.alignment === 'left' ? '0 auto 0 0' : block.alignment === 'right' ? '0 0 0 auto' : '0 auto';
-  const image = source ? <img src={source} alt={block.alt} style={{ width: '100%', height: 'auto', maxHeight: IMAGE_HEIGHT, objectFit: props.layout === 'banner' ? 'cover' : 'contain', display: 'block' }} />
-    : <div role="img" aria-label={`Imagen no disponible: ${block.alt || block.assetRef}`} style={{ height: IMAGE_HEIGHT, display: 'grid', placeItems: 'center', border: '1px solid currentColor' }}>{`▣ ${block.alt || 'Imagen'}`}</div>;
+  const statusText = resource?.status === 'loading' ? t('image.loading', props.locale) : t('image.unavailable', props.locale);
+  const statusLabel = resource?.status === 'loading' ? statusText : `${statusText}: ${block.alt || block.assetRef}`;
+  const image = resource?.status === 'ready'
+    ? <img src={resource.uri} alt={block.alt} style={{ width: '100%', height: 'auto', maxHeight: IMAGE_HEIGHT, objectFit: props.imageFit, display: 'block' }} />
+    : <div role="img" aria-label={statusLabel} style={{ height: IMAGE_HEIGHT, display: 'grid', placeItems: 'center', border: '1px solid currentColor' }}>{statusText}</div>;
   const captionNode = caption.length > 0 ? <figcaption>{inlineNodes(caption, `${index}-caption`)}</figcaption> : null;
   return <figure style={{ margin: marginInline, width, maxWidth: '100%' }}>{props.captionPosition === 'top' || props.captionPosition === 'left' ? captionNode : null}{image}{props.captionPosition === 'bottom' || props.captionPosition === 'right' ? captionNode : null}</figure>;
 }
 
 /** Lector web virtualizado: solo monta los bloques cercanos al scroll y conserva altura total mediante espaciadores. */
-export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, images, testID, color, fontFamily, bodySize, captionPosition = 'bottom', layout = 'document' }: {
+export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, imageResources, testID, color, fontFamily, bodySize, captionPosition = 'bottom', imageFit }: {
   readonly document: RichTextDocument;
-  readonly images: ReadonlyMap<string, string>;
+  readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   readonly testID: string;
   readonly color?: string | undefined;
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
-  readonly layout?: ContentLayout | undefined;
+  /** Ajuste efectivo ya resuelto por el llamador (OBS-N2-IMAGE-FIT-F2, `resolveCardImageFit`). */
+  readonly imageFit: ImageFit;
 }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const fontSize = bodyFontSize(bodySize);
   const lineHeight = bodyLineHeight(fontSize);
   const metrics = useMemo(() => {
@@ -145,7 +154,7 @@ export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, ima
       <div aria-hidden="true" style={{ height: metrics[start] }} />
       {document.blocks.slice(start, end).map((block, relativeIndex) => {
         const index = start + relativeIndex;
-        return <div key={index} data-testid={`${testID}-block-${index}`} style={{ minHeight: estimatedHeight(block, lineHeight), paddingBottom: 4, boxSizing: 'border-box' }}>{blockNode(block, index, { document, images, testID, captionPosition, layout })}</div>;
+        return <div key={index} data-testid={`${testID}-block-${index}`} style={{ minHeight: estimatedHeight(block, lineHeight), paddingBottom: 4, boxSizing: 'border-box' }}>{blockNode(block, index, { document, imageResources, testID, captionPosition, imageFit, locale })}</div>;
       })}
       <div aria-hidden="true" style={{ height: metrics[document.blocks.length]! - metrics[end]! }} />
     </div>

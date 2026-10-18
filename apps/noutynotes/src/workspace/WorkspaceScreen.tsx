@@ -1736,8 +1736,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onPasteImageAt={(point) => { void pasteImageAt(point); }}
         boardTitle={board?.title ?? 'sin tableros'}
         unplaced={unplaced}
-        imageUris={previews.cards}
         noteImages={previews.refs}
+        imageResources={previews.cardResources}
+        noteImageResources={previews.refResources}
         onCardOpen={(cardId) => void openCard(cardId)}
         inlineEditingId={inlineEditing ? editingId : null}
         richTextCodec={markdownRichTextCodec}
@@ -1771,7 +1772,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         {/* La vista de lista no tiene un botón «Editar» propio (a diferencia del lienzo): seleccionar
             sigue abriendo el editor directamente aquí, fuera del alcance de esta corrección. */}
         <Board workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)} richTextCodec={markdownRichTextCodec}
-          imageUris={previews.cards} noteImages={previews.refs} />
+          imageResources={previews.cardResources} noteImageResources={previews.refResources} />
       </ScrollView>
     )
   ) : null;

@@ -539,6 +539,8 @@ export const TRANSLATIONS = {
   'canvasMenu.pasteImage.denied': { es: 'No se concedió permiso para leer el portapapeles.', en: 'Permission to read the clipboard was not granted.' },
   'canvasMenu.pasteImage.empty': { es: 'El portapapeles no tiene una imagen compatible ahora mismo.', en: 'The clipboard does not have a compatible image right now.' },
   'assets.preview.accessibilityLabel': { es: 'Vista previa de {name}', en: 'Preview of {name}' },
+  'image.loading': { es: 'Cargando imagen…', en: 'Loading image…' },
+  'image.unavailable': { es: 'Imagen no disponible', en: 'Image unavailable' },
   'assets.missingSuffix': { es: ' · NO ESTÁ EN LA CARPETA', en: ' · NOT IN THE FOLDER' },
   'assets.copyPath': { es: 'Copiar ruta', en: 'Copy path' },
   'assets.copyPath.copied': { es: 'Ruta copiada', en: 'Path copied' },

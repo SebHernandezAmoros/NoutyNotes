@@ -1,9 +1,11 @@
-import type { CaptionPosition, ContentLayout, RichTextDocument, RichTextImage, RichTextInline, TextSize } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import type { CaptionPosition, ImageFit, RichTextDocument, RichTextImage, RichTextInline, TextSize } from '@noutynotes/domain';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { FlatList, Image, Platform, StyleSheet, Text, View } from 'react-native';
 
+import { t } from '../../i18n';
 import { BasicRichTextPreview } from '../BasicRichTextPreview';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
+import type { ImageResourceState } from '../imageResources';
 import { RichNoteReaderWeb } from './RichNoteReaderWeb';
 
 const IMAGE_HEIGHT = 120;
@@ -17,13 +19,14 @@ type RichTextBlock = RichTextDocument['blocks'][number];
  */
 export function RichNoteReader(props: {
   readonly document: RichTextDocument;
-  readonly images: ReadonlyMap<string, string>;
+  readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   readonly testID: string;
   readonly color?: string | undefined;
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
-  readonly layout?: ContentLayout | undefined;
+  /** Ajuste efectivo ya resuelto por el llamador (OBS-N2-IMAGE-FIT-F2, `resolveCardImageFit`). */
+  readonly imageFit: ImageFit;
 }) {
   if (Platform.OS === 'web') return <RichNoteReaderWeb {...props} />;
   return <RichNoteReaderNative {...props} />;
@@ -31,16 +34,17 @@ export function RichNoteReader(props: {
 
 function RichNoteReaderNative(props: {
   readonly document: RichTextDocument;
-  readonly images: ReadonlyMap<string, string>;
+  readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   readonly testID: string;
   readonly color?: string | undefined;
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
-  readonly layout?: ContentLayout | undefined;
+  readonly imageFit: ImageFit;
 }) {
-  const { document, images, testID, color, fontFamily, bodySize, captionPosition, layout = 'document' } = props;
+  const { document, imageResources, testID, color, fontFamily, bodySize, captionPosition, imageFit } = props;
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const fontSize = bodyFontSize(bodySize);
   const lineHeight = bodyLineHeight(fontSize);
   const captionSize = 11;
@@ -67,28 +71,31 @@ function RichNoteReaderNative(props: {
         />
       </View>
     );
+    const resource = imageResources.get(block.assetRef);
     return (
       <View style={[sideways ? styles.imageRow : styles.imageBlock, {
         width: block.size === 'small' ? '25%' : block.size === 'medium' ? '50%' : block.size === 'large' ? '75%' : '100%',
         alignSelf: block.alignment === 'left' ? 'flex-start' : block.alignment === 'right' ? 'flex-end' : 'center',
       }]}>
         {position === 'top' || position === 'left' ? captionNode : null}
-        {images.get(block.assetRef) ? (
+        {resource?.status === 'ready' ? (
           <Image
             testID={`${testID}-image-${blockIndex}`}
             accessibilityRole="image"
             accessibilityLabel={block.alt || 'Imagen de la nota'}
-            resizeMode={layout === 'banner' ? 'cover' : 'contain'}
-            source={{ uri: images.get(block.assetRef) }}
+            resizeMode={imageFit}
+            source={{ uri: resource.uri }}
             style={[styles.image, sideways ? styles.imageSide : null, {
               borderColor: theme.colors.border,
               backgroundColor: theme.colors.surface,
-              objectFit: layout === 'banner' ? 'cover' : 'contain',
+              objectFit: imageFit,
             }]}
           />
         ) : (
-          <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.assetRef}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>
-            <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
+          <View accessibilityLabel={resource?.status === 'loading' ? t('image.loading', locale) : `${t('image.unavailable', locale)}: ${block.alt || block.assetRef}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>
+            <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight }]}>
+              {resource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale)}
+            </Text>
           </View>
         )}
         {position === 'bottom' || position === 'right' ? captionNode : null}

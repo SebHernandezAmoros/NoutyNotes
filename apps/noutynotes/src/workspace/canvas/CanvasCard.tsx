@@ -1,4 +1,4 @@
-import { cardContentPresentation, isFloatingTextCard, linkDisplay, linkUrlField } from '@noutynotes/domain';
+import { cardContentPresentation, isFloatingTextCard, linkDisplay, linkUrlField, resolveCardImageFit } from '@noutynotes/domain';
 import type { RichTextCodec } from '@noutynotes/application';
 import type { Card, CardDisplayMode, RichTextDocument, RichTextInline, RichTextList, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
@@ -7,10 +7,12 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { View as RNView } from 'react-native';
 
+import { t } from '../../i18n';
 import { cardDisplayTitle, cardTitle, isImageCard } from '../Board';
 import { BasicRichTextPreview } from '../BasicRichTextPreview';
 import { parseWebRichText } from '../basicRichText';
 import { ImagePlaceholder } from '../ImagePlaceholder';
+import type { ImageResourceState } from '../imageResources';
 import { markdownExcerpt, parseChecklistLine } from '../markdownLists';
 import { bodyFontSize, titleFontSize } from '../textSizes';
 import { floatingTextColor } from '../floatingText';
@@ -119,9 +121,10 @@ interface CanvasCardProps {
   /** Al recibir el foco (teclado o lector), el lienzo la muestra desplazando el pan. */
   readonly onFocus: () => void;
   readonly controller: GestureController;
-  /** Vista previa de una imagen importada; sin ella, una tarjeta de imagen es de ejemplo. */
-  readonly imageUri: string | undefined;
-  readonly noteImages: ReadonlyMap<string, string>;
+  /** Estado de disponibilidad de la imagen importada (OBS-N2-IMAGE-FIT-F2); sin ninguna referencia, una tarjeta de imagen es de ejemplo. */
+  readonly imageResource: ImageResourceState | undefined;
+  /** Estado de disponibilidad de las imágenes intercaladas en la nota, por ruta (OBS-N2-IMAGE-FIT-F2). */
+  readonly noteImageResources: ReadonlyMap<string, ImageResourceState>;
   /** Ancho, en unidades del lienzo, que ocupan los controles de la cabecera (dibujados fuera del zoom). */
   readonly reserveRight: number;
   /** Con el zoom alejado, los controles de 44 px bajan sobre el cuerpo: el título les deja sitio. */
@@ -249,6 +252,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const floatingTitle = card.typeId === 'titulo-flotante';
   const floatingText = isFloatingTextCard(card, type?.base);
   const presentation = cardContentPresentation(card, type?.base);
+  const imageFit = resolveCardImageFit(card, type?.base);
   const unifiedFloating = type?.base === 'note' && card.frameOverride === 'hidden'
     && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);
   // Una Nota sin superficie hereda el contraste del lienzo efectivo. `textColor` sigue ganando cuando
@@ -400,9 +404,9 @@ export function CanvasCard(props: CanvasCardProps) {
             }]}>
               {presentation.body === 'visible' && fullReader && richDocument ? (
                 <View ref={readerRef} style={styles.readerShell}>
-                  <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} images={props.noteImages}
+                  <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} imageResources={props.noteImageResources}
                     color={noteTextColor} fontFamily={props.noteFontFamily} bodySize={card.bodySize}
-                    captionPosition={card.captionPosition} layout={presentation.layout} />
+                    captionPosition={card.captionPosition} imageFit={imageFit} />
                 </View>
               ) : presentation.body === 'visible' && previewDocument ? (
                 <BasicRichTextPreview document={previewDocument} numberOfLines={Math.max(1, bodyLines)} color={noteTextColor}
@@ -491,20 +495,22 @@ export function CanvasCard(props: CanvasCardProps) {
                   {cardDisplayTitle(card)}
                 </Text>
               ) : null}
-              {presentation.body === 'visible' && image ? (props.imageUri ? (
-                // «contain», no «cover» (auditoría visual, 2026-09-29): recortar sin que la persona lo
-                // pida oculta parte de su imagen; se ve completa, con el fondo de la tarjeta alrededor
-                // si su proporción no llena el hueco. Elegir un recorte deliberado queda pendiente.
+              {presentation.body === 'visible' && image ? (props.imageResource?.status === 'ready' ? (
+                // OBS-N2-IMAGE-FIT-F2: el ajuste (contain/cover) ya viene resuelto por `resolveCardImageFit`;
+                // «contain» es el valor histórico (auditoría visual, 2026-09-29) que ese resolver conserva
+                // cuando no hay una elección explícita — ya no es un literal fijo en este componente.
                 <Image
                   testID={`image-preview-${card.id}`}
                   accessibilityRole="image"
                   accessibilityLabel={`Imagen ${cardTitle(card, locale)}`}
-                  source={{ uri: props.imageUri }}
-                  resizeMode="contain"
-                  style={[styles.photo, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                  source={{ uri: props.imageResource.uri }}
+                  resizeMode={imageFit}
+                  style={[styles.photo, { borderColor: colors.border, backgroundColor: colors.surface, objectFit: imageFit }]}
                 />
               ) : (card.assetRefs?.length ?? 0) > 0 ? (
-                <Text style={[styles.content, { color: colors.textSecondary, fontSize: contentSize, lineHeight: contentLine }]}>Cargando imagen…</Text>
+                <Text testID={`image-status-${card.id}`} style={[styles.content, { color: colors.textSecondary, fontSize: contentSize, lineHeight: contentLine }]}>
+                  {props.imageResource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale)}
+                </Text>
               ) : <ImagePlaceholder />) : null}
               {presentation.body === 'visible' && !image && link ? (
                 <Text testID={`card-link-${card.id}`} numberOfLines={1} style={[styles.link, { color: colors.cardText, fontSize: typography.auxiliarySize, lineHeight: typography.bodyLineHeight }]}>
@@ -513,13 +519,13 @@ export function CanvasCard(props: CanvasCardProps) {
               ) : null}
               {presentation.body === 'visible' && fullReader && richDocument ? (
                 <View ref={readerRef} style={styles.readerShell}>
-                  <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout} />
+                  <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} />
                 </View>
               ) : presentation.body === 'visible' && mixedRich && richDocument ? (
-                <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout}
+                <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : presentation.body === 'visible' && mixed ? (
-                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} images={props.noteImages} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout}
+                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
                   height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
               {presentation.body === 'visible' && !fullReader && !image && !mixed && previewDocument && bodyLines > 0 ? (

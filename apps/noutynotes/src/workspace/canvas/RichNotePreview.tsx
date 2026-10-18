@@ -1,25 +1,29 @@
-import type { CaptionPosition, ContentLayout, RichTextDocument, RichTextImage, RichTextInline, TextSize } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import type { CaptionPosition, ImageFit, RichTextDocument, RichTextImage, RichTextInline, TextSize } from '@noutynotes/domain';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
+import { t } from '../../i18n';
 import { BasicRichTextPreview } from '../BasicRichTextPreview';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
+import type { ImageResourceState } from '../imageResources';
 import { projectRichTextPreview } from './richTextPreviewProjection';
 
 const IMAGE_HEIGHT = 88;
 
 /** Vista acotada de una nota enriquecida que conserva imágenes, tablas y texto en su orden. */
-export function RichNotePreview({ document, images, height, testID, fontFamily, bodySize, captionPosition, layout = 'document' }: {
+export function RichNotePreview({ document, imageResources, height, testID, fontFamily, bodySize, captionPosition, imageFit }: {
   readonly document: RichTextDocument;
-  readonly images: ReadonlyMap<string, string>;
+  readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   readonly height: number;
   readonly testID: string;
   readonly fontFamily?: string | undefined;
   readonly bodySize?: TextSize | undefined;
   readonly captionPosition?: CaptionPosition | undefined;
-  readonly layout?: ContentLayout | undefined;
+  /** Ajuste efectivo ya resuelto por el llamador (OBS-N2-IMAGE-FIT-F2, `resolveCardImageFit`). */
+  readonly imageFit: ImageFit;
 }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const fontSize = bodyFontSize(bodySize);
   const lineHeight = bodyLineHeight(fontSize);
   const captionSize = 11;
@@ -57,23 +61,31 @@ export function RichNotePreview({ document, images, height, testID, fontFamily, 
           alignSelf: block.alignment === 'left' ? 'flex-start' : block.alignment === 'right' ? 'flex-end' : 'center',
         }]}>
           {position === 'top' || position === 'left' ? captionNode(block, blockIndex) : null}
-          {images.get(block.assetRef) ? (
-            <Image
-              testID={`${testID}-image-${blockIndex}`}
-              accessibilityRole="image"
-              accessibilityLabel={block.alt || 'Imagen de la nota'}
-              resizeMode={layout === 'banner' ? 'cover' : 'contain'}
-              source={{ uri: images.get(block.assetRef) }}
-              style={[styles.image, sideways ? styles.imageSide : null, {
-                borderColor: theme.colors.border, backgroundColor: theme.colors.surface,
-                objectFit: layout === 'banner' ? 'cover' : 'contain',
-              }]}
-            />
-          ) : (
-            <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.assetRef}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>
-              <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight: auxiliaryLineHeight }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
-            </View>
-          )}
+          {(() => {
+            const resource = imageResources.get(block.assetRef);
+            if (resource?.status === 'ready') {
+              return (
+                <Image
+                  testID={`${testID}-image-${blockIndex}`}
+                  accessibilityRole="image"
+                  accessibilityLabel={block.alt || 'Imagen de la nota'}
+                  resizeMode={imageFit}
+                  source={{ uri: resource.uri }}
+                  style={[styles.image, sideways ? styles.imageSide : null, {
+                    borderColor: theme.colors.border, backgroundColor: theme.colors.surface,
+                    objectFit: imageFit,
+                  }]}
+                />
+              );
+            }
+            const text = resource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale);
+            const label = resource?.status === 'loading' ? text : `${text}: ${block.alt || block.assetRef}`;
+            return (
+              <View accessibilityLabel={label} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>
+                <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight: auxiliaryLineHeight }]}>{text}</Text>
+              </View>
+            );
+          })()}
           {position === 'bottom' || position === 'right' ? captionNode(block, blockIndex) : null}
         </View>
       ) : (

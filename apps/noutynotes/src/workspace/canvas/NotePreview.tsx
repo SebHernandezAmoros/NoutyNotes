@@ -1,11 +1,13 @@
 import type { NoteBlock } from '@noutynotes/application';
-import type { CaptionPosition, ContentLayout, TextSize } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import type { CaptionPosition, ImageFit, TextSize } from '@noutynotes/domain';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import type { ColorValue } from 'react-native';
 
+import { t } from '../../i18n';
 import { markdownExcerpt } from '../markdownLists';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
+import type { ImageResourceState } from '../imageResources';
 
 // La miniatura se adapta al alto que queda (entre 32 y 72 px): en una ficha pequeña también se ve.
 const THUMB = 72;
@@ -16,9 +18,9 @@ const GAP = 6;
  * Ficha de una nota con imágenes (ADR 0021): texto resumido e imágenes en el orden del documento
  * hasta llenar el alto disponible; si quedan bloques, «+n». El texto nunca se interpreta como HTML.
  */
-export function NotePreview({ blocks, images, height, testID, fontFamily, bodySize, captionPosition, layout = 'document' }: {
+export function NotePreview({ blocks, imageResources, height, testID, fontFamily, bodySize, captionPosition, imageFit }: {
   readonly blocks: readonly NoteBlock[];
-  readonly images: ReadonlyMap<string, string>;
+  readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   /** Alto en píxeles para los bloques (sin título ni pie). */
   readonly height: number;
   readonly testID: string;
@@ -28,10 +30,11 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
   readonly bodySize?: TextSize | undefined;
   /** Posición de la leyenda de imagen (ADR 0051); sin ella, `'bottom'`. */
   readonly captionPosition?: CaptionPosition | undefined;
-  /** Documento conserva la imagen completa; banner llena el marco deliberadamente. */
-  readonly layout?: ContentLayout | undefined;
+  /** Ajuste efectivo ya resuelto por el llamador (OBS-N2-IMAGE-FIT-F2, `resolveCardImageFit`). */
+  readonly imageFit: ImageFit;
 }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const textSize = bodyFontSize(bodySize);
   const LINE = bodyLineHeight(textSize);
@@ -67,21 +70,26 @@ export function NotePreview({ blocks, images, height, testID, fontFamily, bodySi
     }
   }
   const hidden = blocks.length - shown.length;
-  const imageNode = (block: Extract<NoteBlock, { kind: 'image' }>, size: number, flexStyle: { flex: number } | null, blockIndex: number) => (
-    images.get(block.ref) ? (
-      <Image testID={`${testID}-image-${blockIndex}`} accessibilityRole="image" accessibilityLabel={block.alt || 'Imagen de la nota'} source={{ uri: images.get(block.ref) }}
-        // «contain», no «cover» (UX7-C2, mismo criterio que la ficha de imagen única en CanvasCard):
-        // recortar sin que la persona lo pida oculta parte de su imagen.
-        resizeMode={layout === 'banner' ? 'cover' : 'contain'} style={[styles.thumb, {
-          height: size, borderColor: colors.border, backgroundColor: colors.surface,
-          objectFit: layout === 'banner' ? 'cover' : 'contain',
-        }, flexStyle]} />
-    ) : (
-      <View accessibilityLabel={`Imagen no disponible: ${block.alt || block.ref}`} style={[styles.thumb, styles.missing, { height: size, borderColor: colors.border }, flexStyle]}>
-        <Text numberOfLines={2} style={[styles.missingText, { color: colors.cardText, fontSize: auxiliarySize, lineHeight: LINE }]}>{`▣ ${block.alt || 'Imagen'}`}</Text>
+  const imageNode = (block: Extract<NoteBlock, { kind: 'image' }>, size: number, flexStyle: { flex: number } | null, blockIndex: number) => {
+    const resource = imageResources.get(block.ref);
+    if (resource?.status === 'ready') {
+      return (
+        <Image testID={`${testID}-image-${blockIndex}`} accessibilityRole="image" accessibilityLabel={block.alt || 'Imagen de la nota'} source={{ uri: resource.uri }}
+          // OBS-N2-IMAGE-FIT-F2: el ajuste ya viene resuelto por el llamador (`resolveCardImageFit`), nunca se recalcula aquí.
+          resizeMode={imageFit} style={[styles.thumb, {
+            height: size, borderColor: colors.border, backgroundColor: colors.surface,
+            objectFit: imageFit,
+          }, flexStyle]} />
+      );
+    }
+    const text = resource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale);
+    const label = resource?.status === 'loading' ? text : `${text}: ${block.alt || block.ref}`;
+    return (
+      <View accessibilityLabel={label} style={[styles.thumb, styles.missing, { height: size, borderColor: colors.border }, flexStyle]}>
+        <Text numberOfLines={2} style={[styles.missingText, { color: colors.cardText, fontSize: auxiliarySize, lineHeight: LINE }]}>{text}</Text>
       </View>
-    )
-  );
+    );
+  };
   const captionNode = (block: Extract<NoteBlock, { kind: 'image' }>, size: number, color: ColorValue) => (
     sideways ? (
       <Text numberOfLines={Math.max(1, Math.floor(size / LINE))} style={[styles.caption, styles.captionSide, { color, fontSize: captionSize, lineHeight: LINE }]}>{block.alt}</Text>

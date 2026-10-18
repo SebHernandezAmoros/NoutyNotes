@@ -1,7 +1,8 @@
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { RichTextCodec } from '@noutynotes/application';
-import { cardContentPresentation, cardTitleText, isFloatingTextCard, richTextInlineText } from '@noutynotes/domain';
+import { cardContentPresentation, cardTitleText, isFloatingTextCard, resolveCardImageFit, richTextInlineText } from '@noutynotes/domain';
 import type { BaseCardKind, BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
+import type { ImageResourceState } from './imageResources';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
 import { useState } from 'react';
@@ -22,7 +23,7 @@ import { BasicRichTextPreview } from './BasicRichTextPreview';
 import { parseWebRichText } from './basicRichText';
 
 const BOARD_BORDER = 2;
-const emptyNoteImages: ReadonlyMap<string, string> = new Map();
+const emptyImageResources: ReadonlyMap<string, ImageResourceState> = new Map();
 
 /** Texto plano de texto libre (ADR 0057): su `contentDocument` (HTML seguro v1) son párrafos literales,
  * sin marcas ni bloques especiales; se unen con salto de línea, igual que `content` (Markdown) antes. */
@@ -72,17 +73,17 @@ interface BoardProps {
   readonly mode: LayoutMode;
   readonly selectedId: CardId | null;
   readonly onSelect: (cardId: CardId) => void;
-  /** Vista previa de una ficha de imagen única; sin ella, de ejemplo (UX7-C3, igual que el lienzo). */
-  readonly imageUris?: ReadonlyMap<CardId, string>;
-  /** Imágenes intercaladas en una nota (UX7-C3, igual que `CanvasCard`/`NotePreview`). */
-  readonly noteImages?: ReadonlyMap<string, string>;
+  /** Estado de disponibilidad por tarjeta de imagen (OBS-N2-IMAGE-FIT-F2): distingue carga/listo/ausente. */
+  readonly imageResources?: ReadonlyMap<CardId, ImageResourceState>;
+  /** Estado de disponibilidad de las imágenes intercaladas en notas, por ruta (OBS-N2-IMAGE-FIT-F2). */
+  readonly noteImageResources?: ReadonlyMap<string, ImageResourceState>;
 }
 
 /**
  * Vista de lista (ADR 0013): la proyección de una columna del layout canónico, en orden de lectura.
  * Solo representa y selecciona; mover y redimensionar se hacen en el lienzo o con el inspector.
  */
-export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris, noteImages, richTextCodec }: BoardProps) {
+export function Board({ workspace, layout, mode, selectedId, onSelect, imageResources, noteImageResources, richTextCodec }: BoardProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [width, setWidth] = useState(0);
@@ -119,8 +120,8 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageUris
             card={card}
             image={isImageCard(workspace, card)}
             base={baseKindOf(workspace, card)}
-            imageUri={imageUris?.get(card.id)}
-            noteImages={noteImages ?? emptyNoteImages}
+            imageResource={imageResources?.get(card.id)}
+            noteImageResources={noteImageResources ?? emptyImageResources}
             richTextCodec={richTextCodec}
             selected={selectedId === card.id}
             onPress={() => onSelect(card.id)}
@@ -151,15 +152,15 @@ interface CardViewProps {
   readonly image: boolean;
   /** Primitiva base del tipo (P13-P15: `text`/`shape`/`connector` no son Markdown, UX7 P16). */
   readonly base: BaseCardKind | undefined;
-  /** Vista previa real de una ficha de imagen única; sin ella, de ejemplo (UX7-C3). */
-  readonly imageUri: string | undefined;
-  /** Imágenes intercaladas en una nota (UX7-C3): mismo mapa que usa el lienzo. */
-  readonly noteImages: ReadonlyMap<string, string>;
+  /** Estado de disponibilidad de la imagen de esta tarjeta (OBS-N2-IMAGE-FIT-F2). */
+  readonly imageResource: ImageResourceState | undefined;
+  /** Estado de disponibilidad de las imágenes intercaladas en la nota (OBS-N2-IMAGE-FIT-F2). */
+  readonly noteImageResources: ReadonlyMap<string, ImageResourceState>;
   readonly selected: boolean;
   readonly onPress: () => void;
 }
 
-function CardView({ box, card, image, base, imageUri, noteImages, selected, onPress, richTextCodec }: CardViewProps) {
+function CardView({ box, card, image, base, imageResource, noteImageResources, selected, onPress, richTextCodec }: CardViewProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -168,6 +169,7 @@ function CardView({ box, card, image, base, imageUri, noteImages, selected, onPr
   const shape = base === 'shape';
   const connector = base === 'connector';
   const presentation = cardContentPresentation(card, base);
+  const imageFit = resolveCardImageFit(card, base);
   const textColor = image ? colors.textPrimary : colors.noteText;
   // UX7-C3: antes, Lista mostraba el Markdown crudo de la nota (incluida la sintaxis `![...](...)`
   // de una imagen) o siempre un marcador de ejemplo para una ficha de imagen única, sin la imagen real.
@@ -206,9 +208,14 @@ function CardView({ box, card, image, base, imageUri, noteImages, selected, onPr
     >
       {presentation.title === 'visible' ? <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }]}>{cardTitle(card, locale)}</Text> : null}
       {presentation.body === 'hidden' ? null : image ? (
-        imageUri ? (
+        imageResource?.status === 'ready' ? (
           <Image testID={`list-image-${card.id}`} accessibilityRole="image" accessibilityLabel={`Imagen ${cardTitle(card, locale)}`}
-            source={{ uri: imageUri }} resizeMode="contain" style={[styles.cardImage, { borderColor: colors.border, backgroundColor: colors.surface }]} />
+            source={{ uri: imageResource.uri }} resizeMode={imageFit} style={[styles.cardImage, { borderColor: colors.border, backgroundColor: colors.surface, objectFit: imageFit }]} />
+        ) : (card.assetRefs?.length ?? 0) > 0 ? (
+          <View testID={`list-image-status-${card.id}`} accessibilityLabel={imageResource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale)}
+            style={[styles.cardImage, styles.imageStatus, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <Text style={[styles.imageStatusText, { color: colors.textSecondary }]}>{imageResource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale)}</Text>
+          </View>
         ) : <ImagePlaceholder />
       ) : floatingText ? (
         // P16: contenido literal (ADR 0057), nunca Markdown; mismo criterio que el lienzo/impresión.
@@ -224,9 +231,9 @@ function CardView({ box, card, image, base, imageUri, noteImages, selected, onPr
           <ConnectorPreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-connector-${card.id}`} />
         </View>
       ) : mixedRich && richDocument ? (
-        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} images={noteImages ?? emptyNoteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout} />
+        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} imageResources={noteImageResources} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} />
       ) : mixed ? (
-        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} images={noteImages} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} layout={presentation.layout} />
+        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} imageResources={noteImageResources} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} />
       ) : richDocument ? (
         <BasicRichTextPreview
           document={richDocument}
@@ -257,6 +264,8 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, lineHeight: 19, fontWeight: '800' },
   cardContent: { fontSize: 13, lineHeight: 18 },
   cardImage: { flex: 1, minHeight: 24, borderWidth: 1 },
+  imageStatus: { alignItems: 'center', justifyContent: 'center', padding: 4 },
+  imageStatusText: { fontSize: 11, fontWeight: '700', textAlign: 'center' },
   shapeBody: { flex: 1 },
   connectorBody: { justifyContent: 'center' },
 });
