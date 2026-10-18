@@ -167,6 +167,14 @@ export function takenRelationIds(workspace: Workspace): string[] {
   return [...workspace.relations.map((relation) => relation.id), ...(workspace.trash ?? []).flatMap((entry) => entry.relations.map((relation) => relation.id))];
 }
 
+/** IDs de tablero ocupados: los activos y los reservados por el Archivo (ADR 0039). */
+export function takenBoardIds(workspace: Workspace): string[] {
+  return [
+    ...workspace.boards.map((board) => board.id),
+    ...(workspace.archivedBoards ?? []).map((entry) => entry.board.id),
+  ];
+}
+
 function withCardType(workspace: Workspace, type: CardTypeDefinition): Workspace {
   return workspace.cardTypes.some((existing) => existing.id === type.id) ? workspace : { ...workspace, cardTypes: [...workspace.cardTypes, type] };
 }
@@ -326,7 +334,7 @@ export async function addBoardToWorkspace(storage: WorkspaceStorage, workspaceId
   }
   let created: BoardId | undefined;
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
-    const boardId = nextSequentialId('tablero', workspace.boards.map((board) => board.id)) as BoardId;
+    const boardId = nextSequentialId('tablero', takenBoardIds(workspace)) as BoardId;
     const trimmed = typeof title === 'string' ? title.trim() : '';
     const result = validateWorkspace({
       ...workspace,

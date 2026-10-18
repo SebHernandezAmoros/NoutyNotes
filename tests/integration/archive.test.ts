@@ -5,6 +5,7 @@ import {
   purgeCardFromTrash, restoreBoardFromArchive, restoreCardFromArchive, restoreCardsFromArchive, searchWorkspace, sendArchivedCardsToTrash, sendArchivedToTrash, takenCardIds,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
+import { validateWorkspace } from '../../packages/domain/src/index';
 import type { AssetRef, BoardId } from '../../packages/domain/src/index';
 import { ArchiveStorage, readWorkspaceArchive } from '../../packages/storage/src/index';
 
@@ -87,6 +88,61 @@ describe('Archivo (ADR 0023)', () => {
     expect(restored.boards.find((board) => board.id === guion)).toMatchObject({ title: 'Guion', cardIds: [a, b] });
     expect(restored.archivedBoards ?? []).toEqual([]);
     expect(restored.relations.map((relation) => `${relation.from}→${relation.to}`)).toEqual([`${a}→${b}`]);
+  });
+
+  it('OBS-N2-25 reserva el ID de un tablero archivado al crear el siguiente', async () => {
+    const storage = new ArchiveStorage();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Estudio'));
+    const first = ok(await addBoardToWorkspace(storage, id, { title: 'Primero' }));
+    const archivedId = ok(await addBoardToWorkspace(storage, id, { title: 'Segundo' }));
+    const third = ok(await addBoardToWorkspace(storage, id, { title: 'Tercero' }));
+    const archivedCard = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Conservar', boardId: archivedId }));
+
+    ok(await moveBoardToArchive(storage, id, archivedId, at));
+    const created = ok(await addBoardToWorkspace(storage, id, { title: 'Cuarto' }));
+
+    expect([first, archivedId, third, created]).toEqual(['tablero-1', 'tablero-2', 'tablero-3', 'tablero-4']);
+    const reopened = ok(await storage.open(id));
+    expect(reopened.boards.map((board) => board.id)).toEqual([first, third, created]);
+    expect(reopened.archivedBoards?.map((entry) => entry.board.id)).toEqual([archivedId]);
+
+    const invalid = validateWorkspace({
+      ...reopened,
+      boards: [...reopened.boards, { id: archivedId, title: 'Duplicado deliberado', cardIds: [] }],
+    });
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'duplicate-id', path: 'archivedBoards[0].board.id' }),
+    ]));
+
+    expect(ok(await restoreBoardFromArchive(storage, id, archivedId))).toEqual({ restored: 1, skipped: 0 });
+    const restored = ok(await storage.open(id));
+    expect(restored.boards.map((board) => board.id)).toEqual([first, third, created, archivedId]);
+    expect(new Set(restored.boards.map((board) => board.id)).size).toBe(restored.boards.length);
+    expect(restored.boards.find((board) => board.id === archivedId)).toMatchObject({
+      title: 'Segundo', cardIds: [archivedCard],
+    });
+    expect(restored.cards.find((card) => card.id === archivedCard)?.title).toBe('Conservar');
+  });
+
+  it('OBS-N2-25 excluye todos los huecos reservados por varios tableros archivados', async () => {
+    const storage = new ArchiveStorage();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Estudio'));
+    const boards: BoardId[] = [];
+    for (let number = 1; number <= 5; number += 1) {
+      boards.push(ok(await addBoardToWorkspace(storage, id, { title: `Tablero ${number}` })));
+    }
+    const second = boards[1] as BoardId;
+    const fourth = boards[3] as BoardId;
+    ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Dos', boardId: second }));
+    ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Cuatro', boardId: fourth }));
+    ok(await moveBoardToArchive(storage, id, second, at));
+    ok(await moveBoardToArchive(storage, id, fourth, at));
+
+    expect(ok(await addBoardToWorkspace(storage, id, { title: 'Sexto' }))).toBe('tablero-6');
+    const reopened = ok(await storage.open(id));
+    expect(reopened.boards.map((board) => board.id)).toEqual(['tablero-1', 'tablero-3', 'tablero-5', 'tablero-6']);
+    expect(reopened.archivedBoards?.map((entry) => entry.board.id)).toEqual(['tablero-2', 'tablero-4']);
   });
 
   it('selección múltiple en el Archivo (ADR 0039): restaurar o enviar a la Papelera varias tarjetas en una sola escritura', async () => {
