@@ -523,10 +523,10 @@ export function CanvasCard(props: CanvasCardProps) {
                 </View>
               ) : presentation.body === 'visible' && mixedRich && richDocument ? (
                 <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
-                  height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
+                  banner={presentation.layout === 'banner'} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : presentation.body === 'visible' && mixed ? (
                 <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
-                  height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
+                  banner={presentation.layout === 'banner'} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
               {presentation.body === 'visible' && !fullReader && !image && !mixed && previewDocument && bodyLines > 0 ? (
                 <BasicRichTextPreview

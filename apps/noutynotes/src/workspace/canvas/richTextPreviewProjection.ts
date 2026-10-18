@@ -13,7 +13,10 @@ function listLines(list: RichTextList): number {
     + (item.children?.reduce((nested, child) => nested + listLines(child), 0) ?? 0), 0);
 }
 
-function blockLines(block: RichTextBlock): number {
+/** Costo aproximado en «renglones» de un bloque, usado tanto para decidir qué cabe en la
+ * previsualización (recorte de texto) como, para imágenes de una Nota banner (OBS-N2-28/G1), para
+ * calcular cuánto espacio le queda disponible al no ser ya un bloque de texto. */
+export function blockLines(block: RichTextBlock): number {
   if (block.type === 'paragraph' || block.type === 'heading') return inlineLines(block.content);
   if (block.type === 'opaque-markdown') return Math.max(1, block.source.split('\n').length);
   if (block.type === 'list') return listLines(block);

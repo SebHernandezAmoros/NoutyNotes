@@ -6,12 +6,18 @@ import { t } from '../../i18n';
 import { BasicRichTextPreview } from '../BasicRichTextPreview';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
 import type { ImageResourceState } from '../imageResources';
+import { bannerImageHeight } from './bannerImageHeight';
 import { projectRichTextPreview } from './richTextPreviewProjection';
 
 const IMAGE_HEIGHT = 88;
 
-/** Vista acotada de una nota enriquecida que conserva imágenes, tablas y texto en su orden. */
-export function RichNotePreview({ document, imageResources, height, testID, fontFamily, bodySize, captionPosition, imageFit }: {
+/**
+ * Vista acotada de una nota enriquecida que conserva imágenes, tablas y texto en su orden. En
+ * composición `banner` (OBS-N2-28/IMAGE-GEOMETRY-G1), la imagen aprovecha el espacio que el texto ya
+ * seleccionado para la previsualización no necesita, en vez de quedar fija en `IMAGE_HEIGHT`;
+ * `document` conserva exactamente el alto histórico.
+ */
+export function RichNotePreview({ document, imageResources, height, testID, fontFamily, bodySize, captionPosition, imageFit, banner }: {
   readonly document: RichTextDocument;
   readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   readonly height: number;
@@ -21,6 +27,8 @@ export function RichNotePreview({ document, imageResources, height, testID, font
   readonly captionPosition?: CaptionPosition | undefined;
   /** Ajuste efectivo ya resuelto por el llamador (OBS-N2-IMAGE-FIT-F2, `resolveCardImageFit`). */
   readonly imageFit: ImageFit;
+  /** Si la composición efectiva es `banner` (OBS-N2-28/IMAGE-GEOMETRY-G1). */
+  readonly banner: boolean;
 }) {
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -32,6 +40,8 @@ export function RichNotePreview({ document, imageResources, height, testID, font
   const auxiliaryLineHeight = 16;
   const lines = Math.max(1, Math.floor(height / lineHeight));
   const preview = projectRichTextPreview(document, lines, true);
+  // OBS-N2-28/G1: solo para banner; document conserva IMAGE_HEIGHT sin ningún cálculo adicional.
+  const imageHeight = banner ? bannerImageHeight(preview.document.blocks, height, lineHeight, IMAGE_HEIGHT) : IMAGE_HEIGHT;
   const position = captionPosition ?? 'bottom';
   const sideways = position === 'left' || position === 'right';
   const captionOf = (block: RichTextImage): readonly RichTextInline[] => block.caption && block.caption.length > 0
@@ -72,7 +82,7 @@ export function RichNotePreview({ document, imageResources, height, testID, font
                   resizeMode={imageFit}
                   source={{ uri: resource.uri }}
                   style={[styles.image, sideways ? styles.imageSide : null, {
-                    borderColor: theme.colors.border, backgroundColor: theme.colors.surface,
+                    height: imageHeight, borderColor: theme.colors.border, backgroundColor: theme.colors.surface,
                     objectFit: imageFit,
                   }]}
                 />
@@ -81,7 +91,7 @@ export function RichNotePreview({ document, imageResources, height, testID, font
             const text = resource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale);
             const label = resource?.status === 'loading' ? text : `${text}: ${block.alt || block.assetRef}`;
             return (
-              <View accessibilityLabel={label} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { borderColor: theme.colors.border }]}>
+              <View accessibilityLabel={label} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { height: imageHeight, borderColor: theme.colors.border }]}>
                 <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight: auxiliaryLineHeight }]}>{text}</Text>
               </View>
             );

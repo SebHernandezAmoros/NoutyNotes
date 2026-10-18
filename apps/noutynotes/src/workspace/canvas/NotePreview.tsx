@@ -8,6 +8,7 @@ import { t } from '../../i18n';
 import { markdownExcerpt } from '../markdownLists';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
 import type { ImageResourceState } from '../imageResources';
+import { bannerImageBudget } from './bannerImageBudget';
 
 // La miniatura se adapta al alto que queda (entre 32 y 72 px): en una ficha pequeña también se ve.
 const THUMB = 72;
@@ -17,8 +18,10 @@ const GAP = 6;
 /**
  * Ficha de una nota con imágenes (ADR 0021): texto resumido e imágenes en el orden del documento
  * hasta llenar el alto disponible; si quedan bloques, «+n». El texto nunca se interpreta como HTML.
+ * En composición `banner` (OBS-N2-28/IMAGE-GEOMETRY-G1), la imagen aprovecha el espacio que el texto
+ * no necesita en vez de quedar fija en `THUMB`; `document` no cambia.
  */
-export function NotePreview({ blocks, imageResources, height, testID, fontFamily, bodySize, captionPosition, imageFit }: {
+export function NotePreview({ blocks, imageResources, height, testID, fontFamily, bodySize, captionPosition, imageFit, banner }: {
   readonly blocks: readonly NoteBlock[];
   readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   /** Alto en píxeles para los bloques (sin título ni pie). */
@@ -32,6 +35,10 @@ export function NotePreview({ blocks, imageResources, height, testID, fontFamily
   readonly captionPosition?: CaptionPosition | undefined;
   /** Ajuste efectivo ya resuelto por el llamador (OBS-N2-IMAGE-FIT-F2, `resolveCardImageFit`). */
   readonly imageFit: ImageFit;
+  /** Si la composición efectiva es `banner` (OBS-N2-28/IMAGE-GEOMETRY-G1): la imagen puede crecer más
+   * allá del histórico `THUMB`, cediendo solo lo que el texto realmente necesita. Una Nota `document`
+   * conserva exactamente el reparto histórico. */
+  readonly banner: boolean;
 }) {
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -47,10 +54,13 @@ export function NotePreview({ blocks, imageResources, height, testID, fontFamily
   const sideways = position === 'left' || position === 'right';
   const shown: { block: NoteBlock; lines: number; size: number; caption: boolean }[] = [];
   let left = height - LINE; // reserva la línea de «+n»
+  // OBS-N2-28/G1: solo para la composición banner, la imagen recibe lo que el texto no necesita; una
+  // Nota document conserva el techo histórico `THUMB` sin ningún cálculo adicional.
+  const imageBudget = banner ? bannerImageBudget(blocks, left, LINE, GAP, THUMB) : THUMB;
   for (const block of blocks) {
     if (block.kind === 'image') {
       if (left < THUMB_MIN) break;
-      const maxSize = Math.min(THUMB, left);
+      const maxSize = Math.min(imageBudget, left);
       // UX7-C4/ADR 0051: el texto alternativo ya existía (se guarda en el propio Markdown) pero nunca
       // se veía, solo servía de nombre accesible; ahora se muestra también como leyenda. Casi toda
       // imagen tiene un valor (el nombre del archivo, si no se escribió uno propio), así que reservarle
