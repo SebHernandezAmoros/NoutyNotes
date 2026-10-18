@@ -7,9 +7,11 @@ import { validateGridLayout } from '../layouts/grid';
 import type { GridConfig } from '../layouts/grid';
 import type { BoardLayout, CardPlacement } from '../layouts/layout';
 import { findFreeSpace } from '../layouts/operations';
+import { richTextImageRefs } from '../rich-text/rich-text';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import type { Card } from './card';
+import { noteImageRefs } from './note-content';
 import { deleteCard } from './operations';
 import type { TrashedCard } from './trashed-card';
 
@@ -151,13 +153,21 @@ export function restoreSnapshot(
   }, []);
 }
 
-/** Referencias a assets de una tarjeta: `assetRefs` y valores de campos de tipo asset. */
+/**
+ * Referencias a assets de una tarjeta: `assetRefs`, valores de campos de tipo asset y, salvo en una
+ * tarjeta de imagen (que ya los declara en `assetRefs`), las imágenes incrustadas en su cuerpo —
+ * Markdown heredado (`content`) y documento enriquecido (`contentDocument`). Mismo criterio completo
+ * que `cardAssetRefs` ya aplicaba en aplicación (OBS-N2-02/26, U0): antes de esta corrección, esta
+ * función no veía esas imágenes y `purgeTrashedCard` podía liberar un asset que una Nota todavía usa.
+ */
 function assetsOf(workspace: Workspace, card: Card): string[] {
-  const kinds = new Map(workspace.cardTypes.find((type) => type.id === card.typeId)?.fields.map((field) => [field.key as string, field.kind]) ?? []);
+  const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
+  const kinds = new Map(type?.fields.map((field) => [field.key as string, field.kind]) ?? []);
   const fromFields = Object.entries(card.fields)
     .filter(([key, value]) => kinds.get(key) === 'asset' && typeof value === 'string')
     .map(([, value]) => value as string);
-  return [...(card.assetRefs ?? []), ...fromFields];
+  const fromContent = type?.base === 'image' ? [] : [...noteImageRefs(card.content ?? ''), ...richTextImageRefs(card.contentDocument)];
+  return [...new Set([...(card.assetRefs ?? []), ...fromFields, ...fromContent])];
 }
 
 /**

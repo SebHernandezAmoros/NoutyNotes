@@ -32,8 +32,10 @@ export {
   MAX_RICH_TEXT_BLOCKS, MAX_RICH_TEXT_INLINES, MAX_RICH_TEXT_LIST_DEPTH,
   MAX_RICH_TEXT_LIST_ITEMS, MAX_RICH_TEXT_TABLE_COLUMNS, MAX_RICH_TEXT_TABLE_ROWS,
   MAX_RICH_TEXT_TEXT_LENGTH, RICH_TEXT_SCHEMA_VERSION, createEmptyRichTextDocument,
-  normalizeRichTextDocument, richTextAlignments, richTextDocumentText, richTextImageAlignments, richTextImageSizes, richTextMarks, richTextVerticalAlignments, toggleRichTextChecklistItem, validateRichTextDocument,
+  normalizeRichTextDocument, richTextAlignments, richTextDocumentText, richTextImageAlignments, richTextImageRefs, richTextImageSizes, richTextMarks, richTextVerticalAlignments, toggleRichTextChecklistItem, validateRichTextDocument,
 } from './rich-text/rich-text';
+export { noteImageRefs, parseNoteBlocks } from './cards/note-content';
+export type { NoteBlock } from './cards/note-content';
 export type {
   RichTextAlignment, RichTextBlock, RichTextDocument, RichTextHardBreak, RichTextHeading, RichTextHeadingLevel,
   RichTextImage, RichTextImageAlignment, RichTextImageSize, RichTextInline, RichTextLeaf, RichTextLink, RichTextList, RichTextListItem,

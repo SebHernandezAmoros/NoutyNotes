@@ -83,5 +83,56 @@ describe('importar una imagen real como tarjeta (ADR 0015)', () => {
     expect(Object.keys(tree.snapshot())).not.toContain('fotos/assets/images/tarjeta-1-2.jpg');
     expect(tree.snapshot()['fotos/assets/images/tarjeta-1.jpg']).toEqual(Uint8Array.from([7, 7, 7]));
   });
+
+  it('OBS-N2-02/26 (U0): purgar una tarjeta de Papelera no borra un asset que otra Nota activa sigue usando incrustado en su contenido', async () => {
+    const tree = new MemoryDocumentTree();
+    const storage = new FolderStorage(new DocumentTreeFolderPort(tree));
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Compartidos'));
+    const originalCardId = ok(await importImageCard(storage, storage, id, { bytes: PNG, fileName: 'mapa.png' }));
+    const opened = ok(await storage.open(id));
+    const original = opened.cards.find((card) => card.id === originalCardId)!;
+    const sharedRef = original.assetRefs![0] as AssetRef;
+    expect(original.content).toContain(sharedRef); // la imagen también está incrustada en el Markdown de la Nota.
+    const duplicateId = 'tarjeta-duplicada' as CardId;
+    // La Nota original se queda SOLO con la referencia incrustada (sin `assetRefs`): es exactamente el
+    // caso que `assetsOf` (dominio) no veía antes de esta corrección. La tarjeta duplicada referencia
+    // el mismo asset únicamente por `assetRefs`, y es la que se envía a la Papelera y se purga.
+    ok(await storage.save({
+      ...opened,
+      cards: [
+        ...opened.cards.map((card) => (card.id === originalCardId ? { ...card, assetRefs: [] } : card)),
+        { ...original, id: duplicateId },
+      ],
+    }));
+
+    ok(await moveCardToTrash(storage, id, duplicateId));
+    const purged = ok(await purgeCardFromTrash(storage, storage, id, duplicateId));
+    expect(purged).toEqual({ releasedAssets: [], removedAssets: [], failedAssets: [] });
+
+    // Verificación real de bytes (no solo de una lista de referencias): el archivo sigue disponible.
+    expect(ok(await storage.readAsset(id, sharedRef))).toEqual(PNG);
+    expect(tree.snapshot()[`compartidos/${sharedRef}`]).toEqual(PNG);
+
+    // Reabrir el proyecto confirma que la Nota original sigue usando la imagen correctamente.
+    const after = ok(await storage.open(id));
+    expect(after.cards.find((card) => card.id === originalCardId)?.content).toContain(sharedRef);
+    expect(after.cards.some((card) => card.id === duplicateId)).toBe(false);
+  });
+
+  it('OBS-N2-02/26 (U0): un asset realmente sin uso sigue liberándose tras purgar (sin convertirse en permanente)', async () => {
+    const tree = new MemoryDocumentTree();
+    const storage = new FolderStorage(new DocumentTreeFolderPort(tree));
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Huerfanos'));
+    const cardId = ok(await importImageCard(storage, storage, id, { bytes: PNG, fileName: 'solo.png' }));
+    const opened = ok(await storage.open(id));
+    const sharedRef = opened.cards.find((card) => card.id === cardId)!.assetRefs![0] as AssetRef;
+    ok(await moveCardToTrash(storage, id, cardId as CardId));
+    const purged = ok(await purgeCardFromTrash(storage, storage, id, cardId as CardId));
+    expect(purged.releasedAssets).toEqual([sharedRef]);
+    expect(purged.removedAssets).toEqual([sharedRef]);
+    const missing = await storage.readAsset(id, sharedRef);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.issues[0]).toMatchObject({ code: 'io-failure', path: 'ref' });
+  });
 });
 

@@ -339,6 +339,18 @@ export function createEmptyRichTextDocument(): RichTextDocument {
   return { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: [{ type: 'paragraph', content: [] }] };
 }
 
+/**
+ * Referencias de imágenes de un documento enriquecido, en orden y sin repetir (OBS-N2-02/26, U0: el
+ * mismo criterio que ya usaba `cardAssetRefs` en aplicación, ahora disponible en dominio para que
+ * `purgeTrashedCard` no use un cálculo más estrecho).
+ */
+export function richTextImageRefs(richTextDocument: RichTextDocument | undefined): AssetRef[] {
+  if (!richTextDocument) return [];
+  return [...new Set(richTextDocument.blocks
+    .filter((block): block is RichTextImage => block.type === 'image')
+    .map((block) => block.assetRef))];
+}
+
 function readableInlines(inlines: readonly RichTextInline[] | undefined): string {
   return (inlines ?? []).map((inline) => inline.type === 'hard-break' ? '\n'
     : inline.type === 'link' ? readableInlines(inline.content) : inline.text).join('');
