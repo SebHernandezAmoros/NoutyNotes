@@ -13,8 +13,8 @@ import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
 import {
-  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, noteVerticalAlignments, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
-  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type ContentLayout, type ContentVisibility, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type NoteVerticalAlignment, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
+  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, imageFits, noteVerticalAlignments, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
+  floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type ContentLayout, type ContentVisibility, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ImageFit, type NoteVerticalAlignment, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
 } from './card';
 import { validateRichTextDocument } from '../rich-text/rich-text';
 import type { RichTextDocument, RichTextInline } from '../rich-text/rich-text';
@@ -268,9 +268,14 @@ export interface CardAppearanceChanges {
   readonly connectorDirection?: ConnectorDirection | null;
   readonly connectorStartCardId?: CardId | null;
   readonly connectorEndCardId?: CardId | null;
+  /**
+   * Ajuste de imagen explícito (OBS-N2-IMAGE-FIT-F1); `null` vuelve al comportamiento histórico del
+   * resolver. Solo tarjetas de base `image` o `note`: cualquier otra base se rechaza.
+   */
+  readonly imageFit?: ImageFit | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'noteVerticalAlignment', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId'];
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'noteVerticalAlignment', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId', 'imageFit'];
 
 /** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
@@ -279,6 +284,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   if (!isValidId(cardId)) return failure([issue('invalid-id', 'cardId', 'Identificador de tarjeta inválido.')]);
   const card = workspace.cards.find((candidate) => candidate.id === cardId);
   if (!card) return failure([issue('missing-reference', 'cardId', 'La tarjeta no existe en el workspace.')]);
+  const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   if (!isRecord(changes)) return failure([issue('invalid-value', 'changes', 'Debe ser un objeto de cambios.')]);
   const unknown = Object.keys(changes).filter((key) => !appearanceKeys.includes(key));
   if (unknown.length > 0) return failure(unknown.map((key) => issue('unknown-property', `changes.${key}`, 'Propiedad no editable.')));
@@ -305,6 +311,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const nextConnectorDirection = changes.connectorDirection;
   const nextConnectorStart = changes.connectorStartCardId;
   const nextConnectorEnd = changes.connectorEndCardId;
+  const nextImageFit = changes.imageFit;
   if (nextIcon !== undefined && nextIcon !== null && !cardIconNames.includes(nextIcon as CardIconName)) {
     return failure([issue('invalid-value', 'changes.icon', 'Icono desconocido.')]);
   }
@@ -348,12 +355,18 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
       return failure([issue(value === cardId ? 'invalid-value' : 'missing-reference', `changes.${key}`, 'El anclaje debe ser otra tarjeta existente.')]);
     }
   }
+  if (nextImageFit !== undefined && nextImageFit !== null) {
+    if (!imageFits.includes(nextImageFit as ImageFit)) return failure([issue('invalid-value', 'changes.imageFit', 'Debe ser "contain" o "cover".')]);
+    if (type && type.base !== 'image' && type.base !== 'note') {
+      return failure([issue('invalid-value', 'changes.imageFit', 'Solo una tarjeta de imagen o una Nota pueden declarar un ajuste de imagen.')]);
+    }
+  }
   const {
     icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize,
     captionPosition: _captionPosition, titleVisibility: _titleVisibility, bodyVisibility: _bodyVisibility, contentLayout: _contentLayout, noteVerticalAlignment: _noteVerticalAlignment, textAlign: _textAlign, textColor: _textColor,
     shapeKind: _shapeKind, shapeFill: _shapeFill, shapeStroke: _shapeStroke, shapeStrokeWidth: _shapeStrokeWidth,
     connectorColor: _connectorColor, connectorWidth: _connectorWidth, connectorDash: _connectorDash, connectorArrows: _connectorArrows, connectorDirection: _connectorDirection,
-    connectorStartCardId: _connectorStartCardId, connectorEndCardId: _connectorEndCardId, ...base
+    connectorStartCardId: _connectorStartCardId, connectorEndCardId: _connectorEndCardId, imageFit: _imageFit, ...base
   } = card;
   const edited: Card = {
     ...base,
@@ -387,6 +400,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
     ...(nextConnectorDirection === undefined ? (card.connectorDirection === undefined ? {} : { connectorDirection: card.connectorDirection }) : nextConnectorDirection === null ? {} : { connectorDirection: nextConnectorDirection as ConnectorDirection }),
     ...(nextConnectorStart === undefined ? (card.connectorStartCardId === undefined ? {} : { connectorStartCardId: card.connectorStartCardId }) : nextConnectorStart === null ? {} : { connectorStartCardId: nextConnectorStart as CardId }),
     ...(nextConnectorEnd === undefined ? (card.connectorEndCardId === undefined ? {} : { connectorEndCardId: card.connectorEndCardId }) : nextConnectorEnd === null ? {} : { connectorEndCardId: nextConnectorEnd as CardId }),
+    ...(nextImageFit === undefined ? (card.imageFit === undefined ? {} : { imageFit: card.imageFit }) : nextImageFit === null ? {} : { imageFit: nextImageFit as ImageFit }),
   };
   return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => candidate === card ? edited : candidate) });
 }

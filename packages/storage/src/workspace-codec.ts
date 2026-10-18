@@ -45,8 +45,8 @@ function markdownDocument(frontmatter: unknown, body: string): GeneratedDocument
 function cardDocument(card: Card): GeneratedDocument {
   const tags = card.tags !== undefined && card.tags.length > 0 ? card.tags : undefined;
   // Versión selectiva: v4 con icono/atajo (ADR 0046), v5 con excepción de marco (ADR 0049), v6 con
-  // tamaño de título/cuerpo (ADR 0050), v7 con posición de leyenda (ADR 0051); las anteriores
-  // conservan sus bytes.
+  // tamaño de título/cuerpo (ADR 0050), v7 con posición de leyenda (ADR 0051), v14 con ajuste de
+  // imagen explícito (OBS-N2-IMAGE-FIT-F1); las anteriores conservan sus bytes.
   const hasSize = card.titleSize !== undefined || card.bodySize !== undefined;
   const hasCaption = card.captionPosition !== undefined;
   const hasFloatingTextStyle = card.textAlign !== undefined || card.textColor !== undefined;
@@ -57,7 +57,7 @@ function cardDocument(card: Card): GeneratedDocument {
   const html = card.contentDocument === undefined ? null : serializeRichTextHtml(card.contentDocument);
   if (html && !html.ok) throw new Error('Workspace validado con contenido no representable por HTML seguro v1.');
   return markdownDocument(compact({
-    schemaVersion: hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
+    schemaVersion: card.imageFit !== undefined ? 14 : hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     id: card.id, typeId: card.typeId, title: card.title, titleRichText: card.titleRichText,
     fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
     boardTargetId: card.boardTargetId, frameOverride: card.frameOverride,
@@ -66,6 +66,7 @@ function cardDocument(card: Card): GeneratedDocument {
     shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth,
     connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
     connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
+    imageFit: card.imageFit,
     contentPresent: card.content !== undefined || card.contentDocument !== undefined,
     contentFormat: card.contentDocument === undefined ? undefined : HTML_CONTENT_FORMAT,
     contentVersion: card.contentDocument === undefined ? undefined : HTML_CONTENT_VERSION,
@@ -86,6 +87,7 @@ function trashData(entry: TrashedCard): unknown {
       content: card.content, contentDocument: card.contentDocument,
       connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
       connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
+      imageFit: card.imageFit,
     },
     boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
     placements: entry.placements.map(({ boardId, rect, display, connectorPath }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
@@ -274,7 +276,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -297,6 +299,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     const hasUnifiedContent = front.titleRichText !== undefined || front.titleVisibility !== undefined || front.bodyVisibility !== undefined || front.contentLayout !== undefined;
     const hasHtml = front.contentFormat !== undefined || front.contentVersion !== undefined;
     const hasVerticalAlignment = front.noteVerticalAlignment !== undefined;
+    const hasImageFit = front.imageFit !== undefined;
     if (hasHtml && front.contentFormat !== HTML_CONTENT_FORMAT) {
       issues.push(storageIssue('invalid-document', `${file}#contentFormat`, 'Formato de contenido no admitido.'));
       continue;
@@ -314,7 +317,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(...parsedHtml.issues.map((found) => storageIssue('invalid-document', `${file}#body.${found.path}`, found.message)));
       continue;
     }
-    const expected = hasVerticalAlignment ? 13 : hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
+    const expected = hasImageFit ? 14 : hasVerticalAlignment ? 13 : hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -328,6 +331,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       shapeKind: front.shapeKind, shapeFill: front.shapeFill, shapeStroke: front.shapeStroke, shapeStrokeWidth: front.shapeStrokeWidth,
       connectorColor: front.connectorColor, connectorWidth: front.connectorWidth, connectorDash: front.connectorDash, connectorArrows: front.connectorArrows,
       connectorDirection: front.connectorDirection, connectorStartCardId: front.connectorStartCardId, connectorEndCardId: front.connectorEndCardId,
+      imageFit: front.imageFit,
       content: !hasHtml && front.contentPresent ? body : undefined,
       contentDocument: parsedHtml?.ok ? parsedHtml.value : undefined,
     }) as unknown as Card);

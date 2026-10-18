@@ -70,6 +70,12 @@ export interface Card {
   readonly connectorDirection?: ConnectorDirection;
   readonly connectorStartCardId?: CardId;
   readonly connectorEndCardId?: CardId;
+  /**
+   * Ajuste de imagen explícito (OBS-N2-IMAGE-FIT-F1): «Mostrar completa» o «Rellenar con recorte».
+   * Ausente: el resolver `resolveCardImageFit` aplica el comportamiento histórico por tipo/composición.
+   * Independiente de `contentLayout` y de `RichTextImage` — no se toca ningún bloque enriquecido.
+   */
+  readonly imageFit?: ImageFit;
 }
 
 /**
@@ -102,6 +108,10 @@ export type ContentLayout = (typeof contentLayouts)[number];
 export const noteVerticalAlignments = ['top', 'center', 'bottom'] as const;
 export type NoteVerticalAlignment = (typeof noteVerticalAlignments)[number];
 
+/** Catálogo cerrado del ajuste de imagen (OBS-N2-IMAGE-FIT-F1): mostrar completa o rellenar con recorte. */
+export const imageFits = ['contain', 'cover'] as const;
+export type ImageFit = (typeof imageFits)[number];
+
 export function richTextInlineText(inlines: readonly RichTextInline[] | undefined): string {
   return (inlines ?? []).map((inline) => inline.type === 'hard-break' ? '\n'
     : inline.type === 'link' ? richTextInlineText(inline.content) : inline.text).join('');
@@ -128,6 +138,34 @@ export function cardContentPresentation(
     body: card.bodyVisibility ?? (base === 'section' ? 'hidden' : 'visible'),
     layout: card.contentLayout ?? (base === 'image' ? 'banner' : 'document'),
   };
+}
+
+/**
+ * Si la tarjeta admite elegir un ajuste de imagen (OBS-N2-IMAGE-FIT-F1): una tarjeta de imagen
+ * histórica (igual criterio que `isImageCard`: base `image` sin cuerpo de Nota) o una Nota cuya
+ * composición efectiva ya es `banner`. Una Nota en `document` conserva un valor explícito dormido
+ * (no elegible mientras tanto) para no perder la elección si vuelve a `banner`.
+ */
+export function supportsCardImageFit(
+  card: Pick<Card, 'content' | 'contentLayout'>,
+  base: CardTypeDefinition['base'] | undefined,
+): boolean {
+  if (base === 'image') return card.content === undefined;
+  return base === 'note' && (card.contentLayout ?? 'document') === 'banner';
+}
+
+/**
+ * Ajuste efectivo: valor explícito si la tarjeta es elegible; si no, el comportamiento histórico por
+ * tipo/composición (imagen → `contain`, Nota banner → `cover`, cualquier otro caso → `contain`). Pura:
+ * nunca muta la tarjeta ni decide nada a partir de si el recurso ya cargó.
+ */
+export function resolveCardImageFit(
+  card: Pick<Card, 'imageFit' | 'content' | 'contentLayout'>,
+  base: CardTypeDefinition['base'] | undefined,
+): ImageFit {
+  if (!supportsCardImageFit(card, base)) return 'contain';
+  if (card.imageFit !== undefined) return card.imageFit;
+  return base === 'image' ? 'contain' : 'cover';
 }
 
 /**
@@ -274,6 +312,13 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
     refs.forEach((ref, index) => checkAssetRef(ref, `${path}.assetRefs[${index}]`, issues));
     if (new Set(refs).size !== refs.length) {
       issues.push(issue('invalid-asset-ref', `${path}.assetRefs`, 'Hay referencias a assets repetidas.'));
+    }
+  }
+  if (card.imageFit !== undefined) {
+    if (!imageFits.includes(card.imageFit as ImageFit)) {
+      issues.push(issue('invalid-value', `${path}.imageFit`, 'Debe ser "contain" o "cover".'));
+    } else if (type && type.base !== 'image' && type.base !== 'note') {
+      issues.push(issue('invalid-value', `${path}.imageFit`, 'Solo una tarjeta de imagen o una Nota pueden declarar un ajuste de imagen.'));
     }
   }
 }

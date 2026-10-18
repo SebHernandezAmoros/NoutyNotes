@@ -12,6 +12,14 @@ function ok<T>(result: { ok: true; value: T } | { ok: false; issues: readonly un
 const at = '2026-09-26T10:00:00.000Z';
 
 describe('.nouty/archive.yaml (ADR 0023)', () => {
+  it('conserva imageFit en la instantanea de Archivo y al reabrir', () => {
+    const source = workspaceFixture();
+    const fitted = { ...source, cards: source.cards.map((card, index) => index === 0 ? { ...card, imageFit: 'cover' as const } : card) };
+    const archived = ok(archiveCard(fitted, fitted.cards[0]!.id as CardId, at));
+    const reopened = ok(parseWorkspace(ok(serializeWorkspace(archived))));
+    expect(reopened.archive?.[0]?.card.imageFit).toBe('cover');
+  });
+
   it('conserva el documento HTML semántico de una tarjeta archivada', () => {
     const source = workspaceFixture();
     const html = { ...source, cards: source.cards.map((card, index) => {

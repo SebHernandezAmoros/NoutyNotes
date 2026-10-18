@@ -68,7 +68,7 @@ describe('añadir una tarjeta a un board (fase 7)', () => {
 });
 
 describe('pegar/duplicar una selección en un tablero (ADR 0052)', () => {
-  const cardD: Card = { id: id<CardId>('idea-d'), typeId: id<CardTypeId>('note'), title: 'Idea D', fields: { summary: 'D' } };
+  const cardD: Card = { id: id<CardId>('idea-d'), typeId: id<CardTypeId>('note'), title: 'Idea D', fields: { summary: 'D' }, imageFit: 'cover' };
   const placementC: CardPlacement = { cardId: cardC.id, rect: { x: 8, y: 0, w: 2, h: 1 }, display: 'expanded' };
   const placementD: CardPlacement = { cardId: cardD.id, rect: { x: 10, y: 0, w: 2, h: 1 }, display: 'expanded' };
   const relationCD: Relation = { id: id<RelationId>('c-references-d'), typeId: id<RelationTypeId>('references'), from: cardC.id, to: cardD.id };
@@ -79,6 +79,7 @@ describe('pegar/duplicar una selección en un tablero (ADR 0052)', () => {
       boardId: overview, cards: [cardC, cardD], relations: [relationCD], placements: [placementC, placementD], config: DESKTOP_GRID,
     }));
     expect(result.cards).toEqual([...validWorkspace().cards, cardC, cardD]);
+    expect(result.cards.at(-1)?.imageFit).toBe('cover');
     expect(result.boards[0]?.cardIds).toEqual([ideaA.id, ideaB.id, cardC.id, cardD.id]);
     expect(result.layouts[0]?.placements.slice(-2)).toEqual([placementC, placementD]);
     expect(result.relations).toEqual([...validWorkspace().relations, relationCD]);

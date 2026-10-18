@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '../__fixtures__/grid';
-import { id, ideaA, ideaB, problems, unsafe, validWorkspace } from '../__fixtures__/workspace';
+import { asset, id, ideaA, ideaB, problems, unsafe, validWorkspace } from '../__fixtures__/workspace';
 import { assertValid } from '../errors';
-import type { CardId, RelationId } from '../ids';
+import type { CardId, CardTypeId, RelationId } from '../ids';
 import type { Relation } from '../relations/relation';
 import { validateWorkspace } from '../workspace/workspace';
+import type { Workspace } from '../workspace/workspace';
+import type { Card } from './card';
 import { deleteCard, updateCardAppearance } from './operations';
 
 describe('borrado de tarjeta con relaciones', () => {
@@ -160,5 +162,49 @@ describe('posición de leyenda por ficha (ADR 0051)', () => {
     expect(card?.titleSize).toBe('small');
     expect(card?.frameOverride).toBe('hidden');
     expect(card?.captionPosition).toBe('right');
+  });
+});
+
+describe('ajuste de imagen por ficha (OBS-N2-IMAGE-FIT-F1)', () => {
+  it('ausente por defecto; se puede fijar a contain/cover y volver a ausente con null', () => {
+    const base = validWorkspace();
+    expect(ideaA.imageFit).toBeUndefined();
+    for (const imageFit of ['contain', 'cover'] as const) {
+      const fitted = assertValid(updateCardAppearance(base, ideaA.id, { imageFit }));
+      expect(fitted.cards.find((c) => c.id === ideaA.id)?.imageFit).toBe(imageFit);
+    }
+    const set = assertValid(updateCardAppearance(base, ideaA.id, { imageFit: 'cover' }));
+    const cleared = assertValid(updateCardAppearance(set, ideaA.id, { imageFit: null }));
+    expect(cleared.cards.find((c) => c.id === ideaA.id)?.imageFit).toBeUndefined();
+    expect(base).toEqual(validWorkspace());
+  });
+  it('rechaza un valor que no sea "contain" o "cover"', () => {
+    expect(problems(updateCardAppearance(validWorkspace(), ideaA.id, unsafe({ imageFit: 'stretch' })))).toEqual(['invalid-value@changes.imageFit']);
+  });
+  it('rechaza fijarlo en una tarjeta cuya base no sea imagen ni Nota', () => {
+    const fileType = { id: id<CardTypeId>('archivo'), label: 'Archivo', base: 'file' as const, fields: [] };
+    const fileCard: Card = { id: id<CardId>('doc-1'), typeId: fileType.id, fields: {}, assetRefs: [asset('assets/documents/a.pdf')] };
+    const withFile: Workspace = { ...validWorkspace(), cardTypes: [...validWorkspace().cardTypes, fileType], cards: [...validWorkspace().cards, fileCard] };
+    expect(problems(updateCardAppearance(withFile, fileCard.id, { imageFit: 'cover' }))).toEqual(['invalid-value@changes.imageFit']);
+  });
+  it('seleccionar el modo efectivo cuando está ausente lo fija de forma explícita; repetirlo es idempotente', () => {
+    const base = validWorkspace();
+    const fixedToEffective = assertValid(updateCardAppearance(base, ideaA.id, { imageFit: 'contain' }));
+    expect(fixedToEffective.cards.find((c) => c.id === ideaA.id)?.imageFit).toBe('contain');
+    const repeated = assertValid(updateCardAppearance(fixedToEffective, ideaA.id, { imageFit: 'contain' }));
+    expect(repeated).toEqual(fixedToEffective);
+  });
+  it('cambiar contentLayout no borra ni reinterpreta una elección explícita de imageFit', () => {
+    const withFit = assertValid(updateCardAppearance(validWorkspace(), ideaA.id, { imageFit: 'cover' }));
+    const withLayout = assertValid(updateCardAppearance(withFit, ideaA.id, { contentLayout: 'document' }));
+    const card = withLayout.cards.find((c) => c.id === ideaA.id);
+    expect(card?.imageFit).toBe('cover');
+    expect(card?.contentLayout).toBe('document');
+  });
+  it('no cambia relaciones, posición ni otras tarjetas', () => {
+    const withFit = assertValid(updateCardAppearance(validWorkspace(), ideaA.id, { imageFit: 'cover' }));
+    expect(withFit.relations).toEqual(validWorkspace().relations);
+    expect(withFit.layouts).toEqual(validWorkspace().layouts);
+    expect(withFit.cards.find((c) => c.id === ideaB.id)).toEqual(ideaB);
   });
 });

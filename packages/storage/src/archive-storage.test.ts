@@ -31,6 +31,24 @@ function demoZip(workspace: Workspace = validWorkspace()): Uint8Array {
 }
 
 describe('ArchiveStorage: importar, editar y exportar (fase 9)', () => {
+  it('importa y exporta los ajustes explicitos de imagen sin alterar el resto del proyecto', async () => {
+    const source: Workspace = {
+      ...validWorkspace(),
+      cards: validWorkspace().cards.map((card, index) => ({
+        ...card,
+        contentLayout: 'banner',
+        imageFit: index === 0 ? 'contain' : 'cover',
+      })),
+    };
+    const storage = new ArchiveStorage();
+    ok(await storage.importArchive(demoZip(source)));
+    const exported = valueOf(readWorkspaceArchive(ok(storage.exportArchive(id('demo'))).bytes));
+    expect(exported.workspace).toEqual(source);
+    expect(exported.assets['assets/images/a.png']).toEqual(binary);
+    expect(exported.workspace.relations).toEqual(source.relations);
+    expect(exported.workspace.layouts).toEqual(source.layouts);
+  });
+
   it('importa y exporta HTML v1 conservando el documento semántico y su asset', async () => {
     const storage = new ArchiveStorage();
     const workspace = htmlWorkspace();

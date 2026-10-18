@@ -11,6 +11,14 @@ function ok<T>(result: { ok: true; value: T } | { ok: false; issues: readonly un
 }
 
 describe('Papelera en el formato v1: .nouty/trash.yaml (ADR 0015)', () => {
+  it('conserva imageFit en la instantanea de Papelera y al reabrir', () => {
+    const source = workspaceFixture();
+    const fitted: Workspace = { ...source, cards: source.cards.map((card, index) => index === 0 ? { ...card, imageFit: 'contain' } : card) };
+    const trashed = ok(trashCard(fitted, fitted.cards[0]!.id as CardId));
+    const reopened = ok(parseWorkspace(ok(serializeWorkspace(trashed))));
+    expect(reopened.trash?.[0]?.card.imageFit).toBe('contain');
+  });
+
   it('conserva el documento HTML semántico de una tarjeta retirada', () => {
     const source = workspaceFixture();
     const html: Workspace = { ...source, cards: source.cards.map((card, index) => {
