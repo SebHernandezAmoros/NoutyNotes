@@ -934,6 +934,7 @@ export function Canvas(props: CanvasProps) {
               imageResource={props.imageResources.get(card.id)}
               noteImageResources={props.noteImageResources}
               onPress={() => props.onCardPress(card.id)}
+              onOpenDocument={() => props.onInlineAdvanced(card.id)}
               onToggleCheck={props.onToggleCheck}
               onFocus={() => reveal(card.id)}
               reserveRight={(() => {

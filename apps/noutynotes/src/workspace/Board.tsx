@@ -231,9 +231,9 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
           <ConnectorPreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-connector-${card.id}`} />
         </View>
       ) : mixedRich && richDocument ? (
-        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} imageResources={noteImageResources} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} />
+        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} imageResources={noteImageResources} width={box.width} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} onOpenDocument={onPress} />
       ) : mixed ? (
-        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} imageResources={noteImageResources} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} />
+        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} imageResources={noteImageResources} width={box.width} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} />
       ) : richDocument ? (
         <BasicRichTextPreview
           document={richDocument}

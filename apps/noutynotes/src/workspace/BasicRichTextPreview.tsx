@@ -5,6 +5,13 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { projectRichTextPreview } from './canvas/richTextPreviewProjection';
 
+// Ancho muy generoso para los llamadores de este componente que no necesitan una estimación precisa
+// de envoltorio visual (títulos, vista previa del editor, `PresentationBody`): con un ancho así de
+// grande, `estimatePreviewLines` nunca cuenta más de un renglón por salto de línea explícito, igual
+// que el cálculo histórico — preserva su comportamiento sin ampliar el alcance de OBS-N2-28/G1 (esa
+// corrección solo exige precisión real en `RichNotePreview`/`NotePreview`, que sí pasan un `width`).
+const UNBOUNDED_WIDTH = 10_000;
+
 interface BasicRichTextPreviewProps {
   readonly document: RichTextDocument;
   readonly numberOfLines: number;
@@ -13,6 +20,11 @@ interface BasicRichTextPreviewProps {
   readonly lineHeight: number;
   readonly fontFamily?: string | undefined;
   readonly testID: string;
+  /** Ancho real disponible, si el llamador ya lo conoce y le importa una estimación precisa de
+   * envoltorio visual (OBS-N2-28/G1). Sin él, se asume un ancho prácticamente ilimitado. */
+  readonly width?: number | undefined;
+  /** Intrinsic block height for the Banner budget; other previews retain their clamp. */
+  readonly unclamped?: boolean | undefined;
 }
 
 function inlineView(inline: RichTextInline, blockIndex: number, inlineIndex: number, testID: string): ReactNode {
@@ -71,16 +83,16 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
 }
 
 /** Vista semántica P07; Markdown sigue siendo únicamente la persistencia durable. */
-export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID }: BasicRichTextPreviewProps) {
+export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID, width, unclamped }: BasicRichTextPreviewProps) {
   const { theme } = useTheme();
-  const projectedDocument = projectRichTextPreview(document, numberOfLines).document;
+  const projectedDocument = unclamped ? document : projectRichTextPreview(document, numberOfLines, width ?? UNBOUNDED_WIDTH, fontSize).document;
   if (projectedDocument.blocks.some((block) => block.type === 'table')) {
     return (
       <View testID={testID} style={styles.tableDocument}>
         {projectedDocument.blocks.map((block, blockIndex) => {
           if (block.type !== 'table') {
             return <BasicRichTextPreview key={blockIndex} document={{ schemaVersion: document.schemaVersion, blocks: [block] }} numberOfLines={numberOfLines}
-              color={color} fontSize={fontSize} lineHeight={lineHeight} fontFamily={fontFamily} testID={`${testID}-block-${blockIndex}`} />;
+              color={color} fontSize={fontSize} lineHeight={lineHeight} fontFamily={fontFamily} testID={`${testID}-block-${blockIndex}`} width={width} unclamped={unclamped} />;
           }
           const rows: readonly { readonly row: RichTextTableRow; readonly header: boolean }[] = [
             ...(block.header ? [{ row: block.header, header: true }] : []),
@@ -91,7 +103,7 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
               {rows.map(({ row, header }, rowIndex) => (
                 <View key={rowIndex} style={styles.tableRow}>
                   {row.cells.map((cell, cellIndex) => (
-                    <Text key={cellIndex} testID={`${testID}-table-${blockIndex}-${header ? 'header' : `row-${rowIndex}`}-${cellIndex}`} numberOfLines={2} style={[
+                    <Text key={cellIndex} testID={`${testID}-table-${blockIndex}-${header ? 'header' : `row-${rowIndex}`}-${cellIndex}`} numberOfLines={unclamped ? undefined : 2} style={[
                       styles.tableCell, header ? styles.tableHeader : null,
                       { color, borderColor: color, fontSize, lineHeight },
                       header ? { backgroundColor: theme.colors.surfaceRaised, color: theme.colors.textPrimary } : null,
@@ -111,8 +123,8 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
   const lines = previewLines(projectedDocument);
   return (
     <View testID={testID} style={styles.content}>
-      {lines.slice(0, numberOfLines).map((line, lineIndex) => (
-        <Text key={line.key} numberOfLines={Math.max(1, numberOfLines - lineIndex)} style={[
+      {(unclamped ? lines : lines.slice(0, numberOfLines)).map((line, lineIndex) => (
+        <Text key={line.key} numberOfLines={unclamped ? undefined : Math.max(1, numberOfLines - lineIndex)} style={[
           { color, fontSize, lineHeight, textAlign: line.alignment },
           line.headingLevel === null ? null : [styles.heading, {
             fontSize: fontSize * headingScale[line.headingLevel],

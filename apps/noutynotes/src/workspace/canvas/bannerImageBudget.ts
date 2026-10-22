@@ -1,6 +1,6 @@
 import type { NoteBlock } from '@noutynotes/application';
 
-import { markdownExcerpt } from '../markdownLists';
+import { estimatePreviewLines } from './previewOverflow';
 
 /**
  * Reparto del alto entre imagen(es) y texto para una Nota banner (OBS-N2-28/IMAGE-GEOMETRY-G1): el
@@ -10,18 +10,23 @@ import { markdownExcerpt } from '../markdownLists';
  * el tamaño objetivo: el llamador sigue acotando el resultado al presupuesto real restante bloque a
  * bloque (una tarjeta sin espacio para ninguno de los dos sigue degradando igual que hoy).
  *
+ * `width`/`fontSize` estiman renglones reales por envoltorio visual (reutilizando `estimatePreviewLines`,
+ * ya probado en `previewOverflow.ts`) en vez de solo contar saltos de línea explícitos — un párrafo
+ * largo sin saltos propios antes «costaba» siempre 1 renglón, dejándole a la imagen más espacio del
+ * que realmente sobraba (causa confirmada de OBS-N2-RICHTEXT-CANVAS-VISIBILITY).
+ *
  * Pura, sin React Native: vive en su propio módulo (en vez de dentro de `NotePreview.tsx`) porque
  * importar `react-native` desde una prueba unitaria directa falla fuera del empaquetador de la app.
  */
 export function bannerImageBudget(
-  blocks: readonly NoteBlock[], available: number, lineHeight: number, gap: number, thumb: number,
+  blocks: readonly NoteBlock[], available: number, lineHeight: number, gap: number, thumb: number, width: number, fontSize: number,
 ): number {
   const images = blocks.filter((block) => block.kind === 'image');
   if (images.length === 0) return thumb;
   let left = available;
   for (const block of blocks) {
     if (block.kind === 'image') continue;
-    const lines = Math.min(markdownExcerpt(block.text).split('\n').length, Math.floor(left / lineHeight));
+    const lines = Math.min(estimatePreviewLines(block.text, width, fontSize), Math.floor(left / lineHeight));
     if (lines <= 0) break;
     left -= lines * lineHeight + gap;
   }

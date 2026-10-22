@@ -9,6 +9,7 @@ import { markdownExcerpt } from '../markdownLists';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
 import type { ImageResourceState } from '../imageResources';
 import { bannerImageBudget } from './bannerImageBudget';
+import { estimatePreviewLines } from './previewOverflow';
 
 // La miniatura se adapta al alto que queda (entre 32 y 72 px): en una ficha pequeña también se ve.
 const THUMB = 72;
@@ -21,11 +22,14 @@ const GAP = 6;
  * En composición `banner` (OBS-N2-28/IMAGE-GEOMETRY-G1), la imagen aprovecha el espacio que el texto
  * no necesita en vez de quedar fija en `THUMB`; `document` no cambia.
  */
-export function NotePreview({ blocks, imageResources, height, testID, fontFamily, bodySize, captionPosition, imageFit, banner }: {
+export function NotePreview({ blocks, imageResources, height, width, testID, fontFamily, bodySize, captionPosition, imageFit, banner }: {
   readonly blocks: readonly NoteBlock[];
   readonly imageResources: ReadonlyMap<string, ImageResourceState>;
   /** Alto en píxeles para los bloques (sin título ni pie). */
   readonly height: number;
+  /** Ancho real disponible (OBS-N2-28/G1, corrección de regresión): permite estimar renglones reales
+   * por envoltorio visual, no solo por saltos de línea explícitos. */
+  readonly width: number;
   readonly testID: string;
   /** Tipografía de las notas (ADR 0030); sin ella, la de la app. */
   readonly fontFamily?: string | undefined;
@@ -56,7 +60,7 @@ export function NotePreview({ blocks, imageResources, height, testID, fontFamily
   let left = height - LINE; // reserva la línea de «+n»
   // OBS-N2-28/G1: solo para la composición banner, la imagen recibe lo que el texto no necesita; una
   // Nota document conserva el techo histórico `THUMB` sin ningún cálculo adicional.
-  const imageBudget = banner ? bannerImageBudget(blocks, left, LINE, GAP, THUMB) : THUMB;
+  const imageBudget = banner ? bannerImageBudget(blocks, left, LINE, GAP, THUMB, width, textSize) : THUMB;
   for (const block of blocks) {
     if (block.kind === 'image') {
       if (left < THUMB_MIN) break;
@@ -73,7 +77,9 @@ export function NotePreview({ blocks, imageResources, height, testID, fontFamily
       shown.push({ block, lines: 0, size, caption });
       left -= size + (!sideways && caption ? LINE : 0) + GAP;
     } else {
-      const lines = Math.min(markdownExcerpt(block.text).split('\n').length, Math.floor(left / LINE));
+      // OBS-N2-28/G1, corrección de regresión: renglones reales por envoltorio visual, no solo saltos
+      // de línea explícitos — un párrafo largo sin `\n` propio ya no «cuesta» siempre 1 renglón.
+      const lines = Math.min(estimatePreviewLines(block.text, width, textSize), Math.floor(left / LINE));
       if (lines <= 0) break;
       shown.push({ block, lines, size: 0, caption: false });
       left -= lines * LINE + GAP;

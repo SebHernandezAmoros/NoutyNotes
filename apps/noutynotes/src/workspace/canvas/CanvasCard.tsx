@@ -1,6 +1,6 @@
 import { cardContentPresentation, isFloatingTextCard, linkDisplay, linkUrlField, resolveCardImageFit } from '@noutynotes/domain';
 import type { RichTextCodec } from '@noutynotes/application';
-import type { Card, CardDisplayMode, RichTextDocument, RichTextInline, RichTextList, Workspace } from '@noutynotes/domain';
+import type { Card, CardDisplayMode, RichTextDocument, RichTextList, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -23,6 +23,7 @@ import { CardIcon } from './CardIcon';
 import { canvasTextMetrics } from './canvasTypography';
 import { NotePreview } from './NotePreview';
 import { previewOverflow } from './previewOverflow';
+import { IMAGE_BLOCK_LINES, inlinePlainText } from './richTextPreviewProjection';
 import { RichNotePreview } from './RichNotePreview';
 import { RichNoteReader } from './RichNoteReader';
 import type { ConnectRole } from './connect';
@@ -35,10 +36,10 @@ export const HEADER = 44;
 const HANDLE_HIT = 44;
 const HANDLE_MARK = 14;
 
-function inlinePlainText(inlines: readonly RichTextInline[]): string {
-  return inlines.map((inline) => inline.type === 'link'
-    ? inline.content.map((leaf) => leaf.type === 'text' ? leaf.text : '\n').join('')
-    : inline.type === 'text' ? inline.text : '\n').join('');
+/** Explicit preview actions must receive the pointer instead of beginning a card drag. */
+function hitsPreviewAction(target: unknown): boolean {
+  if (!target || typeof target !== 'object' || !('closest' in target)) return false;
+  return typeof target.closest === 'function' && target.closest('[data-testid$="-overflow-action"]') !== null;
 }
 
 function listContainsChecklist(list: RichTextList): boolean {
@@ -58,7 +59,11 @@ type PreviewBodyBlock =
 
 /** Texto plano de un documento HTML seguro (ADR 0066), una línea aproximada por bloque/elemento: base
  * para estimar desbordamiento y para el resumen de texto plano de la ficha, igual que se hace con las
- * líneas de Markdown en el resto de este archivo. */
+ * líneas de Markdown en el resto de este archivo. Un bloque de imagen reserva `IMAGE_BLOCK_LINES`
+ * renglones en blanco (OBS-N2-28/G1, corrección de regresión de texto omitido): antes no aportaba
+ * ningún renglón a esta estimación, así que `previewOverflow` podía concluir que una Nota con imagen
+ * cabía entera en la vista compacta justo cuando, por el alto real que G1 le da a la imagen, no cabía
+ * — enviándola a `RichNotePreview`, que entonces sí la recortaba. */
 function richDocumentPlainText(document: RichTextDocument): string {
   const lines: string[] = [];
   const walkList = (list: RichTextList) => {
@@ -74,7 +79,7 @@ function richDocumentPlainText(document: RichTextDocument): string {
       for (const row of block.header ? [block.header, ...block.rows] : block.rows) {
         for (const cell of row.cells) lines.push(inlinePlainText(cell.content));
       }
-    }
+    } else if (block.type === 'image') lines.push('\n'.repeat(IMAGE_BLOCK_LINES - 1));
   }
   return lines.join('\n');
 }
@@ -102,6 +107,7 @@ function richDocumentBodyBlocks(document: RichTextDocument, limit: number): read
 }
 
 interface CanvasCardProps {
+  readonly onOpenDocument: () => void;
   readonly richTextCodec: RichTextCodec;
   readonly workspace: Workspace;
   readonly card: Card;
@@ -193,7 +199,7 @@ export function CanvasCard(props: CanvasCardProps) {
         // haya habido movimiento); se usa la posición del evento nativo, como hace el Pressable de la
         // ficha para la misma decisión.
         const { pageX, pageY } = event.nativeEvent;
-        blocked = !controller.canDragCard() || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY);
+        blocked = !controller.canDragCard() || hitsPreviewAction(event.nativeEvent.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY);
         return !blocked;
       },
       onPanResponderGrant: () => { dragging = false; },
@@ -359,7 +365,7 @@ export function CanvasCard(props: CanvasCardProps) {
           // Igual que la decisión de captura de arriba: un toque que empezó en una fila de checklist
           // no debe seleccionar ni abrir la ficha entera.
           const { pageX, pageY } = event.nativeEvent;
-          if (checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY)) return;
+          if (hitsPreviewAction(event.nativeEvent.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY)) return;
           if (!controller.justEndedGesture(card.id)) onPress();
         }}
         onFocus={() => { setFocused(true); props.onFocus(); }}
@@ -523,10 +529,11 @@ export function CanvasCard(props: CanvasCardProps) {
                 </View>
               ) : presentation.body === 'visible' && mixedRich && richDocument ? (
                 <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
-                  banner={presentation.layout === 'banner'} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
+                  onOpenDocument={props.onOpenDocument}
+                  banner={presentation.layout === 'banner'} width={box.width} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : presentation.body === 'visible' && mixed ? (
                 <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
-                  banner={presentation.layout === 'banner'} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
+                  banner={presentation.layout === 'banner'} width={box.width} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
               {presentation.body === 'visible' && !fullReader && !image && !mixed && previewDocument && bodyLines > 0 ? (
                 <BasicRichTextPreview
