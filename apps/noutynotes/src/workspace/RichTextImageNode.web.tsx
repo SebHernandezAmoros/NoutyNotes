@@ -1,13 +1,15 @@
 import { validateRichTextDocument } from '@noutynotes/domain';
 import type { RichTextImage, RichTextInline } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, JSX, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { $getNodeByKey, $getRoot, DecoratorNode } from 'lexical';
+import { $getNodeByKey, $getRoot, DecoratorNode, HISTORY_PUSH_TAG } from 'lexical';
 import type { EditorConfig, LexicalNode, NodeKey, SerializedLexicalNode, Spread } from 'lexical';
+import { t } from '../i18n';
 
 type CaptionPosition = 'bottom' | 'top' | 'left' | 'right';
+export const RICH_TEXT_IMAGE_CHANGE_TAG = 'nouty-image-change';
 
 interface ImageEditorContextValue {
   readonly images: ReadonlyMap<string, string>;
@@ -47,6 +49,7 @@ function captionText(caption: readonly RichTextInline[] | undefined): string {
 function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly current: RichTextImage }) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const context = useContext(ImageEditorContext);
   const rootRef = useRef<HTMLDivElement>(null);
   const resizePercentRef = useRef<number | null>(null);
@@ -54,6 +57,19 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
   const [dragPercent, setDragPercent] = useState<number | null>(null);
   const uri = context.images.get(current.assetRef);
   const caption = captionText(current.caption);
+  // La confirmación local solo corresponde a esta revisión exacta; Undo/reemplazo/textos nuevos
+  // la invalidan sin efectos que encadenen renders ni un tercer campo durable.
+  const reviewBase = JSON.stringify([current.assetRef, current.accessibilityIntent, current.alt, current.caption]);
+  const purposeBase = JSON.stringify([current.assetRef, current.accessibilityIntent]);
+  const [reviewDraft, setReviewDraft] = useState<{
+    readonly base: string;
+    readonly intent: NonNullable<RichTextImage['accessibilityIntent']> | 'legacy';
+    readonly checkedFor: string | null;
+  }>(() => ({ base: purposeBase, intent: current.accessibilityIntent ?? 'legacy', checkedFor: null }));
+  const intentDraft = reviewDraft.base === purposeBase ? reviewDraft.intent : current.accessibilityIntent ?? 'legacy';
+  const reviewed = reviewDraft.base === purposeBase && reviewDraft.checkedFor === reviewBase;
+  const setIntentDraft = (intent: NonNullable<RichTextImage['accessibilityIntent']>) => setReviewDraft({ base: purposeBase, intent, checkedFor: null });
+  const setReviewed = (checked: boolean) => setReviewDraft({ base: purposeBase, intent: intentDraft, checkedFor: checked ? reviewBase : null });
   const horizontal = context.captionPosition === 'left' || context.captionPosition === 'right';
   const reverse = context.captionPosition === 'top' || context.captionPosition === 'left';
   const selectedSize = current.size ?? 'full';
@@ -66,10 +82,16 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
     minHeight: 44, border: '1px solid currentColor', background: 'transparent', color: 'inherit',
     fontWeight: selected ? 800 : 600, outline: selected ? '2px solid currentColor' : 'none', outlineOffset: selected ? 1 : 0,
   } as const);
-  const update = (change: (node: RichTextImageNode) => void) => editor.update(() => {
+  const update = (change: (node: RichTextImageNode) => void, pushHistory = false) => editor.update(() => {
     const node = $getNodeByKey(nodeKey);
     if ($isRichTextImageNode(node)) change(node);
-  });
+  }, { tag: pushHistory ? [RICH_TEXT_IMAGE_CHANGE_TAG, HISTORY_PUSH_TAG] : RICH_TEXT_IMAGE_CHANGE_TAG });
+  const confirmPurpose = () => {
+    const intent = intentDraft;
+    if (intent === 'legacy' || (intent !== 'pending' && !reviewed)) return;
+    update((node) => node.setAccessibilityIntent(intent), true);
+    setReviewed(false);
+  };
   const move = (delta: -1 | 1) => update((node) => {
     let sibling = delta < 0 ? node.getPreviousSibling() : node.getNextSibling();
     // Lexical puede mantener párrafos vacíos alrededor de un DecoratorNode para conservar una
@@ -102,7 +124,7 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
     });
     if (index < 0) return;
     const next = await context.onReplace(index);
-    if (next) update((node) => node.setImage({ ...next, ...(current.size ? { size: current.size } : {}), ...(current.alignment ? { alignment: current.alignment } : {}) }));
+    if (next) update((node) => node.setImage({ ...node.image(), assetRef: next.assetRef, accessibilityIntent: 'pending' }), true);
   };
   const commitResize = (percent: number) => {
     const size: NonNullable<RichTextImage['size']> = percent <= 37 ? 'small' : percent <= 62 ? 'medium' : percent <= 87 ? 'large' : 'full';
@@ -145,6 +167,7 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
     <div ref={rootRef} data-testid={`rich-image-${current.assetRef}`} contentEditable={false} role="group"
       aria-label={`Imagen: ${current.alt || 'sin descripción'}`} aria-selected={selected} tabIndex={0}
       onPointerDown={(event) => { event.stopPropagation(); context.onSelect?.(nodeKey); }}
+      onFocus={() => context.onSelect?.(nodeKey)}
       onKeyDown={(event) => { if (event.key === 'Escape') { context.onSelect?.(null); setAdvanced(false); } }}
       style={{ position: 'relative', padding: 8, margin: '8px 0', display: 'grid', gap: 8, outline: selected ? '2px solid #157a6e' : 'none', outlineOffset: 2 }}>
       {selected ? <div data-testid="image-context-toolbar" role="toolbar" aria-label="Herramientas de la imagen" style={{ position: 'sticky', zIndex: 3, top: 0, display: 'flex', flexWrap: 'wrap', gap: 4, padding: 4, background: theme.colors.cardSurface, color: theme.colors.cardText, border: `1px solid ${theme.colors.border}` }}>
@@ -174,6 +197,40 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
           onChange={(event) => update((node) => node.setAlt(event.currentTarget.value))}
           style={{ minHeight: 40, border: '1px solid currentColor', background: 'transparent', color: 'inherit', padding: '0 8px' }} />
       </label>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <p data-testid="image-review-status" role="status" style={{ margin: 0, fontSize: 12 }}>
+          {current.accessibilityIntent === 'pending' ? t('editor.image.review.pending', locale)
+            : current.accessibilityIntent === 'informative' && current.alt.trim() === '' ? t('editor.image.review.empty', locale)
+              : current.accessibilityIntent === 'informative' ? t('editor.image.intent.informative', locale)
+                : current.accessibilityIntent === 'decorative' ? t('editor.image.intent.decorative', locale) : t('editor.image.intent.legacy', locale)}
+        </p>
+        <label style={{ display: 'grid', gap: 4 }}>
+          <span>{t('editor.image.intent.label', locale)}</span>
+          <select aria-label={t('editor.image.intent.label', locale)} value={intentDraft}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (value === 'informative' || value === 'decorative' || value === 'pending') {
+                setIntentDraft(value);
+              }
+            }}
+            style={{ minHeight: 44, width: '100%', minWidth: 0, padding: 6, background: theme.colors.cardSurface, color: 'inherit', border: '1px solid currentColor' }}>
+            <option value="legacy" disabled>{t('editor.image.intent.legacy', locale)}</option>
+            <option value="informative">{t('editor.image.intent.informative', locale)}</option>
+            <option value="decorative">{t('editor.image.intent.decorative', locale)}</option>
+            <option value="pending">{t('editor.image.intent.pending', locale)}</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44 }}>
+          <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.currentTarget.checked)} />
+          <span>{t('editor.image.review.checked', locale)}</span>
+        </label>
+        <button type="button" disabled={intentDraft === 'legacy' || (intentDraft !== 'pending' && !reviewed)}
+          onClick={confirmPurpose} style={controlStyle()}>
+          {t(intentDraft === 'pending' ? 'editor.image.review.defer' : 'editor.image.review.confirm', locale)}
+        </button>
+        {current.captionPolicy === 'explicit' ? <span style={{ fontSize: 12 }}>{t('editor.image.caption.explicit', locale)}</span>
+          : <button type="button" onClick={() => update((node) => node.setCaptionPolicy('explicit'), true)} style={controlStyle()}>{t('editor.image.caption.adopt', locale)}</button>}
+      </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {(['small', 'medium', 'large', 'full'] as const).map((size) => <button key={size} type="button" aria-label={`Tamaño ${size === 'small' ? 'pequeño' : size === 'medium' ? 'mediano' : size === 'large' ? 'grande' : 'ajustar al ancho'} de la imagen`} aria-pressed={selectedSize === size} onClick={() => update((node) => node.setSize(size))} style={controlStyle(selectedSize === size)}>{size === 'small' ? '25%' : size === 'medium' ? '50%' : size === 'large' ? '75%' : 'Ancho'}</button>)}
         <button type="button" aria-label="Restaurar tamaño y alineación de la imagen" onClick={() => update((node) => { node.setSize(undefined); node.setAlignment(undefined); })} style={controlStyle()}>Restaurar</button>
@@ -234,6 +291,8 @@ export class RichTextImageNode extends DecoratorNode<JSX.Element> {
     writable.__accessibilityIntent = image.accessibilityIntent;
   }
   setAlt(alt: string): void { this.getWritable().__alt = alt; }
+  setAccessibilityIntent(intent: NonNullable<RichTextImage['accessibilityIntent']>): void { this.getWritable().__accessibilityIntent = intent; }
+  setCaptionPolicy(policy: NonNullable<RichTextImage['captionPolicy']>): void { this.getWritable().__captionPolicy = policy; }
   setCaption(text: string): void { this.getWritable().__caption = text === '' ? undefined : [{ type: 'text', text }]; }
   setSize(size: RichTextImage['size']): void { this.getWritable().__size = size; }
   setAlignment(alignment: RichTextImage['alignment']): void { this.getWritable().__alignment = alignment; }

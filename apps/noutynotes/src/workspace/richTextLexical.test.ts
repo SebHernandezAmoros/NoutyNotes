@@ -62,6 +62,32 @@ const advancedDocument: RichTextDocument = {
 };
 
 describe('adaptador Lexical de UX7 P04/P07', () => {
+  it('N2 edita propósito y leyenda explícita independientemente sin borrar textos históricos', () => {
+    const document: RichTextDocument = { schemaVersion: 1, blocks: [
+      { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Anterior', caption: [{ type: 'text', text: 'Leyenda' }] },
+    ] };
+    const editor = createEditor({ namespace: 'n2-fields', nodes: [RichTextImageNode], onError: (error) => { throw error; } });
+    editor.update(() => $loadWebRichTextDocument(document), { discrete: true });
+    for (const intent of ['informative', 'decorative', 'pending'] as const) {
+      editor.update(() => {
+        const node = $getRoot().getFirstChild();
+        if (!(node instanceof RichTextImageNode)) throw new Error('Imagen ausente');
+        node.setAccessibilityIntent(intent);
+      }, { discrete: true });
+      let read: RichTextDocument | null = null;
+      editor.getEditorState().read(() => { read = $readWebRichTextDocument(); });
+      expect(read).toEqual({ schemaVersion: 2, blocks: [{ ...document.blocks[0], accessibilityIntent: intent }] });
+    }
+    editor.update(() => {
+      const node = $getRoot().getFirstChild();
+      if (!(node instanceof RichTextImageNode)) throw new Error('Imagen ausente');
+      node.setCaptionPolicy('explicit');
+      node.setAlt('');
+    }, { discrete: true });
+    editor.getEditorState().read(() => {
+      expect($readWebRichTextDocument()?.blocks[0]).toEqual({ ...document.blocks[0], alt: '', captionPolicy: 'explicit', accessibilityIntent: 'pending' });
+    });
+  });
   it('N1 conserva políticas en carga, edición, clonación y JSON sin alterar la imagen histórica', () => {
     const document: RichTextDocument = { schemaVersion: 2, blocks: [
       { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Anterior', caption: [], captionPolicy: 'explicit', accessibilityIntent: 'pending' },

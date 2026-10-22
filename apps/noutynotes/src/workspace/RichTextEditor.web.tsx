@@ -51,6 +51,7 @@ import {
   COMMAND_PRIORITY_HIGH,
   FORMAT_TEXT_COMMAND,
   FORMAT_ELEMENT_COMMAND,
+  HISTORIC_TAG,
   KEY_DOWN_COMMAND,
   PASTE_COMMAND,
   REDO_COMMAND,
@@ -70,7 +71,7 @@ import { useLocale, useTheme } from '@noutynotes/ui';
 import { t } from '../i18n';
 import { $createWebRichTextNodes, $loadWebRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
 import { parsePastedRichText } from './richTextPaste.web';
-import { $createRichTextImageNode, $isRichTextImageNode, RichTextImageNode, RichTextImageProvider } from './RichTextImageNode.web';
+import { $createRichTextImageNode, $isRichTextImageNode, RICH_TEXT_IMAGE_CHANGE_TAG, RichTextImageNode, RichTextImageProvider } from './RichTextImageNode.web';
 import type { RichTextEditorProps } from './RichTextEditor.types';
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -747,8 +748,11 @@ function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps
   return (
     <OnChangePlugin
       ignoreSelectionChange
-      onChange={(editorState) => {
+      onChange={(editorState, _editor, tags) => {
         latestState.current = editorState;
+        // Los controles de objetos no desenfocan necesariamente ContentEditable. Publicar antes
+        // de transferir la sesión evita perder la última acción en el debounce de escritura.
+        if (tags.has(RICH_TEXT_IMAGE_CHANGE_TAG) || tags.has(HISTORIC_TAG)) { flush(); return; }
         if (timer.current !== null) clearTimeout(timer.current);
         timer.current = setTimeout(flush, 150);
       }}

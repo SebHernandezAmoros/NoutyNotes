@@ -20,7 +20,6 @@ import { applyInlineMark, applyListCommand, normalizeListChange, parseChecklistL
 import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
 import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
-import { resolveMarkdownImagePlace } from './noteImagePlacement';
 import type { NoteImageSource } from './noteImagePlacement';
 import { RichTextEditor } from './RichTextEditor';
 import { PLACEHOLDER_TITLES } from './titlePlaceholders';
@@ -217,7 +216,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     publishDraft({ title, content: next, titleDocument });
   };
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const requiresHtml = document.blocks.some((block) =>
+    const requiresHtml = document.schemaVersion === 2 || document.blocks.some((block) =>
       ((block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined)
       || (block.type === 'image' && (block.size !== undefined || block.alignment !== undefined))
       || (block.type === 'table' && [...(block.header ? [block.header] : []), ...block.rows]
@@ -432,6 +431,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         : addNoteImageDocument(storage, assets, id, card.id, { bytes: file!.bytes, fileName: file!.name, contentDocument: draft, place });
     }, place.kind === 'insert' ? { key: 'action.noteImageInserted', params: { name: displayName } } : { key: 'action.noteImageReplaced', params: { name: displayName } });
     if (result.ok) {
+      setHtmlAuthored(true);
       setLastValidDocument(result.value.contentDocument);
       setHtmlValidation({ status: 'valid' });
       const encoded = htmlCodec.serialize(result.value.contentDocument);
@@ -448,10 +448,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     document: RichTextDocument, place: { readonly kind: 'insert'; readonly afterBlock: number } | { readonly kind: 'replace'; readonly blockIndex: number },
     source: NoteImageSource = { kind: 'upload' },
   ): Promise<RichTextImage | null> => {
-    if (htmlAuthored) return placeImageDocument(place, document, source);
-    const resolved = resolveMarkdownImagePlace(document, place, richTextCodec);
-    if (!resolved) return null;
-    return placeImage(resolved.place, resolved.content, source);
+    return placeImageDocument(place, document, source);
   };
   const placeImageFromAssets = (document: RichTextDocument, afterBlock: number) => onPickAssetImageRef().then((ref) => (
     ref === null ? null : placeVisualImage(document, { kind: 'insert', afterBlock }, { kind: 'existing', ref })

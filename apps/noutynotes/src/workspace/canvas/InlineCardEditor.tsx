@@ -11,7 +11,6 @@ import { t } from '../../i18n';
 import { pickImageFile, supportsImageImport } from '../../session/imageFiles';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import type { EditableCardDraft } from '../editorialDraft';
-import { resolveMarkdownImagePlace } from '../noteImagePlacement';
 import type { MarkdownImagePlace, NoteImageSource, ResolvedNoteImageSource, VisualImagePlace } from '../noteImagePlacement';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
@@ -40,7 +39,7 @@ export interface InlineCardEditorProps {
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, noteImages, initialDraft, onDraftChange, onSave, onPickAssetImageRef, onPlaceImage, onPlaceImageDocument, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, noteImages, initialDraft, onDraftChange, onSave, onPickAssetImageRef, onPlaceImageDocument, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -72,7 +71,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const requiresHtml = document.blocks.some((block) =>
+    const requiresHtml = document.schemaVersion === 2 || document.blocks.some((block) =>
       ((block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined)
       || (block.type === 'image' && (block.size !== undefined || block.alignment !== undefined || block.caption !== undefined))
       || (block.type === 'table' && block.rows.some((row) => row.cells.some((cell) => cell.verticalAlignment !== undefined))));
@@ -102,17 +101,6 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     }
   };
   const [imageProblem, setImageProblem] = useState<string | null>(null);
-  const placeImage = async (place: MarkdownImagePlace, draft: string, source: NoteImageSource): Promise<RichTextImage | null> => {
-    setImageProblem(null);
-    const file = source.kind === 'existing' ? null : await resolveImageFile(source);
-    if (source.kind !== 'existing' && !file) return null;
-    const result = await onPlaceImage(card.id, place, draft, source.kind === 'existing' ? source : { kind: 'bytes', bytes: file!.bytes, name: file!.name });
-    if (!result.ok) { setImageProblem(result.issues[0]?.message ?? 'No se pudo insertar la imagen.'); return null; }
-    setContent(result.value.content);
-    onDraftChange({ cardId: card.id, title, content: result.value.content, titleDocument });
-    const parsed = richTextCodec.parse(result.value.content);
-    return parsed.ok ? parsed.value.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null : null;
-  };
   const placeImageDocument = async (place: VisualImagePlace, draft: RichTextDocument, source: NoteImageSource): Promise<RichTextImage | null> => {
     setImageProblem(null);
     const file = source.kind === 'existing' ? null : await resolveImageFile(source);
@@ -128,10 +116,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     return result.value.contentDocument.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null;
   };
   const placeVisualImage = async (document: RichTextDocument, place: VisualImagePlace, source: NoteImageSource = { kind: 'upload' }): Promise<RichTextImage | null> => {
-    if (htmlAuthored) return placeImageDocument(place, document, source);
-    const resolved = resolveMarkdownImagePlace(document, place, richTextCodec);
-    if (!resolved) return null;
-    return placeImage(resolved.place, resolved.content, source);
+    return placeImageDocument(place, document, source);
   };
   const placeImageFromAssets = (document: RichTextDocument, afterBlock: number) => onPickAssetImageRef().then((ref) => (
     ref === null ? null : placeVisualImage(document, { kind: 'insert', afterBlock }, { kind: 'existing', ref })

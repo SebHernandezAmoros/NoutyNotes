@@ -1,4 +1,4 @@
-import { addCard, isValidAssetRef, validateWorkspace } from '@noutynotes/domain';
+import { RICH_TEXT_SCHEMA_VERSION, addCard, isValidAssetRef, validateRichTextDocument, validateWorkspace } from '@noutynotes/domain';
 import type { AssetRef, BoardId, Card, CardId, RichTextDocument, RichTextImage, WorkspaceId } from '@noutynotes/domain';
 
 import { nextSequentialId } from './ids';
@@ -177,15 +177,28 @@ export interface AddNoteImageDocumentInput {
   readonly place: { readonly kind: 'insert'; readonly afterBlock?: number } | { readonly kind: 'replace'; readonly blockIndex: number };
 }
 
+/** Promover a v2 es una operación explícita, nunca una reparación de datos incompatibles. */
+function checkedImageDocument(document: RichTextDocument): WorkspaceStorageResult<RichTextDocument> {
+  const checked = validateRichTextDocument(document);
+  if (!checked.ok) return storageFailure('invalid-workspace', 'contentDocument', 'El documento de imagen no es compatible.', checked.issues);
+  if (checked.value.blocks.some((block) => block.type === 'opaque-markdown')) {
+    return storageFailure('invalid-workspace', 'contentDocument', 'Este contenido no admite imágenes en Visual sin perder información. Se conserva el documento original.');
+  }
+  return checked;
+}
+
 /**
  * Imagen dentro de una nota con cuerpo HTML seguro (ADR 0066): mismo contrato y numeración de archivo
  * que `addNoteImage`, pero inserta el bloque de imagen directamente en el documento estructurado — el
  * cuerpo nunca pasa por `content`/Markdown (regla de seguridad: nunca convertir HTML nuevo a Markdown).
- * Reemplazar conserva el texto alternativo y la leyenda de la imagen anterior, igual que `addNoteImage`.
+ * Las nuevas imágenes usan explicit/pending sin nombres derivados. Reemplazar conserva textos,
+ * política y disposición, marcando pending para revisión; solo la operación explícita promueve a v2.
  */
 export async function addNoteImageDocument(
   storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, input: AddNoteImageDocumentInput,
 ): Promise<WorkspaceStorageResult<{ readonly contentDocument: RichTextDocument; readonly ref: AssetRef }>> {
+  const checked = checkedImageDocument(input.contentDocument);
+  if (!checked.ok) return checked;
   const written = await writeNextNoteImageAsset(storage, assets, workspaceId, cardId, input.bytes);
   if (!written.ok) return written;
   const ref = written.value;
@@ -193,17 +206,18 @@ export async function addNoteImageDocument(
   if (input.place.kind === 'replace') {
     const existing = blocks[input.place.blockIndex];
     if (existing?.type !== 'image') return withdraw(assets, workspaceId, ref, { ok: false, issues: [{ code: 'invalid-workspace', path: 'place', message: 'Ese bloque no es una imagen de la nota.' }] });
-    blocks[input.place.blockIndex] = { ...existing, assetRef: ref };
+    blocks[input.place.blockIndex] = { ...existing, assetRef: ref, accessibilityIntent: 'pending' };
   } else {
-    const image: RichTextImage = { type: 'image', assetRef: ref, alt: titleFrom(input.fileName) };
+    const image: RichTextImage = { type: 'image', assetRef: ref, alt: '', captionPolicy: 'explicit', accessibilityIntent: 'pending' };
     blocks.splice(Math.min(blocks.length, (input.place.afterBlock ?? blocks.length - 1) + 1), 0, image);
   }
-  const contentDocument = { ...input.contentDocument, blocks };
+  const contentDocument: RichTextDocument = { ...input.contentDocument, schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks };
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
     const card = workspace.cards.find((candidate) => candidate.id === cardId);
     if (!card) return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no existe en este proyecto.' }] };
     const refs = [...new Set(blocks.filter((block): block is RichTextImage => block.type === 'image').map((block) => block.assetRef))];
-    const next = { ...card, contentDocument, ...(refs.length > 0 ? { assetRefs: refs } : {}) };
+    const { content: _legacy, ...rest } = card;
+    const next = { ...rest, contentDocument, ...(refs.length > 0 ? { assetRefs: refs } : {}) };
     return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? next : candidate)) });
   });
   if (saved.ok) return { ok: true, value: { contentDocument, ref } };
@@ -275,6 +289,8 @@ export interface InsertExistingNoteImageDocumentInput {
 export async function insertExistingNoteImageDocument(
   storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, cardId: CardId, input: InsertExistingNoteImageDocumentInput,
 ): Promise<WorkspaceStorageResult<{ readonly contentDocument: RichTextDocument; readonly ref: AssetRef }>> {
+  const checked = checkedImageDocument(input.contentDocument);
+  if (!checked.ok) return checked;
   const resolved = await resolveExistingImageRef(assets, workspaceId, input.ref);
   if (!resolved.ok) return resolved;
   const ref = resolved.value;
@@ -282,17 +298,18 @@ export async function insertExistingNoteImageDocument(
   if (input.place.kind === 'replace') {
     const existing = blocks[input.place.blockIndex];
     if (existing?.type !== 'image') return storageFailure('invalid-workspace', 'place', 'Ese bloque no es una imagen de la nota.');
-    blocks[input.place.blockIndex] = { ...existing, assetRef: ref };
+    blocks[input.place.blockIndex] = { ...existing, assetRef: ref, accessibilityIntent: 'pending' };
   } else {
-    const image: RichTextImage = { type: 'image', assetRef: ref, alt: titleFrom(ref.split('/').pop() ?? ref) };
+    const image: RichTextImage = { type: 'image', assetRef: ref, alt: '', captionPolicy: 'explicit', accessibilityIntent: 'pending' };
     blocks.splice(Math.min(blocks.length, (input.place.afterBlock ?? blocks.length - 1) + 1), 0, image);
   }
-  const contentDocument = { ...input.contentDocument, blocks };
+  const contentDocument: RichTextDocument = { ...input.contentDocument, schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks };
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
     const card = workspace.cards.find((candidate) => candidate.id === cardId);
     if (!card) return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no existe en este proyecto.' }] };
     const refs = [...new Set(blocks.filter((block): block is RichTextImage => block.type === 'image').map((block) => block.assetRef))];
-    const next = { ...card, contentDocument, ...(refs.length > 0 ? { assetRefs: refs } : {}) };
+    const { content: _legacy, ...rest } = card;
+    const next = { ...rest, contentDocument, ...(refs.length > 0 ? { assetRefs: refs } : {}) };
     return validateWorkspace({ ...workspace, cards: workspace.cards.map((candidate) => (candidate === card ? next : candidate)) });
   });
   if (!saved.ok) return saved;
