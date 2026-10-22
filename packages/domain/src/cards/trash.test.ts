@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DESKTOP_GRID } from '../layouts/grid';
 import { asset, id, ideaA, ideaB, noteType, problems, validWorkspace } from '../__fixtures__/workspace';
-import type { BoardId, CardId, CardTypeId, WorkspaceId } from '../ids';
+import type { BoardId, CardId, CardTypeId, FieldKey, WorkspaceId } from '../ids';
 import type { Workspace } from '../workspace/workspace';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Card } from './card';
@@ -81,8 +81,8 @@ describe('Papelera de tarjetas (ADR 0015)', () => {
     const source = validWorkspace();
     const { content: _legacyContent, ...ideaWithoutLegacyContent } = ideaA;
     const diaryType = {
-      id: 'diario', label: 'Entrada del diario', base: 'note' as const,
-      fields: [{ key: 'fecha', kind: 'date' as const, label: 'Fecha', required: true }],
+      id: id<CardTypeId>('diario'), label: 'Entrada del diario', base: 'note' as const,
+      fields: [{ key: id<FieldKey>('fecha'), kind: 'date' as const, label: 'Fecha', required: true }],
     };
     const diary = {
       ...ideaWithoutLegacyContent,

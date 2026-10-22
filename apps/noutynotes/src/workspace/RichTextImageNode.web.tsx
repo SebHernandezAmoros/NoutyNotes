@@ -153,7 +153,10 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
       </div> : null}
       <div data-testid="image-layout" style={{ width, maxWidth: '100%', justifySelf, display: 'flex', flexDirection: horizontal ? (reverse ? 'row-reverse' : 'row') : (reverse ? 'column-reverse' : 'column'), gap: 8, alignItems: 'stretch' }}>
         <div style={{ position: 'relative', width: horizontal ? '62%' : '100%', background: 'transparent' }}>
-          {uri ? <img data-testid="image-media" src={uri} alt={current.alt} style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 280, objectFit: 'contain', background: 'transparent' }} />
+          {uri ? <img data-testid="image-media" src={uri} alt={current.alt}
+            // OBS-N2-IMAGE-GEOMETRY-G2: sin techo de alto fijo — `width`/`height:auto` ya conservan la
+            // proporción intrínseca; el único límite real sigue siendo el ancho del propio editor.
+            style={{ display: 'block', width: '100%', height: 'auto', objectFit: 'contain', background: 'transparent' }} />
             : <div data-testid="image-media" role="img" aria-label={`Imagen no disponible: ${current.alt || 'sin descripción'}`} style={{ minHeight: 96, display: 'grid', placeItems: 'center', border: '1px dashed currentColor' }}>Imagen no disponible</div>}
           {selected ? <>
             <button data-testid="image-resize-nw" type="button" aria-label="Redimensionar imagen desde la esquina superior izquierda" onPointerDown={(event) => beginResize(event, 'left')} style={handleStyle({ left: -8, top: -8, cursor: 'nwse-resize' })} />

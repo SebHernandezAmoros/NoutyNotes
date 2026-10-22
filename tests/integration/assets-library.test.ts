@@ -6,6 +6,7 @@ import {
   removeNoteBlock, replaceAsset, restoreCardFromTrash,
 } from '../../packages/application/src/index';
 import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult } from '../../packages/application/src/index';
+import { isValidAssetRef } from '../../packages/domain/src/index';
 import type { AssetRef, BoardId, WorkspaceId } from '../../packages/domain/src/index';
 import { MemoryDocumentTree } from '../../packages/storage/src/__fixtures__/document-tree';
 import { ArchiveStorage, DocumentTreeFolderPort, FolderStorage, readWorkspaceArchive } from '../../packages/storage/src/index';
@@ -199,7 +200,12 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     const { storage, put } = make();
     const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Documentos'));
     const pdfBytes = Uint8Array.from([37, 80, 68, 70, 9, 9, 9]);
-    const ref = ok(await importLibraryFile(storage, storage, id, { bytes: pdfBytes, fileName: 'informe.pdf' }));
+    const importedRef = ok(await importLibraryFile(storage, storage, id, { bytes: pdfBytes, fileName: 'informe.pdf' }));
+    // `importLibraryFile` devuelve la ruta como `string` (puede usarse como referencia o, en otra
+    // superficie, solo como ruta de archivo); aquí sí es una referencia de Asset — se confirma con el
+    // mismo validador que usa el dominio, en vez de asumirlo con un cast.
+    if (!isValidAssetRef(importedRef)) throw new Error('La ruta importada no es una referencia de Asset válida.');
+    const ref = importedRef;
     const cardId = ok(await addDocumentToBoard(storage, id, { ref }));
     const boardId = ok(await storage.open(id)).layouts[0]?.boardId as BoardId;
 

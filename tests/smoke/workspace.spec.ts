@@ -104,6 +104,9 @@ test('UX7-D-FIX: el retorno desde Diario protege HTML inválido y confirma un bo
   const home = button(page, 'Ir a Inicio');
   await expect(source).toHaveValue(invalid);
   await home.evaluate((element) => {
+    // `getByRole('button')` puede resolver a un SVG con ese rol ARIA; aquí siempre es el `<div
+    // role="button">` real de React Native Web, confirmado en tiempo real (no un cast a ciegas).
+    if (!(element instanceof HTMLElement)) throw new Error('Se esperaba un HTMLElement para «Ir a Inicio».');
     element.click();
     element.click();
     element.click();
@@ -116,6 +119,7 @@ test('UX7-D-FIX: el retorno desde Diario protege HTML inválido y confirma un bo
   await openWorkspaceSection(page, 'Abrir el diario');
   await expect(page.getByTestId('diary-view')).toBeVisible();
   await home.evaluate((element) => {
+    if (!(element instanceof HTMLElement)) throw new Error('Se esperaba un HTMLElement para «Ir a Inicio».');
     element.click();
     element.click();
     element.click();
@@ -2097,7 +2101,7 @@ test('UX7-TABLE-OVERLAY: el menú flota dentro del viewport y conserva la celda 
 
   await closeEditor(page);
   await selectCard(page, 1);
-  await openCardActions(page, card(page, 1));
+  await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
   const inline = page.getByTestId('inline-card-editor');
   await expect(inline).toBeVisible();
