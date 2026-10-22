@@ -4,7 +4,7 @@ import { HeadingNode } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import type { AssetRef, RichTextDocument } from '@noutynotes/domain';
 import { parseRichTextMarkdown } from '@noutynotes/storage';
-import { createEditor } from 'lexical';
+import { $getRoot, createEditor } from 'lexical';
 import { describe, expect, it, vi } from 'vitest';
 
 import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
@@ -62,6 +62,51 @@ const advancedDocument: RichTextDocument = {
 };
 
 describe('adaptador Lexical de UX7 P04/P07', () => {
+  it('N1 conserva políticas en carga, edición, clonación y JSON sin alterar la imagen histórica', () => {
+    const document: RichTextDocument = { schemaVersion: 2, blocks: [
+      { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Anterior', caption: [], captionPolicy: 'explicit', accessibilityIntent: 'pending' },
+      { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: '' },
+    ] };
+    const editor = createEditor({ namespace: 'n1-transport', nodes: [RichTextImageNode], onError: (error) => { throw error; } });
+    editor.update(() => $loadWebRichTextDocument(document), { discrete: true });
+    const serialized = JSON.stringify(editor.getEditorState().toJSON());
+    editor.setEditorState(editor.parseEditorState(serialized));
+    let read: RichTextDocument | null = null;
+    editor.getEditorState().read(() => { read = $readWebRichTextDocument(2); });
+    expect(read).toEqual(document);
+    expect(serialized).toContain('"captionPolicy":"explicit"');
+    expect(serialized).toContain('"accessibilityIntent":"pending"');
+    editor.update(() => {
+      const node = $getRoot().getFirstChild();
+      if (!(node instanceof RichTextImageNode)) throw new Error('Imagen ausente');
+      node.setAlt('Actualizada');
+    }, { discrete: true });
+    editor.getEditorState().read(() => { read = $readWebRichTextDocument(2); });
+    expect(read).toEqual({ ...document, blocks: [{ ...document.blocks[0], alt: 'Actualizada' }, document.blocks[1]] });
+  });
+
+  it('N1 rechaza JSON de imagen con discriminantes o versión desconocidos', () => {
+    const editor = createEditor({ namespace: 'n1-unknown', nodes: [RichTextImageNode], onError: (error) => { throw error; } });
+    const document: RichTextDocument = { schemaVersion: 2, blocks: [
+      { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Anterior', accessibilityIntent: 'pending' },
+    ] };
+    editor.update(() => $loadWebRichTextDocument(document), { discrete: true });
+    const source = JSON.stringify(editor.getEditorState().toJSON());
+    expect(() => editor.parseEditorState(source.replace('"pending"', '"unknown"'))).toThrow('Contrato de imagen no admitido');
+    expect(() => editor.parseEditorState(source.replace('"version":1', '"version":2'))).toThrow('Versión de nodo de imagen no admitida');
+    let read: RichTextDocument | null = null;
+    editor.getEditorState().read(() => { read = $readWebRichTextDocument(2); });
+    expect(read).toEqual(document);
+  });
+
+  it('N1 conserva la versión recibida aunque ya no haya políticas en el cuerpo', () => {
+    const editor = createEditor({ namespace: 'n1-version', onError: (error) => { throw error; } });
+    const document: RichTextDocument = { ...basicDocument, schemaVersion: 2 };
+    editor.update(() => $loadWebRichTextDocument(document), { discrete: true });
+    let read: RichTextDocument | null = null;
+    editor.getEditorState().read(() => { read = $readWebRichTextDocument(document.schemaVersion); });
+    expect(read).toEqual(document);
+  });
   it('carga y vuelve a leer párrafos, saltos y marcas sin usar Markdown como estado', () => {
     const editor = createEditor({ namespace: 'rich-text-test', onError: (error) => { throw error; } });
     editor.update(() => $loadBasicRichTextDocument(basicDocument), { discrete: true });

@@ -227,7 +227,7 @@ describe('lectura de paquetes inválidos', () => {
   it('rechaza formato, versión y cuerpo HTML desconocidos sin reinterpretarlos como Markdown', () => {
     const files = valueOf(serializeWorkspace(htmlWorkspace()));
     const card = files['cards/idea-a.md'] ?? '';
-    expect(problems(parseWorkspace(edit(files, 'cards/idea-a.md', card.replace('contentVersion: 1', 'contentVersion: 2')))))
+    expect(problems(parseWorkspace(edit(files, 'cards/idea-a.md', card.replace('contentVersion: 1', 'contentVersion: 3')))))
       .toContain('unsupported-schema-version@cards/idea-a.md#contentVersion');
     expect(problems(parseWorkspace(edit(files, 'cards/idea-a.md', card.replace('contentFormat: html', 'contentFormat: markdown')))))
       .toContain('invalid-document@cards/idea-a.md#contentFormat');

@@ -55,7 +55,7 @@ function cardDocument(card: Card): GeneratedDocument {
   const hasUnifiedContent = card.titleRichText !== undefined || card.titleVisibility !== undefined || card.bodyVisibility !== undefined || card.contentLayout !== undefined;
   const hasVerticalAlignment = card.noteVerticalAlignment !== undefined;
   const html = card.contentDocument === undefined ? null : serializeRichTextHtml(card.contentDocument);
-  if (html && !html.ok) throw new Error('Workspace validado con contenido no representable por HTML seguro v1.');
+  if (html && !html.ok) throw new Error('Workspace validado con contenido no representable por HTML seguro v1/v2.');
   return markdownDocument(compact({
     schemaVersion: card.imageFit !== undefined ? 14 : hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     id: card.id, typeId: card.typeId, title: card.title, titleRichText: card.titleRichText,
@@ -69,7 +69,7 @@ function cardDocument(card: Card): GeneratedDocument {
     imageFit: card.imageFit,
     contentPresent: card.content !== undefined || card.contentDocument !== undefined,
     contentFormat: card.contentDocument === undefined ? undefined : HTML_CONTENT_FORMAT,
-    contentVersion: card.contentDocument === undefined ? undefined : HTML_CONTENT_VERSION,
+    contentVersion: card.contentDocument?.schemaVersion,
   }), html?.ok ? html.value : card.content ?? '');
 }
 
@@ -173,7 +173,7 @@ function assetPathIssues(workspace: Workspace, locate: (cardIndex: number, rest:
   return issues;
 }
 
-/** Todo contentDocument, también en Papelera/Archivo, debe poder emitirse como HTML v1 sin pérdida. */
+/** Todo contentDocument, también en Papelera/Archivo, debe poder emitirse como HTML v1/v2 sin pérdida. */
 function contentDocumentIssues(workspace: Workspace): StorageIssue[] {
   const groups = [
     ...workspace.cards.map((card, index) => ({ card, path: `cards[${index}].contentDocument` })),
@@ -304,15 +304,15 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(storageIssue('invalid-document', `${file}#contentFormat`, 'Formato de contenido no admitido.'));
       continue;
     }
-    if (hasHtml && front.contentVersion !== HTML_CONTENT_VERSION) {
-      issues.push(storageIssue('unsupported-schema-version', `${file}#contentVersion`, `Solo se admite HTML v${HTML_CONTENT_VERSION}.`));
+    if (hasHtml && front.contentVersion !== 1 && front.contentVersion !== HTML_CONTENT_VERSION) {
+      issues.push(storageIssue('unsupported-schema-version', `${file}#contentVersion`, 'Solo se admiten HTML v1 y v2.'));
       continue;
     }
     if (hasHtml && !front.contentPresent) {
-      issues.push(storageIssue('invalid-document', `${file}#contentPresent`, 'HTML v1 requiere un cuerpo presente.'));
+      issues.push(storageIssue('invalid-document', `${file}#contentPresent`, 'HTML seguro requiere un cuerpo presente.'));
       continue;
     }
-    const parsedHtml = hasHtml ? parseRichTextHtml(body) : null;
+    const parsedHtml = hasHtml ? parseRichTextHtml(body, front.contentVersion) : null;
     if (parsedHtml && !parsedHtml.ok) {
       issues.push(...parsedHtml.issues.map((found) => storageIssue('invalid-document', `${file}#body.${found.path}`, found.message)));
       continue;
@@ -371,7 +371,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (trash?.ok) {
     const needsHtmlVersion = trash.value.items.some((entry) => entry.card.contentDocument !== undefined);
     if ((trash.value.schemaVersion === 4) !== needsHtmlVersion) {
-      issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'La versión 4 corresponde exclusivamente a Papelera con contenido HTML v1.'));
+      issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'La versión 4 corresponde exclusivamente a Papelera con contenido HTML seguro.'));
     }
   }
   const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4, 5]) : null;
@@ -404,7 +404,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (archive?.ok) {
     const needsHtmlVersion = archive.value.items.some((entry) => entry.card.contentDocument !== undefined);
     if ((archive.value.schemaVersion === 5) !== needsHtmlVersion) {
-      located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'La versión 5 corresponde exclusivamente a Archivo con contenido HTML v1.'));
+      located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'La versión 5 corresponde exclusivamente a Archivo con contenido HTML seguro.'));
     }
   }
   return located.length > 0 ? fail(located) : succeed({ workspace, files, extras });

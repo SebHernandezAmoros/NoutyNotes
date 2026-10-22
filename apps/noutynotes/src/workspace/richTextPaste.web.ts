@@ -1,4 +1,4 @@
-import { isLinkUrl, normalizeRichTextDocument, RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
+import { isLinkUrl, normalizeRichTextDocument, LEGACY_RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
 import type {
   RichTextBlock,
   RichTextDocument,
@@ -156,14 +156,14 @@ function plainTextDocument(text: string): RichTextDocument {
   const blocks: RichTextBlock[] = text.replaceAll('\r\n', '\n').split('\n').map((line) => ({
     type: 'paragraph', content: line === '' ? [] : [{ type: 'text', text: line }],
   }));
-  return { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: blocks.length > 0 ? blocks : [{ type: 'paragraph', content: [] }] };
+  return { schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks: blocks.length > 0 ? blocks : [{ type: 'paragraph', content: [] }] };
 }
 
 /** Convierte el portapapeles web mediante lista blanca; nunca devuelve HTML ni atributos activos. */
 export function parsePastedRichText(html: string, plainText: string): RichTextDocument {
   if (html.trim() === '') return plainTextDocument(plainText);
   const parsed = new DOMParser().parseFromString(html, 'text/html');
-  const candidate: RichTextDocument = { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: blocksOf(parsed.body) };
+  const candidate: RichTextDocument = { schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks: blocksOf(parsed.body) };
   const normalized = normalizeRichTextDocument(candidate.blocks.length > 0 ? candidate : plainTextDocument(plainText));
   return normalized.ok ? normalized.value : plainTextDocument(plainText);
 }

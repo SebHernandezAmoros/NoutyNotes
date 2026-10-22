@@ -10,7 +10,7 @@ import { collectFieldValueIssues } from './field-values';
 import type { FieldValue } from './field-values';
 import { collectTagIssues } from './tags';
 import { isArchiveInstant } from './trashed-card';
-import { RICH_TEXT_SCHEMA_VERSION, validateRichTextDocument } from '../rich-text/rich-text';
+import { LEGACY_RICH_TEXT_SCHEMA_VERSION, validateRichTextDocument } from '../rich-text/rich-text';
 import type { RichTextDocument, RichTextInline } from '../rich-text/rich-text';
 
 /**
@@ -26,7 +26,7 @@ export interface Card {
   readonly titleRichText?: readonly RichTextInline[];
   /** Markdown opaco para el dominio: no se interpreta ni se reescribe. */
   readonly content?: string;
-  /** Documento semántico cuyo formato durable oficial es HTML seguro v1 (P18-E2). */
+  /** Documento semántico cuyo formato durable oficial es HTML seguro v1/v2 (P18-E2). */
   readonly contentDocument?: RichTextDocument;
   readonly fields: Readonly<Record<string, FieldValue>>;
   readonly assetRefs?: readonly AssetRef[];
@@ -220,7 +220,7 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
     issues.push(issue('invalid-value', `${path}.titleRichText`, 'El título plano y el enriquecido no pueden coexistir.'));
   }
   if (card.titleRichText !== undefined) {
-    const checkedTitle = validateRichTextDocument({ schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: [{ type: 'paragraph', content: card.titleRichText }] });
+    const checkedTitle = validateRichTextDocument({ schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks: [{ type: 'paragraph', content: card.titleRichText }] });
     if (!checkedTitle.ok) issues.push(issue('invalid-value', `${path}.titleRichText`, 'Debe ser contenido inline enriquecido válido.'));
   }
   if (card.content !== undefined && typeof card.content !== 'string') {
@@ -232,7 +232,7 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   if (card.contentDocument !== undefined) {
     const checkedContent = validateRichTextDocument(card.contentDocument);
     if (!checkedContent.ok || checkedContent.value.blocks.some((block) => block.type === 'opaque-markdown')) {
-      issues.push(issue('invalid-value', `${path}.contentDocument`, 'Debe ser un RichTextDocument válido y representable por HTML seguro v1.'));
+      issues.push(issue('invalid-value', `${path}.contentDocument`, 'Debe ser un RichTextDocument válido y representable por HTML seguro v1/v2.'));
     }
   }
   if (type) {

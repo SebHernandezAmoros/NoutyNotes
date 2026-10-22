@@ -1,5 +1,5 @@
 import {
-  RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard,
+  LEGACY_RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard,
   isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateConnectorPath, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
@@ -58,7 +58,7 @@ interface CardPreset {
  */
 function literalParagraph(text: string): RichTextDocument {
   return {
-    schemaVersion: RICH_TEXT_SCHEMA_VERSION,
+    schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION,
     blocks: text.split('\n').map((line) => ({ type: 'paragraph', content: line === '' ? [] : [{ type: 'text', text: line }] })),
   };
 }

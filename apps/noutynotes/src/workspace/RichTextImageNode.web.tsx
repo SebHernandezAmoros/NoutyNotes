@@ -1,3 +1,4 @@
+import { validateRichTextDocument } from '@noutynotes/domain';
 import type { RichTextImage, RichTextInline } from '@noutynotes/domain';
 import { useTheme } from '@noutynotes/ui';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
@@ -32,7 +33,7 @@ export function RichTextImageProvider({ value, children }: { readonly value: Ima
 }
 
 type SerializedRichTextImageNode = Spread<{
-  type: 'nouty-image'; version: 1; assetRef: string; alt: string; caption?: readonly RichTextInline[]; size?: RichTextImage['size']; alignment?: RichTextImage['alignment'];
+  type: 'nouty-image'; version: 1; assetRef: string; alt: string; caption?: readonly RichTextInline[]; size?: RichTextImage['size']; alignment?: RichTextImage['alignment']; captionPolicy?: RichTextImage['captionPolicy']; accessibilityIntent?: RichTextImage['accessibilityIntent'];
 }, SerializedLexicalNode>;
 
 function captionText(caption: readonly RichTextInline[] | undefined): string {
@@ -190,30 +191,37 @@ export class RichTextImageNode extends DecoratorNode<JSX.Element> {
   __caption: readonly RichTextInline[] | undefined;
   __size: RichTextImage['size'];
   __alignment: RichTextImage['alignment'];
+  __captionPolicy: RichTextImage['captionPolicy'];
+  __accessibilityIntent: RichTextImage['accessibilityIntent'];
 
   static getType(): string { return 'nouty-image'; }
   static clone(node: RichTextImageNode): RichTextImageNode { return new RichTextImageNode(node.image(), node.__key); }
   static importJSON(serialized: SerializedRichTextImageNode): RichTextImageNode {
-    return new RichTextImageNode({ type: 'image', assetRef: serialized.assetRef as RichTextImage['assetRef'], alt: serialized.alt, ...(serialized.caption ? { caption: serialized.caption } : {}), ...(serialized.size ? { size: serialized.size } : {}), ...(serialized.alignment ? { alignment: serialized.alignment } : {}) });
+    if (serialized.version !== 1) throw new Error('Versión de nodo de imagen no admitida.');
+    return new RichTextImageNode({ type: 'image', assetRef: serialized.assetRef as RichTextImage['assetRef'], alt: serialized.alt, ...(serialized.caption ? { caption: serialized.caption } : {}), ...(serialized.size ? { size: serialized.size } : {}), ...(serialized.alignment ? { alignment: serialized.alignment } : {}), ...(serialized.captionPolicy !== undefined ? { captionPolicy: serialized.captionPolicy } : {}), ...(serialized.accessibilityIntent !== undefined ? { accessibilityIntent: serialized.accessibilityIntent } : {}) });
   }
   constructor(image: RichTextImage, key?: NodeKey) {
     super(key);
+    const checked = validateRichTextDocument({ schemaVersion: 2, blocks: [image] });
+    if (!checked.ok) throw new Error('Contrato de imagen no admitido: '+JSON.stringify(checked.issues));
     this.__assetRef = image.assetRef;
     this.__alt = image.alt;
     this.__caption = image.caption;
     this.__size = image.size;
     this.__alignment = image.alignment;
+    this.__captionPolicy = image.captionPolicy;
+    this.__accessibilityIntent = image.accessibilityIntent;
   }
   createDOM(_config: EditorConfig): HTMLElement { return document.createElement('div'); }
   updateDOM(_previous: this, _dom: HTMLElement, _config: EditorConfig): boolean { return false; }
   decorate(): JSX.Element { return <ImageBlock key={this.__key} nodeKey={this.__key} current={this.image()} />; }
   isInline(): false { return false; }
   exportJSON(): SerializedRichTextImageNode {
-    return { ...super.exportJSON(), type: 'nouty-image', version: 1, assetRef: this.__assetRef, alt: this.__alt, ...(this.__caption ? { caption: this.__caption } : {}), ...(this.__size ? { size: this.__size } : {}), ...(this.__alignment ? { alignment: this.__alignment } : {}) };
+    return { ...super.exportJSON(), type: 'nouty-image', version: 1, assetRef: this.__assetRef, alt: this.__alt, ...(this.__caption ? { caption: this.__caption } : {}), ...(this.__size ? { size: this.__size } : {}), ...(this.__alignment ? { alignment: this.__alignment } : {}), ...(this.__captionPolicy !== undefined ? { captionPolicy: this.__captionPolicy } : {}), ...(this.__accessibilityIntent !== undefined ? { accessibilityIntent: this.__accessibilityIntent } : {}) };
   }
   image(): RichTextImage {
     const latest = this.getLatest();
-    return { type: 'image', assetRef: latest.__assetRef as RichTextImage['assetRef'], alt: latest.__alt, ...(latest.__caption ? { caption: latest.__caption } : {}), ...(latest.__size ? { size: latest.__size } : {}), ...(latest.__alignment ? { alignment: latest.__alignment } : {}) };
+    return { type: 'image', assetRef: latest.__assetRef as RichTextImage['assetRef'], alt: latest.__alt, ...(latest.__caption ? { caption: latest.__caption } : {}), ...(latest.__size ? { size: latest.__size } : {}), ...(latest.__alignment ? { alignment: latest.__alignment } : {}), ...(latest.__captionPolicy !== undefined ? { captionPolicy: latest.__captionPolicy } : {}), ...(latest.__accessibilityIntent !== undefined ? { accessibilityIntent: latest.__accessibilityIntent } : {}) };
   }
   setImage(image: RichTextImage): void {
     const writable = this.getWritable();
@@ -222,6 +230,8 @@ export class RichTextImageNode extends DecoratorNode<JSX.Element> {
     writable.__caption = image.caption;
     writable.__size = image.size;
     writable.__alignment = image.alignment;
+    writable.__captionPolicy = image.captionPolicy;
+    writable.__accessibilityIntent = image.accessibilityIntent;
   }
   setAlt(alt: string): void { this.getWritable().__alt = alt; }
   setCaption(text: string): void { this.getWritable().__caption = text === '' ? undefined : [{ type: 'text', text }]; }

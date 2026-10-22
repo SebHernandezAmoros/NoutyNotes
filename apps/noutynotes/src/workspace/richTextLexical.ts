@@ -22,7 +22,7 @@ import {
 } from 'lexical';
 import type { ElementNode, LexicalNode } from 'lexical';
 
-import { RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
+import { LEGACY_RICH_TEXT_SCHEMA_VERSION, RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
 import type {
   RichTextDocument, RichTextInline, RichTextLeaf, RichTextList, RichTextListItem, RichTextMark,
   RichTextTable, RichTextTableCell, RichTextTableRow,
@@ -217,7 +217,7 @@ function readTable(node: ElementNode): RichTextTable | null {
 }
 
 /** Lee el alcance visual web P07 dentro de `EditorState.read` o `editor.update`. */
-export function $readWebRichTextDocument(): RichTextDocument | null {
+export function $readWebRichTextDocument(sourceVersion: RichTextDocument['schemaVersion'] = LEGACY_RICH_TEXT_SCHEMA_VERSION): RichTextDocument | null {
   const blocks: RichTextDocument['blocks'][number][] = [];
   for (const node of $getRoot().getChildren()) {
     if ($isParagraphNode(node) || $isHeadingNode(node)) {
@@ -248,7 +248,8 @@ export function $readWebRichTextDocument(): RichTextDocument | null {
     }
     return null;
   }
-  return { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: blocks.length === 0 ? [{ type: 'paragraph', content: [] }] : blocks };
+  const hasPolicy = blocks.some((block) => block.type === 'image' && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined));
+  return { schemaVersion: hasPolicy ? RICH_TEXT_SCHEMA_VERSION : sourceVersion, blocks: blocks.length === 0 ? [{ type: 'paragraph', content: [] }] : blocks };
 }
 
 /** Debe ejecutarse dentro de `editor.update`. */
@@ -296,7 +297,7 @@ export function $readBasicRichTextDocument(): RichTextDocument | null {
     blocks.push({ type: 'paragraph', content });
   }
   return {
-    schemaVersion: RICH_TEXT_SCHEMA_VERSION,
+    schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION,
     blocks: blocks.length === 0 ? [{ type: 'paragraph', content: [] }] : blocks,
   };
 }

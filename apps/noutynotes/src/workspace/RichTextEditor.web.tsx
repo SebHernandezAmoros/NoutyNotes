@@ -723,7 +723,7 @@ function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const publish = useCallback((editorState: EditorState) => {
     let next = null;
-    editorState.read(() => { next = $readWebRichTextDocument(); });
+    editorState.read(() => { next = $readWebRichTextDocument(initialDocument.schemaVersion); });
     if (next === null) return;
     const signature = JSON.stringify(next);
     if (!changed.current && signature === initialSignature) return;
@@ -731,7 +731,7 @@ function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps
     changed.current = true;
     lastSignature.current = signature;
     onChange(next);
-  }, [initialSignature, onChange]);
+  }, [initialDocument.schemaVersion, initialSignature, onChange]);
   const flush = useCallback(() => {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;

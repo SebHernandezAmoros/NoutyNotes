@@ -1,5 +1,6 @@
 import {
   MAX_RICH_TEXT_LIST_ITEMS,
+  LEGACY_RICH_TEXT_SCHEMA_VERSION,
   RICH_TEXT_SCHEMA_VERSION,
   isLinkUrl,
   normalizeRichTextDocument,
@@ -15,6 +16,7 @@ import type {
   RichTextList,
   RichTextMark,
   RichTextImageAlignment,
+  RichTextImageAccessibilityIntent,
   RichTextImageSize,
   RichTextVerticalAlignment,
   RichTextTableRow,
@@ -24,7 +26,7 @@ import type { RichTextCodec, RichTextCodecResult } from '@noutynotes/application
 import { isPortableAssetRef } from './paths';
 
 export const HTML_CONTENT_FORMAT = 'html' as const;
-export const HTML_CONTENT_VERSION = 1 as const;
+export const HTML_CONTENT_VERSION = 2 as const;
 export const MAX_HTML_ORDERED_LIST_START = 1_000_000;
 
 type HtmlChild = HtmlNode | string;
@@ -259,9 +261,13 @@ function parseList(node: HtmlNode): RichTextList {
 }
 
 function parseFigure(node: HtmlNode): RichTextBlock {
-  exactAttrs(node, ['data-nouty-image-size', 'data-nouty-image-align']);
+  exactAttrs(node, ['data-nouty-image-size', 'data-nouty-image-align', 'data-nouty-image-caption-policy', 'data-nouty-image-accessibility-intent']);
   const size = node.attrs['data-nouty-image-size'];
   const alignment = node.attrs['data-nouty-image-align'];
+  const captionPolicy = node.attrs['data-nouty-image-caption-policy'];
+  const accessibilityIntent = node.attrs['data-nouty-image-accessibility-intent'];
+  if (captionPolicy !== undefined && captionPolicy !== 'explicit') throw new HtmlCodecError('html.figure[data-nouty-image-caption-policy]', 'Política de leyenda no admitida.');
+  if (accessibilityIntent !== undefined && !['informative', 'decorative', 'pending'].includes(accessibilityIntent)) throw new HtmlCodecError('html.figure[data-nouty-image-accessibility-intent]', 'Intención accesible no admitida.');
   if (size !== undefined && !['small', 'medium', 'large', 'full'].includes(size)) throw new HtmlCodecError('html.figure[data-nouty-image-size]', 'Tamaño de imagen no admitido.');
   if (alignment !== undefined && !['left', 'center', 'right'].includes(alignment)) throw new HtmlCodecError('html.figure[data-nouty-image-align]', 'Alineación de imagen no admitida.');
   const children = nodesOnly(node.children, 'html.figure');
@@ -279,6 +285,8 @@ function parseFigure(node: HtmlNode): RichTextBlock {
     ...(size ? { size: size as RichTextImageSize } : {}),
     ...(alignment ? { alignment: alignment as RichTextImageAlignment } : {}),
     ...(caption ? { caption: inlineContent(caption.children) } : {}),
+    ...(captionPolicy ? { captionPolicy } : {}),
+    ...(accessibilityIntent ? { accessibilityIntent: accessibilityIntent as RichTextImageAccessibilityIntent } : {}),
   };
 }
 
@@ -342,11 +350,18 @@ function parseBlock(node: HtmlNode): RichTextBlock {
   throw new HtmlCodecError(`html.${node.tag}`, 'Bloque no admitido en la raíz.');
 }
 
-export function parseRichTextHtml(html: string): RichTextCodecResult<RichTextDocument> {
+/** El contenedor durable proporciona versión; HTML suelto infiere solo el mínimo requerido. */
+export function parseRichTextHtml(html: string, contentVersion?: number): RichTextCodecResult<RichTextDocument> {
+  if (contentVersion !== undefined && contentVersion !== 1 && contentVersion !== HTML_CONTENT_VERSION) {
+    return failure('html.contentVersion', 'Solo se admiten HTML v1 y v2.', 'unsupported-schema-version');
+  }
   try {
     const blocks = nodesOnly(parseFragment(html), 'html').map(parseBlock);
     if (blocks.length === 0) throw new HtmlCodecError('html', 'El documento debe contener al menos un bloque.');
-    return normalizeRichTextDocument({ schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks });
+    const hasPolicy = blocks.some((block) => block.type === 'image' && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined));
+    const schemaVersion = contentVersion === 1 ? LEGACY_RICH_TEXT_SCHEMA_VERSION
+      : contentVersion === 2 || hasPolicy ? RICH_TEXT_SCHEMA_VERSION : LEGACY_RICH_TEXT_SCHEMA_VERSION;
+    return normalizeRichTextDocument({ schemaVersion, blocks });
   } catch (error) {
     return error instanceof HtmlCodecError ? failure(error.path, error.message) : failure('html', 'No se pudo interpretar el HTML.');
   }
@@ -401,10 +416,10 @@ function serializeBlock(block: RichTextBlock, index: number): string {
     case 'list': return serializeList(block);
     case 'image':
       if (!safeAsset(block.assetRef)) throw new HtmlCodecError(`document.blocks[${index}].assetRef`, 'La imagen debe permanecer dentro de assets/.');
-      return `<figure${block.size ? ` data-nouty-image-size="${block.size}"` : ''}${block.alignment ? ` data-nouty-image-align="${block.alignment}"` : ''}><img alt="${escapeAttribute(block.alt)}" src="${escapeAttribute(block.assetRef)}">${
+      return `<figure${block.size ? ` data-nouty-image-size="${block.size}"` : ''}${block.alignment ? ` data-nouty-image-align="${block.alignment}"` : ''}${block.captionPolicy ? ` data-nouty-image-caption-policy="${block.captionPolicy}"` : ''}${block.accessibilityIntent ? ` data-nouty-image-accessibility-intent="${block.accessibilityIntent}"` : ''}><img alt="${escapeAttribute(block.alt)}" src="${escapeAttribute(block.assetRef)}">${
         block.caption === undefined ? '' : `<figcaption>${serializeInlines(block.caption)}</figcaption>`}</figure>`;
     case 'table': return `<table>${block.header ? `<thead>${serializeRow(block.header, 'th')}</thead>` : ''}<tbody>${block.rows.map((row) => serializeRow(row, 'td')).join('')}</tbody></table>`;
-    case 'opaque-markdown': throw new HtmlCodecError(`document.blocks[${index}]`, 'HTML v1 no admite bloques Markdown opacos.');
+    case 'opaque-markdown': throw new HtmlCodecError(`document.blocks[${index}]`, 'HTML seguro no admite bloques Markdown opacos.');
   }
 }
 

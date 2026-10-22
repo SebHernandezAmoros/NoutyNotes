@@ -1,6 +1,6 @@
 import type { RichTextCodec, RichTextCodecResult } from '@noutynotes/application';
 import {
-  RICH_TEXT_SCHEMA_VERSION,
+  LEGACY_RICH_TEXT_SCHEMA_VERSION,
   createEmptyRichTextDocument,
   isLinkUrl,
   isValidAssetRef,
@@ -270,7 +270,7 @@ export function parseRichTextMarkdown(markdown: string): RichTextCodecResult<Ric
     const source = sourceOf(node, markdown);
     blocks.push(mapped ?? { type: 'opaque-markdown', source });
   }
-  const richText: RichTextDocument = { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks };
+  const richText: RichTextDocument = { schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks };
   return normalizeRichTextDocument(richText);
 }
 
@@ -356,6 +356,9 @@ function captionExtension(caption: readonly RichTextInline[]): string {
 export function serializeRichTextMarkdown(richText: RichTextDocument): RichTextCodecResult<string> {
   const checked = validateRichTextDocument(richText);
   if (!checked.ok) return checked;
+  if (checked.value.schemaVersion !== LEGACY_RICH_TEXT_SCHEMA_VERSION) {
+    return { ok: false, issues: [{ code: 'unsupported-rich-text', path: 'document.schemaVersion', message: 'Markdown heredado no puede conservar el contrato v2; utilice HTML seguro.' }] };
+  }
   const output = checked.value.blocks.map((block) => {
     if (block.type === 'opaque-markdown') return block.source;
     const markdown = supportedMarkdown(block);

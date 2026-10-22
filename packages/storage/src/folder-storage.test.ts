@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { validWorkspace } from '../../domain/src/__fixtures__/workspace';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
 import { FolderStorage } from './folder-storage';
 import type { FolderPort, WorkspaceDirectory } from './folder-storage';
 import { htmlWorkspace } from './__fixtures__/html-workspace';
+import { imagePolicyWorkspace } from './__fixtures__/image-policy-workspace';
 
 const encode = (value: string): Uint8Array => new TextEncoder().encode(value);
 const id = (value: string) => value as WorkspaceId;
@@ -40,6 +41,28 @@ const code = (result: { ok: boolean; issues?: readonly { code: string }[] }): st
   result.ok ? undefined : result.issues?.[0]?.code;
 
 describe('FolderStorage: paquetes v1 y cambios externos', () => {
+  it.each(['future', 'unknown-intent'])('N1 reabre v2 y rechaza %s sin escrituras ni borrados (sin journal previo)', async (kind) => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    const source = imagePolicyWorkspace();
+    expect((await storage.create(source)).ok).toBe(true);
+    expect((await storage.save(source)).ok).toBe(true);
+    expect(await new FolderStorage(port).open(source.id)).toEqual({ ok: true, value: source });
+    const folder = port.directories.get('demo')!;
+    const body = new TextDecoder().decode(folder.files.get('cards/idea-a.md'));
+    folder.files.set('cards/idea-a.md', encode(kind === 'future' ? body.replace('contentVersion: 2', 'contentVersion: 3')
+      : body.replace('accessibility-intent="pending"', 'accessibility-intent="unknown"')));
+    expect(folder.files.has('.nouty-transaction.json')).toBe(false);
+    const before = new Map([...folder.files].map(([path, bytes]) => [path, bytes.slice()]));
+    const writes = vi.spyOn(folder, 'write');
+    const removes = vi.spyOn(folder, 'remove');
+    expect((await new FolderStorage(port).open(source.id)).ok).toBe(false);
+    expect((await storage.save(source)).ok).toBe(false);
+    expect(writes).not.toHaveBeenCalled();
+    expect(removes).not.toHaveBeenCalled();
+    expect(folder.files).toEqual(before);
+  });
+
   it('escribe y reabre HTML v1 mediante el mismo adaptador de carpeta', async () => {
     const port = new FakePort();
     const storage = new FolderStorage(port);

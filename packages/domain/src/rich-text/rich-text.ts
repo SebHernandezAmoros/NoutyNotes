@@ -5,7 +5,9 @@ import type { DomainIssue, ValidationResult } from '../errors';
 import { isLinkUrl } from '../cards/field-values';
 import { collectPlainDataIssues } from '../shared/plain-data';
 
-export const RICH_TEXT_SCHEMA_VERSION = 1 as const;
+export const RICH_TEXT_SCHEMA_VERSION = 2 as const;
+/** Los creadores históricos conservan v1 hasta que se autorice la escritura de políticas nuevas. */
+export const LEGACY_RICH_TEXT_SCHEMA_VERSION = 1 as const;
 export const MAX_RICH_TEXT_BLOCKS = 10_000;
 export const MAX_RICH_TEXT_INLINES = 10_000;
 export const MAX_RICH_TEXT_TEXT_LENGTH = 1_000_000;
@@ -26,9 +28,12 @@ export const richTextImageSizes = ['small', 'medium', 'large', 'full'] as const;
 export type RichTextImageSize = (typeof richTextImageSizes)[number];
 export const richTextImageAlignments = ['left', 'center', 'right'] as const;
 export type RichTextImageAlignment = (typeof richTextImageAlignments)[number];
+export type RichTextImageCaptionPolicy = 'explicit';
+export const richTextImageAccessibilityIntents = ['informative', 'decorative', 'pending'] as const;
+export type RichTextImageAccessibilityIntent = (typeof richTextImageAccessibilityIntents)[number];
 
 export interface RichTextDocument {
-  readonly schemaVersion: typeof RICH_TEXT_SCHEMA_VERSION;
+  readonly schemaVersion: typeof LEGACY_RICH_TEXT_SCHEMA_VERSION | typeof RICH_TEXT_SCHEMA_VERSION;
   readonly blocks: readonly RichTextBlock[];
 }
 
@@ -82,6 +87,8 @@ export interface RichTextImage {
   readonly assetRef: AssetRef;
   readonly alt: string;
   readonly caption?: readonly RichTextInline[];
+  readonly captionPolicy?: RichTextImageCaptionPolicy;
+  readonly accessibilityIntent?: RichTextImageAccessibilityIntent;
   readonly size?: RichTextImageSize;
   readonly alignment?: RichTextImageAlignment;
 }
@@ -119,7 +126,7 @@ const documentKeys = ['schemaVersion', 'blocks'];
 const documentPath = 'document';
 const paragraphKeys = ['type', 'alignment', 'content'];
 const headingKeys = ['type', 'level', 'alignment', 'content'];
-const imageKeys = ['type', 'assetRef', 'alt', 'caption', 'size', 'alignment'];
+const imageKeys = ['type', 'assetRef', 'alt', 'caption', 'size', 'alignment', 'captionPolicy', 'accessibilityIntent'];
 const tableKeys = ['type', 'header', 'rows'];
 const tableRowKeys = ['cells'];
 const tableCellKeys = ['content', 'verticalAlignment'];
@@ -292,6 +299,8 @@ function collectBlockIssues(input: unknown, path: string, issues: DomainIssue[])
       checkAssetRef(input.assetRef, `${path}.assetRef`, issues);
       checkText(input.alt, `${path}.alt`, issues, true);
       if (input.caption !== undefined) collectInlineListIssues(input.caption, `${path}.caption`, issues);
+      if (input.captionPolicy !== undefined && input.captionPolicy !== 'explicit') issues.push(issue('invalid-value', `${path}.captionPolicy`, 'Solo se admite "explicit".'));
+      if (input.accessibilityIntent !== undefined && !richTextImageAccessibilityIntents.includes(input.accessibilityIntent as RichTextImageAccessibilityIntent)) issues.push(issue('invalid-value', `${path}.accessibilityIntent`, 'Debe ser "informative", "decorative" o "pending".'));
       if (input.size !== undefined && !richTextImageSizes.includes(input.size as RichTextImageSize)) issues.push(issue('invalid-value', `${path}.size`, 'Debe ser "small", "medium", "large" o "full".'));
       if (input.alignment !== undefined && !richTextImageAlignments.includes(input.alignment as RichTextImageAlignment)) issues.push(issue('invalid-value', `${path}.alignment`, 'Debe ser "left", "center" o "right".'));
       return;
@@ -325,18 +334,25 @@ export function validateRichTextDocument(input: unknown): ValidationResult<RichT
   if (issues.length > 0) return resultOf(document, issues);
   if (!isRecord(input)) return resultOf(document, [issue('invalid-value', documentPath, 'Debe ser un objeto.')]);
   checkKnownKeys(input, documentKeys, documentPath, issues);
-  if (input.schemaVersion !== RICH_TEXT_SCHEMA_VERSION) {
-    issues.push(issue('unsupported-schema-version', `${documentPath}.schemaVersion`, `Solo se admite la versión ${RICH_TEXT_SCHEMA_VERSION}.`));
+  if (input.schemaVersion !== LEGACY_RICH_TEXT_SCHEMA_VERSION && input.schemaVersion !== RICH_TEXT_SCHEMA_VERSION) {
+    issues.push(issue('unsupported-schema-version', `${documentPath}.schemaVersion`, 'Solo se admiten las versiones 1 y 2.'));
   }
   const blocksPath = `${documentPath}.blocks`;
   const blocks = checkArray(input.blocks, blocksPath, issues, MAX_RICH_TEXT_BLOCKS);
   if (blocks.length === 0) issues.push(issue('invalid-value', blocksPath, 'El documento debe contener al menos un bloque.'));
-  blocks.forEach((block, index) => collectBlockIssues(block, `${blocksPath}[${index}]`, issues));
+  blocks.forEach((block, index) => {
+    const path = `${blocksPath}[${index}]`;
+    collectBlockIssues(block, path, issues);
+    if (input.schemaVersion === LEGACY_RICH_TEXT_SCHEMA_VERSION && isRecord(block) && block.type === 'image'
+      && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined)) {
+      issues.push(issue('unsupported-schema-version', path, 'Las políticas de imagen requieren documento v2.'));
+    }
+  });
   return resultOf(document, issues);
 }
 
 export function createEmptyRichTextDocument(): RichTextDocument {
-  return { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: [{ type: 'paragraph', content: [] }] };
+  return { schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks: [{ type: 'paragraph', content: [] }] };
 }
 
 /**
