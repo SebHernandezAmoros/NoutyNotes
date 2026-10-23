@@ -7,6 +7,7 @@ import type { CSSProperties, KeyboardEvent, ReactNode, UIEvent } from 'react';
 import { t } from '../../i18n';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
 import type { ImageResourceState } from '../imageResources';
+import { resolveImageReading } from './imageReadingPresentation';
 
 const OVERSCAN = 10;
 const IMAGE_HEIGHT = 120;
@@ -30,7 +31,7 @@ function listItemCount(list: RichTextList): number {
 }
 
 function estimatedHeight(block: RichTextBlock, lineHeight: number): number {
-  if (block.type === 'image') return IMAGE_HEIGHT + (block.caption?.length || block.alt ? Math.max(24, lineHeight + 6) : 0) + 8;
+  if (block.type === 'image') return IMAGE_HEIGHT + (resolveImageReading(block).caption.length > 0 ? Math.max(24, lineHeight + 6) : 0) + 8;
   if (block.type === 'table') return ((block.header ? 1 : 0) + block.rows.length) * Math.max(34, lineHeight + 8) + 8;
   if (block.type === 'list') return Math.max(1, listItemCount(block)) * lineHeight + 8;
   const text = block.type === 'opaque-markdown' ? block.source : inlineText(block.content);
@@ -83,14 +84,16 @@ function blockNode(block: RichTextBlock, index: number, props: {
     );
   }
   const resource = props.imageResources.get(block.assetRef);
-  const caption = block.caption && block.caption.length > 0 ? block.caption : block.alt ? [{ type: 'text' as const, text: block.alt }] : [];
+  const reading = resolveImageReading(block);
+  const { caption } = reading;
   const width = block.size === 'small' ? '25%' : block.size === 'medium' ? '50%' : block.size === 'large' ? '75%' : '100%';
   const marginInline = block.alignment === 'left' ? '0 auto 0 0' : block.alignment === 'right' ? '0 0 0 auto' : '0 auto';
   const statusText = resource?.status === 'loading' ? t('image.loading', props.locale) : t('image.unavailable', props.locale);
-  const statusLabel = resource?.status === 'loading' ? statusText : `${statusText}: ${block.alt || block.assetRef}`;
+  const description = reading.intent === 'legacy' ? block.alt || block.assetRef : reading.alt;
+  const statusLabel = resource?.status === 'loading' || !description ? statusText : `${statusText}: ${description}`;
   const image = resource?.status === 'ready'
-    ? <img src={resource.uri} alt={block.alt} style={{ width: '100%', height: 'auto', maxHeight: IMAGE_HEIGHT, objectFit: props.imageFit, display: 'block' }} />
-    : <div role="img" aria-label={statusLabel} style={{ height: IMAGE_HEIGHT, display: 'grid', placeItems: 'center', border: '1px solid currentColor' }}>{statusText}</div>;
+    ? <img src={resource.uri} alt={reading.alt} role={reading.intent === 'informative' ? 'img' : undefined} aria-hidden={reading.hideImageFromAccessibility} style={{ width: '100%', height: 'auto', maxHeight: IMAGE_HEIGHT, objectFit: props.imageFit, display: 'block' }} />
+    : <div role="img" aria-label={statusLabel} aria-hidden={reading.hideImageFromAccessibility} style={{ height: IMAGE_HEIGHT, display: 'grid', placeItems: 'center', border: '1px solid currentColor' }}>{statusText}</div>;
   const captionNode = caption.length > 0 ? <figcaption>{inlineNodes(caption, `${index}-caption`)}</figcaption> : null;
   return <figure style={{ margin: marginInline, width, maxWidth: '100%' }}>{props.captionPosition === 'top' || props.captionPosition === 'left' ? captionNode : null}{image}{props.captionPosition === 'bottom' || props.captionPosition === 'right' ? captionNode : null}</figure>;
 }

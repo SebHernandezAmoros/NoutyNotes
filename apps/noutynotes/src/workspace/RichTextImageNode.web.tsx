@@ -2,10 +2,10 @@ import { validateRichTextDocument } from '@noutynotes/domain';
 import type { RichTextImage, RichTextInline } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, JSX, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { $getNodeByKey, $getRoot, DecoratorNode, HISTORY_PUSH_TAG } from 'lexical';
-import type { EditorConfig, LexicalNode, NodeKey, SerializedLexicalNode, Spread } from 'lexical';
+import { $getNodeByKey, $getRoot, DecoratorNode, HISTORIC_TAG, HISTORY_PUSH_TAG } from 'lexical';
+import type { EditorConfig, LexicalEditor, LexicalNode, NodeKey, SerializedLexicalNode, Spread } from 'lexical';
 import { t } from '../i18n';
 
 type CaptionPosition = 'bottom' | 'top' | 'left' | 'right';
@@ -46,6 +46,30 @@ function captionText(caption: readonly RichTextInline[] | undefined): string {
   }).join('');
 }
 
+function imageReviewKey(image: RichTextImage): string {
+  return JSON.stringify([image.assetRef, image.accessibilityIntent, image.alt, image.caption]);
+}
+
+/** Acknowledge the existing local editor operation only after its committed result is readable.
+ * This is not an acknowledgement of filesystem persistence. */
+export function applyReviewedImagePurpose(editor: LexicalEditor, nodeKey: NodeKey, expected: RichTextImage, intent: 'informative' | 'decorative'): boolean {
+  let applied = false;
+  try {
+    editor.update(() => {
+      const node = $getNodeByKey(nodeKey);
+      if (!$isRichTextImageNode(node) || imageReviewKey(node.image()) !== imageReviewKey(expected)) return;
+      node.setAccessibilityIntent(intent);
+      applied = true;
+    }, { discrete: true, tag: [RICH_TEXT_IMAGE_CHANGE_TAG, HISTORY_PUSH_TAG] });
+    return applied && editor.getEditorState().read(() => {
+      const node = $getNodeByKey(nodeKey);
+      return $isRichTextImageNode(node) && imageReviewKey(node.image()) === imageReviewKey({ ...expected, accessibilityIntent: intent });
+    });
+  } catch {
+    return false;
+  }
+}
+
 function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly current: RichTextImage }) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
@@ -53,13 +77,32 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
   const context = useContext(ImageEditorContext);
   const rootRef = useRef<HTMLDivElement>(null);
   const resizePercentRef = useRef<number | null>(null);
+  const confirmationLocked = useRef(false);
+  const reviewHintId = useId();
+  const [reviewFeedback, setReviewFeedback] = useState<{ readonly base: string; readonly kind: 'success' | 'error' } | null>(null);
+  useEffect(() => editor.registerUpdateListener(({ editorState, tags }) => {
+    setReviewFeedback((feedback) => {
+      if (!feedback) return feedback;
+      if (tags.has(HISTORIC_TAG)) return null;
+      const base = editorState.read(() => {
+        const node = $getNodeByKey(nodeKey);
+        return $isRichTextImageNode(node) ? imageReviewKey(node.image()) : null;
+      });
+      return base === feedback.base ? feedback : null;
+    });
+  }), [editor, nodeKey]);
+  useEffect(() => {
+    if (!reviewFeedback) return;
+    const timer = window.setTimeout(() => setReviewFeedback(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [reviewFeedback]);
   const [advanced, setAdvanced] = useState(false);
   const [dragPercent, setDragPercent] = useState<number | null>(null);
   const uri = context.images.get(current.assetRef);
   const caption = captionText(current.caption);
   // La confirmación local solo corresponde a esta revisión exacta; Undo/reemplazo/textos nuevos
   // la invalidan sin efectos que encadenen renders ni un tercer campo durable.
-  const reviewBase = JSON.stringify([current.assetRef, current.accessibilityIntent, current.alt, current.caption]);
+  const reviewBase = imageReviewKey(current);
   const purposeBase = JSON.stringify([current.assetRef, current.accessibilityIntent]);
   const [reviewDraft, setReviewDraft] = useState<{
     readonly base: string;
@@ -68,8 +111,17 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
   }>(() => ({ base: purposeBase, intent: current.accessibilityIntent ?? 'legacy', checkedFor: null }));
   const intentDraft = reviewDraft.base === purposeBase ? reviewDraft.intent : current.accessibilityIntent ?? 'legacy';
   const reviewed = reviewDraft.base === purposeBase && reviewDraft.checkedFor === reviewBase;
-  const setIntentDraft = (intent: NonNullable<RichTextImage['accessibilityIntent']>) => setReviewDraft({ base: purposeBase, intent, checkedFor: null });
-  const setReviewed = (checked: boolean) => setReviewDraft({ base: purposeBase, intent: intentDraft, checkedFor: checked ? reviewBase : null });
+  const setIntentDraft = (intent: NonNullable<RichTextImage['accessibilityIntent']>) => {
+    confirmationLocked.current = false;
+    setReviewFeedback(null);
+    setReviewDraft({ base: purposeBase, intent, checkedFor: null });
+  };
+  const setReviewed = (checked: boolean) => {
+    if (checked) { confirmationLocked.current = false; setReviewFeedback(null); }
+    setReviewDraft({ base: purposeBase, intent: intentDraft, checkedFor: checked ? reviewBase : null });
+  };
+  const visibleFeedback = reviewFeedback?.base === reviewBase ? reviewFeedback : null;
+  const needsReviewCheck = intentDraft !== 'legacy' && intentDraft !== 'pending' && !reviewed && visibleFeedback?.kind !== 'success';
   const horizontal = context.captionPosition === 'left' || context.captionPosition === 'right';
   const reverse = context.captionPosition === 'top' || context.captionPosition === 'left';
   const selectedSize = current.size ?? 'full';
@@ -89,8 +141,21 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
   const confirmPurpose = () => {
     const intent = intentDraft;
     if (intent === 'legacy' || (intent !== 'pending' && !reviewed)) return;
-    update((node) => node.setAccessibilityIntent(intent), true);
-    setReviewed(false);
+    if (intent === 'pending') {
+      update((node) => node.setAccessibilityIntent(intent), true);
+      setReviewed(false);
+      return;
+    }
+    if (confirmationLocked.current) return;
+    confirmationLocked.current = true;
+    const applied = applyReviewedImagePurpose(editor, nodeKey, current, intent);
+    if (applied) {
+      setReviewed(false);
+      setReviewFeedback({ base: imageReviewKey({ ...current, accessibilityIntent: intent }), kind: 'success' });
+    } else {
+      confirmationLocked.current = false;
+      setReviewFeedback({ base: reviewBase, kind: 'error' });
+    }
   };
   const move = (delta: -1 | 1) => update((node) => {
     let sibling = delta < 0 ? node.getPreviousSibling() : node.getNextSibling();
@@ -221,10 +286,17 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
           </select>
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44 }}>
-          <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.currentTarget.checked)} />
+          <input type="checkbox" checked={reviewed} aria-describedby={needsReviewCheck ? reviewHintId : undefined} onChange={(event) => setReviewed(event.currentTarget.checked)} />
           <span>{t('editor.image.review.checked', locale)}</span>
         </label>
-        <button type="button" disabled={intentDraft === 'legacy' || (intentDraft !== 'pending' && !reviewed)}
+        {needsReviewCheck ? <p id={reviewHintId} data-testid="image-review-hint" style={{ margin: 0, fontSize: 12 }}>
+          {t('editor.image.review.checkFirst', locale)}
+        </p> : null}
+        {visibleFeedback ? <p data-testid="image-review-feedback" role="status" aria-live="polite" aria-atomic="true"
+          style={{ margin: 0, padding: 8, borderLeft: `3px solid ${theme.colors.border}`, fontSize: 12, fontWeight: 700 }}>
+          {t(visibleFeedback.kind === 'success' ? 'editor.image.review.confirmed' : 'editor.image.review.failed', locale)}
+        </p> : null}
+        <button type="button" aria-describedby={needsReviewCheck ? reviewHintId : undefined} disabled={intentDraft === 'legacy' || (intentDraft !== 'pending' && !reviewed)}
           onClick={confirmPurpose} style={controlStyle()}>
           {t(intentDraft === 'pending' ? 'editor.image.review.defer' : 'editor.image.review.confirm', locale)}
         </button>

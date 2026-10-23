@@ -1,6 +1,7 @@
 import type { CaptionPosition, RichTextBlock, RichTextDocument, RichTextImage } from '@noutynotes/domain';
 
 import { blockLines } from './richTextPreviewProjection';
+import { resolveImageReading } from './imageReadingPresentation';
 
 /**
  * Alto de imagen para una Nota banner con cuerpo HTML seguro (OBS-N2-28/IMAGE-GEOMETRY-G1): cede el
@@ -41,7 +42,7 @@ export function projectBannerPreview(document: RichTextDocument, options: {
   const { height, width, fontSize, lineHeight, imageMinimum, captionPosition, textHeights } = options;
   const sideways = captionPosition === 'left' || captionPosition === 'right';
   const captionHeight = (block: RichTextBlock) => block.type === 'image' && !sideways
-    && (block.caption?.length || block.alt) ? BANNER_CAPTION_LINE + BANNER_CAPTION_GAP : 0;
+    && resolveImageReading(block).caption.length > 0 ? BANNER_CAPTION_LINE + BANNER_CAPTION_GAP : 0;
   const textHeight = (block: RichTextBlock, index: number) => textHeights[index] ?? blockLines(block, width, fontSize) * lineHeight;
   const select = (available: number) => {
     let used = 0;

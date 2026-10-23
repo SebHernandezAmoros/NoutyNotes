@@ -1,4 +1,4 @@
-import type { CaptionPosition, ImageFit, RichTextDocument, RichTextImage, RichTextInline, TextSize } from '@noutynotes/domain';
+import type { CaptionPosition, ImageFit, RichTextDocument, RichTextImage, TextSize } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -9,6 +9,7 @@ import { bodyFontSize, bodyLineHeight } from '../textSizes';
 import type { ImageResourceState } from '../imageResources';
 import { BANNER_BLOCK_GAP, BANNER_CAPTION_GAP, BANNER_CAPTION_LINE, BANNER_OVERFLOW_HEIGHT, projectBannerPreview } from './bannerImageHeight';
 import { blockLines, projectRichTextPreview } from './richTextPreviewProjection';
+import { resolveImageReading } from './imageReadingPresentation';
 
 const IMAGE_HEIGHT = 88;
 
@@ -62,11 +63,8 @@ export function RichNotePreview({ document, imageResources, height, width, testI
   const preview = bannerPreview ?? projectRichTextPreview(document, lines, width, fontSize, true);
   const imageHeight = bannerPreview?.imageHeight ?? IMAGE_HEIGHT;
   const sideways = position === 'left' || position === 'right';
-  const captionOf = (block: RichTextImage): readonly RichTextInline[] => block.caption && block.caption.length > 0
-    ? block.caption
-    : block.alt ? [{ type: 'text', text: block.alt }] : [];
   const captionNode = (block: RichTextImage, blockIndex: number) => {
-    const caption = captionOf(block);
+    const { caption } = resolveImageReading(block);
     return caption.length === 0 ? null : (
       <View style={sideways ? styles.captionSide : null}>
         <BasicRichTextPreview
@@ -92,12 +90,14 @@ export function RichNotePreview({ document, imageResources, height, width, testI
           {position === 'top' || position === 'left' ? captionNode(block, blockIndex) : null}
           {(() => {
             const resource = imageResources.get(block.assetRef);
+            const reading = resolveImageReading(block);
             if (resource?.status === 'ready') {
               return (
                 <Image
                   testID={`${testID}-image-${blockIndex}`}
                   accessibilityRole="image"
-                  accessibilityLabel={block.alt || 'Imagen de la nota'}
+                  accessibilityLabel={reading.intent === 'legacy' ? block.alt || 'Imagen de la nota' : reading.alt}
+                  aria-hidden={reading.hideImageFromAccessibility}
                   resizeMode={imageFit}
                   source={{ uri: resource.uri }}
                   style={[styles.image, sideways ? styles.imageSide : null, {
@@ -108,9 +108,10 @@ export function RichNotePreview({ document, imageResources, height, width, testI
               );
             }
             const text = resource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale);
-            const label = resource?.status === 'loading' ? text : `${text}: ${block.alt || block.assetRef}`;
+            const description = reading.intent === 'legacy' ? block.alt || block.assetRef : reading.alt;
+            const label = resource?.status === 'loading' || !description ? text : `${text}: ${description}`;
             return (
-              <View accessibilityLabel={label} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { height: imageHeight, borderColor: theme.colors.border }]}>
+              <View accessibilityLabel={label} aria-hidden={reading.hideImageFromAccessibility} style={[styles.image, styles.missing, sideways ? styles.imageSide : null, { height: imageHeight, borderColor: theme.colors.border }]}>
                 <Text numberOfLines={1} style={[styles.missingText, { color: theme.colors.cardText, fontSize: auxiliarySize, lineHeight: auxiliaryLineHeight }]}>{text}</Text>
               </View>
             );
