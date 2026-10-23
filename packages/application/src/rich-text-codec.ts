@@ -10,4 +10,7 @@ export type RichTextCodecResult<T> = ValidationResult<T, IssueLike>;
 export interface RichTextCodec {
   parse(source: string): RichTextCodecResult<RichTextDocument>;
   serialize(document: RichTextDocument): RichTextCodecResult<string>;
+  /** Solo lectura: omite metadatos de transporte reconocidos de la fuente usada para previews.
+   * Nunca utilizar el resultado para guardar o editar el documento durable. */
+  projectLegacyNotePreview?(source: string): string;
 }

@@ -372,7 +372,37 @@ export function serializeRichTextMarkdown(richText: RichTextDocument): RichTextC
   return { ok: true, value: output };
 }
 
+/** Proyección de lectura; reutiliza exactamente el AST y reconocimiento de captions del codec.
+ * No se filtra por prefijo: código, texto escapado, comentarios huérfanos/malformados y bloques HTML
+ * no consumidos como caption permanecen literales. Las rutas de escritura conservan la fuente. */
+function projectLegacyNotePreview(markdown: string): string {
+  if (!markdown.includes(CAPTION_PREFIX)) return markdown;
+  const root = fromMarkdown(markdown, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
+  const parts: string[] = [];
+  let cursor = 0;
+  for (let index = 0; index < root.children.length - 1; index += 1) {
+    const image = root.children[index] as RootContent;
+    const next = root.children[index + 1] as RootContent;
+    const mapped = mapBlock(image);
+    if (mapped?.type !== 'image') continue;
+    const caption = captionFrom(next);
+    if (caption === null) continue;
+    const checked = validateRichTextDocument({ schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks: [{ ...mapped, caption }] });
+    if (!checked.ok) continue;
+    const start = image.position?.end.offset;
+    const end = next.position?.end.offset;
+    if (typeof start !== 'number' || typeof end !== 'number') continue;
+    parts.push(markdown.slice(cursor, start));
+    cursor = end;
+    index += 1;
+  }
+  if (cursor === 0) return markdown;
+  parts.push(markdown.slice(cursor));
+  return parts.join('');
+}
+
 export const markdownRichTextCodec: RichTextCodec = {
   parse: parseRichTextMarkdown,
   serialize: serializeRichTextMarkdown,
+  projectLegacyNotePreview,
 };

@@ -241,7 +241,11 @@ export function CanvasCard(props: CanvasCardProps) {
   // seguro (ADR 0066) sustituye `content` de forma excluyente (dominio): sin él no hay nada que
   // parsear como Markdown, así que estos bloques heredados solo aplican a notas aún no migradas.
   const htmlAuthored = card.contentDocument !== undefined;
-  const blocks = image || htmlAuthored ? [] : parseNoteBlocks(card.content ?? '');
+  const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
+  const legacyPreviewContent = !htmlAuthored && type?.base === 'note'
+    ? props.richTextCodec.projectLegacyNotePreview?.(card.content ?? '') ?? card.content ?? ''
+    : card.content ?? '';
+  const blocks = image || htmlAuthored ? [] : parseNoteBlocks(legacyPreviewContent);
   const mixedLegacy = blocks.some((block) => block.kind === 'image');
   const richDocument = image ? null : (card.contentDocument ?? parseWebRichText(props.richTextCodec, card.content ?? ''));
   const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => block.type === 'image') ?? false);
@@ -254,7 +258,6 @@ export function CanvasCard(props: CanvasCardProps) {
   const hasChecklist = richDocument?.blocks.some((block) => block.type === 'list' && listContainsChecklist(block)) ?? false;
   const previewDocument = hasChecklist ? null : richDocument;
   const checklistTexts = richDocument?.blocks.flatMap((block) => block.type === 'list' ? checklistTextsOf(block) : []) ?? [];
-  const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const floatingTitle = card.typeId === 'titulo-flotante';
   const floatingText = isFloatingTextCard(card, type?.base);
   const presentation = cardContentPresentation(card, type?.base);
@@ -289,7 +292,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const link = typeof linkValue === 'string' ? linkDisplay(linkValue) : undefined;
   const bodyLines = Math.max(0, Math.floor((box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40)) / contentLine) - (link ? 1 : 0));
   const collapsedBodyLines = Math.max(0, Math.floor((box.height - HEADER - 12) / contentLine));
-  const overflow = previewOverflow(htmlAuthored ? (richDocument ? richDocumentPlainText(richDocument) : '') : (card.content ?? ''), box.width, contentSize, bodyLines);
+  const overflow = previewOverflow(htmlAuthored ? (richDocument ? richDocumentPlainText(richDocument) : '') : legacyPreviewContent, box.width, contentSize, bodyLines);
   const fullReader = note && display === 'expanded' && richDocument !== null && overflow.hiddenLines > 0;
   // UX7-B2: cada línea mostrada es texto agrupado o una fila de checklist propia (marcable sin abrir
   // el editor). El recorte por `bodyLines` es el mismo que el bloque único anterior.

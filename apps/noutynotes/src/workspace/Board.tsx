@@ -179,7 +179,10 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
   // Un cuerpo HTML seguro (ADR 0066) sustituye `content` de forma excluyente (dominio): sin él no hay
   // nada que parsear como Markdown, así que `blocks` (NotePreview) solo aplica a notas aún no migradas.
   const htmlAuthored = card.contentDocument !== undefined;
-  const blocks = image || floatingText || shape || connector || htmlAuthored ? [] : parseNoteBlocks(card.content ?? '');
+  const legacyPreviewContent = !htmlAuthored && base === 'note'
+    ? richTextCodec.projectLegacyNotePreview?.(card.content ?? '') ?? card.content ?? ''
+    : card.content ?? '';
+  const blocks = image || floatingText || shape || connector || htmlAuthored ? [] : parseNoteBlocks(legacyPreviewContent);
   const mixedLegacy = blocks.some((block) => block.kind === 'image');
   const richDocument = image || floatingText || shape || connector ? null : (card.contentDocument ?? parseWebRichText(richTextCodec, card.content ?? ''));
   const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => block.type === 'image') ?? false);
