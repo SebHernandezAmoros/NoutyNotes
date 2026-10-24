@@ -61,7 +61,17 @@ function summary(workspace: Workspace): WorkspaceSummary { return { id: workspac
  */
 export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
   readonly #baseline = new Map<string, string>();
-  constructor(readonly port: FolderPort) {}
+  #recoveryRequired = false;
+  /** UI de reanudación: ninguna lectura recupera transacciones sin una apertura manual explícita. */
+  constructor(readonly port: FolderPort, private readonly options: { readonly readRecovery?: 'automatic' | 'defer' } = {}) {}
+  get recoveryRequired(): boolean { return this.#recoveryRequired; }
+
+  async #requireCleanRead(folder: WorkspaceDirectory): Promise<void> {
+    if (await folder.read(TRANSACTION) !== undefined) {
+      this.#recoveryRequired = true;
+      throw new Error('La carpeta requiere una recuperación explícita.');
+    }
+  }
 
   async #allowed<T>(): Promise<WorkspaceStorageResult<T> | null> {
     try { return await this.port.permission() ? null : error('permission-denied', 'folder', 'El navegador no concedió acceso de lectura y escritura a la carpeta.'); }
@@ -88,7 +98,8 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
   }
 
   async #read(folder: WorkspaceDirectory): Promise<Package | null> {
-    await this.#recover(folder);
+    if (this.options.readRecovery === 'defer') await this.#requireCleanRead(folder);
+    else await this.#recover(folder);
     const paths = await folder.listPaths();
     if (paths.includes(DELETED) || !paths.includes(MANIFEST)) return null;
     const entries: [string, string][] = [];
@@ -101,6 +112,7 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     const files = Object.fromEntries(entries);
     const parsed = parseWorkspace(files);
     if (!parsed.ok) throw new Error(`Paquete v1 inválido: ${parsed.issues.map((issue) => `${issue.code}@${issue.path}`).join(', ')}`);
+    if (this.options.readRecovery === 'defer') await this.#requireCleanRead(folder);
     return { folder, files, workspace: parsed.value, fingerprint: fingerprint(files) };
   }
 

@@ -60,7 +60,7 @@ export function useRecentConnections(): RecentConnectionsApi {
   const folderIsCurrent = (entry: RecentFolderEntry) => session.mode === 'folder' && (
     entry.backend === 'android' ? entry.androidUri === session.activeFolderKey : entry.name === session.activeFolderKey
   );
-  const currentFolderId = session.mode === 'folder' ? (recent.folders.find(folderIsCurrent)?.id ?? null) : null;
+  const currentFolderId = session.mode === 'folder' ? (currentBackend === 'web' ? session.activeFolderId : (recent.folders.find(folderIsCurrent)?.id ?? null)) : null;
 
   const registerWebConnection = async (handle: BrowserDirectory, name: string): Promise<string> => {
     const stored = await loadAllFolderHandles();
@@ -71,6 +71,7 @@ export function useRecentConnections(): RecentConnectionsApi {
     const id = matchedId ?? newFolderId('web');
     recent.recordFolderUse({ id, backend: 'web', name, origin: 'created', androidUri: null });
     await saveFolderHandle(id, handle);
+    session.identifyWebFolder(id);
     return id;
   };
 
@@ -114,6 +115,7 @@ export function useRecentConnections(): RecentConnectionsApi {
       if (reopened.ok) {
         const result = await session.connectFolderWithHandle(handle);
         if (!result.ok) return result;
+        session.identifyWebFolder(entry.id);
         recent.recordFolderUse({ id: entry.id, backend: 'web', name: reopened.name, origin: 'created', androidUri: null });
         return { ok: true, folderId: entry.id };
       }
@@ -150,6 +152,7 @@ export function useRecentConnections(): RecentConnectionsApi {
     }
     const result = await session.connectFolderWithHandle(handle);
     if (!result.ok) return result;
+    session.identifyWebFolder(entry.id);
     recent.recordFolderUse({ id: entry.id, backend: 'web', name: reopened.name, origin: 'created', androidUri: null });
     return { ok: true, folderId: entry.id };
   };

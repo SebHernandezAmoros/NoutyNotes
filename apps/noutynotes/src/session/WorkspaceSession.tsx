@@ -3,7 +3,7 @@ import type { DraftStore, WorkspaceStorage } from '@noutynotes/application';
 import type { WorkspaceId } from '@noutynotes/domain';
 import { ArchiveStorage } from '@noutynotes/storage';
 import type { ArchiveImport, ExportConfirmation } from '@noutynotes/storage';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
 
@@ -17,6 +17,12 @@ import { chooseFolderInto, reopenRememberedInto } from './folderSession';
 import type { FolderState } from './folderSession';
 import { describeImport, describeImportFailure } from './messages';
 import { createDeviceDraftStore } from './draftPersistence';
+import { loadFolderHandle } from './folderHandles';
+import { parseRegistry } from './recentItems';
+import { loadRecentItems } from './recentItemsStore';
+import { SessionResume } from './sessionResume';
+import type { ResumeState } from './sessionResume';
+import { isReload, readResumeIntent, writeResumeIntent } from './sessionResumeStore';
 
 type Outcome<T = null> = { readonly ok: true; readonly value: T; readonly message: string } | { readonly ok: false; readonly message: string };
 
@@ -44,6 +50,12 @@ interface Session {
    * en modo memoria. No persiste entre cargas — solo indica "ya conectada en esta sesión" para el
    * historial de recientes (UX7-E1). */
   readonly activeFolderKey: string | null;
+  readonly activeFolderId: string | null;
+  identifyWebFolder(id: string): void;
+  beginResume(id: string | undefined): Promise<ResumeState | 'skip'>;
+  reconnectResume(): Promise<ResumeState>;
+  cancelResume(): void;
+  leaveProject(): void;
   reconnectFolder(): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }>;
   /** `null` si el usuario cancela el selector. */
   importArchive(): Promise<Outcome<ArchiveImport> | null>;
@@ -73,6 +85,38 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   // UX7-E1: identidad local de la carpeta activa, solo para saber "ya conectada en esta sesión" en
   // el historial de recientes; no es un handle persistente ni sustituye a `savedFolder` (Android).
   const [activeFolderKey, setActiveFolderKey] = useState<string | null>(null);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [resume] = useState(() => new SessionResume<BrowserDirectory, { storage: WorkspaceStorage; name: string }>({
+    loadHandle: loadFolderHandle,
+    queryPermission: (handle) => handle.queryPermission({ mode: 'readwrite' }),
+    prepare: async (handle, intent) => {
+      const candidate = storageForHandle(handle, { readRecovery: 'defer' });
+      const opened = await candidate.open(intent.workspaceId as WorkspaceId);
+      if (!opened.ok) return { state: candidate.recoveryRequired ? 'recovery' : 'unavailable' };
+      return { state: 'ready', candidate: { storage: candidate, name: handle.name } };
+    },
+    activate: (candidate, intent) => {
+      setStorage(candidate.storage);
+      setMode('folder');
+      setActiveFolderKey(candidate.name);
+      setActiveFolderId(intent.folderId);
+    },
+  }));
+  const identifyWebFolder = useCallback((id: string) => { setActiveFolderId(id); }, []);
+  const cancelResume = useCallback(() => { resume.cancel(); }, [resume]);
+  const leaveProject = useCallback(() => {
+    resume.abandon();
+    writeResumeIntent(null);
+  }, [resume]);
+  const beginResume = useCallback(async (id: string | undefined): Promise<ResumeState | 'skip'> => {
+    if (Platform.OS !== 'web') return 'skip';
+    const intent = readResumeIntent();
+    const known = !!intent && parseRegistry(loadRecentItems()).folders.some((entry) => entry.id === intent.folderId && entry.backend === 'web');
+    const claim = resume.claimReload(intent, id, isReload(), known);
+    if (claim.discard) writeResumeIntent(null); // Invalida copias de opener y pistas incompatibles.
+    return claim.target ? resume.start(claim.target) : 'skip';
+  }, [resume]);
+  const reconnectResume = useCallback(() => resume.reconnect((handle) => handle.requestPermission({ mode: 'readwrite' })), [resume]);
 
   useEffect(() => archive.subscribe(() => setUnexported(archive.unexportedIds())), [archive]);
 
@@ -94,6 +138,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
 
   /** La sesión y la carpeta recordada solo cambian si la carpeta elegida se lee bien (folderSession.ts). */
   const connectFolder = async (): Promise<{ ok: true; folder: { key: string; name: string }; webHandle: BrowserDirectory | null } | { ok: false; message: string }> => {
+    resume.cancel();
     // UX7-E1/E2B: captura por cierre la identidad de la carpeta elegida (nombre web / URI Android) y,
     // en web, el handle real, para registrarla en Recientes y permitir guardarlo solo si
     // `chooseFolderInto` confirma el éxito debajo. `box` evita la pérdida de estrechamiento de
@@ -117,18 +162,21 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
     if (!result.ok) return result;
     if (!box.chosen) return { ok: false, message: 'No se pudo identificar la carpeta elegida.' };
     setActiveFolderKey(box.chosen.key);
+    setActiveFolderId(null);
     return { ok: true, folder: box.chosen, webHandle: box.webHandle };
   };
 
   /** UX7-E2B: igual que `connectFolder`, pero partiendo de un handle web ya obtenido (recordado en
    * IndexedDB o recién verificado) — nunca abre el selector nativo. */
   const connectFolderWithHandle = async (handle: BrowserDirectory): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }> => {
+    resume.cancel();
     const candidate = storageForHandle(handle);
     const listed = await candidate.list();
     if (!listed.ok) return { ok: false, message: listed.issues[0]?.message ?? 'No se pudo leer la carpeta.' };
     setStorage(candidate);
     setMode('folder');
     setActiveFolderKey(handle.name);
+    setActiveFolderId(null);
     return { ok: true, folder: { key: handle.name, name: handle.name } };
   };
 
@@ -189,6 +237,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
     <StorageContext.Provider value={{
       storage, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
       savedFolder: mode === 'memory' ? savedFolder : null, activeFolderKey: mode === 'folder' ? activeFolderKey : null, reconnectFolder,
+      activeFolderId: mode === 'folder' ? activeFolderId : null, identifyWebFolder, beginResume, reconnectResume, cancelResume, leaveProject,
       unexported: mode === 'memory' ? unexported : [], connectFolder, connectFolderWithHandle, importArchive, exportArchive, confirmExported,
     }}
     >

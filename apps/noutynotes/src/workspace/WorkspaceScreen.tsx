@@ -31,6 +31,8 @@ import { printHtmlNative, supportsNativePrint } from '../session/printNative';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { loadViewPreferences, saveViewPreferences } from '../session/viewPreferencesStore';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
+import { WorkspaceResumeGate } from '../session/WorkspaceResumeGate';
+import { writeResumeIntent } from '../session/sessionResumeStore';
 import { useRecentConnections } from '../session/useRecentConnections';
 import type { RecentProjectEntry } from '../session/recentItems';
 import { Board } from './Board';
@@ -116,7 +118,8 @@ export function WorkspaceScreen() {
   const params = useLocalSearchParams<{ id?: string; notice?: string; card?: string }>();
   const id = typeof params.id === 'string' ? params.id : undefined;
   // Cambiar de espacio desde la barra lateral reinicia todo el estado de pantalla.
-  return <WorkspaceView key={id ?? ''} id={id} notice={typeof params.notice === 'string' ? params.notice : ''} initialCard={typeof params.card === 'string' ? params.card : ''} />;
+  const content = <WorkspaceView key={id ?? ''} id={id} notice={typeof params.notice === 'string' ? params.notice : ''} initialCard={typeof params.card === 'string' ? params.card : ''} />;
+  return Platform.OS === 'web' ? <WorkspaceResumeGate key={id ?? ''} id={id}>{content}</WorkspaceResumeGate> : content;
 }
 
 function useSessionSummaries(refresh: unknown): readonly WorkspaceSummary[] {
@@ -215,6 +218,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Editor enfocado (ADR 0021): el mismo editor ocupa el sitio del lienzo; el borrador no se pierde.
   const [focus, setFocus] = useState(false);
   const workspace = view.kind === 'ready' ? view.workspace : null;
+  const openedProjectId = view.kind === 'ready' && view.storage === session.storage ? workspace?.id : undefined;
+  useEffect(() => {
+    if (!openedProjectId || Platform.OS !== 'web') return;
+    if (session.mode === 'folder' && session.activeFolderId) {
+      writeResumeIntent({ version: 1, backend: 'web', folderId: session.activeFolderId, workspaceId: openedProjectId });
+    } else if (session.mode === 'memory') writeResumeIntent(null);
+  }, [openedProjectId, session.mode, session.activeFolderId]);
   // UX7.1-A4: mismo visor y mismo hook de ciclo de vida que Assets — una tarjeta de documento abre su
   // PDF ya catalogado, sin un segundo sistema de vista previa.
   const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assetsOf(session.storage), workspace?.id);
@@ -305,6 +315,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     let navigated = false;
     try {
       if (!await flushPendingText() || !await flushWorkspace()) return;
+      session.leaveProject();
       if (router.canGoBack()) router.back();
       else router.replace('/');
       navigated = true;

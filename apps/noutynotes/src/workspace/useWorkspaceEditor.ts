@@ -16,7 +16,7 @@ export type { ActionSuccess } from './actionFeedback';
 export type WorkspaceView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'missing'; readonly message: string }
-  | { readonly kind: 'ready'; readonly workspace: Workspace };
+  | { readonly kind: 'ready'; readonly workspace: Workspace; readonly storage: WorkspaceStorage };
 
 export interface Feedback {
   readonly tone: 'error' | 'success';
@@ -72,14 +72,14 @@ export function useWorkspaceEditor(id: string | undefined) {
     current.current = snapshot.workspace;
     history.current = snapshot.history;
     if (!mounted.current) return;
-    setView({ kind: 'ready', workspace: snapshot.workspace });
+    setView({ kind: 'ready', workspace: snapshot.workspace, storage });
     setSteps(snapshot.history);
     setRevision(snapshot.revision);
     setSaveState(snapshot.status);
     setPendingCount(snapshot.pendingCount);
     setSaveIssues(snapshot.issues);
     setSaving(snapshot.status === 'saving');
-  }, []);
+  }, [storage]);
 
   const installReactive = useCallback((workspace: Workspace) => {
     unsubscribe.current?.();

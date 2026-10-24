@@ -8,6 +8,13 @@
 import type { Locale } from '@noutynotes/ui';
 
 export const TRANSLATIONS = {
+  'session.resume.title': { es: 'Recuperar acceso al proyecto', en: 'Restore project access' },
+  'session.resume.loading': { es: 'Comprobando la carpeta del proyecto…', en: 'Checking the project folder…' },
+  'session.resume.permission': { es: 'La carpeta necesita permiso. Reconecta este proyecto para continuar; no se elegirá otra carpeta.', en: 'Folder permission is needed. Reconnect this project to continue; no other folder will be selected.' },
+  'session.resume.recovery': { es: 'Hay una transacción pendiente. No se ha modificado ningún archivo. Vuelve a mis espacios y abre la carpeta de forma explícita para recuperarla.', en: 'A transaction is pending. No files have been modified. Return to your spaces and explicitly open the folder to recover it.' },
+  'session.resume.unavailable': { es: 'No se puede abrir la carpeta o el proyecto conocido. No se han creado archivos ni descartado borradores. Puedes volver a mis espacios para revisar el acceso.', en: 'The known folder or project cannot be opened. No files have been created or drafts discarded. Return to your spaces to review access.' },
+  'session.resume.reconnect': { es: 'Reconectar proyecto', en: 'Reconnect project' },
+  'session.resume.leave': { es: 'Volver a mis espacios', en: 'Back to my spaces' },
   'toolbar.label': { es: 'Herramientas del tablero', en: 'Board tools' },
   'toolbar.group.work': { es: 'Trabajar', en: 'Work' },
   'toolbar.group.history': { es: 'Historial', en: 'History' },

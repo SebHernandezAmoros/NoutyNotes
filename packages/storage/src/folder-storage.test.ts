@@ -41,6 +41,27 @@ const code = (result: { ok: boolean; issues?: readonly { code: string }[] }): st
   result.ok ? undefined : result.issues?.[0]?.code;
 
 describe('FolderStorage: paquetes v1 y cambios externos', () => {
+  it('F5: diferir recuperación en list/open no escribe ni retira un journal; la apertura explícita conserva recuperación', async () => {
+    const port = new FakePort();
+    const source = workspace();
+    expect((await new FolderStorage(port).create(source)).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    folder.files.set('.nouty-transaction.json', encode(JSON.stringify({ version: 1, committed: true, old: {} })));
+    const before = new Map(folder.files);
+    const writes = vi.spyOn(folder, 'write');
+    const removes = vi.spyOn(folder, 'remove');
+    const automatic = new FolderStorage(port, { readRecovery: 'defer' });
+    const listed = await automatic.list();
+    const opened = await automatic.open(source.id);
+    expect(writes).not.toHaveBeenCalled();
+    expect(removes).not.toHaveBeenCalled();
+    expect(listed.ok).toBe(false);
+    expect(opened.ok).toBe(false);
+    expect(folder.files).toEqual(before);
+    expect((await new FolderStorage(port).open(source.id)).ok).toBe(true);
+    expect(folder.files.has('.nouty-transaction.json')).toBe(false);
+  });
+
   it.each(['future', 'unknown-intent'])('N1 reabre v2 y rechaza %s sin escrituras ni borrados (sin journal previo)', async (kind) => {
     const port = new FakePort();
     const storage = new FolderStorage(port);

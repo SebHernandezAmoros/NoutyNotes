@@ -119,8 +119,8 @@ export async function chooseFolder(): Promise<{ readonly storage: FolderStorage;
 
 /** Misma envoltura que usa `chooseFolder`, reutilizable sobre un handle ya obtenido (recordado o
  * recién verificado) sin volver a abrir el selector nativo. */
-export function storageForHandle(handle: BrowserDirectory): FolderStorage {
-  return new FolderStorage(new BrowserFolderPort(handle));
+export function storageForHandle(handle: BrowserDirectory, options: { readonly readRecovery?: 'automatic' | 'defer' } = {}): FolderStorage {
+  return new FolderStorage(new BrowserFolderPort(handle), options);
 }
 
 /**
