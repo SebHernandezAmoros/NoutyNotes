@@ -25,6 +25,7 @@ import { PdfPreview } from './PdfPreview';
 import { useEscapeBack } from './useEscapeBack';
 import { usePdfPreview } from './usePdfPreview';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
+import { AssetReferenceDetails } from './AssetReferenceDetails';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 type Tab = 'all' | AssetKind;
@@ -81,6 +82,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const [gridChoice, setGridChoice] = useState<boolean | null>(null);
   const grid = gridChoice ?? !compact;
   const [selected, setSelected] = useState<string | null>(null);
+  const [usageRef, setUsageRef] = useState<string | null>(null);
   const [thumbs, setThumbs] = useState<ReadonlyMap<string, string>>(new Map());
   const [bytes, setBytes] = useState<ReadonlyMap<string, number>>(new Map());
   const [confirm, setConfirm] = useState<'one' | 'unused' | null>(null);
@@ -376,20 +378,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
           </View>
         </View>
       ) : null}
-      <Text style={[styles.section, { color: colors.textSecondary }]}>{t('assets.section.usedBy', locale)}</Text>
-      {current.usedBy.length === 0 ? (
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.usedBy.empty', locale)}</Text>
-      ) : current.usedBy.map((use) => (
-        <View key={use.cardId} style={styles.useRow}>
-          <Text style={[styles.body, styles.useText, { color: colors.textPrimary }]}>
-            {`${use.title} · ${use.inTrash ? t('assets.use.inTrash', locale) : use.inArchive ? t('assets.use.inArchive', locale) : use.boards.map((board) => board.title).join(', ') || t('search.noBoard', locale)}`}
-          </Text>
-          {use.inTrash || use.inArchive ? null : <ActionButton label={t('search.go', locale)} accessibilityLabel={t('search.go.accessibilityLabel', locale, { title: use.title })} onPress={() => { onBack(); onGo(use.cardId); }} />}
-        </View>
-      ))}
-      {current.usedBy.length > 0 ? (
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('assets.usedBy.hint', locale)}</Text>
-      ) : null}
+      <ActionButton label={t('assets.references.query', locale)} onPress={() => setUsageRef(current.ref)} />
+      {usageRef === current.ref ? <AssetReferenceDetails workspace={workspace} assetRef={current.ref} preferences={preferences}
+        onGo={(id) => { onBack(); onGo(id); }} onClose={() => setUsageRef(null)} /> : null}
     </View>
   ) : null;
 

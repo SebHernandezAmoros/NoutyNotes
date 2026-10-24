@@ -1657,19 +1657,29 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   const imported = pick('Plano del Río.png');
   await button(page, 'Importar una imagen a la biblioteca').click();
   await imported;
-  await expect(feedback(page)).toHaveText('Imagen «Plano del Río.png» añadida a la biblioteca. Guardado en memoria.');
+  // D03/D04: verificar el recurso y el estado real, sin esperar una franja de éxito retirada.
+  await expect(page.getByTestId('asset-plano-del-rio.png')).toBeVisible();
+  await expect(page.getByTestId('workspace-feedback')).toHaveCount(0);
   await expect(page.getByTestId('assets-count')).toHaveText('2 ARCHIVOS');
   await expect(button(page, 'Imágenes (2)')).toBeVisible();
   await expect(button(page, 'Documentos (0)')).toBeVisible();
   await expect(button(page, 'Solo sin usar (1)')).toBeVisible();
-  // Recién importada queda seleccionada: nadie la usa.
-  await expect(page.getByTestId('asset-detail')).toContainText('Ninguna tarjeta lo usa');
+  // U1: consulta explícita; cero usos del snapshot no se presenta como cobertura global.
+  await button(page, 'Consultar uso').click();
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Propietarios conocidos: 0');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Análisis parcial');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('no demuestra que el recurso esté libre');
   await expect(page.getByTestId('asset-path')).toHaveText('assets/images/plano-del-rio.png');
   // Búsqueda por nombre de archivo, sin mayúsculas.
   await page.getByTestId('assets-search').fill('TARJETA');
   await expect(page.getByTestId('assets-count')).toHaveText('1 ARCHIVO');
   await button(page, 'Ver tarjeta-1-1.png').click();
-  await expect(page.getByTestId('asset-detail')).toContainText('Ruta · Tablero principal');
+  await button(page, 'Consultar uso').click();
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Propietarios conocidos: 1');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Apariciones conocidas: 1');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Análisis parcial');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Ruta');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Tablero principal');
   await page.screenshot({ path: testInfo.outputPath('assets.png') });
   // Un archivo en uso no se puede eliminar; «Ir» lleva a la tarjeta.
   await expect(button(page, 'Eliminar tarjeta-1-1.png')).toHaveCount(0);
@@ -1685,7 +1695,7 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   await page.getByTestId('assets-search').fill('');
   await button(page, 'Ver plano-del-rio.png').click();
   await button(page, 'Añadir plano-del-rio.png al tablero').click();
-  await expect(feedback(page)).toHaveText('«plano-del-rio.png» añadido al tablero sin copiar el archivo. Guardado en memoria.');
+  await expect(page.getByTestId('assets-view')).toBeHidden();
   // Como crear, añadir al tablero deja la tarjeta seleccionada pero sin abrir su editor (auditoría de
   // interacción, 2026-09-29): no hay nada que cerrar.
   await expect(page.getByTestId('note-preview-tarjeta-2-image-0')).toBeVisible();
@@ -1698,20 +1708,38 @@ test('biblioteca de assets: importar, pestañas y recuentos, Usado en e Ir, aña
   const replacement = pick('mapa nuevo.png');
   await button(page, 'Reemplazar tarjeta-1-1.png').click();
   await replacement;
-  await expect(feedback(page)).toHaveText('«tarjeta-1-1.png» reemplazado por «mapa nuevo.png» en 1 tarjeta; el archivo anterior queda sin usar. Guardado en memoria.');
+  await expect(page.getByTestId('asset-mapa-nuevo.png')).toBeVisible();
+  await expect(page.getByTestId('asset-path')).toHaveText('assets/images/mapa-nuevo.png');
+  await expect(page.getByTestId('assets-count')).toHaveText('3 ARCHIVOS');
+  await button(page, 'Consultar uso').click();
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Propietarios conocidos: 1');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Ruta');
+  await expect(page.getByTestId('asset-reference-analysis')).toContainText('Análisis parcial');
+  await expect(page.getByTestId('asset-tarjeta-1-1.png')).toContainText('SIN USAR');
   await expect(button(page, 'Solo sin usar (1)')).toBeVisible();
   await button(page, 'Eliminar los sin usar (1)').click();
   await expect(page.getByTestId('assets-confirm-unused')).toContainText('¿Eliminar 1 archivo sin usar?');
   await button(page, 'Confirmar eliminar 1 archivo sin usar').click();
-  await expect(feedback(page)).toHaveText('1 archivo sin usar eliminado. Guardado en memoria.');
+  await expect(page.getByTestId('assets-confirm-unused')).toHaveCount(0);
   await expect(page.getByTestId('assets-count')).toHaveText('2 ARCHIVOS');
   await expect(page.getByTestId('asset-tarjeta-1-1.png')).toHaveCount(0);
+  await expect(page.getByTestId('asset-mapa-nuevo.png')).toBeVisible();
+  await expect(page.getByTestId('asset-plano-del-rio.png')).toBeVisible();
   expect(await hasHorizontalOverflow(page)).toBe(false);
   await page.keyboard.press('Escape');
   // Con la densidad de UX7-D1 (fila más baja) la ficha de tamaño inicial ya no tiene sitio para una
   // imagen en compacto, solo en ancho (igual que en la prueba de varias imágenes, ADR 0021).
   if (!isCompactWidth(page)) {
-    await expect(page.getByTestId('note-preview-tarjeta-1').getByRole('img', { name: 'mapa' }).first()).toBeVisible();
+    // N2/N3: una imagen nueva pendiente no toma el nombre del archivo como descripción accesible.
+    // Verificar la imagen visual y su carga real, sin exigir aquel fallback retirado.
+    const renderedImage = card(page, 1).locator('img').first();
+    await testInfo.attach('asset-note-visual-evidence', {
+      body: await card(page, 1).evaluate((element) => element.outerHTML),
+      contentType: 'text/html',
+    });
+    await card(page, 1).screenshot({ path: testInfo.outputPath('asset-note-visual.png') });
+    await expect(renderedImage).toBeVisible();
+    await expect.poll(() => renderedImage.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   }
   expect(runtimeErrors).toEqual([]);
 });
