@@ -180,7 +180,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   );
   const {
     view, feedback, saving, saveState, saveIssues, run, setFeedback, undo, redo, retry, recoverExternal,
-    flush: flushWorkspace, revision, undoLabel, redoLabel,
+    flush: flushWorkspace, currentWorkspace, revision, undoLabel, redoLabel,
   } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
   // Editor visible (auditoría de interacción, 2026-09-29): separado de `selectedId» a propósito.
@@ -196,7 +196,16 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [clipboard, setClipboard] = useState<ClipboardSnapshot | null>(null);
   // Marco seleccionado (ADR 0027): excluye la tarjeta abierta y la selección múltiple.
   const [frameId, setFrameId] = useState<string | null>(null);
-  const [boardId, setBoardId] = useState<BoardId | null>(null);
+  const [boardId, setBoardId] = useState<BoardId | null>(() => {
+    const initial = session.boardResume;
+    return Platform.OS === 'web' && initial?.storage === session.storage && initial.folderId === session.activeFolderId && initial.workspaceId === id
+      ? initial.boardId : null;
+  });
+  // Semilla consumida por esta instancia: jamás se vuelve a aplicar al guardar o navegar por SPA.
+  const { acknowledgeBoardResume, storage: boardResumeStorage } = session;
+  useEffect(() => { acknowledgeBoardResume(boardResumeStorage); }, [acknowledgeBoardResume, boardResumeStorage]);
+  const boardNavigation = useRef(0);
+  useEffect(() => () => { boardNavigation.current++; }, [session.storage, id]);
   const [openBoardIds, setOpenBoardIds] = useState<readonly BoardId[]>([]);
   const [tool, setTool] = useState<CanvasTool>('select');
   const [connectSource, setConnectSource] = useState<CardId | null>(null);
@@ -219,12 +228,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const [focus, setFocus] = useState(false);
   const workspace = view.kind === 'ready' ? view.workspace : null;
   const openedProjectId = view.kind === 'ready' && view.storage === session.storage ? workspace?.id : undefined;
-  useEffect(() => {
-    if (!openedProjectId || Platform.OS !== 'web') return;
-    if (session.mode === 'folder' && session.activeFolderId) {
-      writeResumeIntent({ version: 1, backend: 'web', folderId: session.activeFolderId, workspaceId: openedProjectId });
-    } else if (session.mode === 'memory') writeResumeIntent(null);
-  }, [openedProjectId, session.mode, session.activeFolderId]);
+  const rememberBoard = useCallback((next: BoardId | null) => {
+    if (!openedProjectId || Platform.OS !== 'web' || session.mode !== 'folder' || !session.activeFolderId) return;
+    const current = currentWorkspace();
+    if (current?.id !== openedProjectId || (next !== null && !current.boards.some((candidate) => candidate.id === next))) return;
+    writeResumeIntent({ version: 1, backend: 'web', folderId: session.activeFolderId, workspaceId: openedProjectId,
+      ...(next === null ? {} : { activeBoardId: next }) });
+  }, [openedProjectId, session.mode, session.activeFolderId, currentWorkspace]);
   // UX7.1-A4: mismo visor y mismo hook de ciclo de vida que Assets — una tarjeta de documento abre su
   // PDF ya catalogado, sin un segundo sistema de vista previa.
   const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assetsOf(session.storage), workspace?.id);
@@ -315,6 +325,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     let navigated = false;
     try {
       if (!await flushPendingText() || !await flushWorkspace()) return;
+      boardNavigation.current++;
       session.leaveProject();
       if (router.canGoBack()) router.back();
       else router.replace('/');
@@ -360,6 +371,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const openSpace = async (target: string) => {
     if (target === id || !await flushPendingText() || !await flushWorkspace()) return;
+    boardNavigation.current++;
     router.replace({ pathname: '/workspace', params: { id: target } });
   };
 
@@ -515,6 +527,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const board = workspace ? workspace.boards.find((candidate) => candidate.id === boardId) ?? workspace.boards[0] : undefined;
+  useEffect(() => {
+    if (!openedProjectId || Platform.OS !== 'web') return;
+    if (session.mode === 'memory') writeResumeIntent(null);
+    else rememberBoard(board?.id ?? null);
+  }, [openedProjectId, session.mode, rememberBoard, board?.id]);
   // Pestañas de sesión (ADR 0035): el tablero activo siempre está abierto; los IDs de un proyecto
   // anterior se descartan solos porque ya no coinciden con ningún tablero del workspace vigente.
   const openBoards = workspace
@@ -664,6 +681,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const openBoard = (next: BoardId) => {
+    const current = currentWorkspace();
+    if (!openedProjectId || current?.id !== openedProjectId || !current.boards.some((candidate) => candidate.id === next)) return;
+    boardNavigation.current++;
+    // Antes del cambio visual, no depender del efecto de carga para F5 inmediato.
+    rememberBoard(next);
     setBoardId(next);
     setBoardFitRequest((current) => current + 1);
     // A partir de `openBoards` (derivado), no de `openBoardIds` (estado crudo): el tablero mostrado
@@ -673,7 +695,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const chooseBoard = async (next: BoardId) => {
-    if (!await flushPendingText()) return;
+    const request = ++boardNavigation.current;
+    if (!await flushPendingText() || request !== boardNavigation.current) return;
     openBoard(next);
     setEditingId(null);
     setInlineEditing(false);
@@ -702,6 +725,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // tablero, se explica y se ofrece colocarla (ADR 0020).
   const revealCard = (cardId: CardId) => {
     if (!workspace) return;
+    boardNavigation.current++;
     const card = workspace.cards.find((candidate) => candidate.id === cardId);
     if (!card) {
       setFeedback({ tone: 'error', text: 'Esa tarjeta ya no existe en este proyecto.' });
@@ -799,8 +823,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   };
 
   const createBoard = () => {
+    const request = ++boardNavigation.current;
     void run((storage, workspaceId) => addBoardToWorkspace(storage, workspaceId, {}), 'action.boardCreated')
-      .then((result) => { if (result.ok) void chooseBoard(result.value); });
+      .then((result) => { if (result.ok && request === boardNavigation.current) void chooseBoard(result.value); });
   };
 
   const createShortcut = (targetBoardId: BoardId) => {
@@ -1044,13 +1069,18 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const archiveBoardById = async (targetBoardId: BoardId): Promise<boolean> => {
     const target = workspace?.boards.find((candidate) => candidate.id === targetBoardId);
     if (!target) return false;
-    if (!await flushPendingText()) return false;
+    const request = ++boardNavigation.current;
+    if (!await flushPendingText() || request !== boardNavigation.current) return false;
     const result = await run((storage, workspaceId) => moveBoardToArchive(storage, workspaceId, target.id, new Date().toISOString()),
       { key: 'action.boardArchived', params: { title: target.title } });
     if (result.ok) {
       setBoardActionsId(null);
       setOpenBoardIds((current) => current.filter((id) => id !== target.id));
-      if (board?.id === target.id) setBoardId(workspace?.boards.find((candidate) => candidate.id !== target.id)?.id ?? null);
+      if (board?.id === target.id && request === boardNavigation.current) {
+        const next = workspace?.boards.find((candidate) => candidate.id !== target.id)?.id ?? null;
+        rememberBoard(next);
+        setBoardId(next);
+      }
       setEditingId(null);
       setSelectedId(null);
       setMulti(null);

@@ -1,6 +1,6 @@
 import { EditorialSessionCoordinator } from '@noutynotes/application';
 import type { DraftStore, WorkspaceStorage } from '@noutynotes/application';
-import type { WorkspaceId } from '@noutynotes/domain';
+import type { BoardId, WorkspaceId } from '@noutynotes/domain';
 import { ArchiveStorage } from '@noutynotes/storage';
 import type { ArchiveImport, ExportConfirmation } from '@noutynotes/storage';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
@@ -20,7 +20,7 @@ import { createDeviceDraftStore } from './draftPersistence';
 import { loadFolderHandle } from './folderHandles';
 import { parseRegistry } from './recentItems';
 import { loadRecentItems } from './recentItemsStore';
-import { SessionResume } from './sessionResume';
+import { resolveResumeBoard, SessionResume } from './sessionResume';
 import type { ResumeState } from './sessionResume';
 import { isReload, readResumeIntent, writeResumeIntent } from './sessionResumeStore';
 
@@ -51,6 +51,9 @@ interface Session {
    * historial de recientes (UX7-E1). */
   readonly activeFolderKey: string | null;
   readonly activeFolderId: string | null;
+  /** Semilla de navegación preparada con el proyecto; no es otro estado activo ni registro durable. */
+  readonly boardResume: { readonly storage: WorkspaceStorage; readonly folderId: string; readonly workspaceId: string; readonly boardId: BoardId | null } | null;
+  acknowledgeBoardResume(storage: WorkspaceStorage): void;
   identifyWebFolder(id: string): void;
   beginResume(id: string | undefined): Promise<ResumeState | 'skip'>;
   reconnectResume(): Promise<ResumeState>;
@@ -86,26 +89,33 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   // el historial de recientes; no es un handle persistente ni sustituye a `savedFolder` (Android).
   const [activeFolderKey, setActiveFolderKey] = useState<string | null>(null);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  const [resume] = useState(() => new SessionResume<BrowserDirectory, { storage: WorkspaceStorage; name: string }>({
+  const [boardResume, setBoardResume] = useState<Session['boardResume']>(null);
+  const acknowledgeBoardResume = useCallback((source: WorkspaceStorage) => {
+    setBoardResume((current) => current?.storage === source ? null : current);
+  }, []);
+  const [resume] = useState(() => new SessionResume<BrowserDirectory, { storage: WorkspaceStorage; name: string; boardId: BoardId | null }>({
     loadHandle: loadFolderHandle,
     queryPermission: (handle) => handle.queryPermission({ mode: 'readwrite' }),
     prepare: async (handle, intent) => {
       const candidate = storageForHandle(handle, { readRecovery: 'defer' });
       const opened = await candidate.open(intent.workspaceId as WorkspaceId);
       if (!opened.ok) return { state: candidate.recoveryRequired ? 'recovery' : 'unavailable' };
-      return { state: 'ready', candidate: { storage: candidate, name: handle.name } };
+      const boardId = resolveResumeBoard(intent, { backend: 'web', folderId: intent.folderId, workspaceId: opened.value.id }, opened.value.boards);
+      return { state: 'ready', candidate: { storage: candidate, name: handle.name, boardId } };
     },
     activate: (candidate, intent) => {
       setStorage(candidate.storage);
       setMode('folder');
       setActiveFolderKey(candidate.name);
       setActiveFolderId(intent.folderId);
+      setBoardResume({ storage: candidate.storage, folderId: intent.folderId, workspaceId: intent.workspaceId, boardId: candidate.boardId });
     },
   }));
   const identifyWebFolder = useCallback((id: string) => { setActiveFolderId(id); }, []);
   const cancelResume = useCallback(() => { resume.cancel(); }, [resume]);
   const leaveProject = useCallback(() => {
     resume.abandon();
+    setBoardResume(null);
     writeResumeIntent(null);
   }, [resume]);
   const beginResume = useCallback(async (id: string | undefined): Promise<ResumeState | 'skip'> => {
@@ -237,7 +247,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
     <StorageContext.Provider value={{
       storage, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
       savedFolder: mode === 'memory' ? savedFolder : null, activeFolderKey: mode === 'folder' ? activeFolderKey : null, reconnectFolder,
-      activeFolderId: mode === 'folder' ? activeFolderId : null, identifyWebFolder, beginResume, reconnectResume, cancelResume, leaveProject,
+      activeFolderId: mode === 'folder' ? activeFolderId : null, boardResume, acknowledgeBoardResume, identifyWebFolder, beginResume, reconnectResume, cancelResume, leaveProject,
       unexported: mode === 'memory' ? unexported : [], connectFolder, connectFolderWithHandle, importArchive, exportArchive, confirmExported,
     }}
     >

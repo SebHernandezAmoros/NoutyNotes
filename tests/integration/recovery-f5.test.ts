@@ -3,7 +3,7 @@ import { MemoryDraftPersistence, PersistentDraftStore, createDraftKey, draftRevi
 import { validWorkspace } from '../../packages/domain/src/__fixtures__/workspace';
 import { FolderStorage } from '../../packages/storage/src/folder-storage';
 import type { FolderPort, WorkspaceDirectory } from '../../packages/storage/src/folder-storage';
-import { SessionResume } from '../../apps/noutynotes/src/session/sessionResume';
+import { resolveResumeBoard, SessionResume } from '../../apps/noutynotes/src/session/sessionResume';
 import type { ResumeIntent } from '../../apps/noutynotes/src/session/sessionResume';
 
 async function fixture() {
@@ -32,6 +32,27 @@ async function fixture() {
 }
 
 describe('F5 integración de sesión/carpeta y protección editorial', () => {
+  it('INT-AB-01/02/04: después del permiso y apertura resuelve tablero o fallback, sin escrituras', async () => {
+    const f = await fixture();
+    const before = new Map(f.files);
+    const selected = { ...f.intent, activeBoardId: f.source.boards[1]!.id };
+    const applied: (string | null)[] = [];
+    f.services.activate.mockImplementation(async (storage: FolderStorage, target: ResumeIntent) => {
+      const opened = await storage.open(f.source.id);
+      if (opened.ok) applied.push(resolveResumeBoard(target, f.intent, opened.value.boards));
+    });
+    f.services.queryPermission.mockResolvedValue('prompt');
+    expect(await f.resume.start(selected)).toBe('permission');
+    expect(applied).toEqual([]);
+    expect(await f.resume.reconnect(async () => 'granted')).toBe('ready');
+    await vi.waitFor(() => expect(applied).toEqual([f.source.boards[1]!.id]));
+    f.services.queryPermission.mockResolvedValue('granted');
+    expect(await f.resume.start({ ...selected, activeBoardId: 'no-longer-active' })).toBe('ready');
+    await vi.waitFor(() => expect(applied).toEqual([f.source.boards[1]!.id, f.source.boards[0]!.id]));
+    expect(f.files).toEqual(before);
+    expect(f.directory.write).not.toHaveBeenCalled();
+    expect(f.directory.remove).not.toHaveBeenCalled();
+  });
   it('INT-01/05: activa el proyecto existente, sin escrituras ni confirmaciones de borrador', async () => {
     const f = await fixture();
     const persistence = new MemoryDraftPersistence();

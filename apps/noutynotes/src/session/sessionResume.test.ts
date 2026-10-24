@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseResumeIntent, SessionResume } from './sessionResume';
+import type { BoardId } from '@noutynotes/domain';
+import { parseResumeIntent, resolveResumeBoard, SessionResume } from './sessionResume';
 import type { PreparedResume, ResumeIntent } from './sessionResume';
 import { isReload, readResumeIntent, writeResumeIntent } from './sessionResumeStore';
 
@@ -21,6 +22,25 @@ function fixture(permission = 'granted') {
 }
 
 describe('F5: intención y coordinación localizada', () => {
+  it('AB: amplía v1 opcionalmente; un tablero inválido no impide restaurar el proyecto histórico', () => {
+    expect(parseResumeIntent(JSON.stringify(intent))).toEqual(intent);
+    expect(parseResumeIntent(JSON.stringify({ ...intent, activeBoardId: 'board-3' }))).toEqual({ ...intent, activeBoardId: 'board-3' });
+    for (const activeBoardId of ['', '../board', null, 12]) {
+      expect(parseResumeIntent(JSON.stringify({ ...intent, activeBoardId }))).toEqual(intent);
+    }
+  });
+  it('AB: resuelve solo activos del propietario; ausente/archivado/eliminado usa fallback sin crear tableros', () => {
+    const boards = [{ id: 'board-1' as BoardId }, { id: 'board-3' as BoardId }];
+    const selected = { ...intent, activeBoardId: 'board-3' };
+    expect(resolveResumeBoard(selected, intent, boards)).toBe('board-3');
+    for (const activeBoardId of [undefined, 'unknown', 'archived', 'deleted']) {
+      expect(resolveResumeBoard({ ...intent, ...(activeBoardId === undefined ? {} : { activeBoardId }) }, intent, boards)).toBe('board-1');
+    }
+    expect(resolveResumeBoard(selected, { ...intent, folderId: 'another-folder' }, boards)).toBe('board-1');
+    expect(resolveResumeBoard(selected, { ...intent, workspaceId: 'another-project' }, boards)).toBe('board-1');
+    expect(resolveResumeBoard(selected, intent, [])).toBeNull();
+    expect(boards).toEqual([{ id: 'board-1' }, { id: 'board-3' }]);
+  });
   it('valida backend/versión/identificadores y guarda solo la identidad mínima', () => {
     expect(parseResumeIntent(JSON.stringify({ ...intent, name: 'no persistir', granted: true }))).toEqual(intent);
     for (const value of [null, '{', JSON.stringify({ ...intent, backend: 'unknown' }), JSON.stringify({ ...intent, version: 9 }), JSON.stringify({ ...intent, folderId: '../another' })]) {
@@ -53,7 +73,7 @@ describe('F5: intención y coordinación localizada', () => {
     services.prepare.mockImplementationOnce(() => old.promise);
     const first = resume.start(intent);
     await vi.waitFor(() => expect(services.prepare).toHaveBeenCalledTimes(1));
-    const second = { ...intent, workspaceId: 'project-b' };
+    const second = { ...intent, workspaceId: 'project-b', activeBoardId: 'board-b' };
     expect(await resume.start(second)).toBe('ready');
     old.resolve({ state: 'ready', candidate: 'project-a' });
     expect(await first).toBe('idle');

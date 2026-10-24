@@ -82,8 +82,18 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Nota persistente');
   await expect(page.getByTestId('workspace-memory')).toContainText('CAMBIOS GUARDADOS');
   await page.screenshot({ path: testInfo.outputPath('folder-saved.png'), fullPage: true });
+  const savedFiles = await page.evaluate(() => localStorage.getItem('nouty-test-folder'));
+  // Esta fixture no tiene handles nativos clonables. C3 no puede reabrirlos automáticamente;
+  // la restauración real de carpeta/tablero se comprueba en recovery-f5.spec.ts con OPFS.
+  expect(await page.evaluate(async () => {
+    const picker = Reflect.get(window, 'showDirectoryPicker') as () => Promise<unknown>;
+    try { structuredClone(await picker()); return 'cloned'; }
+    catch (error) { return error instanceof DOMException ? error.name : 'unexpected'; }
+  })).toBe('DataCloneError');
   await page.reload();
-  await expect(page.getByTestId('workspace-missing')).toBeVisible();
+  await expect(page.getByTestId('workspace-resume')).toContainText('No se puede abrir la carpeta o el proyecto conocido.');
+  await expect(page.getByTestId('workspace-missing')).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('nouty-test-folder'))).toBe(savedFiles);
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   await expect(page.getByRole('button', { name: 'Abrir el proyecto Mi carpeta' })).toBeVisible();

@@ -1,10 +1,12 @@
 import { isValidId } from '@noutynotes/domain';
+import type { BoardId } from '@noutynotes/domain';
 
 export interface ResumeIntent {
   readonly version: 1;
   readonly backend: 'web';
   readonly folderId: string;
   readonly workspaceId: string;
+  readonly activeBoardId?: string;
 }
 
 export function parseResumeIntent(serialized: string | null): ResumeIntent | null {
@@ -15,8 +17,16 @@ export function parseResumeIntent(serialized: string | null): ResumeIntent | nul
     if (entry.version !== 1 || entry.backend !== 'web' || typeof entry.folderId !== 'string'
       || !/^[a-zA-Z0-9:._-]{1,180}$/.test(entry.folderId)
       || typeof entry.workspaceId !== 'string' || !isValidId(entry.workspaceId)) return null;
-    return { version: 1, backend: 'web', folderId: entry.folderId, workspaceId: entry.workspaceId };
+    return { version: 1, backend: 'web', folderId: entry.folderId, workspaceId: entry.workspaceId,
+      ...(typeof entry.activeBoardId === 'string' && isValidId(entry.activeBoardId) ? { activeBoardId: entry.activeBoardId } : {}) };
   } catch { return null; }
+}
+
+/** Solo sobre el proyecto ya abierto: una pista nunca acredita pertenencia ni recupera archivados. */
+export function resolveResumeBoard(intent: ResumeIntent | null, owner: Pick<ResumeIntent, 'backend' | 'folderId' | 'workspaceId'>,
+  boards: readonly { readonly id: BoardId }[]): BoardId | null {
+  const matches = intent?.backend === owner.backend && intent.folderId === owner.folderId && intent.workspaceId === owner.workspaceId;
+  return (matches ? boards.find((board) => board.id === intent.activeBoardId)?.id : undefined) ?? boards[0]?.id ?? null;
 }
 
 export type ResumeState = 'idle' | 'resolving' | 'permission' | 'unavailable' | 'recovery' | 'ready';

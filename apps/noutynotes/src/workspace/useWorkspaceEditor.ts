@@ -209,9 +209,11 @@ export function useWorkspaceEditor(id: string | undefined) {
     return result?.ok ?? false;
   }, [locale, mode]);
   const flush = useCallback(async () => (await reactive.current?.flush())?.ok ?? true, []);
+  // Lectura para continuaciones de acciones: React puede no haber confirmado todavía su render.
+  const currentWorkspace = useCallback(() => mounted.current ? current.current : null, []);
 
   return {
-    view, feedback, saving, saveState, saveIssues, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal, flush, revision,
+    view, feedback, saving, saveState, saveIssues, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal, flush, currentWorkspace, revision,
     undoLabel: steps.past.at(-1)?.label ?? null,
     redoLabel: steps.future.at(-1)?.label ?? null,
   };
