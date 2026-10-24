@@ -1,6 +1,6 @@
 import {
   LEGACY_RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard,
-  isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateConnectorPath, validateWorkspace,
+  isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateConnectorPath, validateRichTextDocument, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
   AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, ConnectorRoutePoint, GridConfig, GridPoint, GridSize, RestoreReport,
@@ -90,6 +90,8 @@ export interface AddCardInput {
   readonly title?: string;
   /** Contenido inicial de una nota; permite crear inserciones compuestas sin un segundo guardado. */
   readonly content?: string;
+  /** Solo para crear una imagen enriquecida: documento inicial, sin un segundo guardado de la Nota. */
+  readonly contentDocument?: RichTextDocument;
   /** Solo para `link`: la dirección tal como la escribe la persona; se normaliza (ADR 0020). */
   readonly url?: string;
   /** Solo para `image`: un asset que ya existe (biblioteca, ADR 0022). */
@@ -194,6 +196,7 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   const kind = isObject(input) ? ownValue(input, 'kind') : undefined;
   const title = isObject(input) ? ownValue(input, 'title') : undefined;
   const content = isObject(input) ? ownValue(input, 'content') : undefined;
+  const contentDocument = isObject(input) ? ownValue(input, 'contentDocument') : undefined;
   const requestedBoard = isObject(input) ? ownValue(input, 'boardId') : undefined;
   const near = isObject(input) ? ownValue(input, 'near') : undefined;
   const rawUrl = isObject(input) ? ownValue(input, 'url') : undefined;
@@ -225,6 +228,11 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
   if (assetRef !== undefined && ((kind !== 'image' && kind !== 'document') || typeof assetRef !== 'string' || !isValidAssetRef(assetRef) || !assetRef.startsWith('assets/'))) {
     return storageFailure('invalid-asset', 'assetRef', 'Solo una imagen o un documento del proyecto (bajo assets/) puede añadirse como tarjeta de imagen o de documento.');
   }
+  if (contentDocument !== undefined && (kind !== 'image' || content !== undefined)) {
+    return storageFailure('invalid-workspace', 'contentDocument', 'El documento inicial solo se admite en una imagen y no puede coexistir con contenido Markdown.');
+  }
+  const initialDocument = contentDocument === undefined ? undefined : validateRichTextDocument(contentDocument);
+  if (initialDocument && !initialDocument.ok) return storageFailure('invalid-workspace', 'contentDocument', 'El documento inicial no es válido.', initialDocument.issues);
   const preset = PROTOTYPE_CARD_PRESETS[kind];
   if (connectorPath !== undefined) {
     const checked = validateConnectorPath(connectorPath as readonly ConnectorRoutePoint[]);
@@ -258,7 +266,7 @@ export async function addCardToBoard(storage: WorkspaceStorage, workspaceId: Wor
       ...(kind === 'connector' ? { frameOverride: 'hidden' as const, connectorColor: 'default' as const, connectorWidth: 'medium' as const, connectorDash: 'solid' as const, connectorArrows: 'end' as const, connectorDirection: 'down' as const } : {}),
       ...(typeof connectorStartCardId === 'string' ? { connectorStartCardId: connectorStartCardId as CardId } : {}),
       ...(typeof connectorEndCardId === 'string' ? { connectorEndCardId: connectorEndCardId as CardId } : {}),
-      ...(preset.content === undefined ? {} : { content: typeof content === 'string' ? content
+      ...(initialDocument?.ok ? { contentDocument: initialDocument.value } : preset.content === undefined ? {} : { content: typeof content === 'string' ? content
         : kind === 'image' && typeof assetRef === 'string' ? insertImageBlock('', undefined, assetRef, title ?? preset.title ?? 'Imagen')
           : preset.content }),
       // Texto libre (ADR 0057): siempre HTML seguro v1 de un párrafo, nunca Markdown — su contenido

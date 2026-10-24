@@ -12,6 +12,7 @@ import { pickImageFile, supportsImageImport } from '../../session/imageFiles';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import type { EditableCardDraft } from '../editorialDraft';
 import type { MarkdownImagePlace, NoteImageSource, ResolvedNoteImageSource, VisualImagePlace } from '../noteImagePlacement';
+import { placedNoteImage } from '../noteImagePlacement';
 import { RichTextEditor } from '../RichTextEditor';
 import type { ScreenBox } from './cardChrome';
 
@@ -113,7 +114,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     const nextContent = encoded.ok ? encoded.value : content;
     setContent(nextContent);
     onDraftChange({ cardId: card.id, title, content: nextContent, titleDocument, bodySource: { format: 'html', value: nextContent }, bodyDocument: result.value.contentDocument, bodyValidation: { status: 'valid' } });
-    return result.value.contentDocument.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null;
+    return placedNoteImage(draft, result.value.contentDocument, place, result.value.ref);
   };
   const placeVisualImage = async (document: RichTextDocument, place: VisualImagePlace, source: NoteImageSource = { kind: 'upload' }): Promise<RichTextImage | null> => {
     return placeImageDocument(place, document, source);

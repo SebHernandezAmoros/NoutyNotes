@@ -21,6 +21,7 @@ import { NoteBlocksEditor } from './NoteBlocksEditor';
 import { openLink } from './openLink';
 import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
 import type { NoteImageSource } from './noteImagePlacement';
+import { placedNoteImage } from './noteImagePlacement';
 import { RichTextEditor } from './RichTextEditor';
 import { PLACEHOLDER_TITLES } from './titlePlaceholders';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
@@ -438,7 +439,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       const nextContent = encoded.ok ? encoded.value : content;
       setContent(nextContent);
       publishDraft({ title, content: nextContent, titleDocument }, { source: { format: 'html', value: nextContent }, document: result.value.contentDocument, validation: { status: 'valid' } });
-      return result.value.contentDocument.blocks.find((block): block is RichTextImage => block.type === 'image' && block.assetRef === result.value.ref) ?? null;
+      return placedNoteImage(draft, result.value.contentDocument, place, result.value.ref);
     } else {
       setImageProblem(describeFailure(result.issues, mode));
     }

@@ -2,7 +2,7 @@
  * Biblioteca de assets del proyecto (ADR 0022): importar sin crear tarjeta, añadir al tablero sin copiar,
  * reemplazar cambiando todas las referencias en una transacción y eliminar solo lo que nada usa.
  */
-import { validateWorkspace } from '@noutynotes/domain';
+import { RICH_TEXT_SCHEMA_VERSION, validateWorkspace } from '@noutynotes/domain';
 import type { AssetRef, BoardId, CardId, WorkspaceId } from '@noutynotes/domain';
 
 import { assetKind, buildAssetCatalog, replaceAssetReferences } from './assets-catalog';
@@ -78,9 +78,9 @@ export interface ImportImageAtInput {
 
 /**
  * Importa una imagen nueva como tarjeta en una posición concreta (UX7.1-IMAGES-FIX): compone
- * `importAssetImage` (escribe el archivo en la biblioteca, sin tarjeta) y `addAssetToBoard` (coloca una
- * tarjeta que reutiliza esa referencia, con soporte de `near` que `importImageCard` no tiene). Si la
- * colocación falla, retira el archivo recién escrito — igual que el resto de operaciones de imagen.
+ * `importAssetImage` (escribe el archivo en la biblioteca, sin tarjeta) y `addCardToBoard` (crea la
+ * Nota enriquecida con las políticas de imagen nueva de N2 y soporte de `near`). El nombre físico
+ * no se convierte en título, descripción ni leyenda. Si la colocación falla, retira el archivo nuevo.
  */
 export async function importImageCardAt(
   storage: WorkspaceStorage, assets: WorkspaceAssets, workspaceId: WorkspaceId, input: ImportImageAtInput,
@@ -88,8 +88,12 @@ export async function importImageCardAt(
   const written = await importAssetImage(storage, assets, workspaceId, { bytes: input.bytes, fileName: input.fileName });
   if (!written.ok) return written;
   const ref = written.value;
-  const saved = await addAssetToBoard(storage, workspaceId, {
-    ref, ...(input.boardId ? { boardId: input.boardId } : {}), ...(input.near ? { near: input.near } : {}), ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+  const saved = await addCardToBoard(storage, workspaceId, {
+    kind: 'image', assetRef: ref, title: 'Imagen',
+    contentDocument: { schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks: [
+      { type: 'image', assetRef: ref as AssetRef, alt: '', captionPolicy: 'explicit', accessibilityIntent: 'pending' },
+    ] },
+    ...(input.boardId ? { boardId: input.boardId } : {}), ...(input.near ? { near: input.near } : {}), ...(input.createdAt ? { createdAt: input.createdAt } : {}),
   });
   if (saved.ok) return saved;
   return withdraw(assets, workspaceId, ref as AssetRef, saved);

@@ -1,6 +1,6 @@
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { RichTextCodec } from '@noutynotes/application';
-import type { RichTextDocument } from '@noutynotes/domain';
+import type { RichTextDocument, RichTextImage } from '@noutynotes/domain';
 
 /** Origen de los bytes de una imagen a insertar/reemplazar (UX7.1-IMAGES): subida nueva (picker del
  * sistema), ya catalogada en Assets (ASSET-04, sin copiar bytes) o recién pegada del portapapeles
@@ -17,6 +17,16 @@ export type ResolvedNoteImageSource = Exclude<NoteImageSource, { readonly kind: 
 export type VisualImagePlace =
   | { readonly kind: 'insert'; readonly afterBlock: number }
   | { readonly kind: 'replace'; readonly blockIndex: number };
+
+/** AssetRef identifies shared bytes, not a particular image occurrence in the document. */
+export function placedNoteImage(before: RichTextDocument, after: RichTextDocument,
+  place: { readonly kind: 'insert'; readonly afterBlock?: number } | { readonly kind: 'replace'; readonly blockIndex: number },
+  ref: string): RichTextImage | null {
+  const index = place.kind === 'replace' ? place.blockIndex
+    : Math.min(before.blocks.length, (place.afterBlock ?? before.blocks.length - 1) + 1);
+  const block = after.blocks[index];
+  return block?.type === 'image' && block.assetRef === ref ? block : null;
+}
 
 export type MarkdownImagePlace =
   | { readonly kind: 'insert'; readonly caret?: number }

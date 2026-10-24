@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   addAssetToBoard, addDocumentToBoard, addNoteImage, addCardToBoard, buildAssetCatalog, createEmptyWorkspaceNamed, deleteUnusedAssets, duplicateSelection,
@@ -7,9 +7,9 @@ import {
 } from '../../packages/application/src/index';
 import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult } from '../../packages/application/src/index';
 import { isValidAssetRef } from '../../packages/domain/src/index';
-import type { AssetRef, BoardId, WorkspaceId } from '../../packages/domain/src/index';
+import type { AssetRef, BoardId, RichTextDocument, WorkspaceId } from '../../packages/domain/src/index';
 import { MemoryDocumentTree } from '../../packages/storage/src/__fixtures__/document-tree';
-import { ArchiveStorage, DocumentTreeFolderPort, FolderStorage, readWorkspaceArchive } from '../../packages/storage/src/index';
+import { ArchiveStorage, DocumentTreeFolderPort, FolderStorage, parseRichTextMarkdown, readWorkspaceArchive, serializeRichTextMarkdown, serializeWorkspace, writeWorkspaceArchive } from '../../packages/storage/src/index';
 
 function ok<T>(result: WorkspaceStorageResult<T>): T {
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
@@ -81,6 +81,74 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     const placement = opened.layouts[0]?.placements.find((candidate) => candidate.cardId === cardId);
     expect(placement?.rect.x).toBe(3);
     expect(placement?.rect.y).toBe(2);
+  });
+
+  it('pegar en Canvas crea Imagen enriquecida explicit/pending sin convertir el nombre del Asset en texto editorial', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Pegado Canvas'));
+    const save = vi.spyOn(storage, 'save');
+    const cardId = ok(await importImageCardAt(storage, storage, id, { bytes: PNG, fileName: 'captura-interna-42.png' }));
+    const card = ok(await storage.open(id)).cards.find((candidate) => candidate.id === cardId);
+    const ref = 'assets/images/captura-interna-42.png';
+    expect(card?.title).toBe('Imagen');
+    expect(card?.content).toBeUndefined();
+    expect(card?.contentDocument).toEqual({ schemaVersion: 2, blocks: [
+      { type: 'image', assetRef: ref, alt: '', captionPolicy: 'explicit', accessibilityIntent: 'pending' },
+    ] });
+    expect(card?.assetRefs).toEqual([ref]);
+    expect(ok(await storage.readAsset(id, ref as AssetRef))).toEqual(PNG);
+    expect(save).toHaveBeenCalledTimes(1);
+    save.mockRestore();
+  });
+
+  it('pegar una imagen conserva la Nota histórica y persiste el nuevo documento y los bytes mediante ZIP', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Compatibilidad Canvas'));
+    const oldId = ok(await importImageCard(storage, storage, id, { bytes: PNG, fileName: 'Título histórico.png' }));
+    const oldRef = ok(await storage.open(id)).cards[0]!.assetRefs![0]!;
+    const oldEncoded = serializeRichTextMarkdown({ schemaVersion: 1, blocks: [
+      { type: 'image', assetRef: oldRef, alt: 'Descripción legítima', caption: [{ type: 'text', text: 'Leyenda histórica exacta' }] },
+    ] });
+    if (!oldEncoded.ok) throw new Error(JSON.stringify(oldEncoded.issues));
+    const oldBody = oldEncoded.value;
+    expect(oldBody).toContain('<!-- nouty-caption:v1:');
+    ok(await editCardContent(storage, id, oldId, { content: oldBody }));
+    const before = ok(await storage.open(id));
+    const oldFile = `cards/${oldId}.md`;
+    const savedBefore = serializeWorkspace(before);
+    if (!savedBefore.ok) throw new Error(JSON.stringify(savedBefore.issues));
+    const newId = ok(await importImageCardAt(storage, storage, id, { bytes: JPEG, fileName: 'Plano del Río.jpg', boardId: before.boards[0]!.id, near: { x: 9, y: 2, columns: 6 } }));
+    const after = ok(await storage.open(id));
+    expect(after.cards.find((card) => card.id === oldId)).toEqual(before.cards[0]);
+    const files = serializeWorkspace(after);
+    if (!files.ok) throw new Error(JSON.stringify(files.issues));
+    expect(files.value[oldFile]).toBe(savedBefore.value[oldFile]);
+    expect(files.value[`cards/${newId}.md`]).toContain('contentVersion: 2');
+    expect(files.value[`cards/${newId}.md`]).toContain('data-nouty-image-caption-policy="explicit"');
+    const assetFiles = Object.fromEntries(await Promise.all(ok(await storage.listAssets(id)).map(async (ref) => [ref, ok(await storage.readAsset(id, ref as AssetRef))])));
+    const zipped = writeWorkspaceArchive(files.value, assetFiles);
+    if (!zipped.ok) throw new Error(JSON.stringify(zipped.issues));
+    const reopened = readWorkspaceArchive(zipped.value);
+    if (!reopened.ok) throw new Error(JSON.stringify(reopened.issues));
+    expect(reopened.value.workspace.cards).toEqual(after.cards);
+    expect(reopened.value.assets).toEqual(assetFiles);
+    const parsedOld = parseRichTextMarkdown(reopened.value.workspace.cards.find((card) => card.id === oldId)!.content!);
+    if (!parsedOld.ok) throw new Error(JSON.stringify(parsedOld.issues));
+    expect(parsedOld.value.blocks[0]).toEqual({ type: 'image', assetRef: oldRef, alt: 'Descripción legítima', caption: [{ type: 'text', text: 'Leyenda histórica exacta' }] });
+  });
+
+  it('rechaza documentos iniciales inválidos o ajenos a imágenes antes de guardar', async () => {
+    const { storage } = make();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Validación inicial'));
+    const document: RichTextDocument = { schemaVersion: 2, blocks: [] };
+    const save = vi.spyOn(storage, 'save');
+    const invalid = await addCardToBoard(storage, id, { kind: 'image', contentDocument: { schemaVersion: 99, blocks: [] } as unknown as RichTextDocument });
+    expect(invalid.ok).toBe(false);
+    expect((await addCardToBoard(storage, id, { kind: 'note', contentDocument: document })).ok).toBe(false);
+    expect((await addCardToBoard(storage, id, { kind: 'image', content: 'No mezclar', contentDocument: document })).ok).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+    expect(ok(await storage.open(id)).cards).toEqual([]);
+    save.mockRestore();
   });
 
   it('importar con posición: un formato inválido no escribe nada; si la colocación falla, se retira el archivo recién escrito sin dejar huérfano', async () => {
