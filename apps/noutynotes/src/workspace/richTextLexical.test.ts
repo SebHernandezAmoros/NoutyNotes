@@ -9,6 +9,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
 import { RichTextImageNode } from './RichTextImageNode.web';
+import { RichTextRetiredImageNode } from './RichTextRetiredImageNode.web';
+import { removedImageDocument } from '../../../../tests/fixtures/removed-image-blocks';
 import { $loadBasicRichTextDocument, $loadWebRichTextDocument, $readBasicRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
 
 // Este test ejercita el adaptador Lexical sin renderizar React Native. El nodo de
@@ -19,6 +21,8 @@ vi.mock('@noutynotes/ui', () => ({
     theme: { colors: { cardSurface: '#fffdf6', cardText: '#23241f', border: '#34362f' } },
   }),
 }));
+// Headless transport test; the real marker UI is exercised in Playwright.
+vi.mock('./RetiredImageBlock', () => ({ RetiredImageBlock: () => null }));
 
 const basicDocument: RichTextDocument = {
   schemaVersion: 1,
@@ -62,6 +66,25 @@ const advancedDocument: RichTextDocument = {
 };
 
 describe('adaptador Lexical de UX7 P04/P07', () => {
+  it('U2-B conserva marcador y versión al editar vecinos y serializar el estado Lexical real', () => {
+    const editor = createEditor({ namespace: 'u2-b-transport', nodes: [RichTextRetiredImageNode], onError: (error) => { throw error; } });
+    expect(isWebRichTextDocument(removedImageDocument)).toBe(true);
+    editor.update(() => $loadWebRichTextDocument(removedImageDocument), { discrete: true });
+    const saved = editor.getEditorState().toJSON();
+    editor.setEditorState(editor.parseEditorState(JSON.stringify(saved)));
+    editor.update(() => {
+      const first = $getRoot().getFirstDescendant();
+      if (!first || !('setTextContent' in first)) throw new Error('Párrafo vecino no editable.');
+      (first as import('lexical').TextNode).setTextContent('Anterior editado');
+    }, { discrete: true });
+    editor.getEditorState().read(() => {
+      const read = $readWebRichTextDocument();
+      expect(read?.schemaVersion).toBe(3);
+      expect(read?.blocks[1]).toEqual(removedImageDocument.blocks[1]);
+      expect(read?.blocks[0]).toEqual({ type: 'paragraph', content: [{ type: 'text', text: 'Anterior editado' }] });
+      expect(read?.blocks[2]).toEqual(removedImageDocument.blocks[2]);
+    });
+  });
   it('N2 edita propósito y leyenda explícita independientemente sin borrar textos históricos', () => {
     const document: RichTextDocument = { schemaVersion: 1, blocks: [
       { type: 'image', assetRef: 'assets/images/uno.png' as AssetRef, alt: 'Anterior', caption: [{ type: 'text', text: 'Leyenda' }] },

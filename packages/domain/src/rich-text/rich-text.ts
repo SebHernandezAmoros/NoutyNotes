@@ -6,6 +6,8 @@ import { isLinkUrl } from '../cards/field-values';
 import { collectPlainDataIssues } from '../shared/plain-data';
 
 export const RICH_TEXT_SCHEMA_VERSION = 2 as const;
+/** Selective capability for inert retired image blocks; ordinary creators retain v1/v2. */
+export const RETIRED_IMAGE_SCHEMA_VERSION = 3 as const;
 /** Los creadores históricos conservan v1 hasta que se autorice la escritura de políticas nuevas. */
 export const LEGACY_RICH_TEXT_SCHEMA_VERSION = 1 as const;
 export const MAX_RICH_TEXT_BLOCKS = 10_000;
@@ -33,7 +35,7 @@ export const richTextImageAccessibilityIntents = ['informative', 'decorative', '
 export type RichTextImageAccessibilityIntent = (typeof richTextImageAccessibilityIntents)[number];
 
 export interface RichTextDocument {
-  readonly schemaVersion: typeof LEGACY_RICH_TEXT_SCHEMA_VERSION | typeof RICH_TEXT_SCHEMA_VERSION;
+  readonly schemaVersion: typeof LEGACY_RICH_TEXT_SCHEMA_VERSION | typeof RICH_TEXT_SCHEMA_VERSION | typeof RETIRED_IMAGE_SCHEMA_VERSION;
   readonly blocks: readonly RichTextBlock[];
 }
 
@@ -98,6 +100,17 @@ export interface RichTextTableCell {
   readonly verticalAlignment?: RichTextVerticalAlignment;
 }
 
+/** No original reference, URL, identifier or loadable resource is retained. */
+export interface RichTextRetiredImage {
+  readonly type: 'retired-image';
+  readonly alt: string;
+  readonly caption?: readonly RichTextLeaf[];
+  readonly captionPolicy?: RichTextImageCaptionPolicy;
+  readonly accessibilityIntent?: RichTextImageAccessibilityIntent;
+  readonly size?: RichTextImageSize;
+  readonly alignment?: RichTextImageAlignment;
+}
+
 export interface RichTextTableRow {
   readonly cells: readonly RichTextTableCell[];
 }
@@ -119,6 +132,7 @@ export type RichTextBlock =
   | RichTextHeading
   | RichTextList
   | RichTextImage
+  | RichTextRetiredImage
   | RichTextTable
   | RichTextOpaqueMarkdown;
 
@@ -295,10 +309,12 @@ function collectBlockIssues(input: unknown, path: string, issues: DomainIssue[])
       collectListIssues(input, path, issues, 1);
       return;
     case 'image':
-      checkKnownKeys(input, imageKeys, path, issues);
-      checkAssetRef(input.assetRef, `${path}.assetRef`, issues);
+    case 'retired-image':
+      checkKnownKeys(input, input.type === 'image' ? imageKeys : imageKeys.filter((key) => key !== 'assetRef'), path, issues);
+      if (input.type === 'image') checkAssetRef(input.assetRef, `${path}.assetRef`, issues);
       checkText(input.alt, `${path}.alt`, issues, true);
       if (input.caption !== undefined) collectInlineListIssues(input.caption, `${path}.caption`, issues);
+      if (input.type === 'retired-image' && Array.isArray(input.caption)) input.caption.forEach((inline, index) => collectLeafIssues(inline, `${path}.caption[${index}]`, issues));
       if (input.captionPolicy !== undefined && input.captionPolicy !== 'explicit') issues.push(issue('invalid-value', `${path}.captionPolicy`, 'Solo se admite "explicit".'));
       if (input.accessibilityIntent !== undefined && !richTextImageAccessibilityIntents.includes(input.accessibilityIntent as RichTextImageAccessibilityIntent)) issues.push(issue('invalid-value', `${path}.accessibilityIntent`, 'Debe ser "informative", "decorative" o "pending".'));
       if (input.size !== undefined && !richTextImageSizes.includes(input.size as RichTextImageSize)) issues.push(issue('invalid-value', `${path}.size`, 'Debe ser "small", "medium", "large" o "full".'));
@@ -334,8 +350,8 @@ export function validateRichTextDocument(input: unknown): ValidationResult<RichT
   if (issues.length > 0) return resultOf(document, issues);
   if (!isRecord(input)) return resultOf(document, [issue('invalid-value', documentPath, 'Debe ser un objeto.')]);
   checkKnownKeys(input, documentKeys, documentPath, issues);
-  if (input.schemaVersion !== LEGACY_RICH_TEXT_SCHEMA_VERSION && input.schemaVersion !== RICH_TEXT_SCHEMA_VERSION) {
-    issues.push(issue('unsupported-schema-version', `${documentPath}.schemaVersion`, 'Solo se admiten las versiones 1 y 2.'));
+  if (input.schemaVersion !== LEGACY_RICH_TEXT_SCHEMA_VERSION && input.schemaVersion !== RICH_TEXT_SCHEMA_VERSION && input.schemaVersion !== RETIRED_IMAGE_SCHEMA_VERSION) {
+    issues.push(issue('unsupported-schema-version', `${documentPath}.schemaVersion`, 'Solo se admiten las versiones 1, 2 y 3.'));
   }
   const blocksPath = `${documentPath}.blocks`;
   const blocks = checkArray(input.blocks, blocksPath, issues, MAX_RICH_TEXT_BLOCKS);
@@ -343,6 +359,9 @@ export function validateRichTextDocument(input: unknown): ValidationResult<RichT
   blocks.forEach((block, index) => {
     const path = `${blocksPath}[${index}]`;
     collectBlockIssues(block, path, issues);
+    if (isRecord(block) && block.type === 'retired-image' && input.schemaVersion !== RETIRED_IMAGE_SCHEMA_VERSION) {
+      issues.push(issue('unsupported-schema-version', path, 'Una imagen retirada requiere documento v3.'));
+    }
     if (input.schemaVersion === LEGACY_RICH_TEXT_SCHEMA_VERSION && isRecord(block) && block.type === 'image'
       && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined)) {
       issues.push(issue('unsupported-schema-version', path, 'Las políticas de imagen requieren documento v2.'));
@@ -389,6 +408,7 @@ export function richTextDocumentText(document: RichTextDocument): string {
       case 'heading': return readableInlines(block.content);
       case 'list': return readableList(block).join('\n');
       case 'image': return [block.alt, readableInlines(block.caption)].filter(Boolean).join('\n');
+      case 'retired-image': return ['Imagen retirada', block.alt, readableInlines(block.caption)].filter(Boolean).join('\n');
       case 'table': return [...(block.header ? [block.header] : []), ...block.rows]
         .map((row) => row.cells.map((cell) => readableInlines(cell.content)).join('\t')).join('\n');
       case 'opaque-markdown': return block.source;
@@ -451,6 +471,7 @@ function normalizeBlock(block: RichTextBlock): RichTextBlock {
     case 'heading': return { ...block, content: normalizeInlines(block.content) };
     case 'list': return normalizeList(block);
     case 'image': return block.caption === undefined ? block : { ...block, caption: normalizeInlines(block.caption) };
+    case 'retired-image': return block.caption === undefined ? block : { ...block, caption: normalizeInlines(block.caption) as readonly RichTextLeaf[] };
     case 'table': return {
       ...block,
       ...(block.header === undefined ? {} : { header: normalizeRow(block.header) }),

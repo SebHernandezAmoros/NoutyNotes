@@ -211,7 +211,7 @@ export async function addNoteImageDocument(
     const image: RichTextImage = { type: 'image', assetRef: ref, alt: '', captionPolicy: 'explicit', accessibilityIntent: 'pending' };
     blocks.splice(Math.min(blocks.length, (input.place.afterBlock ?? blocks.length - 1) + 1), 0, image);
   }
-  const contentDocument: RichTextDocument = { ...input.contentDocument, schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks };
+  const contentDocument: RichTextDocument = { ...input.contentDocument, schemaVersion: input.contentDocument.schemaVersion === 3 ? 3 : RICH_TEXT_SCHEMA_VERSION, blocks };
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
     const card = workspace.cards.find((candidate) => candidate.id === cardId);
     if (!card) return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no existe en este proyecto.' }] };
@@ -303,7 +303,7 @@ export async function insertExistingNoteImageDocument(
     const image: RichTextImage = { type: 'image', assetRef: ref, alt: '', captionPolicy: 'explicit', accessibilityIntent: 'pending' };
     blocks.splice(Math.min(blocks.length, (input.place.afterBlock ?? blocks.length - 1) + 1), 0, image);
   }
-  const contentDocument: RichTextDocument = { ...input.contentDocument, schemaVersion: RICH_TEXT_SCHEMA_VERSION, blocks };
+  const contentDocument: RichTextDocument = { ...input.contentDocument, schemaVersion: input.contentDocument.schemaVersion === 3 ? 3 : RICH_TEXT_SCHEMA_VERSION, blocks };
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
     const card = workspace.cards.find((candidate) => candidate.id === cardId);
     if (!card) return { ok: false, issues: [{ code: 'missing-reference', path: 'cardId', message: 'La tarjeta no existe en este proyecto.' }] };

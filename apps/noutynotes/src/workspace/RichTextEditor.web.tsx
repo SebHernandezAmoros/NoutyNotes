@@ -72,6 +72,7 @@ import { t } from '../i18n';
 import { $createWebRichTextNodes, $loadWebRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
 import { parsePastedRichText } from './richTextPaste.web';
 import { $createRichTextImageNode, $isRichTextImageNode, RICH_TEXT_IMAGE_CHANGE_TAG, RichTextImageNode, RichTextImageProvider } from './RichTextImageNode.web';
+import { RichTextRetiredImageNode } from './RichTextRetiredImageNode.web';
 import type { RichTextEditorProps } from './RichTextEditor.types';
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -781,7 +782,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
   const [initialDocument] = useState(document);
   const [initialConfig] = useState(() => ({
     namespace: `noutynotes-card-${cardId}`,
-    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode, TableNode, TableRowNode, TableCellNode],
+    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode, RichTextRetiredImageNode, TableNode, TableRowNode, TableCellNode],
     theme: editorTheme,
     editorState: () => $loadWebRichTextDocument(initialDocument),
     onError: (error: Error) => setProblem(error.message),

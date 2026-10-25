@@ -28,6 +28,7 @@ function supportsWebTable(table: Extract<RichTextDocument['blocks'][number], { r
 /** Alcance visual web de P07. Android conserva el subconjunto básico de P05. */
 export function isWebRichTextDocument(document: RichTextDocument): boolean {
   return document.blocks.every((block) => {
+    if (block.type === 'retired-image') return (block.caption ?? []).every(supportsWebInline);
     if (block.type === 'paragraph' || block.type === 'heading') return block.content.every(supportsWebInline);
     if (block.type === 'list') return supportsWebList(block);
     if (block.type === 'table') return supportsWebTable(block);

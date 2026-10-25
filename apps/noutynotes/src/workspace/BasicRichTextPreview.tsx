@@ -4,6 +4,7 @@ import { useTheme } from '@noutynotes/ui';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { projectRichTextPreview } from './canvas/richTextPreviewProjection';
+import { RetiredImageBlock } from './RetiredImageBlock';
 
 // Ancho muy generoso para los llamadores de este componente que no necesitan una estimación precisa
 // de envoltorio visual (títulos, vista previa del editor, `PresentationBody`): con un ancho así de
@@ -86,10 +87,11 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
 export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID, width, unclamped }: BasicRichTextPreviewProps) {
   const { theme } = useTheme();
   const projectedDocument = unclamped ? document : projectRichTextPreview(document, numberOfLines, width ?? UNBOUNDED_WIDTH, fontSize).document;
-  if (projectedDocument.blocks.some((block) => block.type === 'table')) {
+  if (projectedDocument.blocks.some((block) => block.type === 'table' || block.type === 'retired-image')) {
     return (
       <View testID={testID} style={styles.tableDocument}>
         {projectedDocument.blocks.map((block, blockIndex) => {
+          if (block.type === 'retired-image') return <RetiredImageBlock key={blockIndex} block={block} testID={`${testID}-retired-${blockIndex}`} />;
           if (block.type !== 'table') {
             return <BasicRichTextPreview key={blockIndex} document={{ schemaVersion: document.schemaVersion, blocks: [block] }} numberOfLines={numberOfLines}
               color={color} fontSize={fontSize} lineHeight={lineHeight} fontFamily={fontFamily} testID={`${testID}-block-${blockIndex}`} width={width} unclamped={unclamped} />;

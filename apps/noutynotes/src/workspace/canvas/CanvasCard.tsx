@@ -80,7 +80,8 @@ function richDocumentPlainText(document: RichTextDocument): string {
       for (const row of block.header ? [block.header, ...block.rows] : block.rows) {
         for (const cell of row.cells) lines.push(inlinePlainText(cell.content));
       }
-    } else if (block.type === 'image') lines.push('\n'.repeat(IMAGE_BLOCK_LINES - 1));
+    } else if (block.type === 'retired-image') lines.push('Imagen retirada', block.alt, inlinePlainText(block.caption ?? []), '');
+    else if (block.type === 'image') lines.push('\n'.repeat(IMAGE_BLOCK_LINES - 1));
   }
   return lines.join('\n');
 }

@@ -22,7 +22,7 @@ import {
 } from 'lexical';
 import type { ElementNode, LexicalNode } from 'lexical';
 
-import { LEGACY_RICH_TEXT_SCHEMA_VERSION, RICH_TEXT_SCHEMA_VERSION } from '@noutynotes/domain';
+import { LEGACY_RICH_TEXT_SCHEMA_VERSION, RICH_TEXT_SCHEMA_VERSION, RETIRED_IMAGE_SCHEMA_VERSION } from '@noutynotes/domain';
 import type {
   RichTextDocument, RichTextInline, RichTextLeaf, RichTextList, RichTextListItem, RichTextMark,
   RichTextTable, RichTextTableCell, RichTextTableRow,
@@ -30,6 +30,7 @@ import type {
 
 import { isBasicRichTextDocument } from './basicRichText';
 import { $createRichTextImageNode, $isRichTextImageNode } from './RichTextImageNode.web';
+import { $createRichTextRetiredImageNode, $isRichTextRetiredImageNode } from './RichTextRetiredImageNode.web';
 
 function lexicalLeaf(leaf: RichTextLeaf): LexicalNode {
   if (leaf.type === 'hard-break') return $createLineBreakNode();
@@ -100,6 +101,7 @@ export function $createWebRichTextNodes(document: RichTextDocument): LexicalNode
     }
     if (block.type === 'list') return createList(block);
     if (block.type === 'image') return $createRichTextImageNode(block);
+    if (block.type === 'retired-image') return $createRichTextRetiredImageNode(block);
     if (block.type === 'table') return createTable(block);
     throw new Error('El documento contiene bloques fuera del alcance del editor visual web.');
   });
@@ -236,6 +238,10 @@ export function $readWebRichTextDocument(sourceVersion: RichTextDocument['schema
       blocks.push(list);
       continue;
     }
+    if ($isRichTextRetiredImageNode(node)) {
+      blocks.push(node.block());
+      continue;
+    }
     if ($isRichTextImageNode(node)) {
       blocks.push(node.image());
       continue;
@@ -249,7 +255,7 @@ export function $readWebRichTextDocument(sourceVersion: RichTextDocument['schema
     return null;
   }
   const hasPolicy = blocks.some((block) => block.type === 'image' && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined));
-  return { schemaVersion: hasPolicy ? RICH_TEXT_SCHEMA_VERSION : sourceVersion, blocks: blocks.length === 0 ? [{ type: 'paragraph', content: [] }] : blocks };
+  return { schemaVersion: sourceVersion === RETIRED_IMAGE_SCHEMA_VERSION || blocks.some((block) => block.type === 'retired-image') ? RETIRED_IMAGE_SCHEMA_VERSION : hasPolicy ? RICH_TEXT_SCHEMA_VERSION : sourceVersion, blocks: blocks.length === 0 ? [{ type: 'paragraph', content: [] }] : blocks };
 }
 
 /** Debe ejecutarse dentro de `editor.update`. */

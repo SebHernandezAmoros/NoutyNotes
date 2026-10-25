@@ -96,13 +96,13 @@ export function analyzeAssetReferences(input: AssetReferenceInput): AssetReferen
       if (card.contentDocument !== undefined) {
         const doc = card.contentDocument;
         const unknown = Array.isArray(doc.blocks) && doc.blocks.some((block) =>
-          !['paragraph', 'heading', 'list', 'image', 'table'].includes(block.type));
-        if (unknown || ![1, 2].includes(doc.schemaVersion)) {
+          !['paragraph', 'heading', 'list', 'image', 'retired-image', 'table'].includes(block.type));
+        if (unknown || ![1, 2, 3].includes(doc.schemaVersion)) {
           issues.push({ kind: 'unsupported', detail: 'Hay contenido enriquecido no admitido; no se puede completar el análisis.' });
         }
         // Validate the document, including inlines; opaque/future blocks are never an empty success.
         const parsed = validateRichTextDocument(doc);
-        if (!parsed.ok && !unknown && [1, 2].includes(doc.schemaVersion)) {
+        if (!parsed.ok && !unknown && [1, 2, 3].includes(doc.schemaVersion)) {
           issues.push({ kind: 'error', detail: 'No se pudo interpretar el documento enriquecido.' });
         }
         if (Array.isArray(doc.blocks)) doc.blocks.forEach((block, index) => {

@@ -72,7 +72,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const requiresHtml = document.schemaVersion === 2 || document.blocks.some((block) =>
+    const requiresHtml = document.schemaVersion >= 2 || document.blocks.some((block) =>
       ((block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined)
       || (block.type === 'image' && (block.size !== undefined || block.alignment !== undefined || block.caption !== undefined))
       || (block.type === 'table' && block.rows.some((row) => row.cells.some((cell) => cell.verticalAlignment !== undefined))));

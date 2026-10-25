@@ -583,6 +583,7 @@ export const TRANSLATIONS = {
   'assets.preview.accessibilityLabel': { es: 'Vista previa de {name}', en: 'Preview of {name}' },
   'image.loading': { es: 'Cargando imagen…', en: 'Loading image…' },
   'image.unavailable': { es: 'Imagen no disponible', en: 'Image unavailable' },
+  'image.retired': { es: 'Imagen retirada', en: 'Image retired' },
   'assets.missingSuffix': { es: ' · NO ESTÁ EN LA CARPETA', en: ' · NOT IN THE FOLDER' },
   'assets.copyPath': { es: 'Copiar ruta', en: 'Copy path' },
   'assets.copyPath.copied': { es: 'Ruta copiada', en: 'Path copied' },

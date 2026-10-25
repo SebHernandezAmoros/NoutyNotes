@@ -39,6 +39,7 @@ function listLines(list: RichTextList, width: number, fontSize: number): number 
  * siempre «costaría» 1 renglón sin importar cuánto ocupe realmente al envolver (la causa confirmada de
  * OBS-N2-RICHTEXT-CANVAS-VISIBILITY). */
 export function blockLines(block: RichTextBlock, width: number, fontSize: number): number {
+  if (block.type === 'retired-image') return 2 + estimatePreviewLines(block.alt, width, fontSize) + inlineLines(block.caption ?? [], width, fontSize);
   if (block.type === 'paragraph' || block.type === 'heading') return inlineLines(block.content, width, fontSize);
   if (block.type === 'opaque-markdown') return Math.max(1, block.source.split('\n').length);
   if (block.type === 'list') return listLines(block, width, fontSize);
@@ -86,7 +87,7 @@ function projectBlocks(document: RichTextDocument, capacity: number, width: numb
       }
       continue;
     }
-    if (block.type === 'image') {
+    if (block.type === 'image' || block.type === 'retired-image') {
       // Una imagen se muestra entera o no se muestra (OBS-N2-28/G1, corrección de regresión de texto
       // omitido): a diferencia de un bloque de texto, su alto real en pantalla tiene un piso fijo
       // (`bannerImageHeight`/`bannerImageBudget`) que no baja aunque el presupuesto restante sea menor.

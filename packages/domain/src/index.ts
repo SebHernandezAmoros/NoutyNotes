@@ -31,14 +31,14 @@ export type { FieldValue } from './cards/field-values';
 export {
   MAX_RICH_TEXT_BLOCKS, MAX_RICH_TEXT_INLINES, MAX_RICH_TEXT_LIST_DEPTH,
   MAX_RICH_TEXT_LIST_ITEMS, MAX_RICH_TEXT_TABLE_COLUMNS, MAX_RICH_TEXT_TABLE_ROWS,
-  MAX_RICH_TEXT_TEXT_LENGTH, LEGACY_RICH_TEXT_SCHEMA_VERSION, RICH_TEXT_SCHEMA_VERSION, createEmptyRichTextDocument,
+  MAX_RICH_TEXT_TEXT_LENGTH, LEGACY_RICH_TEXT_SCHEMA_VERSION, RICH_TEXT_SCHEMA_VERSION, RETIRED_IMAGE_SCHEMA_VERSION, createEmptyRichTextDocument,
   normalizeRichTextDocument, richTextAlignments, richTextDocumentText, richTextImageAccessibilityIntents, richTextImageAlignments, richTextImageRefs, richTextImageSizes, richTextMarks, richTextVerticalAlignments, toggleRichTextChecklistItem, validateRichTextDocument,
 } from './rich-text/rich-text';
 export { noteImageRefs, parseNoteBlocks } from './cards/note-content';
 export type { NoteBlock } from './cards/note-content';
 export type {
   RichTextAlignment, RichTextBlock, RichTextDocument, RichTextHardBreak, RichTextHeading, RichTextHeadingLevel,
-  RichTextImage, RichTextImageAccessibilityIntent, RichTextImageCaptionPolicy, RichTextImageAlignment, RichTextImageSize, RichTextInline, RichTextLeaf, RichTextLink, RichTextList, RichTextListItem,
+  RichTextImage, RichTextRetiredImage, RichTextImageAccessibilityIntent, RichTextImageCaptionPolicy, RichTextImageAlignment, RichTextImageSize, RichTextInline, RichTextLeaf, RichTextLink, RichTextList, RichTextListItem,
   RichTextListStyle, RichTextMark, RichTextOpaqueMarkdown, RichTextParagraph, RichTextTable,
   RichTextTableCell, RichTextTableRow, RichTextTextRun, RichTextVerticalAlignment,
 } from './rich-text/rich-text';

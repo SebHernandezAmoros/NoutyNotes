@@ -8,6 +8,7 @@ import { t } from '../../i18n';
 import { bodyFontSize, bodyLineHeight } from '../textSizes';
 import type { ImageResourceState } from '../imageResources';
 import { resolveImageReading } from './imageReadingPresentation';
+import { RetiredImageBlock } from '../RetiredImageBlock';
 
 const OVERSCAN = 10;
 const IMAGE_HEIGHT = 120;
@@ -31,6 +32,7 @@ function listItemCount(list: RichTextList): number {
 }
 
 function estimatedHeight(block: RichTextBlock, lineHeight: number): number {
+  if (block.type === 'retired-image') return 24 + (2 + Math.ceil((block.alt.length + inlineText(block.caption ?? []).length) / 42)) * lineHeight;
   if (block.type === 'image') return IMAGE_HEIGHT + (resolveImageReading(block).caption.length > 0 ? Math.max(24, lineHeight + 6) : 0) + 8;
   if (block.type === 'table') return ((block.header ? 1 : 0) + block.rows.length) * Math.max(34, lineHeight + 8) + 8;
   if (block.type === 'list') return Math.max(1, listItemCount(block)) * lineHeight + 8;
@@ -63,6 +65,7 @@ function blockNode(block: RichTextBlock, index: number, props: {
   readonly locale: Locale;
 }) {
   const common = { margin: 0 } satisfies CSSProperties;
+  if (block.type === 'retired-image') return <RetiredImageBlock block={block} testID={`${props.testID}-retired-${index}`} />;
   if (block.type === 'paragraph') return <p style={{ ...common, textAlign: block.alignment ?? 'left' }}>{inlineNodes(block.content, `${index}`)}</p>;
   if (block.type === 'heading') {
     const Tag = `h${block.level}` as 'h1';

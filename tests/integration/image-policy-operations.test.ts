@@ -5,6 +5,7 @@ import type { WorkspaceStorageResult } from '../../packages/application/src/inde
 import type { AssetRef, RichTextDocument } from '../../packages/domain/src/index';
 import { ArchiveStorage, parseRichTextMarkdown } from '../../packages/storage/src/index';
 import { unsafe } from '../../packages/domain/src/__fixtures__/workspace';
+import { removedImageDocument } from '../fixtures/removed-image-blocks';
 
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2]);
 const ref = 'assets/images/id-interno-739.png' as AssetRef;
@@ -24,9 +25,19 @@ async function fixture(document: RichTextDocument = { schemaVersion: 1, blocks: 
 }
 
 describe('N2: operaciones de imágenes enriquecidas', () => {
+  it.each(['upload', 'existing'] as const)('U2-B conserva v3 y marcador al insertar una imagen activa por %s', async (source) => {
+    const { storage, id, card } = await fixture(removedImageDocument);
+    const inserted = ok(await (source === 'upload'
+      ? addNoteImageDocument(storage, storage, id, card, { contentDocument: removedImageDocument, bytes: PNG, fileName: 'nueva.png', place: { kind: 'insert' } })
+      : insertExistingNoteImageDocument(storage, storage, id, card, { contentDocument: removedImageDocument, ref, place: { kind: 'insert' } })));
+    expect(inserted.contentDocument.schemaVersion).toBe(3);
+    expect(inserted.contentDocument.blocks.slice(0, 3)).toEqual(removedImageDocument.blocks);
+    expect(ok(await storage.open(id)).cards[0]?.contentDocument).toEqual(inserted.contentDocument);
+    expect(ok(await storage.readAsset(id, ref))).toEqual(PNG);
+  });
   it.each(['upload', 'existing'] as const)('rechaza entrada futura en %s antes de reinterpretar la versión o escribir Assets', async (source) => {
     const { storage, id, card, document } = await fixture();
-    const invalid = unsafe<RichTextDocument>({ ...document, schemaVersion: 3 });
+    const invalid = unsafe<RichTextDocument>({ ...document, schemaVersion: 4 });
     const before = ok(await storage.open(id));
     const assets = ok(await storage.listAssets(id));
     const result = await (source === 'upload'

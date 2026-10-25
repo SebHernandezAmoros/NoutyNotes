@@ -2,6 +2,7 @@ import {
   MAX_RICH_TEXT_LIST_ITEMS,
   LEGACY_RICH_TEXT_SCHEMA_VERSION,
   RICH_TEXT_SCHEMA_VERSION,
+  RETIRED_IMAGE_SCHEMA_VERSION,
   isLinkUrl,
   normalizeRichTextDocument,
   validateRichTextDocument,
@@ -261,7 +262,9 @@ function parseList(node: HtmlNode): RichTextList {
 }
 
 function parseFigure(node: HtmlNode): RichTextBlock {
-  exactAttrs(node, ['data-nouty-image-size', 'data-nouty-image-align', 'data-nouty-image-caption-policy', 'data-nouty-image-accessibility-intent']);
+  const retired = node.attrs['data-nouty-resource-state'] !== undefined;
+  exactAttrs(node, ['data-nouty-image-size', 'data-nouty-image-align', 'data-nouty-image-caption-policy', 'data-nouty-image-accessibility-intent',
+    ...(retired ? ['data-nouty-resource-state', 'data-nouty-resource-kind', 'data-nouty-retired-alt'] : [])]);
   const size = node.attrs['data-nouty-image-size'];
   const alignment = node.attrs['data-nouty-image-align'];
   const captionPolicy = node.attrs['data-nouty-image-caption-policy'];
@@ -271,6 +274,25 @@ function parseFigure(node: HtmlNode): RichTextBlock {
   if (size !== undefined && !['small', 'medium', 'large', 'full'].includes(size)) throw new HtmlCodecError('html.figure[data-nouty-image-size]', 'Tamaño de imagen no admitido.');
   if (alignment !== undefined && !['left', 'center', 'right'].includes(alignment)) throw new HtmlCodecError('html.figure[data-nouty-image-align]', 'Alineación de imagen no admitida.');
   const children = nodesOnly(node.children, 'html.figure');
+  if (retired) {
+    if (node.attrs['data-nouty-resource-state'] !== 'retired' || node.attrs['data-nouty-resource-kind'] !== 'image'
+      || node.attrs['data-nouty-retired-alt'] === undefined || children.length < 1 || children.length > 2
+      || children[0]?.tag !== 'p' || children[0].children.some((child) => typeof child !== 'string')
+      || children[0].children.join('') !== 'Imagen retirada' || (children[1] && children[1].tag !== 'figcaption')) {
+      throw new HtmlCodecError('html.figure', 'Marcador de imagen retirada no válido.');
+    }
+    exactAttrs(children[0], []);
+    const caption = children[1];
+    if (caption) exactAttrs(caption, []);
+    const inlines = caption ? inlineContent(caption.children) : undefined;
+    if (inlines?.some((inline) => inline.type === 'link')) throw new HtmlCodecError('html.figcaption', 'Una imagen retirada no conserva enlaces cargables.');
+    return {
+      type: 'retired-image', alt: node.attrs['data-nouty-retired-alt'],
+      ...(size ? { size: size as RichTextImageSize } : {}), ...(alignment ? { alignment: alignment as RichTextImageAlignment } : {}),
+      ...(inlines ? { caption: inlines.filter((inline): inline is RichTextLeaf => inline.type !== 'link') } : {}),
+      ...(captionPolicy ? { captionPolicy } : {}), ...(accessibilityIntent ? { accessibilityIntent: accessibilityIntent as RichTextImageAccessibilityIntent } : {}),
+    };
+  }
   if (children.length < 1 || children.length > 2 || children[0]?.tag !== 'img' || (children[1] && children[1].tag !== 'figcaption')) {
     throw new HtmlCodecError('html.figure', 'Figure debe contener img y una leyenda opcional.');
   }
@@ -352,14 +374,15 @@ function parseBlock(node: HtmlNode): RichTextBlock {
 
 /** El contenedor durable proporciona versión; HTML suelto infiere solo el mínimo requerido. */
 export function parseRichTextHtml(html: string, contentVersion?: number): RichTextCodecResult<RichTextDocument> {
-  if (contentVersion !== undefined && contentVersion !== 1 && contentVersion !== HTML_CONTENT_VERSION) {
-    return failure('html.contentVersion', 'Solo se admiten HTML v1 y v2.', 'unsupported-schema-version');
+  if (contentVersion !== undefined && contentVersion !== 1 && contentVersion !== HTML_CONTENT_VERSION && contentVersion !== RETIRED_IMAGE_SCHEMA_VERSION) {
+    return failure('html.contentVersion', 'Solo se admiten HTML v1, v2 y v3.', 'unsupported-schema-version');
   }
   try {
     const blocks = nodesOnly(parseFragment(html), 'html').map(parseBlock);
     if (blocks.length === 0) throw new HtmlCodecError('html', 'El documento debe contener al menos un bloque.');
     const hasPolicy = blocks.some((block) => block.type === 'image' && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined));
-    const schemaVersion = contentVersion === 1 ? LEGACY_RICH_TEXT_SCHEMA_VERSION
+    const schemaVersion = contentVersion === 3 || (contentVersion === undefined && blocks.some((block) => block.type === 'retired-image')) ? RETIRED_IMAGE_SCHEMA_VERSION
+      : contentVersion === 1 ? LEGACY_RICH_TEXT_SCHEMA_VERSION
       : contentVersion === 2 || hasPolicy ? RICH_TEXT_SCHEMA_VERSION : LEGACY_RICH_TEXT_SCHEMA_VERSION;
     return normalizeRichTextDocument({ schemaVersion, blocks });
   } catch (error) {
@@ -414,6 +437,7 @@ function serializeBlock(block: RichTextBlock, index: number): string {
     case 'paragraph': return `<p${alignment}>${serializeInlines(block.content)}</p>`;
     case 'heading': return `<h${block.level}${alignment}>${serializeInlines(block.content)}</h${block.level}>`;
     case 'list': return serializeList(block);
+    case 'retired-image': return `<figure data-nouty-resource-state="retired" data-nouty-resource-kind="image" data-nouty-retired-alt="${escapeAttribute(block.alt)}"${block.size ? ` data-nouty-image-size="${block.size}"` : ''}${block.alignment ? ` data-nouty-image-align="${block.alignment}"` : ''}${block.captionPolicy ? ` data-nouty-image-caption-policy="${block.captionPolicy}"` : ''}${block.accessibilityIntent ? ` data-nouty-image-accessibility-intent="${block.accessibilityIntent}"` : ''}><p>Imagen retirada</p>${block.caption === undefined ? '' : `<figcaption>${serializeInlines(block.caption)}</figcaption>`}</figure>`;
     case 'image':
       if (!safeAsset(block.assetRef)) throw new HtmlCodecError(`document.blocks[${index}].assetRef`, 'La imagen debe permanecer dentro de assets/.');
       return `<figure${block.size ? ` data-nouty-image-size="${block.size}"` : ''}${block.alignment ? ` data-nouty-image-align="${block.alignment}"` : ''}${block.captionPolicy ? ` data-nouty-image-caption-policy="${block.captionPolicy}"` : ''}${block.accessibilityIntent ? ` data-nouty-image-accessibility-intent="${block.accessibilityIntent}"` : ''}><img alt="${escapeAttribute(block.alt)}" src="${escapeAttribute(block.assetRef)}">${

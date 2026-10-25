@@ -1,6 +1,7 @@
 import type { RichTextCodec, RichTextCodecResult } from '@noutynotes/application';
 import {
   LEGACY_RICH_TEXT_SCHEMA_VERSION,
+  RETIRED_IMAGE_SCHEMA_VERSION,
   createEmptyRichTextDocument,
   isLinkUrl,
   isValidAssetRef,
@@ -40,6 +41,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFromMarkdown, gfmToMarkdown } from 'mdast-util-gfm';
 import { toMarkdown } from 'mdast-util-to-markdown';
 import { gfm } from 'micromark-extension-gfm';
+import { parseRichTextHtml, serializeRichTextHtml } from './rich-text-html-codec';
 
 const CAPTION_PREFIX = '<!-- nouty-caption:v1:';
 const CAPTION_PATTERN = /^<!-- nouty-caption:v1:([^\s]+) -->$/;
@@ -257,6 +259,15 @@ export function parseRichTextMarkdown(markdown: string): RichTextCodecResult<Ric
         continue;
       }
     }
+    if (node.type === 'html' && /^<figure\s+data-nouty-resource-state=/.test(node.value)) {
+      const retired = parseRichTextHtml(node.value, RETIRED_IMAGE_SCHEMA_VERSION);
+      if (!retired.ok) return retired;
+      if (retired.value.blocks.length !== 1 || retired.value.blocks[0]?.type !== 'retired-image') {
+        return { ok: false, issues: [{ code: 'unsupported-rich-text', path: 'markdown', message: 'El marcador debe ser un bloque de imagen retirada independiente.' }] };
+      }
+      blocks.push(retired.value.blocks[0]);
+      continue;
+    }
     const mapped = mapBlock(node);
     if (mapped?.type === 'image') {
       const next = root.children[index + 1] as RootContent | undefined;
@@ -270,7 +281,7 @@ export function parseRichTextMarkdown(markdown: string): RichTextCodecResult<Ric
     const source = sourceOf(node, markdown);
     blocks.push(mapped ?? { type: 'opaque-markdown', source });
   }
-  const richText: RichTextDocument = { schemaVersion: LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks };
+  const richText: RichTextDocument = { schemaVersion: blocks.some((block) => block.type === 'retired-image') ? RETIRED_IMAGE_SCHEMA_VERSION : LEGACY_RICH_TEXT_SCHEMA_VERSION, blocks };
   return normalizeRichTextDocument(richText);
 }
 
@@ -327,6 +338,11 @@ function blockToMdast(block: Exclude<RichTextBlock, { readonly type: 'opaque-mar
     case 'paragraph': return { type: 'paragraph', children: block.content.map(inlineToMdast) } satisfies Paragraph;
     case 'heading': return { type: 'heading', depth: block.level, children: block.content.map(inlineToMdast) } satisfies Heading;
     case 'list': return listToMdast(block);
+    case 'retired-image': {
+      const html = serializeRichTextHtml({ schemaVersion: RETIRED_IMAGE_SCHEMA_VERSION, blocks: [block] });
+      if (!html.ok) throw new Error('Marcador validado no representable.');
+      return { type: 'html', value: html.value };
+    }
     case 'image': return {
       type: 'paragraph',
       children: [{ type: 'image', url: block.assetRef, alt: block.alt, title: null } satisfies Image],
@@ -356,7 +372,7 @@ function captionExtension(caption: readonly RichTextInline[]): string {
 export function serializeRichTextMarkdown(richText: RichTextDocument): RichTextCodecResult<string> {
   const checked = validateRichTextDocument(richText);
   if (!checked.ok) return checked;
-  if (checked.value.schemaVersion !== LEGACY_RICH_TEXT_SCHEMA_VERSION) {
+  if (checked.value.schemaVersion !== LEGACY_RICH_TEXT_SCHEMA_VERSION && checked.value.schemaVersion !== RETIRED_IMAGE_SCHEMA_VERSION) {
     return { ok: false, issues: [{ code: 'unsupported-rich-text', path: 'document.schemaVersion', message: 'Markdown heredado no puede conservar el contrato v2; utilice HTML seguro.' }] };
   }
   const output = checked.value.blocks.map((block) => {
@@ -369,6 +385,15 @@ export function serializeRichTextMarkdown(richText: RichTextDocument): RichTextC
       ? `${markdown}\n\n${captionExtension(block.caption)}`
       : markdown;
   }).join('\n\n');
+  if (richText.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION) {
+    const roundtrip = parseRichTextMarkdown(output);
+    const canonical = normalizeRichTextDocument(richText);
+    const before = canonical.ok ? serializeRichTextHtml(canonical.value) : null;
+    const after = roundtrip.ok ? serializeRichTextHtml(roundtrip.value) : null;
+    if (!before?.ok || !after?.ok || before.value !== after.value) {
+      return { ok: false, issues: [{ code: 'unsupported-rich-text', path: 'document', message: 'Markdown no representa este documento sin pérdida; conserve HTML seguro o ZIP.' }] };
+    }
+  }
   return { ok: true, value: output };
 }
 

@@ -1,4 +1,4 @@
-import { isValidId, validateWorkspace } from '@noutynotes/domain';
+import { isValidId, RETIRED_IMAGE_SCHEMA_VERSION, validateWorkspace } from '@noutynotes/domain';
 import type { ArchivedBoard, Board, Card, DomainIssue, TrashedCard, Workspace } from '@noutynotes/domain';
 import type { z } from 'zod';
 
@@ -57,7 +57,7 @@ function cardDocument(card: Card): GeneratedDocument {
   const html = card.contentDocument === undefined ? null : serializeRichTextHtml(card.contentDocument);
   if (html && !html.ok) throw new Error('Workspace validado con contenido no representable por HTML seguro v1/v2.');
   return markdownDocument(compact({
-    schemaVersion: card.primaryResourceState !== undefined ? 15 : card.imageFit !== undefined ? 14 : hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
+    schemaVersion: card.contentDocument?.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION ? 16 : card.primaryResourceState !== undefined ? 15 : card.imageFit !== undefined ? 14 : hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     primaryResourceState: card.primaryResourceState,
     id: card.id, typeId: card.typeId, title: card.title, titleRichText: card.titleRichText,
     fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
@@ -98,7 +98,13 @@ function trashData(entry: TrashedCard): unknown {
   });
 }
 
-function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 | 4 | 5 {
+function hasV3Content(card: { readonly contentDocument?: unknown }): boolean {
+  const content = card.contentDocument;
+  return typeof content === 'object' && content !== null && 'schemaVersion' in content && content.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION;
+}
+
+function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 | 4 | 5 | 6 {
+  if (entries.some((entry) => entry.card.contentDocument?.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION)) return 6;
   if (entries.some((entry) => entry.card.primaryResourceState !== undefined)) return 5;
   if (entries.some((entry) => entry.card.contentDocument !== undefined)) return 4;
   if (entries.some((entry) => entry.card.createdAt !== undefined)) return 3;
@@ -107,7 +113,8 @@ function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 | 4 | 5 
 }
 
 /** v4 solo si hay tableros archivados (ADR 0039); si no, la misma versión selectiva de siempre. */
-function archiveSchemaVersion(entries: readonly TrashedCard[], archivedBoards: readonly ArchivedBoard[]): 1 | 2 | 3 | 4 | 5 | 6 {
+function archiveSchemaVersion(entries: readonly TrashedCard[], archivedBoards: readonly ArchivedBoard[]): 1 | 2 | 3 | 4 | 5 | 6 | 7 {
+  if (entries.some((entry) => entry.card.contentDocument?.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION)) return 7;
   if (entries.some((entry) => entry.card.primaryResourceState !== undefined)) return 6;
   if (entries.some((entry) => entry.card.contentDocument !== undefined)) return 5;
   return archivedBoards.length > 0 ? 4 : trashSchemaVersion(entries);
@@ -177,7 +184,7 @@ function assetPathIssues(workspace: Workspace, locate: (cardIndex: number, rest:
   return issues;
 }
 
-/** Todo contentDocument, también en Papelera/Archivo, debe poder emitirse como HTML v1/v2 sin pérdida. */
+/** Todo contentDocument, también en Papelera/Archivo, debe poder emitirse como HTML seguro v1/v2/v3 sin pérdida. */
 function contentDocumentIssues(workspace: Workspace): StorageIssue[] {
   const groups = [
     ...workspace.cards.map((card, index) => ({ card, path: `cards[${index}].contentDocument` })),
@@ -280,7 +287,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -308,8 +315,8 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(storageIssue('invalid-document', `${file}#contentFormat`, 'Formato de contenido no admitido.'));
       continue;
     }
-    if (hasHtml && front.contentVersion !== 1 && front.contentVersion !== HTML_CONTENT_VERSION) {
-      issues.push(storageIssue('unsupported-schema-version', `${file}#contentVersion`, 'Solo se admiten HTML v1 y v2.'));
+    if (hasHtml && front.contentVersion !== 1 && front.contentVersion !== HTML_CONTENT_VERSION && front.contentVersion !== RETIRED_IMAGE_SCHEMA_VERSION) {
+      issues.push(storageIssue('unsupported-schema-version', `${file}#contentVersion`, 'Solo se admiten HTML v1, v2 y v3.'));
       continue;
     }
     if (hasHtml && !front.contentPresent) {
@@ -321,7 +328,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(...parsedHtml.issues.map((found) => storageIssue('invalid-document', `${file}#body.${found.path}`, found.message)));
       continue;
     }
-    const expected = front.primaryResourceState !== undefined ? 15 : hasImageFit ? 14 : hasVerticalAlignment ? 13 : hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
+    const expected = front.contentVersion === RETIRED_IMAGE_SCHEMA_VERSION ? 16 : front.primaryResourceState !== undefined ? 15 : hasImageFit ? 14 : hasVerticalAlignment ? 13 : hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -362,7 +369,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (!layouts.ok) issues.push(...layouts.issues);
   const relations = parseRelations(files[RELATIONS_FILE] ?? '');
   if (!relations.ok) issues.push(...relations.issues);
-  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2, 3, 4, 5]) : null;
+  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2, 3, 4, 5, 6]) : null;
   if (trash && !trash.ok) issues.push(...trash.issues);
   if (trash?.ok && trash.value.schemaVersion === 1) {
     trash.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -374,14 +381,16 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     }));
   }
   if (trash?.ok) {
-    const hasRetired = trash.value.items.some((entry) => entry.card.primaryResourceState !== undefined);
+    const hasV3 = trash.value.items.some((entry) => hasV3Content(entry.card));
+    if ((trash.value.schemaVersion === 6) !== hasV3) issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'El contenido enriquecido v3 requiere Papelera6.'));
+    const hasRetired = !hasV3 && trash.value.items.some((entry) => entry.card.primaryResourceState !== undefined);
     if ((trash.value.schemaVersion === 5) !== hasRetired) issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'La versión 5 requiere tarjetas con recurso retirado.'));
     const needsHtmlVersion = trash.value.items.some((entry) => entry.card.contentDocument !== undefined);
-    if (!hasRetired && (trash.value.schemaVersion === 4) !== needsHtmlVersion) {
+    if (!hasV3 && !hasRetired && (trash.value.schemaVersion === 4) !== needsHtmlVersion) {
       issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'La versión 4 corresponde exclusivamente a Papelera con contenido HTML seguro.'));
     }
   }
-  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4, 5, 6]) : null;
+  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4, 5, 6, 7]) : null;
   if (archive && !archive.ok) issues.push(...archive.issues);
   if (archive?.ok && archive.value.schemaVersion === 1) {
     archive.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -409,10 +418,12 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     ...assetPathIssues(workspace, (index, rest) => `${cardPath(cardIds[index] ?? '')}#${rest}`),
   ];
   if (archive?.ok) {
-    const hasRetired = archive.value.items.some((entry) => entry.card.primaryResourceState !== undefined);
+    const hasV3 = archive.value.items.some((entry) => hasV3Content(entry.card));
+    if ((archive.value.schemaVersion === 7) !== hasV3) located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'El contenido enriquecido v3 requiere Archivo7.'));
+    const hasRetired = !hasV3 && archive.value.items.some((entry) => entry.card.primaryResourceState !== undefined);
     if ((archive.value.schemaVersion === 6) !== hasRetired) located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'La versión 6 requiere tarjetas con recurso retirado.'));
     const needsHtmlVersion = archive.value.items.some((entry) => entry.card.contentDocument !== undefined);
-    if (!hasRetired && (archive.value.schemaVersion === 5) !== needsHtmlVersion) {
+    if (!hasV3 && !hasRetired && (archive.value.schemaVersion === 5) !== needsHtmlVersion) {
       located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'La versión 5 corresponde exclusivamente a Archivo con contenido HTML seguro.'));
     }
   }

@@ -12,6 +12,12 @@ const image = (ref = 'assets/images/a.png') => ({ type: 'image' as const, assetR
 const WIDTH = 300;
 const FONT_SIZE = 14;
 
+it('U2-B cobra las líneas de una leyenda retirada larga para conservar acceso al contenido posterior', () => {
+  const marker = { type: 'retired-image' as const, alt: 'Mapa', caption: [{ type: 'text' as const, text: 'Detalle\n'.repeat(50) }] };
+  expect(blockLines(marker, WIDTH, FONT_SIZE)).toBeGreaterThan(50);
+  expect(projectRichTextPreview({ schemaVersion: 3, blocks: [marker, paragraph('Final')] }, 10, WIDTH, FONT_SIZE).hiddenLines).toBeGreaterThan(0);
+});
+
 // Ancho angosto, representativo de una tarjeta compacta: a este ancho, un párrafo de varias
 // decenas de caracteres sin saltos de línea explícitos SÍ envuelve en varios renglones reales
 // (OBS-N2-RICHTEXT-CANVAS-VISIBILITY / OBS-N2-28/G1, corrección de regresión).

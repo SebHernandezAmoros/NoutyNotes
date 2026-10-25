@@ -218,7 +218,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
     publishDraft({ title, content: next, titleDocument });
   };
   const changeVisualDocument = (document: Parameters<RichTextCodec['serialize']>[0]) => {
-    const requiresHtml = document.schemaVersion === 2 || document.blocks.some((block) =>
+    const requiresHtml = document.schemaVersion >= 2 || document.blocks.some((block) =>
       ((block.type === 'paragraph' || block.type === 'heading') && block.alignment !== undefined)
       || (block.type === 'image' && (block.size !== undefined || block.alignment !== undefined))
       || (block.type === 'table' && [...(block.header ? [block.header] : []), ...block.rows]

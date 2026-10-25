@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AssetRef, Card, FieldKey, Workspace } from '@noutynotes/domain';
 
 import { analyzeAssetReferences } from './asset-reference-analysis';
+import { removedImageDocument } from '../../../tests/fixtures/removed-image-blocks';
 
 const ref = 'assets/images/mapa.png' as AssetRef;
 const note = (id: string, extra: Partial<Card> = {}): Card => ({ id: id as Card['id'], typeId: 'note' as Card['typeId'], title: id, fields: {}, ...extra });
@@ -13,6 +14,13 @@ const workspace = (cards: readonly Card[]): Workspace => ({
 });
 
 describe('consulta de referencias U1', () => {
+  it('U2-B reconoce el documento v3 e ignora el marcador sin perder usos de imágenes activas', () => {
+    const snapshot = workspace([note('n', { contentDocument: { ...removedImageDocument, blocks: [
+      ...removedImageDocument.blocks, { type: 'image', assetRef: ref, alt: 'Activa' },
+    ] } })]);
+    expect(analyzeAssetReferences({ workspace: snapshot, ref, unverified: [] })).toMatchObject({ status: 'complete-used', ownerCount: 1, occurrenceCount: 1 });
+    expect(analyzeAssetReferences({ workspace: workspace([note('n', { contentDocument: removedImageDocument })]), ref, unverified: [] })).toMatchObject({ status: 'complete-unused', ownerCount: 0, occurrenceCount: 0 });
+  });
   it('distingue tres apariciones de una propietaria y no suma el carrier redundante', () => {
     const snapshot = workspace([note('n', { assetRefs: [ref], contentDocument: { schemaVersion: 2, blocks: [
       { type: 'image', assetRef: ref, alt: 'Uno' },
