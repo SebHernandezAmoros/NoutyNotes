@@ -2,13 +2,14 @@ import { analyzeAssetReferences } from '@noutynotes/application';
 import type { AssetReferenceKind, AssetReferenceStatus } from '@noutynotes/application';
 import type { CardId, Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/controls';
 import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import type { ViewPreferences } from './canvas/preferences';
+import { AssetDetachmentPreview } from './AssetDetachmentPreview';
 
 const statusKeys: Record<AssetReferenceStatus, TranslationKey> = {
   'complete-used': 'assets.references.completeUsed', 'complete-unused': 'assets.references.completeUnused',
@@ -28,6 +29,7 @@ export function AssetReferenceDetails({ workspace, assetRef, preferences, onGo, 
   const { locale } = useLocale();
   const { theme } = useTheme();
   const colors = theme.colors;
+  const [showPlan, setShowPlan] = useState(false);
   const analysis = useMemo(() => analyzeAssetReferences({ workspace, ref: assetRef,
     unverified: [t('assets.references.unverifiedSessions', locale), t('assets.references.unverifiedRoot', locale)],
     dependencies: preferences.noteFont === 'custom' && preferences.customFontRef
@@ -67,6 +69,8 @@ export function AssetReferenceDetails({ workspace, assetRef, preferences, onGo, 
       ))}
       {analysis.dependencies.map((dependency) => <Text key={dependency.kind} style={body}>{dependency.label}</Text>)}
       <Text style={hint}>{t('assets.references.carriers', locale, { count: String(analysis.carriers.length) })}</Text>
+      {Platform.OS === 'web' ? <ActionButton label={t('assets.plan.open', locale)} onPress={() => setShowPlan(true)} /> : null}
+      {showPlan ? <AssetDetachmentPreview key={assetRef} workspace={workspace} analysis={analysis} onClose={() => setShowPlan(false)} /> : null}
       <ActionButton label={t('assets.references.close', locale)} onPress={onClose} />
     </View>
   );
