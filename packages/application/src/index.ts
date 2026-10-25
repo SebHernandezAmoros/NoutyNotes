@@ -72,6 +72,8 @@ export { assetKind, buildAssetCatalog, cardAssetRefs, replaceAssetReferences } f
 export type { AssetEntry, AssetKind, AssetUse } from './assets-catalog';
 export { analyzeAssetReferences } from './asset-reference-analysis';
 export { planAssetDetachment, isAssetDetachmentPlanCurrent } from './asset-detachment-plan';
+export { prepareAssetDetachmentCandidate } from './asset-detachment-candidate';
+export type { AssetDetachmentCandidate } from './asset-detachment-candidate';
 export type { AssetDetachmentPlanInput, AssetDetachmentPlan, AssetDetachmentEntry, AssetDetachmentProposal, NoteImagePolicy } from './asset-detachment-plan';
 export type { AssetReferenceAnalysis, AssetReferenceCollection, AssetReferenceDependency, AssetReferenceInput, AssetReferenceKind, AssetReferenceOccurrence, AssetReferenceOwner, AssetReferenceStatus } from './asset-reference-analysis';
 export { addAssetToBoard, addDocumentToBoard, assetBaseName, deleteUnusedAssets, importAssetImage, importImageCardAt, replaceAsset } from './assets-library';
