@@ -12,6 +12,7 @@ import { cardDisplayTitle, cardTitle, isImageCard } from '../Board';
 import { BasicRichTextPreview } from '../BasicRichTextPreview';
 import { parseWebRichText } from '../basicRichText';
 import { ImagePlaceholder } from '../ImagePlaceholder';
+import { RetiredCardResource } from '../RetiredCardResource';
 import type { ImageResourceState } from '../imageResources';
 import { markdownExcerpt, parseChecklistLine } from '../markdownLists';
 import { bodyFontSize, titleFontSize } from '../textSizes';
@@ -360,7 +361,7 @@ export function CanvasCard(props: CanvasCardProps) {
       <Pressable
         testID={`card-${card.id}`}
         accessibilityRole="button"
-        accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}${displayNames[display]}`}
+        accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}${displayNames[display]}${card.primaryResourceState ? `. ${t('card.resourceRetired', locale)}` : ''}`}
         accessibilityHint={accessibilityHint}
         accessibilityState={{ selected }}
         {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
@@ -380,7 +381,11 @@ export function CanvasCard(props: CanvasCardProps) {
           opacity: dragging ? 0.85 : 1,
         }]}
       >
-        {display === 'minimized' ? (
+        {card.primaryResourceState ? (
+          <View style={[styles.documentWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+            <RetiredCardResource card={card} color={colors.cardText} compact={display !== 'expanded'} showBody={!props.controlsOverBody} testID={`retired-card-${card.id}`} />
+          </View>
+        ) : display === 'minimized' ? (
           // Ficha mínima 2 × 2: conserva identidad, nombre y una pista de expansión legibles.
           <View testID={`minimized-${card.id}`} style={[styles.mini, { backgroundColor: headerColor }]}>
             {icon ? <CardIcon kind={icon} testID={`minimized-icon-${card.id}`} /> : null}

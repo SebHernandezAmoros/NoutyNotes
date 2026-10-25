@@ -46,6 +46,7 @@ export function TrashPanel({ visible, compact, workspace, busy, onRestore, onPur
           <View key={entry.card.id} testID={`trash-item-${entry.card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
             <Text style={[styles.kind, { color: colors.textSecondary }]}>{typeLabel(entry).toUpperCase()}{hasImage ? t('trash.item.image', locale) : ''}</Text>
             <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+            {entry.card.primaryResourceState ? <Text style={[styles.kind, { color: colors.textPrimary }]}>{t('card.resourceRetired', locale)}</Text> : null}
             {confirming === entry.card.id ? (
               <View testID="purge-confirmation" style={[styles.confirm, { borderColor: colors.danger }]}>
                 <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>

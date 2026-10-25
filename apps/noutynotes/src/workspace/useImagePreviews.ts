@@ -34,10 +34,11 @@ export function useImagePreviews(storage: WorkspaceStorage, workspace: Workspace
   const [resolved, setResolved] = useState<ReadonlyMap<string, ImageResourceState>>(new Map());
   const types = new Map((workspace?.cardTypes ?? []).map((type) => [type.id, type.base]));
   const cardRefs = (workspace?.cards ?? []).flatMap((card) => {
+    if (card.primaryResourceState) return [];
     const [ref] = card.assetRefs ?? [];
     return types.get(card.typeId) === 'image' && ref && IMAGE.test(ref) ? [{ cardId: card.id, ref }] : [];
   });
-  const noteRefs = (workspace?.cards ?? []).flatMap((card) => (types.get(card.typeId) === 'image'
+  const noteRefs = (workspace?.cards ?? []).flatMap((card) => (card.primaryResourceState || types.get(card.typeId) === 'image'
     ? []
     : [...noteImageRefs(card.content ?? ''), ...richTextImageRefs(card.contentDocument)]));
   const refs = [...new Set([...cardRefs.map(({ ref }) => ref), ...noteRefs])].filter((ref) => IMAGE.test(ref)).sort();

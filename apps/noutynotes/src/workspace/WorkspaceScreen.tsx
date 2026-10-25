@@ -506,6 +506,10 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     // de 75 % y el tamaño por defecto (4 × 3 celdas de 56 px), la huella real es 168 × 126 px, por debajo
     // del umbral antiguo, así que «Editar dentro de la ficha» abría el editor completo sin avisarlo.
     const base = workspace?.cardTypes.find((candidate) => candidate.id === card?.typeId)?.base;
+    if (card?.primaryResourceState) {
+      showCardInspector(cardId, 'appearance', compact);
+      return;
+    }
     // UX7.1-A4: una tarjeta de documento no abre edición ni inspector al activarla — abre el PDF ya
     // catalogado que referencia, igual que «Vista previa» en Assets (mismo visor, mismo hook).
     if (base === 'file') {

@@ -3,6 +3,7 @@ import type { RichTextCodec } from '@noutynotes/application';
 import { cardContentPresentation, cardTitleText, isFloatingTextCard, resolveCardImageFit, richTextInlineText } from '@noutynotes/domain';
 import type { BaseCardKind, BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
 import type { ImageResourceState } from './imageResources';
+import { RetiredCardResource } from './RetiredCardResource';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
 import { useState } from 'react';
@@ -196,7 +197,7 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
     <Pressable
       testID={`card-${card.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}`}
+      accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}${card.primaryResourceState ? `. ${t('card.resourceRetired', locale)}` : ''}`}
       accessibilityState={{ selected }}
       {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
       onPress={onPress}
@@ -209,8 +210,8 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
         borderWidth: selected ? 4 : focused ? 3 : 2,
       }]}
     >
-      {presentation.title === 'visible' ? <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }]}>{cardTitle(card, locale)}</Text> : null}
-      {presentation.body === 'hidden' ? null : image ? (
+      {presentation.title === 'visible' && !card.primaryResourceState ? <Text numberOfLines={2} style={[styles.cardTitle, { color: textColor, fontSize: titleSize, lineHeight: titleLineHeight(titleSize) }]}>{cardTitle(card, locale)}</Text> : null}
+      {card.primaryResourceState ? <RetiredCardResource card={card} color={textColor} testID={`retired-list-${card.id}`} /> : presentation.body === 'hidden' ? null : image ? (
         imageResource?.status === 'ready' ? (
           <Image testID={`list-image-${card.id}`} accessibilityRole="image" accessibilityLabel={`Imagen ${cardTitle(card, locale)}`}
             source={{ uri: imageResource.uri }} resizeMode={imageFit} style={[styles.cardImage, { borderColor: colors.border, backgroundColor: colors.surface, objectFit: imageFit }]} />

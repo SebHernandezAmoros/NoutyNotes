@@ -13,7 +13,7 @@ export type { Board } from './boards/board';
 export { captionPositions, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, floatingTextAlignments, floatingTextColors, frameOverrides, imageFits, isFloatingTextCard, resolveCardImageFit, richTextInlineText, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, supportsCardImageFit, textSizes, validateCard } from './cards/card';
 export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export { linkDisplay, linkUrlField, normalizeLinkUrl } from './cards/links';
-export type { CaptionPosition, Card, CardContentPresentation, CardIconName, ConnectorArrows, ConnectorDash, ConnectorDirection, ContentLayout, ContentVisibility, FloatingTextAlign, FloatingTextColor, FrameOverride, ImageFit, NoteVerticalAlignment, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize } from './cards/card';
+export type { CaptionPosition, Card, CardContentPresentation, CardIconName, ConnectorArrows, ConnectorDash, ConnectorDirection, ContentLayout, ContentVisibility, FloatingTextAlign, FloatingTextColor, FrameOverride, ImageFit, NoteVerticalAlignment, PrimaryResourceState, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize } from './cards/card';
 export { addCard, deleteCard, pasteCardsOnBoard, updateCard, updateCardAppearance } from './cards/operations';
 export type { AddCardOptions, CardAppearanceChanges, CardContentChanges, DeleteCardOptions, PasteCardsInput } from './cards/operations';
 export { purgeTrashedCard, restoreTrashedCard, trashCard } from './cards/trash';

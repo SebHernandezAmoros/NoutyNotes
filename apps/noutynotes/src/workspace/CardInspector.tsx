@@ -23,6 +23,7 @@ import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocumen
 import type { NoteImageSource } from './noteImagePlacement';
 import { placedNoteImage } from './noteImagePlacement';
 import { RichTextEditor } from './RichTextEditor';
+import { RetiredCardResource } from './RetiredCardResource';
 import { PLACEHOLDER_TITLES } from './titlePlaceholders';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
@@ -169,7 +170,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   const [htmlModified, setHtmlModified] = useState(initialDraft?.bodySource?.format === 'html' && initialDraft.bodyValidation?.status !== 'valid');
   // El texto flotante es una primitiva propia (P13-P16), no una nota: conserva su campo de texto simple
   // y nunca adopta el editor Visual/HTML (ADR 0066), que es del cuerpo de una nota.
-  const supportsVisualEditor = !shape && !connector && !documentCard && (Platform.OS === 'web' || Platform.OS === 'android');
+  const supportsVisualEditor = !shape && !connector && !documentCard && !card.primaryResourceState && (Platform.OS === 'web' || Platform.OS === 'android');
   const supportsVisualDocument = (document: Parameters<typeof isBasicRichTextDocument>[0]) => Platform.OS === 'web'
     ? isWebRichTextDocument(document)
     : isNativeRichTextDocument(document);
@@ -537,6 +538,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       <Text testID="card-created" style={[styles.hint, { color: colors.textSecondary }]}>
         {formatCreated(card.createdAt, new Date(card.createdAt ?? 0).getTimezoneOffset(), locale)}
       </Text>
+      {card.primaryResourceState ? <RetiredCardResource card={card} color={colors.textPrimary} showTitle={false} fullBody testID="retired-inspector" /> : null}
       <View testID="card-inspector-sections" style={styles.sectionTabs} accessibilityRole="tablist" accessibilityLabel={t('inspector.sections.accessibilityLabel', locale)}>
         {(['content', 'appearance', 'more'] as const).map((candidate) => (
           <ActionButton
@@ -635,7 +637,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             </View>
           ) : null}
         </View> : null}
-        {section === 'content' ? <>
+        {section === 'content' && !card.primaryResourceState ? <>
         {Platform.OS === 'web' && supportsVisualEditor && visualAvailable ? (
           <View testID="body-mode-switch" style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Modo de edición del cuerpo">
             <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => {

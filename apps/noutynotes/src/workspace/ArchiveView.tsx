@@ -162,6 +162,7 @@ export function ArchiveView({
                   <View key={entry.card.id} testID={`archive-item-${entry.card.id}`} style={[styles.item, compact ? null : styles.itemCol, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                     <Text style={[styles.kind, { color: colors.textSecondary }]}>{t('archive.item.kind', locale, { type: typeLabel(entry.card.typeId).toUpperCase(), when: when(entry.archivedAt) })}</Text>
                     <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+                    {entry.card.primaryResourceState ? <Text style={[styles.meta, { color: colors.textPrimary }]}>{t('card.resourceRetired', locale)}</Text> : null}
                     <Text style={[styles.meta, { color: colors.textSecondary }]}>{origin.length > 0 ? t('archive.item.origin.some', locale, { boards: origin.join(', ') }) : t('archive.item.origin.none', locale)}</Text>
                     {(entry.card.tags ?? []).length > 0 ? <Text style={[styles.meta, { color: colors.selection }]}>{(entry.card.tags ?? []).map((tag) => `#${tag}`).join('  ')}</Text> : null}
                     {excerpt !== '' ? <Text numberOfLines={2} style={[styles.excerpt, { color: colors.textPrimary }]}>{excerpt}</Text> : null}

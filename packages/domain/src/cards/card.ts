@@ -10,8 +10,15 @@ import { collectFieldValueIssues } from './field-values';
 import type { FieldValue } from './field-values';
 import { collectTagIssues } from './tags';
 import { isArchiveInstant } from './trashed-card';
-import { LEGACY_RICH_TEXT_SCHEMA_VERSION, validateRichTextDocument } from '../rich-text/rich-text';
+import { LEGACY_RICH_TEXT_SCHEMA_VERSION, richTextImageRefs, validateRichTextDocument } from '../rich-text/rich-text';
 import type { RichTextDocument, RichTextInline } from '../rich-text/rich-text';
+import { noteImageRefs } from './note-content';
+
+/** Deliberate retirement of a primary resource; never inferred from a read error. */
+export interface PrimaryResourceState {
+  readonly kind: 'retired';
+  readonly resourceKind: 'image' | 'pdf';
+}
 
 /**
  * Unidad de contenido. Pertenece al workspace, no a un board: los boards la referencian por ID
@@ -30,6 +37,7 @@ export interface Card {
   readonly contentDocument?: RichTextDocument;
   readonly fields: Readonly<Record<string, FieldValue>>;
   readonly assetRefs?: readonly AssetRef[];
+  readonly primaryResourceState?: PrimaryResourceState;
   /** Etiquetas `#` normalizadas, únicas y ordenadas (ADR 0019); ausentes si no tiene ninguna. */
   readonly tags?: readonly string[];
   /** Creación real (ADR 0024): instante ISO 8601 en UTC puesto al crearla. Ausente en las anteriores. */
@@ -312,6 +320,23 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
     refs.forEach((ref, index) => checkAssetRef(ref, `${path}.assetRefs[${index}]`, issues));
     if (new Set(refs).size !== refs.length) {
       issues.push(issue('invalid-asset-ref', `${path}.assetRefs`, 'Hay referencias a assets repetidas.'));
+    }
+  }
+  if (card.primaryResourceState !== undefined) {
+    const state = card.primaryResourceState;
+    if (!isRecord(state) || state.kind !== 'retired' || !['image', 'pdf'].includes(state.resourceKind as string)
+      || Object.keys(state).some((key) => key !== 'kind' && key !== 'resourceKind')) {
+      issues.push(issue('invalid-value', `${path}.primaryResourceState`, 'Debe ser un estado retirado de imagen o PDF sin claves adicionales.'));
+    } else if ((state.resourceKind === 'image' && type?.base !== 'image') || (state.resourceKind === 'pdf' && type?.base !== 'file')) {
+      issues.push(issue('invalid-value', `${path}.primaryResourceState`, 'El recurso retirado debe corresponder al tipo de tarjeta imagen o documento.'));
+    }
+    const rich = card.contentDocument === undefined ? null : validateRichTextDocument(card.contentDocument);
+    const fields = card.fields;
+    const hasAssetField = isRecord(fields) && type?.fields.some((field) => field.kind === 'asset' && fields[field.key] !== undefined);
+    if ((Array.isArray(card.assetRefs) && card.assetRefs.length > 0) || hasAssetField
+      || (typeof card.content === 'string' && noteImageRefs(card.content).length > 0)
+      || (rich?.ok && richTextImageRefs(rich.value).length > 0)) {
+      issues.push(issue('invalid-value', `${path}.primaryResourceState`, 'Una tarjeta retirada no puede conservar referencias cargables a recursos.'));
     }
   }
   if (card.imageFit !== undefined) {

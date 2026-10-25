@@ -8,6 +8,9 @@
 import type { Locale } from '@noutynotes/ui';
 
 export const TRANSLATIONS = {
+  'card.resourceRetired': { es: 'Recurso retirado', en: 'Resource retired' },
+  'card.retiredImage': { es: 'Imagen', en: 'Image' },
+  'card.retiredPdf': { es: 'Documento PDF', en: 'PDF document' },
   'assets.references.query': { es: 'Consultar uso', en: 'View usage' },
   'assets.references.title': { es: 'Referencias conocidas', en: 'Known references' },
   'assets.references.close': { es: 'Cerrar consulta', en: 'Close usage' },
