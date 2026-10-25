@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addBoardToWorkspace, addCardToBoard, addNoteImage, buildAssetCatalog, connectCards, createEmptyWorkspaceNamed, deleteUnusedAssets, moveBoardToArchive, moveCardToArchive, moveCardToTrash,
-  purgeCardFromTrash, restoreBoardFromArchive, restoreCardFromArchive, restoreCardsFromArchive, searchWorkspace, sendArchivedCardsToTrash, sendArchivedToTrash, takenCardIds,
+  moveCardsToArchive, moveCardsToTrash, purgeCardFromTrash, restoreBoardFromArchive, restoreCardFromArchive, restoreCardsFromArchive, restoreCardsFromTrash, searchWorkspace, sendArchivedCardsToTrash,
+  sendArchivedToTrash, takenCardIds, takenRelationIds,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import { validateWorkspace } from '../../packages/domain/src/index';
@@ -164,5 +165,49 @@ describe('Archivo (ADR 0023)', () => {
     const afterTrash = ok(await storage.open(id));
     expect(afterTrash.archive ?? []).toEqual([]);
     expect(afterTrash.trash?.map((entry) => entry.card.id)).toEqual([c]);
+  });
+
+  it('archivar juntas dos tarjetas relacionadas y restaurarlas juntas conserva la relación, en cualquier orden', async () => {
+    const storage = new ArchiveStorage();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Estudio'));
+    const a = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Una' }));
+    const b = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Dos' }));
+    ok(await connectCards(storage, id, { from: a, to: b }));
+
+    ok(await moveCardsToArchive(storage, id, [a, b], at));
+    const archived = ok(await storage.open(id));
+    expect(archived.relations).toEqual([]);
+
+    ok(await restoreCardsFromArchive(storage, id, { cardIds: [a, b], fallbackBoardId: 'principal' as BoardId }));
+    const restored = ok(await storage.open(id));
+    expect(restored.cards.map((card) => card.id).sort()).toEqual([a, b].sort());
+    expect(restored.relations.map((relation) => `${relation.from}→${relation.to}`)).toEqual([`${a}→${b}`]);
+  });
+
+  it('enviar juntas a la Papelera dos tarjetas relacionadas y restaurarlas juntas conserva la relación', async () => {
+    const storage = new ArchiveStorage();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Estudio'));
+    const a = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Una' }));
+    const b = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Dos' }));
+    ok(await connectCards(storage, id, { from: a, to: b }));
+
+    ok(await moveCardsToTrash(storage, id, [a, b]));
+    ok(await restoreCardsFromTrash(storage, id, { cardIds: [a, b], fallbackBoardId: 'principal' as BoardId }));
+    const restored = ok(await storage.open(id));
+    expect(restored.cards.map((card) => card.id).sort()).toEqual([a, b].sort());
+    expect(restored.relations.map((relation) => `${relation.from}→${relation.to}`)).toEqual([`${a}→${b}`]);
+  });
+
+  it('reserva los IDs de relaciones archivadas: una nueva relación no puede ocupar ese ID', async () => {
+    const storage = new ArchiveStorage();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Estudio'));
+    const a = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Una' }));
+    const b = ok(await addCardToBoard(storage, id, { kind: 'note', title: 'Dos' }));
+    ok(await connectCards(storage, id, { from: a, to: b }));
+    ok(await moveCardsToArchive(storage, id, [a, b], at));
+    const archived = ok(await storage.open(id));
+    const archivedRelationId = archived.archive?.find((entry) => entry.card.id === a)?.relations[0]?.id;
+    expect(archivedRelationId).toBeDefined();
+    expect(takenRelationIds(archived)).toContain(archivedRelationId);
   });
 });

@@ -54,6 +54,9 @@ export function ArchiveView({
   const [confirmingSelection, setConfirmingSelection] = useState(false);
   const archivedBoards = workspace.archivedBoards ?? [];
   const archive = workspace.archive ?? [];
+  // Protege contra selección obsoleta si el Workspace cambió por otra vía (restaurada/enviada a la
+  // Papelera desde otro sitio) mientras esta vista seguía abierta.
+  const activeSelected = [...selected].filter((cardId) => archive.some((entry) => entry.card.id === cardId));
   const titleOf = (entry: ArchivedCard) => cardTitleText(entry.card) || t('trash.item.untitled', locale);
   const cardsUnit = (count: number) => t(count === 1 ? 'unit.card.one' : 'unit.card.many', locale, { count: String(count) });
   const countUnit = (base: 'archive.count' | 'archive.selected', count: number) => t(count === 1 ? `${base}.one` : `${base}.many`, locale, { count: String(count) });
@@ -62,12 +65,15 @@ export function ArchiveView({
     if (next.has(cardId)) next.delete(cardId); else next.add(cardId);
     return next;
   });
+  // Seleccionar visibles (P6, bloque 6): une al resultado filtrado actual, no a futuros resultados
+  // si el filtro cambia después.
+  const selectVisible = () => setSelected((current) => new Set([...current, ...shown.map((entry) => entry.card.id)]));
   const restoreSelection = async () => {
-    if (await onRestoreSelection([...selected])) setSelected(new Set());
+    if (await onRestoreSelection(activeSelected)) setSelected(new Set());
   };
   const trashSelection = async () => {
     setConfirmingSelection(false);
-    if (await onSendSelectionToTrash([...selected])) setSelected(new Set());
+    if (await onSendSelectionToTrash(activeSelected)) setSelected(new Set());
   };
   const typeLabel = (id: CardTypeId) => workspace.cardTypes.find((type) => type.id === id)?.label ?? t('trash.item.type.fallback', locale);
   const types = [...new Set(archive.map((entry) => entry.card.typeId))].map((id) => ({ id, count: archive.filter((entry) => entry.card.typeId === id).length }));
@@ -129,13 +135,18 @@ export function ArchiveView({
               {countUnit('archive.count', shown.length)}
             </Text>
             {shown.length === 0 ? <Text style={[styles.intro, { color: colors.textSecondary }]}>{t('search.empty.query', locale, { query: query.trim() })}</Text> : null}
-            {selected.size > 0 ? (
+            {shown.length > 0 ? (
+              <View style={styles.actions}>
+                <ActionButton label={t('archive.selectAll', locale)} accessibilityLabel={t('archive.selectAll.accessibilityLabel', locale)} onPress={selectVisible} testID="archive-select-all" />
+              </View>
+            ) : null}
+            {activeSelected.length > 0 ? (
               <View testID="archive-selection-bar" style={[styles.item, { borderColor: colors.selection, backgroundColor: colors.surface }]}>
-                <Text style={[styles.meta, { color: colors.textSecondary }]}>{countUnit('archive.selected', selected.size)}</Text>
+                <Text style={[styles.meta, { color: colors.textSecondary }]}>{countUnit('archive.selected', activeSelected.length)}</Text>
                 {confirmingSelection ? (
                   <View testID="archive-selection-confirm" style={[styles.confirm, { borderColor: colors.danger }]}>
                     <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>
-                      {t(selected.size === 1 ? 'archive.trashSelection.confirm.one' : 'archive.trashSelection.confirm.many', locale, { count: String(selected.size) })}
+                      {t(activeSelected.length === 1 ? 'archive.trashSelection.confirm.one' : 'archive.trashSelection.confirm.many', locale, { count: String(activeSelected.length) })}
                     </Text>
                     <View style={styles.actions}>
                       <ActionButton label={t('archive.trash.label', locale)} tone="primary" accessibilityLabel={t('archive.trash.selection.accessibilityLabel', locale)} onPress={() => void trashSelection()} />
@@ -146,7 +157,7 @@ export function ArchiveView({
                   <View style={styles.actions}>
                     <ActionButton label={t('archive.selection.restore', locale)} tone="primary" accessibilityLabel={t('archive.selection.restore.accessibilityLabel', locale)} onPress={() => void restoreSelection()} />
                     <ActionButton label={t('archive.selection.trash', locale)} accessibilityLabel={t('archive.selection.trash.accessibilityLabel', locale)} onPress={() => setConfirmingSelection(true)} />
-                    <ActionButton label={t('archive.selection.export', locale)} accessibilityLabel={t('archive.selection.export.accessibilityLabel', locale)} onPress={() => onExportSelection([...selected])} />
+                    <ActionButton label={t('archive.selection.export', locale)} accessibilityLabel={t('archive.selection.export.accessibilityLabel', locale)} onPress={() => onExportSelection(activeSelected)} />
                     <ActionButton label={t('archive.selection.cancel', locale)} accessibilityLabel={t('archive.selection.cancel.accessibilityLabel', locale)} onPress={() => setSelected(new Set())} />
                   </View>
                 )}

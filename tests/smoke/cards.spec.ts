@@ -2167,6 +2167,104 @@ test('Archivo: archivar un tablero completo y selección múltiple para restaura
   expect(runtimeErrors).toEqual([]);
 });
 
+test('Papelera, selección múltiple (bloque 6): restaurar juntas dos tarjetas relacionadas conserva la conexión', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  const compact = isCompactWidth(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Papelera masiva');
+  await addNote(page, 'Una');
+  await closeEditor(page);
+  await addNote(page, 'Dos');
+  await closeEditor(page);
+
+  // Conectar las dos antes de enviarlas a la Papelera, para comprobar que la relación vuelve.
+  await tapCard(page, 1, false);
+  if (compact) {
+    await openCardEditor(page, 1);
+    await button(page, 'Mostrar organización y opciones adicionales').click();
+    await button(page, 'Conectar con Dos').click();
+    await closeEditor(page);
+  } else {
+    await openCardActions(page, card(page, 1), 'Una');
+    await button(page, 'Conectar desde Una').click();
+    await tapConnectTarget(page, 2);
+    await button(page, 'Herramienta Seleccionar').click();
+  }
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
+
+  const sendToTrash = async (id: number, title: string) => {
+    await openCardActions(page, card(page, id), title);
+    await button(page, `Enviar ${title} a la Papelera`).click();
+  };
+  await sendToTrash(1, 'Una');
+  await sendToTrash(2, 'Dos');
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(0);
+
+  await button(page, 'Abrir la Papelera (2)').click();
+  await expect(page.getByTestId('trash-item-tarjeta-1')).toContainText('Una');
+  await expect(page.getByTestId('trash-item-tarjeta-2')).toContainText('Dos');
+  // Seleccionar todas en vez de una por una, y restaurar el conjunto en una sola escritura.
+  await button(page, 'Seleccionar todas las tarjetas de la Papelera').click();
+  await expect(page.getByTestId('trash-selection-bar')).toContainText('2 SELECCIONADAS');
+  await page.screenshot({ path: testInfo.outputPath('trash-selection.png') });
+  await button(page, 'Restaurar las tarjetas seleccionadas').click();
+  await expect(page.getByTestId('trash-empty')).toBeVisible();
+  // El aviso es transitorio y puede desaparecer mientras se compara: el historial («Deshacer: …»)
+  // ofrece una señal durable de que el caso de uso de restaurar terminó con el resultado correcto.
+  await expect(button(page, 'Deshacer: 2 tarjetas restauradas')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // La relación entre ambas, perdida en el camino antes de esta corrección, vuelve en cualquier caso.
+  await expect(card(page, 1)).toBeVisible();
+  await expect(card(page, 2)).toBeVisible();
+  await expect(page.getByTestId('relation-line-relacion-1')).toHaveCount(1);
+
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('Archivo, seleccionar visibles (bloque 6): une el filtro actual a la selección sin marcar una por una', async ({ page }, testInfo) => {
+  const { runtimeErrors } = trackProblems(page);
+  await page.goto('./');
+  await createWorkspace(page, 'Archivo masivo');
+  await addNote(page, 'Una');
+  await closeEditor(page);
+  await addNote(page, 'Dos');
+  await closeEditor(page);
+
+  const archiveByTitle = async (id: number, title: string) => {
+    await openCardActions(page, card(page, id), title);
+    await button(page, `Archivar ${title}`).click();
+  };
+  await archiveByTitle(1, 'Una');
+  await archiveByTitle(2, 'Dos');
+
+  if (isCompactWidth(page)) {
+    await button(page, 'Más secciones').click();
+    await expect(page.getByTestId('more-sheet')).toBeVisible();
+  }
+  await button(page, 'Abrir el Archivo (2)').click();
+  await expect(page.getByTestId('archive-view')).toBeVisible();
+  await expect(page.getByTestId('archive-count')).toHaveText('2 TARJETAS');
+  await button(page, 'Seleccionar las tarjetas visibles con este filtro').click();
+  await expect(page.getByTestId('archive-selection-bar')).toContainText('2 SELECCIONADAS');
+  await page.screenshot({ path: testInfo.outputPath('archive-select-all.png') });
+  // Quitar una de la selección sigue funcionando: la unión no es de solo-lectura.
+  await button(page, 'Quitar de la selección a Una').click();
+  await expect(page.getByTestId('archive-selection-bar')).toContainText('1 SELECCIONADA');
+
+  await button(page, 'Seleccionar las tarjetas visibles con este filtro').click();
+  await expect(page.getByTestId('archive-selection-bar')).toContainText('2 SELECCIONADAS');
+  await button(page, 'Restaurar las tarjetas seleccionadas').click();
+  await expect(page.getByTestId('archive-empty')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card(page, 1)).toBeVisible();
+  await expect(card(page, 2)).toBeVisible();
+
+  expect(await hasHorizontalOverflow(page)).toBe(false);
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('Diario: nota de hoy sin duplicar, cronología con fechas reales, archivadas, cambiar de día y estado vacío sin cifras (ADR 0024)', async ({ page }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const { runtimeErrors } = trackProblems(page);

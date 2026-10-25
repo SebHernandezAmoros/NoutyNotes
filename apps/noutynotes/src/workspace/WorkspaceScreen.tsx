@@ -1,6 +1,6 @@
 import {
   PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, addNoteImage, addNoteImageDocument, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardAppearance, editCardContent, editConnectorPath, importImageCard, importImageCardAt, insertExistingNoteImage, insertExistingNoteImageDocument,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, restoreCardsFromTrash, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, Card, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
@@ -1172,6 +1172,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (notes.length > 0) setFeedback({ tone: 'success', text: composeSavedWithNotes(t('action.cardRestored', locale), notes, storageMode, locale) });
   };
 
+  const restoreTrashSelection = async (cardIds: readonly CardId[]) => {
+    const fallbackBoardId = board?.id ?? PROTOTYPE_BOARD.id;
+    const result = await run((storage, workspaceId) => restoreCardsFromTrash(storage, workspaceId, { cardIds, fallbackBoardId }),
+      pluralAction(cardIds.length, 'action.cardRestored', 'action.cardsRestored.many'));
+    return result.ok;
+  };
+
   const purge = async (cardId: CardId) => {
     const assets = assetsOf(session.storage);
     const result = await run((storage, workspaceId) => purgeCardFromTrash(storage, assets, workspaceId, cardId), 'action.cardPurged', { history: 'clear' });
@@ -2183,6 +2190,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             busy={saving}
             onRestore={(cardId) => void restore(cardId)}
             onPurge={(cardId) => void purge(cardId)}
+            onRestoreSelection={restoreTrashSelection}
             onClose={() => setTrashOpen(false)}
           />
           <RecoveryCenter

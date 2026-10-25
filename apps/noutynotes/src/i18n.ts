@@ -409,6 +409,19 @@ export const TRANSLATIONS = {
   'trash.restore.accessibilityLabel': { es: 'Restaurar {title}', en: 'Restore {title}' },
   'trash.purge': { es: 'Eliminar definitivamente…', en: 'Delete permanently…' },
   'trash.purge.accessibilityLabel': { es: 'Eliminar definitivamente {title}', en: 'Delete {title} permanently' },
+  // Selección múltiple de la Papelera (P6, bloque 6)
+  'trash.item.select': { es: 'Seleccionar', en: 'Select' },
+  'trash.item.selected': { es: 'Seleccionada', en: 'Selected' },
+  'trash.item.select.add.accessibilityLabel': { es: 'Añadir a la selección a {title}', en: 'Add {title} to the selection' },
+  'trash.item.select.remove.accessibilityLabel': { es: 'Quitar de la selección a {title}', en: 'Remove {title} from the selection' },
+  'trash.selectAll': { es: 'Seleccionar todas', en: 'Select all' },
+  'trash.selectAll.accessibilityLabel': { es: 'Seleccionar todas las tarjetas de la Papelera', en: 'Select every card in the Trash' },
+  'trash.selected.one': { es: '1 SELECCIONADA', en: '1 SELECTED' },
+  'trash.selected.many': { es: '{count} SELECCIONADAS', en: '{count} SELECTED' },
+  'trash.selection.restore': { es: 'Restaurar seleccionadas', en: 'Restore selected' },
+  'trash.selection.restore.accessibilityLabel': { es: 'Restaurar las tarjetas seleccionadas', en: 'Restore the selected cards' },
+  'trash.selection.cancel': { es: 'Cancelar selección', en: 'Cancel selection' },
+  'trash.selection.cancel.accessibilityLabel': { es: 'Cancelar la selección', en: 'Cancel the selection' },
 
   // Diálogo de enlace (E7a, ADR 0040)
   'link.dialog.title': { es: 'Nuevo enlace', en: 'New link' },
@@ -695,6 +708,9 @@ export const TRANSLATIONS = {
   'archive.count.many': { es: '{count} TARJETAS', en: '{count} CARDS' },
   'archive.selected.one': { es: '1 SELECCIONADA', en: '1 SELECTED' },
   'archive.selected.many': { es: '{count} SELECCIONADAS', en: '{count} SELECTED' },
+  // Seleccionar visibles (P6, bloque 6): une al resultado filtrado actual, no futuros resultados.
+  'archive.selectAll': { es: 'Seleccionar visibles', en: 'Select visible' },
+  'archive.selectAll.accessibilityLabel': { es: 'Seleccionar las tarjetas visibles con este filtro', en: 'Select the cards visible under this filter' },
   'archive.trashSelection.confirm.one': {
     es: '¿Enviar la seleccionada a la Papelera? Desde allí aún podrás restaurarla o eliminarla definitivamente.',
     en: 'Send the selected one to the Trash? From there you can still restore or permanently delete it.',
@@ -1115,6 +1131,7 @@ export const TRANSLATIONS = {
   'action.cardsRestoredFromArchive.many': { es: '{count} tarjetas restauradas del Archivo', en: '{count} cards restored from the Archive' },
   'action.cardsArchivedToTrash.many': { es: '{count} tarjetas enviadas del Archivo a la Papelera', en: '{count} cards sent from the Archive to the Trash' },
   'action.cardRestored': { es: 'Tarjeta restaurada', en: 'Card restored' },
+  'action.cardsRestored.many': { es: '{count} tarjetas restauradas', en: '{count} cards restored' },
   'action.cardPurged': { es: 'Tarjeta eliminada definitivamente', en: 'Card permanently deleted' },
   'action.imageImported': { es: 'Imagen «{name}» importada', en: 'Image “{name}” imported' },
   'action.cardExpanded': { es: 'Tarjeta expandida', en: 'Card expanded' },

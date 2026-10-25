@@ -20,16 +20,10 @@ import type { TrashedCard } from './trashed-card';
  * devuelve un workspace a medias.
  */
 
-/**
- * Retira una tarjeta activa guardando todo lo necesario para restaurarla (pertenencia, colocación y
- * relaciones). Común a la Papelera y al Archivo (ADR 0023).
- */
-export function setAsideCard(workspace: Workspace, cardId: CardId): ValidationResult<{ readonly workspace: Workspace; readonly entry: TrashedCard }> {
-  const source = validateWorkspace(workspace);
-  if (!source.ok) return failure([...source.issues]);
-  const card = workspace.cards.find((candidate) => candidate.id === cardId);
-  if (!isValidId(cardId) || !card) return failure([issue('missing-reference', 'cardId', 'La tarjeta no existe en el workspace.')]);
-  const entry: TrashedCard = {
+/** Instantánea de una tarjeta todavía activa: pertenencia, colocación y relaciones incidentes. */
+function snapshotOf(workspace: Workspace, card: Card): TrashedCard {
+  const cardId = card.id;
+  return {
     card,
     boards: workspace.boards.flatMap((board) => {
       const index = board.cardIds.indexOf(cardId);
@@ -41,9 +35,52 @@ export function setAsideCard(workspace: Workspace, cardId: CardId): ValidationRe
         ...(placement.connectorPath === undefined ? {} : { connectorPath: placement.connectorPath }) }))),
     relations: workspace.relations.filter((relation) => relation.from === cardId || relation.to === cardId),
   };
+}
+
+/**
+ * Retira una tarjeta activa guardando todo lo necesario para restaurarla (pertenencia, colocación y
+ * relaciones). Común a la Papelera y al Archivo (ADR 0023).
+ */
+export function setAsideCard(workspace: Workspace, cardId: CardId): ValidationResult<{ readonly workspace: Workspace; readonly entry: TrashedCard }> {
+  const source = validateWorkspace(workspace);
+  if (!source.ok) return failure([...source.issues]);
+  const card = workspace.cards.find((candidate) => candidate.id === cardId);
+  if (!isValidId(cardId) || !card) return failure([issue('missing-reference', 'cardId', 'La tarjeta no existe en el workspace.')]);
+  const entry = snapshotOf(workspace, card);
   const removed = deleteCard(workspace, cardId, { relations: 'cascade' });
   if (!removed.ok) return failure([...removed.issues]);
   return resultOf({ workspace: removed.value, entry }, []);
+}
+
+/**
+ * Retira un conjunto de tarjetas activas a la vez (ADR 0025/0039/P6): todas las instantáneas se
+ * capturan sobre el mismo `workspace` original, antes de retirar la primera. Si una tarjeta de la
+ * selección está relacionada con otra de la misma selección, ambas instantáneas conservan esa
+ * relación (no solo la de la tarjeta retirada primero) — así la restauración posterior recupera la
+ * relación sin que importe en qué orden se restauren ni en qué orden se retiraron. Si se capturara
+ * secuencialmente (instantánea tras instantánea, sobre un workspace que ya va encogiendo), la segunda
+ * tarjeta de un par relacionado ya no vería esa relación: la primera retirada se la habría llevado.
+ */
+export function setAsideCards(
+  workspace: Workspace, cardIds: readonly CardId[],
+): ValidationResult<{ readonly workspace: Workspace; readonly entries: readonly TrashedCard[] }> {
+  const source = validateWorkspace(workspace);
+  if (!source.ok) return failure([...source.issues]);
+  const ids = [...new Set(cardIds)];
+  if (ids.length === 0) return failure([issue('invalid-value', 'cardIds', 'Debe haber al menos una tarjeta.')]);
+  const entries: TrashedCard[] = [];
+  for (const cardId of ids) {
+    const card = workspace.cards.find((candidate) => candidate.id === cardId);
+    if (!isValidId(cardId) || !card) return failure([issue('missing-reference', 'cardId', 'La tarjeta no existe en el workspace.')]);
+    entries.push(snapshotOf(workspace, card));
+  }
+  let current = workspace;
+  for (const cardId of ids) {
+    const removed = deleteCard(current, cardId, { relations: 'cascade' });
+    if (!removed.ok) return failure([...removed.issues]);
+    current = removed.value;
+  }
+  return resultOf({ workspace: current, entries }, []);
 }
 
 /** Envía una tarjeta a la Papelera con su pertenencia, colocación y relaciones. */
@@ -51,6 +88,13 @@ export function trashCard(workspace: Workspace, cardId: CardId): ValidationResul
   const aside = setAsideCard(workspace, cardId);
   if (!aside.ok) return failure([...aside.issues]);
   return validateWorkspace({ ...aside.value.workspace, trash: [...(workspace.trash ?? []), aside.value.entry] });
+}
+
+/** Envía un conjunto de tarjetas a la Papelera en una sola transformación (ADR 0025/P6). */
+export function trashCards(workspace: Workspace, cardIds: readonly CardId[]): ValidationResult<Workspace> {
+  const aside = setAsideCards(workspace, cardIds);
+  if (!aside.ok) return failure([...aside.issues]);
+  return validateWorkspace({ ...aside.value.workspace, trash: [...(workspace.trash ?? []), ...aside.value.entries] });
 }
 
 export interface RestoreOptions {

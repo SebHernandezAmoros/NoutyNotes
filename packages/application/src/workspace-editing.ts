@@ -1,5 +1,5 @@
 import {
-  LEGACY_RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard,
+  LEGACY_RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archiveCards, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard, trashCards,
   isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateConnectorPath, validateRichTextDocument, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
@@ -166,7 +166,11 @@ export function takenCardIds(workspace: Workspace): string[] {
 }
 
 export function takenRelationIds(workspace: Workspace): string[] {
-  return [...workspace.relations.map((relation) => relation.id), ...(workspace.trash ?? []).flatMap((entry) => entry.relations.map((relation) => relation.id))];
+  return [
+    ...workspace.relations.map((relation) => relation.id),
+    ...(workspace.trash ?? []).flatMap((entry) => entry.relations.map((relation) => relation.id)),
+    ...(workspace.archive ?? []).flatMap((entry) => entry.relations.map((relation) => relation.id)),
+  ];
 }
 
 /** IDs de tablero ocupados: los activos y los reservados por el Archivo (ADR 0039). */
@@ -579,16 +583,21 @@ function eachCard(workspace: Workspace, cardIds: readonly CardId[], apply: (curr
   return { ok: true, value: current };
 }
 
-/** Envía un conjunto a la Papelera (ADR 0025): cada tarjeta con su instantánea, una sola escritura. */
+/**
+ * Envía un conjunto a la Papelera (ADR 0025/P6): una sola transformación y escritura. Las instantáneas
+ * se capturan todas sobre el mismo workspace original (`trashCards`), así que una relación entre dos
+ * tarjetas de la misma selección se conserva en ambas, sin depender del orden de retirada ni de
+ * restauración posterior.
+ */
 export function moveCardsToTrash(storage: WorkspaceStorage, workspaceId: WorkspaceId, cardIds: readonly CardId[]): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
-  return modifyWorkspace(storage, workspaceId, (workspace) => eachCard(workspace, cardIds, trashCard));
+  return modifyWorkspace(storage, workspaceId, (workspace) => trashCards(workspace, cardIds));
 }
 
-/** Archiva un conjunto (ADR 0025) con la misma hora, puesta por la interfaz. */
+/** Archiva un conjunto (ADR 0025/P6) con la misma hora, puesta por la interfaz; ver `moveCardsToTrash`. */
 export function moveCardsToArchive(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, cardIds: readonly CardId[], archivedAt: string,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
-  return modifyWorkspace(storage, workspaceId, (workspace) => eachCard(workspace, cardIds, (current, cardId) => archiveCard(current, cardId, archivedAt)));
+  return modifyWorkspace(storage, workspaceId, (workspace) => archiveCards(workspace, cardIds, archivedAt));
 }
 
 /** Restaura una tarjeta de la Papelera y devuelve qué no pudo quedar igual. */
@@ -623,6 +632,24 @@ export function restoreCardsFromArchive(
     let current = target;
     for (const cardId of new Set(input.cardIds)) {
       const restored = restoreArchivedCard(current, cardId, { fallbackBoardId: boardId, config: CANONICAL_GRID });
+      if (!restored.ok) return restored;
+      current = restored.value.workspace;
+    }
+    return { ok: true, value: current };
+  });
+}
+
+/** Restaura un conjunto de tarjetas de la Papelera en una sola escritura (P6, equivalente a `restoreCardsFromArchive`). */
+export function restoreCardsFromTrash(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, input: { readonly cardIds: readonly CardId[]; readonly fallbackBoardId: BoardId },
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => {
+    if (input.cardIds.length === 0) return { ok: false, issues: [{ code: 'invalid-value', path: 'cardIds', message: 'Debe haber al menos una tarjeta.' }] };
+    const { workspace: target, boardId } = workspace.boards.some((board) => board.id === input.fallbackBoardId)
+      ? { workspace, boardId: input.fallbackBoardId } : withBoard(workspace);
+    let current = target;
+    for (const cardId of new Set(input.cardIds)) {
+      const restored = restoreTrashedCard(current, cardId, { fallbackBoardId: boardId, config: CANONICAL_GRID });
       if (!restored.ok) return restored;
       current = restored.value.workspace;
     }

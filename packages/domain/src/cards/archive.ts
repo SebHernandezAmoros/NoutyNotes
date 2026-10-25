@@ -7,7 +7,7 @@ import type { ValidationResult } from '../errors';
 import type { CardId } from '../ids';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
-import { restoreSnapshot, setAsideCard } from './trash';
+import { restoreSnapshot, setAsideCard, setAsideCards } from './trash';
 import type { RestoreOptions, RestoreReport } from './trash';
 import { isArchiveInstant } from './trashed-card';
 import type { ArchivedCard, TrashedCard } from './trashed-card';
@@ -19,6 +19,19 @@ export function archiveCard(workspace: Workspace, cardId: CardId, archivedAt: st
   if (!aside.ok) return failure([...aside.issues]);
   const entry: ArchivedCard = { ...aside.value.entry, archivedAt };
   return validateWorkspace({ ...aside.value.workspace, archive: [...(workspace.archive ?? []), entry] });
+}
+
+/**
+ * Archiva un conjunto de tarjetas a la vez, con la misma fecha (ADR 0025/0039/P6): todas las
+ * instantáneas se capturan sobre el mismo workspace original (ver `setAsideCards`), así que una
+ * relación entre dos tarjetas de la misma selección se conserva en ambas, sin depender del orden.
+ */
+export function archiveCards(workspace: Workspace, cardIds: readonly CardId[], archivedAt: string): ValidationResult<Workspace> {
+  if (!isArchiveInstant(archivedAt)) return failure([issue('invalid-value', 'archivedAt', 'Debe ser una fecha y hora ISO 8601 en UTC.')]);
+  const aside = setAsideCards(workspace, cardIds);
+  if (!aside.ok) return failure([...aside.issues]);
+  const entries: ArchivedCard[] = aside.value.entries.map((entry) => ({ ...entry, archivedAt }));
+  return validateWorkspace({ ...aside.value.workspace, archive: [...(workspace.archive ?? []), ...entries] });
 }
 
 function archivedEntry(workspace: Workspace, cardId: CardId): ValidationResult<ArchivedCard> {
