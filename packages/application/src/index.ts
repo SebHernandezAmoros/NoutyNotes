@@ -7,7 +7,7 @@ export type { CreateEmptyWorkspaceInput, CreateFromTemplateInput, WorkspaceTrans
 export { nextSequentialId, workspaceIdFromName } from './ids';
 export {
   CANONICAL_GRID, DEFAULT_CARD_SIZE, PROTOTYPE_BOARD, PROTOTYPE_CARD_PRESETS, RELATED_RELATION_TYPE,
-  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, restoreCardsFromArchive, restoreCardsFromTrash, sendArchivedCardsToTrash, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenBoardIds, takenCardIds, takenRelationIds, createEmptyWorkspaceNamed, disconnectCards, editableCardContent, editCardAppearance, editCardContent, editConnectorPath, moveCardOnBoard, nudgeCardOnBoard, placeCardOnBoard, renameBoardInWorkspace, reorderBoardInWorkspace, resizeCardOnBoard,
+  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, restoreCardFromArchive, restoreCardsFromArchive, restoreCardsFromTrash, sendArchivedCardsToTrash, sendArchivedToTrash, purgeCardFromTrash, restoreCardFromTrash, setCardDisplay, takenBoardIds, takenCardIds, takenRelationIds, createEmptyWorkspaceNamed, disconnectCards, editableCardContent, editCardAppearance, editCardContent, editConnectorPath, moveCardOnBoard, nudgeCardOnBoard, placeCardOnBoard, renameBoardInWorkspace, reorderBoardInWorkspace, resizeCardOnBoard, resizeCardRectOnBoard,
 } from './workspace-editing';
 export { duplicateSelection, pasteSnapshot, snapshotSelection } from './clipboard';
 export type { ClipboardSnapshot } from './clipboard';

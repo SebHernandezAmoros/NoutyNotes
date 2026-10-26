@@ -48,6 +48,8 @@ export interface Card {
   readonly boardTargetId?: BoardId;
   /** Excepción a la preferencia global de marco (ADR 0049). Ausente: sigue la preferencia del dispositivo. */
   readonly frameOverride?: FrameOverride;
+  /** Explicit Canvas background. Absence preserves the historical frame/visibility presentation. */
+  readonly noteBackground?: NoteBackground;
   /** Tamaño semántico del título (ADR 0050). Ausente: `'medium'`, el tamaño de hoy. */
   readonly titleSize?: TextSize;
   /** Tamaño semántico del cuerpo (ADR 0050); no afecta al título ni al pie. Ausente: `'medium'`. */
@@ -101,6 +103,13 @@ export type CardIconName = (typeof cardIconNames)[number];
 
 export const frameOverrides = ['visible', 'hidden'] as const;
 export type FrameOverride = (typeof frameOverrides)[number];
+export const noteBackgrounds = ['paper', 'transparent'] as const;
+export type NoteBackground = (typeof noteBackgrounds)[number];
+
+export function resolveNoteBackground(card: Pick<Card, 'noteBackground' | 'frameOverride' | 'titleVisibility' | 'bodyVisibility'>, base: CardTypeDefinition['base'] | undefined): NoteBackground {
+  if (base !== 'note') return 'paper';
+  return card.noteBackground ?? (card.frameOverride === 'hidden' && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined) ? 'transparent' : 'paper');
+}
 
 export const textSizes = ['small', 'medium', 'large'] as const;
 export type TextSize = (typeof textSizes)[number];
@@ -258,6 +267,9 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
   if (card.boardTargetId !== undefined) checkId(card.boardTargetId, `${path}.boardTargetId`, issues);
   if (card.frameOverride !== undefined && !frameOverrides.includes(card.frameOverride as FrameOverride)) {
     issues.push(issue('invalid-value', `${path}.frameOverride`, 'Debe ser "visible" u "hidden".'));
+  }
+  if (card.noteBackground !== undefined && (type?.base !== 'note' || !noteBackgrounds.includes(card.noteBackground as NoteBackground))) {
+    issues.push(issue('invalid-value', `${path}.noteBackground`, 'Solo una Nota admite fondo paper o transparent.'));
   }
   if (card.titleSize !== undefined && !textSizes.includes(card.titleSize as TextSize)) {
     issues.push(issue('invalid-value', `${path}.titleSize`, 'Debe ser "small", "medium" o "large".'));

@@ -30,7 +30,7 @@ export const cardSchema = z.strictObject({
   primaryResourceState: primaryResourceStateSchema.optional(),
   titleRichText: z.array(z.unknown()).optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
-  icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
+  icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(), noteBackground: text.optional(),
   titleSize: text.optional(), bodySize: text.optional(), captionPosition: text.optional(), textAlign: text.optional(), textColor: text.optional(),
   titleVisibility: text.optional(), bodyVisibility: text.optional(), contentLayout: text.optional(), noteVerticalAlignment: text.optional(),
   shapeKind: text.optional(), shapeFill: text.optional(), shapeStroke: text.optional(), shapeStrokeWidth: text.optional(),
@@ -85,12 +85,13 @@ export const workspaceManifestSchema = z.strictObject({
  * v9: geometría y estilo de formas. v10: conectores decorativos. v11: nota unificada.
  * v12: cuerpo `contentFormat: html`, `contentVersion: 1` (P18-E2). v13: alineación vertical de Nota.
  * v14: ajuste de imagen explícito `imageFit` (OBS-N2-IMAGE-FIT-F1). v15: recurso primario retirado (U2-A). v16: cuerpo enriquecido v3 (U2-B).
+ * v17: fondo opcional de Nota, independiente del marco (BLOQUE7). Ausente conserva versión y apariencia históricas.
  */
 export const cardFrontmatterSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11), z.literal(12), z.literal(13), z.literal(14), z.literal(15), z.literal(16)]), id: text, typeId: text, title: text.optional(), titleRichText: z.array(z.unknown()).optional(),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11), z.literal(12), z.literal(13), z.literal(14), z.literal(15), z.literal(16), z.literal(17)]), id: text, typeId: text, title: text.optional(), titleRichText: z.array(z.unknown()).optional(),
   primaryResourceState: primaryResourceStateSchema.optional(),
   fields: z.record(text, fieldValue), assetRefs: z.array(text).optional(), tags: z.array(text).optional(), createdAt: text.optional(),
-  icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(),
+  icon: text.optional(), boardTargetId: text.optional(), frameOverride: text.optional(), noteBackground: text.optional(),
   titleSize: text.optional(), bodySize: text.optional(), captionPosition: text.optional(), textAlign: text.optional(), textColor: text.optional(),
   titleVisibility: text.optional(), bodyVisibility: text.optional(), contentLayout: text.optional(), noteVerticalAlignment: text.optional(),
   shapeKind: text.optional(), shapeFill: text.optional(), shapeStroke: text.optional(), shapeStrokeWidth: text.optional(), contentPresent: z.boolean(),
@@ -102,10 +103,10 @@ export const cardFrontmatterSchema = z.strictObject({
 export const boardFrontmatterSchema = z.strictObject({
   schemaVersion: z.literal(1), id: text, title: text, cardIds: z.array(text), descriptionPresent: z.boolean(),
 });
-export const trashFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), items: z.array(trashItemSchema) });
+export const trashFileSchema = z.strictObject({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]), items: z.array(trashItemSchema) });
 /** v4: con `archivedBoards`, tableros archivados como unidad (ADR 0039). */
 export const archiveFileSchema = z.strictObject({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]), items: z.array(archiveItemSchema),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8)]), items: z.array(archiveItemSchema),
   archivedBoards: z.array(archivedBoardSchema).optional(),
 });
 export const templateFileSchema = z.strictObject({

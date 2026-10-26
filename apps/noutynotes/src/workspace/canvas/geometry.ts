@@ -1,6 +1,6 @@
 import { CANONICAL_GRID } from '@noutynotes/application';
-import { cellsOverlap, footprint, frameMembers, moveCard, moveCards, moveFrame, resizeCard } from '@noutynotes/domain';
-import type { BoardLayout, CardId, GridCell, GridPoint, GridSize, ValidationResult } from '@noutynotes/domain';
+import { cellsOverlap, footprint, frameMembers, moveCard, moveCards, moveFrame, resizeCard, resizeCardRect } from '@noutynotes/domain';
+import type { BoardLayout, CardId, GridCell, GridPoint, GridRect, GridSize, ValidationResult } from '@noutynotes/domain';
 
 /**
  * Geometría pura del lienzo (ADR 0013): el layout canónico de 12 columnas en píxeles, arrastre y
@@ -56,13 +56,22 @@ export function dragTarget(cell: GridPoint, dx: number, dy: number, zoom: number
   return { x: cell.x + cells(dx, zoom, metrics.cell, subdivisions), y: cell.y + cells(dy, zoom, metrics.row, subdivisions) };
 }
 
-export type ResizeHandle = 'e' | 's' | 'se';
+export type ResizeHandle = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+
+/** Opposite edges stay fixed; pointer deltas are screen pixels, rects stay in world cells. */
+export function resizeRectTarget(rect: GridRect, handle: ResizeHandle, dx: number, dy: number, zoom: number, metrics: CanvasMetrics): GridRect {
+  const horizontal = cells(dx, zoom, metrics.cell);
+  const vertical = cells(dy, zoom, metrics.row);
+  const w = Math.max(1, rect.w + (handle.includes('w') ? -horizontal : handle.includes('e') ? horizontal : 0));
+  const h = Math.max(1, rect.h + (handle.includes('n') ? -vertical : handle.includes('s') ? vertical : 0));
+  return { x: (handle.includes('w') ? rect.x + rect.w - w : rect.x) + 0,
+    y: (handle.includes('n') ? rect.y + rect.h - h : rect.y) + 0, w, h };
+}
 
 /** Tamaño de destino al arrastrar un asa; la esquina superior izquierda no cambia. Mínimo 1 × 1. */
 export function resizeTarget(size: GridSize, handle: ResizeHandle, dx: number, dy: number, zoom: number, metrics: CanvasMetrics): GridSize {
-  const w = handle === 's' ? size.w : size.w + cells(dx, zoom, metrics.cell);
-  const h = handle === 'e' ? size.h : size.h + cells(dy, zoom, metrics.row);
-  return { w: Math.max(1, w), h: Math.max(1, h) };
+  const { w, h } = resizeRectTarget({ x: 0, y: 0, ...size }, handle, dx, dy, zoom, metrics);
+  return { w, h };
 }
 
 /** Caja de la vista previa: con imán, la celda de destino; sin imán, sigue al puntero. */
@@ -129,6 +138,11 @@ export function checkFrameMove(layout: BoardLayout, frameId: string, delta: Grid
 export function checkResize(layout: BoardLayout, cardId: CardId, size: GridSize): PlacementCheck {
   return checked(layout, cardId, resizeCard(layout, cardId, size, CANONICAL_GRID),
     (placement) => footprint({ ...placement, rect: { ...placement.rect, ...size } }));
+}
+
+export function checkResizeRect(layout: BoardLayout, cardId: CardId, rect: GridRect): PlacementCheck {
+  return checked(layout, cardId, resizeCardRect(layout, cardId, rect, CANONICAL_GRID),
+    (placement) => footprint({ ...placement, rect }));
 }
 
 /** Umbral en píxeles de pantalla: por debajo, el gesto es un toque (selección), no un arrastre. */

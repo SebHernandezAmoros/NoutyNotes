@@ -10,10 +10,10 @@ export { ASSET_REF_MAX_LENGTH, isValidAssetRef, parseAssetRef } from './assets/a
 export type { AssetRef } from './assets/asset-ref';
 export { validateBoard } from './boards/board';
 export type { Board } from './boards/board';
-export { captionPositions, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, floatingTextAlignments, floatingTextColors, frameOverrides, imageFits, isFloatingTextCard, resolveCardImageFit, richTextInlineText, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, supportsCardImageFit, textSizes, validateCard } from './cards/card';
+export { captionPositions, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, floatingTextAlignments, floatingTextColors, frameOverrides, noteBackgrounds, resolveNoteBackground, imageFits, isFloatingTextCard, resolveCardImageFit, richTextInlineText, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, supportsCardImageFit, textSizes, validateCard } from './cards/card';
 export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export { linkDisplay, linkUrlField, normalizeLinkUrl } from './cards/links';
-export type { CaptionPosition, Card, CardContentPresentation, CardIconName, ConnectorArrows, ConnectorDash, ConnectorDirection, ContentLayout, ContentVisibility, FloatingTextAlign, FloatingTextColor, FrameOverride, ImageFit, NoteVerticalAlignment, PrimaryResourceState, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize } from './cards/card';
+export type { CaptionPosition, Card, CardContentPresentation, CardIconName, ConnectorArrows, ConnectorDash, ConnectorDirection, ContentLayout, ContentVisibility, FloatingTextAlign, FloatingTextColor, FrameOverride, NoteBackground, ImageFit, NoteVerticalAlignment, PrimaryResourceState, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize } from './cards/card';
 export { addCard, deleteCard, pasteCardsOnBoard, updateCard, updateCardAppearance } from './cards/operations';
 export type { AddCardOptions, CardAppearanceChanges, CardContentChanges, DeleteCardOptions, PasteCardsInput } from './cards/operations';
 export { purgeTrashedCard, restoreTrashedCard, trashCard, trashCards } from './cards/trash';
@@ -52,7 +52,7 @@ export {
   cellsOverlap, compareReadingOrder, footprint, snapFineUnit, snapPoint, snapSize, snapUnit, validateGridConfig, validateGridLayout, WORLD_GRID, MAX_WORLD_CELL,
 } from './layouts/grid';
 export type { GridCell, GridConfig, GridPoint, GridSize } from './layouts/grid';
-export { addGroup, compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, setConnectorPath, setDisplay } from './layouts/operations';
+export { addGroup, compactLayout, findFreeSpace, moveCard, moveCards, resizeCard, resizeCardRect, setConnectorPath, setDisplay } from './layouts/operations';
 export type { FindFreeSpaceOptions, SetDisplayOptions } from './layouts/operations';
 export { projectLayout } from './layouts/projection';
 export type { ProjectedItem, ProjectedLayout } from './layouts/projection';

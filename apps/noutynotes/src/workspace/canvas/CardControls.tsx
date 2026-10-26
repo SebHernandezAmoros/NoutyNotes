@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '../../components/AppIcon';
+import { ActionButton } from '../../components/controls';
 import type { AppIconName } from '../../components/AppIcon';
 import { Dialog, DialogCloseButton } from '../../components/Dialog';
 import { t } from '../../i18n';
@@ -70,13 +71,13 @@ function Control({ testID, icon, label, danger = false, floating = false, contai
         backgroundColor: pressed ? colors.surfaceRaised : contained ? colors.surface : 'transparent',
       }]}
     >
-      <AppIcon name={icon} size={20} color={danger ? colors.danger : floating ? colors.textPrimary : colors.cardText} />
+      <AppIcon name={icon} size={20} color={danger ? colors.danger : floating || contained ? colors.textPrimary : colors.cardText} />
     </Pressable>
   );
 }
 
 /** Acciones cercanas a la tarjeta en escritorio; hoja temporal en móvil. */
-export function CardMenu({ title, display, compact, canQuickEdit, canPaste, frameHidden, anchor, onEdit, onQuickEdit, onTags, onConnect, onCopy, onDuplicate, onPaste, onSelectMany, onArchive, onAction, onToggleFrame, onClose }: {
+export function CardMenu({ title, display, compact, canQuickEdit, canPaste, frameHidden, backgroundTransparent, anchor, onEdit, onQuickEdit, onTags, onConnect, onCopy, onDuplicate, onPaste, onSelectMany, onArchive, onAction, onToggleFrame, onToggleBackground, onResizeBy, onClose }: {
   readonly title: string;
   readonly display: CardDisplayMode;
   readonly compact: boolean;
@@ -90,6 +91,7 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
   /** UX7.3-B: estado EFECTIVO del marco (ya resuelta la preferencia global, no solo `frameOverride`
    * crudo) — decide si este botón ofrece «Mostrar marco» u «Ocultar marco». */
   readonly frameHidden: boolean;
+  readonly backgroundTransparent: boolean | null;
   readonly anchor: { readonly left: number; readonly top: number } | null;
   readonly onEdit: () => void;
   readonly onQuickEdit: () => void;
@@ -102,11 +104,14 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
   readonly onArchive: () => void;
   readonly onAction: (action: CardAction) => void;
   readonly onToggleFrame: () => void;
+  readonly onToggleBackground: () => void;
+  readonly onResizeBy: (dw: number, dh: number) => void;
   readonly onClose: () => void;
 }) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
+  const [sizeOpen, setSizeOpen] = useState(false);
   const screen = useWindowDimensions();
   const actions = cardActions(display);
   const displayActions = actions.filter((action) => action.kind !== 'trash');
@@ -138,6 +143,21 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
       <MenuRow icon="frame" label={t(frameHidden ? 'cardMenu.frame.show' : 'cardMenu.frame.hide', locale)}
         accessibilityLabel={t(frameHidden ? 'cardMenu.frame.show.accessibilityLabel' : 'cardMenu.frame.hide.accessibilityLabel', locale, { title })}
         onPress={() => { onClose(); onToggleFrame(); }} />
+      {backgroundTransparent !== null ? <MenuRow icon="frame" label={t(backgroundTransparent ? 'cardMenu.background.paper' : 'cardMenu.background.transparent', locale)}
+        accessibilityLabel={t(backgroundTransparent ? 'cardMenu.background.paper.label' : 'cardMenu.background.transparent.label', locale, { title })}
+        onPress={() => { onClose(); onToggleBackground(); }} /> : null}
+      <MenuRow icon="expand" label={locale === 'es' ? 'Ajustar tamaño' : 'Adjust size'} accessibilityLabel={locale === 'es' ? 'Ajustar tamaño' : 'Adjust size'} onPress={() => setSizeOpen((open) => !open)} />
+      {sizeOpen ? <View testID="card-size-options" style={{ gap: 4 }}>
+        <Text style={{ color: colors.textSecondary }}>{locale === 'es' ? 'Flechas: mover. Mayús + flechas: tamaño. El Inspector permite leer todo el contenido.' : 'Arrows: move. Shift + arrows: resize. The Inspector shows all content.'}</Text>
+        {display === 'minimized' ? <Text style={{ color: colors.textPrimary }}>{locale === 'es' ? 'Expande la tarjeta para ajustar su tamaño.' : 'Expand the Card to resize it.'}</Text> : <>
+          <ActionButton label={locale === 'es' ? 'Más ancha' : 'Wider'} onPress={() => onResizeBy(1, 0)} />
+          <ActionButton label={locale === 'es' ? 'Más estrecha' : 'Narrower'} onPress={() => onResizeBy(-1, 0)} />
+          {display === 'expanded' ? <>
+            <ActionButton label={locale === 'es' ? 'Más alta' : 'Taller'} onPress={() => onResizeBy(0, 1)} />
+            <ActionButton label={locale === 'es' ? 'Más baja' : 'Shorter'} onPress={() => onResizeBy(0, -1)} />
+          </> : null}
+        </>}
+      </View> : null}
       <MenuRow icon="copy" label={t('cardMenu.copy', locale)} accessibilityLabel={t('cardMenu.copy.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onCopy(); }} />
       <MenuRow icon="duplicate" label={t('cardMenu.duplicate', locale)} accessibilityLabel={t('cardMenu.duplicate.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onDuplicate(); }} />
       {canPaste ? <MenuRow icon="paste" label={t('cardMenu.paste', locale)} accessibilityLabel={t('cardMenu.paste.accessibilityLabel', locale)} onPress={() => { onClose(); onPaste(); }} /> : null}
@@ -156,8 +176,8 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
   const width = Math.min(220, screen.width - 16);
   // Altura real estimada a partir del número de filas visibles (antes, un valor fijo de 470 pensado
   // para la cuadrícula anterior) — decide si el menú se abre encima o debajo del ancla.
-  const rowCount = (canQuickEdit ? 1 : 0) + 3 + displayActions.length + 1 + 2 + (canPaste ? 1 : 0) + 2 + (trash ? 1 : 0);
-  const height = Math.min(screen.height - 16, 52 + rowCount * 40 + (trash ? 9 : 0));
+  const rowCount = (canQuickEdit ? 1 : 0) + 3 + displayActions.length + 2 + 2 + (canPaste ? 1 : 0) + 2 + (trash ? 1 : 0) + (sizeOpen ? 7 : 0) + (backgroundTransparent !== null ? 1 : 0);
+  const height = Math.min(screen.height - 16, 52 + rowCount * 46 + (trash ? 9 : 0));
   const left = Math.max(8, Math.min(anchor?.left ?? 8, screen.width - width - 8));
   const below = (anchor?.top ?? 8) + CONTROL_SIZE + 4;
   const top = below + height <= screen.height - 8 ? below : Math.max(8, (anchor?.top ?? 8) - height - 4);
@@ -214,7 +234,7 @@ const styles = StyleSheet.create({
   control: { width: CONTROL_SIZE, height: CONTROL_SIZE, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   glyph: { fontSize: 22, lineHeight: 26, fontWeight: '900' },
   menu: { gap: 2 },
-  menuRow: { minHeight: 38, borderWidth: 2, borderRadius: 4, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  menuRow: { minHeight: 44, borderWidth: 2, borderRadius: 4, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 11 },
   menuRowText: { flexShrink: 1, fontSize: 14, lineHeight: 18, fontWeight: '700' },
   menuRule: { height: 1, marginVertical: 5 },
   backdrop: { flex: 1 },

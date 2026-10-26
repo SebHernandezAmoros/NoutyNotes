@@ -1,10 +1,11 @@
+import { isEditorialTarget } from './canvas/cardInteraction';
 import {
   PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, addNoteImage, addNoteImageDocument, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardAppearance, editCardContent, editConnectorPath, importImageCard, importImageCardAt, insertExistingNoteImage, insertExistingNoteImageDocument,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, restoreCardsFromTrash, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardRectOnBoard, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, restoreCardsFromTrash, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, Card, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
-import { cardTitleText, createOrthogonalConnectorPath, frameMembers, toggleRichTextChecklistItem } from '@noutynotes/domain';
+import { cardTitleText, createOrthogonalConnectorPath, frameMembers, resolveNoteBackground, toggleRichTextChecklistItem } from '@noutynotes/domain';
 import { htmlRichTextCodec, markdownRichTextCodec, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -221,7 +222,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // que el guardado termine, la tarjeta se ve un instante en su sitio anterior («salto al soltar», el
   // layout todavía no refleja el destino). Se mantiene el valor esperado hasta que el guardado termina
   // (con o sin éxito), en vez de depender de `layout`, que solo se actualiza tras recargar.
-  const [pendingRects, setPendingRects] = useState<ReadonlyMap<CardId, GridRect>>(new Map());
+  const [pendingRects, setPendingRects] = useState<ReadonlyMap<string, { readonly boardId: string; readonly cardId: CardId; readonly rect: GridRect; readonly owner: symbol }>>(new Map());
   // Móvil: el editor puede ocultarse para usar el lienzo (y las asas) sin perder el borrador.
   const [sheetHidden, setSheetHidden] = useState(false);
   // Editor enfocado (ADR 0021): el mismo editor ocupa el sitio del lienzo; el borrador no se pierde.
@@ -598,17 +599,20 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const action = run((storage, workspaceId) => moveCardsOnBoard(storage, workspaceId, { boardId: board.id, cardIds, delta }),
       pluralAction(cardIds.length, 'action.cardMoved', 'action.cardsMoved.many'), { reactive: true });
     // Posición optimista de cada tarjeta del conjunto (mismo motivo que `move`, ver `withPendingRect`).
+    const owner = Symbol();
+    const boardId = board.id;
+    const keys = cardIds.map((id) => JSON.stringify([boardId, id]));
     setPendingRects((current) => {
       const next = new Map(current);
       for (const cardId of cardIds) {
         const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
-        if (placement) next.set(cardId, { ...placement.rect, x: placement.rect.x + delta.x, y: placement.rect.y + delta.y });
+        if (placement) next.set(JSON.stringify([boardId, cardId]), { boardId, cardId, owner, rect: { ...placement.rect, x: placement.rect.x + delta.x, y: placement.rect.y + delta.y } });
       }
       return next;
     });
-    void action.finally(() => setPendingRects((current) => {
+    return action.finally(() => setPendingRects((current) => {
       const next = new Map(current);
-      for (const cardId of cardIds) next.delete(cardId);
+      for (const key of keys) if (next.get(key)?.owner === owner) next.delete(key);
       return next;
     }));
   };
@@ -676,6 +680,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     const effectivelyHidden = card.frameOverride === 'hidden' || (preferences.hideFrames && card.frameOverride !== 'visible');
     const frameOverride = effectivelyHidden ? 'visible' : 'hidden';
     await run((storage, id) => editCardAppearance(storage, id, cardId, { frameOverride }), { label: 'Apariencia actualizada' }, { reactive: true });
+  };
+  const toggleCardBackground = async (cardId: CardId) => {
+    const card = workspace?.cards.find((candidate) => candidate.id === cardId);
+    const type = workspace?.cardTypes.find((candidate) => candidate.id === card?.typeId);
+    if (!card || type?.base !== 'note') return;
+    const noteBackground = resolveNoteBackground(card, type.base) === 'transparent' ? 'paper' : 'transparent';
+    await run((storage, id) => editCardAppearance(storage, id, cardId, { noteBackground }), { label: t('cardMenu.background.updated', locale) }, { reactive: true });
   };
   const pasteClipboardAt = async (point: GridPoint) => {
     if (!board || !clipboard) return;
@@ -930,7 +941,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (Platform.OS !== 'web') return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (event.defaultPrevented || isEditorialTarget(target)) return;
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
       const key = event.key.toLowerCase();
       if (key === 'z' && !event.shiftKey) { event.preventDefault(); void shortcuts.current.undoLast(); }
@@ -983,7 +994,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (Platform.OS !== 'web' || multi === null || multiIds.length === 0) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (event.defaultPrevented || isEditorialTarget(target) || event.ctrlKey || event.metaKey || event.altKey) return;
       const delta = event.key === 'ArrowLeft' ? { x: -1, y: 0 }
         : event.key === 'ArrowRight' ? { x: 1, y: 0 }
         : event.key === 'ArrowUp' ? { x: 0, y: -1 }
@@ -1291,28 +1302,38 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Guarda una posición/tamaño optimista para una tarjeta hasta que su guardado termine (con o sin
   // éxito): sin esto, un redibujado de por medio la mostraría un instante en el layout aún sin guardar.
   const withPendingRect = useCallback(<T,>(cardId: CardId, rect: GridRect, action: Promise<T>): Promise<T> => {
-    setPendingRects((current) => new Map(current).set(cardId, rect));
+    if (!board) return action;
+    const boardId = board.id;
+    const key = JSON.stringify([boardId, cardId]);
+    const owner = Symbol();
+    setPendingRects((current) => new Map(current).set(key, { boardId, cardId, rect, owner }));
     return action.finally(() => setPendingRects((current) => {
-      if (!current.has(cardId)) return current;
+      if (current.get(key)?.owner !== owner) return current;
       const next = new Map(current);
-      next.delete(cardId);
+      next.delete(key);
       return next;
     }));
-  }, []);
+  }, [board]);
   const move = useCallback((cardId: CardId, to: GridPoint) => {
     if (!board) return;
     const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
     if (!placement) return;
-    void withPendingRect(cardId, { ...placement.rect, ...to },
+    return withPendingRect(cardId, { ...placement.rect, ...to },
       run((storage, workspaceId) => moveCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, to }), 'action.cardMoved', { reactive: true }));
   }, [board, layout, run, withPendingRect]);
   const resize = useCallback((cardId: CardId, size: GridSize) => {
     if (!board) return;
     const placement = layout?.placements.find((candidate) => candidate.cardId === cardId);
     if (!placement) return;
-    void withPendingRect(cardId, { ...placement.rect, ...size },
+    return withPendingRect(cardId, { ...placement.rect, ...size },
       run((storage, workspaceId) => resizeCardOnBoard(storage, workspaceId, { boardId: board.id, cardId, size }), 'action.sizeChanged', { reactive: true }));
   }, [board, layout, run, withPendingRect]);
+
+  const resizeRect = useCallback((cardId: CardId, rect: GridRect) => {
+    if (!board) return;
+    return withPendingRect(cardId, rect,
+      run((storage, workspaceId) => resizeCardRectOnBoard(storage, workspaceId, { boardId: board.id, cardId, rect }), 'action.sizeChanged', { reactive: true }));
+  }, [board, run, withPendingRect]);
 
   // Alternativa accesible a arrastrar y usar las asas. `Pressable` consume flechas en web, por eso el
   // listener global usa captura y se restringe a la ficha seleccionada que conserva el foco.
@@ -1322,8 +1343,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (!placement) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const selectedElement = target?.closest(`[data-testid="card-${selectedOnBoard.id}"]`);
-      if (!selectedElement || event.ctrlKey || event.metaKey || event.altKey) return;
+      const selectedElement = target?.closest(`[data-testid="card-${selectedOnBoard.id}"], [data-testid="card-move-${selectedOnBoard.id}"]`);
+      if (!selectedElement || event.defaultPrevented || isEditorialTarget(target) || event.ctrlKey || event.metaKey || event.altKey) return;
       const delta = event.key === 'ArrowLeft' ? { x: -1, y: 0 }
         : event.key === 'ArrowRight' ? { x: 1, y: 0 }
         : event.key === 'ArrowUp' ? { x: 0, y: -1 }
@@ -1778,8 +1799,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         }}
         onBackgroundPress={() => { if (multi !== null) setMulti(null); else if (frameId) void selectFrame(null); else if (selectedId) void select(null); }}
         onMove={move}
-        onResize={resize}
-        pendingRects={pendingRects}
+        onResize={resizeRect}
+        pendingRects={new Map([...pendingRects.values()].filter((entry) => entry.boardId === board?.id).map((entry) => [entry.cardId, entry.rect]))}
         onRejected={(message) => setFeedback({ tone: 'error', text: message })}
         onCreateFirst={() => void add('note')}
         onCreateAt={(point) => { void add('note', {}, { ...point, columns: 1 }); }}
@@ -1809,6 +1830,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onCardCopy={copyCard}
         onCardDuplicate={(cardId) => { void duplicateCard(cardId); }}
         onCardToggleFrame={(cardId) => { void toggleCardFrame(cardId); }}
+        onCardToggleBackground={(cardId) => { void toggleCardBackground(cardId); }}
         onCardPaste={() => { void pasteClipboard(); }}
         onTrash={(cardId) => void sendToTrash(cardId)}
         onArchive={(cardId) => void archiveSelected(cardId)}

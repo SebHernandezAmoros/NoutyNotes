@@ -1,9 +1,9 @@
 import {
-  LEGACY_RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archiveCards, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard, trashCards,
+  LEGACY_RICH_TEXT_SCHEMA_VERSION, WORLD_GRID, addCard, archiveCard, archiveCards, archivedToTrash, createRelation, deleteRelation, findFreeSpace, moveCard, moveCards, purgeTrashedCard, resizeCard, resizeCardRect, restoreArchivedCard, restoreTrashedCard, setConnectorPath, setDisplay, trashCard, trashCards,
   isArchiveInstant, isValidAssetRef, linkDisplay, linkUrlField, normalizeLinkUrl, updateCard, updateCardAppearance, validateConnectorPath, validateRichTextDocument, validateWorkspace,
 } from '@noutynotes/domain';
 import type {
-  AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, ConnectorRoutePoint, GridConfig, GridPoint, GridSize, RestoreReport,
+  AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, ConnectorRoutePoint, GridConfig, GridPoint, GridRect, GridSize, RestoreReport,
   RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, RichTextDocument, RichTextImage, ValidationResult, Workspace, WorkspaceId,
 } from '@noutynotes/domain';
 
@@ -516,6 +516,14 @@ export function resizeCardOnBoard(
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
   return modifyWorkspace(storage, workspaceId, (workspace) =>
     changeBoardLayout(workspace, boardId, (layout) => resizeCard(layout, cardId, size, CANONICAL_GRID)));
+}
+
+/** One validated candidate and one save for anchored resizing from any edge. */
+export function resizeCardRectOnBoard(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, { boardId, cardId, rect }: BoardCardTarget & { readonly rect: GridRect },
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) =>
+    changeBoardLayout(workspace, boardId, (layout) => resizeCardRect(layout, cardId, rect, CANONICAL_GRID)));
 }
 
 /** Conecta dos tarjetas con el tipo «Relacionada con», que se añade si no existe. Devuelve el ID. */

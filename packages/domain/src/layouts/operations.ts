@@ -4,7 +4,7 @@ import type { CardId } from '../ids';
 import { candidateRows, cellsOverlap, compareReadingOrder, fitsGrid, footprint, isRepresentable, validateGridLayout } from './grid';
 import type { GridCell, GridConfig, GridPoint, GridSize } from './grid';
 import { GRID_SUBDIVISIONS, cardDisplayModes } from './layout';
-import type { BoardLayout, CardDisplayMode, CardPlacement } from './layout';
+import type { BoardLayout, CardDisplayMode, CardPlacement, GridRect } from './layout';
 import { validateConnectorPath } from './connector-path';
 import type { ConnectorRoutePoint } from './connector-path';
 
@@ -195,6 +195,17 @@ export function addGroup(layout: BoardLayout, additions: readonly CardPlacement[
 }
 
 /** Cambia el tamaño expandido (`rect.w`, `rect.h`) y valida la huella resultante en cualquier modo. */
+export function resizeCardRect(layout: BoardLayout, cardId: CardId, rect: GridRect, config: GridConfig): ValidationResult<BoardLayout> {
+  const located = locate(layout, cardId, config);
+  if (!located.ok) return fail(layout, [...located.issues]);
+  const invalid = [...checkIntegers(rect, ['x', 'y'], 'rect', Number.MIN_SAFE_INTEGER), ...checkIntegers(rect, ['w', 'h'], 'rect', 1)];
+  if (invalid.length > 0) return fail(layout, invalid);
+  const { placement, index } = located.value;
+  const candidate = { ...placement, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } };
+  const issues = fitIssues(layout, index, candidate, config, 'rect');
+  return issues.length > 0 ? fail(layout, issues) : resultOf(replaceAt(layout, index, candidate), []);
+}
+
 export function resizeCard(layout: BoardLayout, cardId: CardId, size: GridSize, config: GridConfig): ValidationResult<BoardLayout> {
   const located = locate(layout, cardId, config);
   if (!located.ok) return fail(layout, [...located.issues]);

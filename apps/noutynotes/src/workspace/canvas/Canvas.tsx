@@ -1,6 +1,6 @@
 import type { RichTextCodec } from '@noutynotes/application';
-import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, GridSize, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
-import { footprint, frameMembers, moveConnectorPoint } from '@noutynotes/domain';
+import type { BoardLayout, CardDisplayMode, CardId, CardPlacement, GridPoint, GridRect, RelationArrow, RelationId, Workspace } from '@noutynotes/domain';
+import { footprint, frameMembers, moveConnectorPoint, resolveNoteBackground } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Modal, PanResponder, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -29,7 +29,8 @@ import { InlineCardEditor } from './InlineCardEditor';
 import type { InlineCardEditorProps } from './InlineCardEditor';
 import { connectTarget } from './connect';
 import type { ImageResourceState } from '../imageResources';
-import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResize, dragTarget, isDrag, previewBox, resizeTarget } from './geometry';
+import { cardBox, checkFrameMove, checkMove, checkMoveMany, checkResizeRect, dragTarget, isDrag, previewBox, resizeRectTarget } from './geometry';
+import { cardInteractionBox, gestureContext } from './cardInteraction';
 import { cardsInArea, contentBounds, fitView, shouldConsumeFitRequest } from './overview';
 import type { CanvasMetrics, PixelBox, PlacementCheck, ResizeHandle } from './geometry';
 import { formatDay } from '../dates';
@@ -40,6 +41,7 @@ export type CanvasTool = 'select' | 'pan' | 'connect' | 'connector';
 
 export interface GestureController {
   canDragCard(): boolean;
+  openMenu(cardId: CardId): void;
   /** Un toque sin arrastre sobre una tarjeta: lo decide la herramienta activa. */
   tapCard(cardId: CardId): void;
   /**
@@ -60,6 +62,7 @@ export interface GestureController {
 }
 
 interface Gesture {
+  readonly context: string;
   readonly cardId: CardId;
   readonly kind: 'move' | 'resize';
   readonly handle: ResizeHandle;
@@ -84,7 +87,7 @@ interface CanvasProps {
   readonly selectedIds: ReadonlySet<CardId>;
   /** Ctrl, ⌘ o Mayús + clic: añade o quita la tarjeta de la selección. */
   readonly onCardToggle: (cardId: CardId) => void;
-  readonly onMoveMany: (cardIds: readonly CardId[], delta: GridPoint) => void;
+  readonly onMoveMany: (cardIds: readonly CardId[], delta: GridPoint) => Promise<unknown> | void;
   /** Marcos (ADR 0027): el seleccionado, tocar su título y soltar un arrastre válido. */
   readonly selectedFrameId: string | null;
   readonly onFramePress: (frameId: string) => void;
@@ -114,8 +117,8 @@ interface CanvasProps {
   /** UX7-B2: marca o desmarca una línea de checklist directamente en el lienzo. */
   readonly onToggleCheck: (cardId: CardId, lineIndex: number) => void;
   readonly onBackgroundPress: () => void;
-  readonly onMove: (cardId: CardId, to: GridPoint) => void;
-  readonly onResize: (cardId: CardId, size: GridSize) => void;
+  readonly onMove: (cardId: CardId, to: GridPoint) => Promise<unknown> | void;
+  readonly onResize: (cardId: CardId, rect: GridRect) => Promise<unknown> | void;
   /** Posición/tamaño optimistas mientras se guarda (auditoría de interacción, 2026-09-29): sin esto, un
    * redibujado antes de que `layout` refleje el guardado mostraba la tarjeta un instante en su sitio
    * anterior («salto al soltar», reproducido con guardado lento y una segunda acción de por medio). */
@@ -166,6 +169,7 @@ interface CanvasProps {
   /** UX7.3-B: binario del menú contextual — alterna `frameOverride` entre 'visible' y 'hidden' según
    * el estado EFECTIVO actual (ya resuelta la preferencia global `hideFrames`). */
   readonly onCardToggleFrame: (cardId: CardId) => void;
+  readonly onCardToggleBackground: (cardId: CardId) => void;
   /** Acciones de la tarjeta seleccionada: representación y Papelera (ADR 0014, ADR 0015). */
   readonly onDisplay: (cardId: CardId, display: CardDisplayMode) => void;
   readonly onTrash: (cardId: CardId) => void;
@@ -191,12 +195,11 @@ const isFloating = (workspace: Workspace, cardId: CardId): boolean => {
   return card?.typeId === FLOATING_TITLE || type?.base === 'text';
 };
 
-/** Una Nota sin superficie usa controles contextuales flotantes, sin alterar el ancho del documento. */
+/** Identifica el fondo transparente para no superponer controles de cabecera sobre su texto. */
 const isTransparentNote = (workspace: Workspace, cardId: CardId): boolean => {
   const card = workspace.cards.find((candidate) => candidate.id === cardId);
   const type = workspace.cardTypes.find((candidate) => candidate.id === card?.typeId);
-  return type?.base === 'note' && card?.frameOverride === 'hidden'
-    && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);
+  return card !== undefined && type?.base === 'note' && resolveNoteBackground(card, type.base) === 'transparent';
 };
 
 /** Destino de un gesto en curso y su validez según el motor de grilla, antes de guardar nada. */
@@ -210,8 +213,8 @@ function evaluate(layout: BoardLayout, placement: CardPlacement, gesture: Gestur
     const to = dragTarget(placement.rect, gesture.dx, gesture.dy, zoom, metrics, snap);
     return { rect: { ...placement.rect, ...to }, changed: to.x !== placement.rect.x || to.y !== placement.rect.y, check: checkMove(layout, placement.cardId, to) };
   }
-  const size = resizeTarget(placement.rect, gesture.handle, gesture.dx, gesture.dy, zoom, metrics);
-  return { rect: { ...placement.rect, ...size }, changed: size.w !== placement.rect.w || size.h !== placement.rect.h, check: checkResize(layout, placement.cardId, size) };
+  const rect = resizeRectTarget(placement.rect, gesture.handle, gesture.dx, gesture.dy, zoom, metrics);
+  return { rect, changed: JSON.stringify(rect) !== JSON.stringify(placement.rect), check: checkResizeRect(layout, placement.cardId, rect) };
 }
 
 function rejection(check: PlacementCheck, names: ReadonlyMap<CardId, string>): string {
@@ -256,17 +259,19 @@ export function Canvas(props: CanvasProps) {
   // la tarjeta un instante en su sitio anterior («salto al soltar»). Al fijarlo en la misma función
   // síncrona que limpia `gesture`, ese primer redibujado ya usa el destino correcto; se libera en cuanto
   // `props.pendingRects` lo confirma (con éxito o con rechazo: en ambos casos dejó de hacer falta).
-  const [justFinished, setJustFinished] = useState<ReadonlyMap<CardId, GridRect>>(new Map());
-  // Se libera desde el propio gesto que lo creó (más abajo), no reactivamente a props: 100 ms bastan de
-  // sobra para que `WorkspaceScreen` reciba el `pendingRects` que releva al puente (se fija en la misma
-  // llamada síncrona que hace `run()`, mucho antes de que el guardado en sí termine).
-  const releaseJustFinished = (cardId: CardId) => {
-    setTimeout(() => setJustFinished((current) => {
-      if (!current.has(cardId)) return current;
-      const next = new Map(current);
-      next.delete(cardId);
-      return next;
-    }), 100);
+  const [justFinished, setJustFinished] = useState<ReadonlyMap<string, { readonly boardId: string; readonly cardId: CardId; readonly rect: GridRect }>>(new Map());
+  const finishedOwners = useRef(new Map<string, symbol>());
+  // Cada finalización posee su puente hasta completar la operación. Una respuesta anterior no puede
+  // borrar la vista optimista de un gesto posterior sobre la misma tarjeta.
+  const releaseJustFinished = (cardId: CardId, completion: unknown, boardId: string) => {
+    const key = JSON.stringify([boardId, cardId]);
+    const owner = Symbol();
+    finishedOwners.current.set(key, owner);
+    void Promise.resolve(completion).catch(() => undefined).finally(() => {
+      if (finishedOwners.current.get(key) !== owner) return;
+      finishedOwners.current.delete(key);
+      setJustFinished((current) => { const next = new Map(current); next.delete(key); return next; });
+    });
   };
   // Minimapa abierto (ADR 0028): estado de la sesión, cerrado por defecto.
   const [minimapOpen, setMinimapOpen] = useState(false);
@@ -296,6 +301,7 @@ export function Canvas(props: CanvasProps) {
   const modifierDown = useRef(false);
   // Controlador estable de gestos: las tarjetas y las asas crean sus PanResponder con él.
   const [controller] = useState<GestureController>(() => {
+    const context = () => { const current = latest.current.props; return gestureContext({ ...current, workspaceId: current.workspace.id }); };
     // Identidad del gesto en curso, síncrona: no depende de que React haya vuelto a renderizar.
     let active: Omit<Gesture, 'dx' | 'dy'> | null = null;
     let cancelled = false;
@@ -310,6 +316,18 @@ export function Canvas(props: CanvasProps) {
       gestureEnded: (cardId) => { ended = { cardId, at: Date.now() }; },
       justEndedGesture: (cardId) => ended !== null && ended.cardId === cardId && Date.now() - ended.at < 400,
       resetTap: () => { lastTap = null; },
+      openMenu: (cardId) => {
+        lastTap = null;
+        const { workspace: sourceWorkspace, layout: sourceLayout } = latest.current.props;
+        // Finish the initiating pointer event before a modal can receive its trailing click.
+        // Focusing its control may reveal/pan the Card; that does not cancel a menu request.
+        requestAnimationFrame(() => {
+          const current = latest.current.props;
+          if (current.workspace.id === sourceWorkspace.id && current.layout?.boardId === sourceLayout?.boardId) {
+            setMenuAnchor(null); setCanvasMenu(null); setMenuFor(cardId);
+          }
+        });
+      },
       canDragCard: () => latest.current.props.tool === 'select' && active === null,
       tapCard: (cardId) => {
         if (latest.current.props.tool === 'connector') {
@@ -345,10 +363,11 @@ export function Canvas(props: CanvasProps) {
         swallowTap = false;
         const { selectedIds } = latest.current.props;
         const group = next.kind === 'move' && selectedIds.size > 1 && selectedIds.has(next.cardId) ? [...selectedIds] : undefined;
-        active = group ? { ...next, group } : next;
+        active = { ...next, ...(group ? { group } : {}), context: context() };
         setGesture({ ...active, dx: 0, dy: 0 });
       },
       update: (dx, dy) => {
+        if (active && active.context !== context()) { active = null; cancelled = true; setGesture(null); return; }
         if (!cancelled) setGesture((current) => (current ? { ...current, dx, dy } : current));
       },
       abort: (fromEscape = false) => {
@@ -362,7 +381,7 @@ export function Canvas(props: CanvasProps) {
         const done = active;
         active = null;
         setGesture(null);
-        if (!done || cancelled) return;
+        if (!done || cancelled || done.context !== context()) return;
         const currentLayout = current.props.layout;
         const placement = currentLayout?.placements.find((candidate) => candidate.cardId === done.cardId);
         if (!currentLayout || !placement) return;
@@ -379,24 +398,42 @@ export function Canvas(props: CanvasProps) {
             const next = new Map(prev);
             for (const cardId of members) {
               const memberPlacement = currentLayout.placements.find((candidate) => candidate.cardId === cardId);
-              if (memberPlacement) next.set(cardId, { ...memberPlacement.rect, x: memberPlacement.rect.x + delta.x, y: memberPlacement.rect.y + delta.y });
+              if (memberPlacement) next.set(JSON.stringify([currentLayout.boardId, cardId]), { boardId: currentLayout.boardId, cardId, rect: { ...memberPlacement.rect, x: memberPlacement.rect.x + delta.x, y: memberPlacement.rect.y + delta.y } });
             }
             return next;
           });
-          for (const cardId of members) releaseJustFinished(cardId);
-          current.props.onMoveMany(done.group, delta);
+          const completion = current.props.onMoveMany(done.group, delta);
+          for (const cardId of members) releaseJustFinished(cardId, completion, currentLayout.boardId);
         } else if (done.kind === 'move') {
-          setJustFinished((prev) => new Map(prev).set(done.cardId, result.rect));
-          releaseJustFinished(done.cardId);
-          current.props.onMove(done.cardId, { x: result.rect.x, y: result.rect.y });
+          setJustFinished((prev) => new Map(prev).set(JSON.stringify([currentLayout.boardId, done.cardId]), { boardId: currentLayout.boardId, cardId: done.cardId, rect: result.rect }));
+          releaseJustFinished(done.cardId, current.props.onMove(done.cardId, { x: result.rect.x, y: result.rect.y }), currentLayout.boardId);
         } else {
-          setJustFinished((prev) => new Map(prev).set(done.cardId, result.rect));
-          releaseJustFinished(done.cardId);
-          current.props.onResize(done.cardId, { w: result.rect.w, h: result.rect.h });
+          setJustFinished((prev) => new Map(prev).set(JSON.stringify([currentLayout.boardId, done.cardId]), { boardId: currentLayout.boardId, cardId: done.cardId, rect: result.rect }));
+          releaseJustFinished(done.cardId, current.props.onResize(done.cardId, result.rect), currentLayout.boardId);
         }
       },
     };
   });
+
+  const currentGestureContext = gestureContext({ ...props, workspaceId: workspace.id });
+  useLayoutEffect(() => { controller.abort(); }, [controller, currentGestureContext]);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const cancel = () => controller.abort();
+    // Implicit touch capture is normally released between pointerup and touchend. It is not a cancellation.
+    const lost = (event: Event) => { if (!(event instanceof PointerEvent) || event.buttons !== 0) cancel(); };
+    const hidden = () => { if (document.hidden) cancel(); };
+    window.addEventListener('blur', cancel);
+    window.addEventListener('pointercancel', cancel, true);
+    window.addEventListener('lostpointercapture', lost, true);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      window.removeEventListener('blur', cancel);
+      window.removeEventListener('pointercancel', cancel, true);
+      window.removeEventListener('lostpointercapture', lost, true);
+      document.removeEventListener('visibilitychange', hidden);
+    };
+  }, [controller]);
 
   // En web, un elemento que se muestra al enfocarlo (teclado, lector o herramientas) desplaza el
   // contenedor aunque tenga overflow: hidden, y el contenido deja de coincidir con `pan`. El único
@@ -423,8 +460,9 @@ export function Canvas(props: CanvasProps) {
         // descendiente de la ficha: un clic que caiga en su zona de 44 px (frecuente en una ficha
         // contraída a esta densidad, UX7-D1) nunca encontraría un ancestro `card-*`, así que se
         // reconoce también su propio patrón para resolver el mismo cardId.
-        const resizeMatch = /^resize-(?:e|s|se)-(.+)$/.exec(testId);
-        const cardId = testId.startsWith('card-') ? (testId.slice(5) as CardId) : resizeMatch ? (resizeMatch[1] as CardId) : null;
+        const resizeMatch = /^resize-(?:nw|n|ne|e|se|s|sw|w)-(.+)$/.exec(testId);
+        const gripMatch = /^card-(?:move|options)-(.+)$/.exec(testId);
+        const cardId = gripMatch ? gripMatch[1] as CardId : testId.startsWith('card-') ? (testId.slice(5) as CardId) : resizeMatch ? (resizeMatch[1] as CardId) : null;
         if (cardId && ids.has(cardId)) return cardId;
       }
       return null;
@@ -701,7 +739,7 @@ export function Canvas(props: CanvasProps) {
   // números pintados son pequeños aunque las tarjetas estén a un millón de celdas (ADR 0017).
   const base = renderBase(pan, zoom);
   const local = <T extends { readonly left: number; readonly top: number }>(box: T): T => ({ ...box, left: box.left - base.x, top: box.top - base.y });
-  const rectOverrides = new Map<CardId, GridRect>(justFinished);
+  const rectOverrides = new Map<CardId, GridRect>([...justFinished.values()].filter((entry) => entry.boardId === layout?.boardId).map((entry) => [entry.cardId, entry.rect]));
   for (const [cardId, rect] of props.pendingRects) rectOverrides.set(cardId, rect);
   const gestureBoxes = new Map<CardId, PixelBox>();
   for (const rawPlacement of placements) {
@@ -765,7 +803,8 @@ export function Canvas(props: CanvasProps) {
     const current = latest.current;
     const placement = current.props.layout?.placements.find((candidate) => candidate.cardId === selectedId);
     if (!placement) return;
-    const next = panToRevealWorld(current.props.pan, cardBox(footprint(placement), current.props.metrics), current.props.zoom, current.viewport);
+    const box = cardBox(footprint(placement), current.props.metrics);
+    const next = panToRevealWorld(current.props.pan, cardInteractionBox(box, current.props.zoom, placement.display), current.props.zoom, current.viewport);
     if (next.x !== current.props.pan.x || next.y !== current.props.pan.y) current.props.onPan(next);
   }, [selectedId, selectedRect, viewport.width, viewport.height]);
   // Marco seleccionado (ADR 0027): se revela su título, que es donde se toca y se agarra.
@@ -798,6 +837,17 @@ export function Canvas(props: CanvasProps) {
       const screen = { left: pan.x + box.left * zoom, top: pan.y + box.top * zoom, width: box.width * zoom, height: box.height * zoom };
       const isSelected = placement.cardId === selectedId;
       const found = chromeFor(placement.display, screen, isSelected, viewport, transparentNote);
+      if (Platform.OS === 'web') {
+        const card = cards.get(placement.cardId);
+        const base = workspace.cardTypes.find((type) => type.id === card?.typeId)?.base;
+        const headerless = placement.display === 'expanded' && (transparentNote || isFloating(workspace, placement.cardId)
+          || base === 'file' || base === 'shape' || Boolean(card?.primaryResourceState));
+        // No exterior menu substitutes the removed toolbar. Headerless Cards use their own grip;
+        // tiny Cards retain long press, context key and focused Inspector.
+        if (headerless || (found && (found.left < screen.left || found.top < screen.top
+          || found.left + found.count * CONTROL_SIZE > screen.left + screen.width
+          || found.top + CONTROL_SIZE > screen.top + screen.height))) continue;
+      }
       if (found) chrome.set(placement.cardId, found);
     }
   }
@@ -811,7 +861,8 @@ export function Canvas(props: CanvasProps) {
     const current = latest.current;
     const placement = current.props.layout?.placements.find((candidate) => candidate.cardId === cardId);
     if (!placement) return;
-    const next = panToRevealWorld(current.props.pan, cardBox(footprint(placement), current.props.metrics), current.props.zoom, current.viewport);
+    const box = cardBox(footprint(placement), current.props.metrics);
+    const next = panToRevealWorld(current.props.pan, cardInteractionBox(box, current.props.zoom, placement.display), current.props.zoom, current.viewport);
     if (next !== current.props.pan) current.props.onPan(next);
   };
   const menuPlacement = menuFor ? placements.find((placement) => placement.cardId === menuFor) : undefined;
@@ -945,6 +996,8 @@ export function Canvas(props: CanvasProps) {
               controlsOverBody={rendersCardControls && chrome.has(card.id)
                 && !isTransparentNote(workspace, card.id) && zoom < 1}
               controller={controller}
+              zoom={zoom}
+              enableGrip={Platform.OS === 'web' && tool === 'select'}
             />
           );
         })}
@@ -1026,8 +1079,8 @@ export function Canvas(props: CanvasProps) {
             }]}
           />
         ) : null}
-        {/* Una ficha minimizada no se redimensiona desde el lienzo: su tamaño expandido queda oculto y
-            sus acciones se abren desde un único menú al lado. El editor conserva «Más ancha/estrecha». */}
+        {/* Una ficha minimizada no expone su tamaño expandido: acciones por menú contextual,
+            teclado o restauración. Las asas adaptativas conservan su contrato. */}
         {selectedPlacement && !selectedPlacement.connectorPath && tool === 'select' && selectedPlacement.display !== 'minimized' ? (
           <ResizeHandles
             key={selectedPlacement.cardId}
@@ -1036,6 +1089,8 @@ export function Canvas(props: CanvasProps) {
               ? cardBox(footprint({ ...selectedPlacement, rect: preview.rect }), metrics)
               : cardBox(footprint(selectedPlacement), metrics))}
             controller={controller}
+            zoom={zoom}
+            display={selectedPlacement.display}
           />
         ) : null}
       </View>
@@ -1088,12 +1143,8 @@ export function Canvas(props: CanvasProps) {
             chrome={found}
             onAction={(action) => runAction(placement.cardId, action)}
             onMenu={() => {
+              if (Platform.OS === 'web') { controller.openMenu(placement.cardId); return; }
               controller.resetTap();
-              if (Platform.OS === 'web') {
-                const node = viewportRef.current as unknown as HTMLElement | null;
-                const bounds = node?.getBoundingClientRect();
-                setMenuAnchor(bounds ? { left: bounds.left + found.left, top: bounds.top + found.top } : null);
-              }
               setMenuFor(placement.cardId);
             }}
             onFocus={() => reveal(placement.cardId)}
@@ -1108,6 +1159,7 @@ export function Canvas(props: CanvasProps) {
           canQuickEdit={canQuickEditMenuCard}
           canPaste={props.canPaste}
           frameHidden={Boolean(menuCard?.frameOverride === 'hidden' || (props.hideFrames && menuCard?.frameOverride !== 'visible'))}
+          backgroundTransparent={menuCard && workspace.cardTypes.find((type) => type.id === menuCard.typeId)?.base === 'note' ? resolveNoteBackground(menuCard, 'note') === 'transparent' : null}
           anchor={menuAnchor}
           onEdit={() => props.onCardEdit(menuPlacement.cardId)}
           onQuickEdit={() => props.onCardOpen(menuPlacement.cardId)}
@@ -1120,6 +1172,14 @@ export function Canvas(props: CanvasProps) {
           onArchive={() => props.onArchive(menuPlacement.cardId)}
           onAction={(action) => runAction(menuPlacement.cardId, action)}
           onToggleFrame={() => props.onCardToggleFrame(menuPlacement.cardId)}
+          onToggleBackground={() => props.onCardToggleBackground(menuPlacement.cardId)}
+          onResizeBy={(dw, dh) => {
+            const rect = rectOverrides.get(menuPlacement.cardId) ?? menuPlacement.rect;
+            const next = { ...rect, w: Math.max(1, rect.w + dw), h: Math.max(1, rect.h + dh) };
+            const check = checkResizeRect(layout!, menuPlacement.cardId, next);
+            if (check.ok) void props.onResize(menuPlacement.cardId, next);
+            else props.onRejected(rejection(check, names));
+          }}
           onClose={() => setMenuFor(null)}
         />
       ) : null}

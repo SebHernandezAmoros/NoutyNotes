@@ -13,7 +13,7 @@ import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import { validateCard } from './card';
 import {
-  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, imageFits, noteVerticalAlignments, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
+  captionPositions, cardIconNames, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, frameOverrides, imageFits, noteVerticalAlignments, resolveNoteBackground, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, textSizes,
   floatingTextAlignments, floatingTextColors, type Card, type CaptionPosition, type CardIconName, type ConnectorArrows, type ConnectorDash, type ConnectorDirection, type ContentLayout, type ContentVisibility, type FloatingTextAlign, type FloatingTextColor, type FrameOverride, type ImageFit, type NoteVerticalAlignment, type ShapeFill, type ShapeKind, type ShapeStroke, type ShapeStrokeWidth, type TextSize,
 } from './card';
 import { validateRichTextDocument } from '../rich-text/rich-text';
@@ -246,6 +246,7 @@ export interface CardAppearanceChanges {
   readonly boardTargetId?: BoardId | null;
   /** Excepción a la preferencia global de marco (ADR 0049); `null` vuelve a seguirla. */
   readonly frameOverride?: FrameOverride | null;
+  readonly noteBackground?: Card['noteBackground'] | null;
   /** Tamaño semántico del título/cuerpo (ADR 0050); `null` vuelve a `'medium'` (ausente). */
   readonly titleSize?: TextSize | null;
   readonly bodySize?: TextSize | null;
@@ -275,7 +276,7 @@ export interface CardAppearanceChanges {
   readonly imageFit?: ImageFit | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'noteVerticalAlignment', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId', 'imageFit'];
+const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'noteBackground', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'noteVerticalAlignment', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId', 'imageFit'];
 
 /** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
@@ -291,6 +292,9 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
   const nextIcon = changes.icon;
   const nextTarget = changes.boardTargetId;
   const nextFrame = changes.frameOverride;
+  // Opt into independent presentation only on an explicit frame edit. Opening old Notes never rewrites them.
+  const nextBackground = changes.noteBackground === undefined && changes.frameOverride !== undefined && card.noteBackground === undefined && type?.base === 'note'
+    ? resolveNoteBackground(card, type.base) : changes.noteBackground;
   const nextTitleSize = changes.titleSize;
   const nextBodySize = changes.bodySize;
   const nextCaptionPosition = changes.captionPosition;
@@ -362,7 +366,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
     }
   }
   const {
-    icon: _icon, boardTargetId: _target, frameOverride: _frame, titleSize: _titleSize, bodySize: _bodySize,
+    icon: _icon, boardTargetId: _target, frameOverride: _frame, noteBackground: _noteBackground, titleSize: _titleSize, bodySize: _bodySize,
     captionPosition: _captionPosition, titleVisibility: _titleVisibility, bodyVisibility: _bodyVisibility, contentLayout: _contentLayout, noteVerticalAlignment: _noteVerticalAlignment, textAlign: _textAlign, textColor: _textColor,
     shapeKind: _shapeKind, shapeFill: _shapeFill, shapeStroke: _shapeStroke, shapeStrokeWidth: _shapeStrokeWidth,
     connectorColor: _connectorColor, connectorWidth: _connectorWidth, connectorDash: _connectorDash, connectorArrows: _connectorArrows, connectorDirection: _connectorDirection,
@@ -375,6 +379,7 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
       : nextTarget === null ? {} : { boardTargetId: nextTarget as BoardId }),
     ...(nextFrame === undefined ? (card.frameOverride === undefined ? {} : { frameOverride: card.frameOverride })
       : nextFrame === null ? {} : { frameOverride: nextFrame as FrameOverride }),
+    ...(nextBackground === undefined ? (card.noteBackground === undefined ? {} : { noteBackground: card.noteBackground }) : nextBackground === null ? {} : { noteBackground: nextBackground as NonNullable<Card['noteBackground']> }),
     ...(nextTitleSize === undefined ? (card.titleSize === undefined ? {} : { titleSize: card.titleSize })
       : nextTitleSize === null ? {} : { titleSize: nextTitleSize as TextSize }),
     ...(nextBodySize === undefined ? (card.bodySize === undefined ? {} : { bodySize: card.bodySize })

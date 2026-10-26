@@ -1,4 +1,4 @@
-import { cardContentPresentation, isFloatingTextCard, linkDisplay, linkUrlField, resolveCardImageFit } from '@noutynotes/domain';
+import { cardContentPresentation, isFloatingTextCard, linkDisplay, linkUrlField, resolveCardImageFit, resolveNoteBackground } from '@noutynotes/domain';
 import type { RichTextCodec } from '@noutynotes/application';
 import type { Card, CardDisplayMode, RichTextDocument, RichTextList, Workspace } from '@noutynotes/domain';
 import { parseNoteBlocks } from '@noutynotes/application';
@@ -29,6 +29,7 @@ import { RichNotePreview } from './RichNotePreview';
 import { RichNoteReader } from './RichNoteReader';
 import type { ConnectRole } from './connect';
 import { isDrag } from './geometry';
+import { handlesFor, headerlessGripLayout, isCardDragTarget } from './cardInteraction';
 import type { PixelBox, ResizeHandle } from './geometry';
 
 /** Alto de la cabecera a zoom 100 %: aloja los controles de 44 px (ADR 0016). */
@@ -141,6 +142,8 @@ interface CanvasCardProps {
   readonly onToggleCheck: (cardId: Card['id'], lineIndex: number) => void;
   /** Sin marco en reposo (preferencia global u override por ficha, ADR 0049); selección/foco/arrastre/edición lo mantienen. */
   readonly hideFrame: boolean;
+  readonly zoom: number;
+  readonly enableGrip: boolean;
 }
 
 interface ChecklistHit { readonly top: number; readonly bottom: number; readonly left: number; readonly right: number }
@@ -161,6 +164,10 @@ export function CanvasCard(props: CanvasCardProps) {
   const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
+  const [contextPress] = useState(() => {
+    let held = false;
+    return { reset: () => { held = false; }, hold: () => { held = true; }, held: () => held };
+  });
   const { controller } = props;
   // UX7-B2: filas de checklist medidas en pantalla (coordenadas absolutas, como `gestureState.x0/y0`)
   // para que el PanResponder de abajo las excluya y el toque llegue al Pressable de la fila, no al arrastre.
@@ -201,15 +208,14 @@ export function CanvasCard(props: CanvasCardProps) {
         // haya habido movimiento); se usa la posición del evento nativo, como hace el Pressable de la
         // ficha para la misma decisión.
         const { pageX, pageY } = event.nativeEvent;
-        blocked = !controller.canDragCard() || hitsPreviewAction(event.nativeEvent.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY);
+        blocked = !controller.canDragCard() || (Platform.OS === 'web' && !isCardDragTarget(event.nativeEvent.target)) || hitsPreviewAction(event.nativeEvent.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY);
         return !blocked;
       },
-      onPanResponderGrant: () => { dragging = false; },
+      onPanResponderGrant: () => { dragging = false; controller.begin({ cardId: card.id, kind: 'move', handle: 'se' }); },
       onPanResponderMove: (_event, state) => {
         if (blocked) return;
         if (!dragging && isDrag(state.dx, state.dy)) {
           dragging = true;
-          controller.begin({ cardId: card.id, kind: 'move', handle: 'se' });
         }
         if (dragging) controller.update(state.dx, state.dy);
       },
@@ -217,7 +223,7 @@ export function CanvasCard(props: CanvasCardProps) {
         if (blocked) { blocked = false; return; }
         controller.gestureEnded(card.id);
         if (dragging) controller.finish(state.dx, state.dy);
-        else controller.tapCard(card.id);
+        else { controller.abort(); controller.tapCard(card.id); }
         dragging = false;
       },
       onPanResponderTerminate: () => {
@@ -261,11 +267,10 @@ export function CanvasCard(props: CanvasCardProps) {
   const previewDocument = hasChecklist ? null : richDocument;
   const checklistTexts = richDocument?.blocks.flatMap((block) => block.type === 'list' ? checklistTextsOf(block) : []) ?? [];
   const floatingTitle = card.typeId === 'titulo-flotante';
-  const floatingText = isFloatingTextCard(card, type?.base);
+  const floatingText = isFloatingTextCard(card, type?.base) && (type?.base !== 'note' || resolveNoteBackground(card, type.base) === 'transparent');
   const presentation = cardContentPresentation(card, type?.base);
   const imageFit = resolveCardImageFit(card, type?.base);
-  const unifiedFloating = type?.base === 'note' && card.frameOverride === 'hidden'
-    && (card.titleVisibility !== undefined || card.bodyVisibility !== undefined);
+  const unifiedFloating = type?.base === 'note' && resolveNoteBackground(card, type.base) === 'transparent';
   // Una Nota sin superficie hereda el contraste del lienzo efectivo. `textColor` sigue ganando cuando
   // la persona eligió un color manual; `default` usa el texto primario del tema, no `cardText`, que fue
   // diseñado para la superficie clara y opaca de la tarjeta incluso en modo oscuro.
@@ -288,6 +293,11 @@ export function CanvasCard(props: CanvasCardProps) {
   // Nota reserva esta fila únicamente para la fecha de creación opcional (ADR 0029).
   const meta = props.createdLabel ?? '';
   const footerLines = (tags.length > 0 ? 1 : 0) + (meta !== '' ? 1 : 0);
+  const imageHasTitle = presentation.title === 'visible' && Boolean(cardDisplayTitle(card));
+  const imageTitleLines = Math.min(2, Math.max(1, Math.floor((box.height - HEADER - 16 - 40 - 6 - 6 - footerLines * 22) / typography.titleLineHeight)));
+  const minimumContentHeight = card.primaryResourceState ? 112 : document ? 46 + 24 + 8 + typography.titleLineHeight + 6
+    : image ? HEADER + 16 + 40 + 6 + footerLines * 22 + (imageHasTitle ? typography.titleLineHeight + 6 : 0)
+      : HEADER + 24 + contentLine;
   // Enlace (ADR 0020): una línea con dominio y ruta, sin descargar nada; ocupa una línea del texto.
   const linkKey = linkUrlField(type);
   const linkValue = linkKey ? card.fields[linkKey] : undefined;
@@ -341,6 +351,14 @@ export function CanvasCard(props: CanvasCardProps) {
     });
   });
   const headerColor = image ? colors.headerImage : colors.headerNote;
+  const compactContent = display === 'expanded' && (box.height < minimumContentHeight || box.width < 64);
+  const headerless = display === 'expanded' && !connector && (compactContent || card.primaryResourceState || unifiedFloating || floatingTitle || floatingText || shape || document);
+  const grip = props.enableGrip && headerless ? headerlessGripLayout({ width: box.width - props.reserveRight, height: box.height }, props.zoom) : null;
+  const contentTop = grip ? (grip.contentLeft ? 2 : Math.max(36, grip.contentTop)) : 36;
+  const contentInset = grip ? { paddingTop: contentTop, ...(grip.contentLeft ? { paddingLeft: grip.contentLeft } : {}) } : null;
+  const extraTop = contentTop - 36;
+  const compactWithGrip = compactContent || Boolean(grip?.contentLeft) || (headerless && box.height < minimumContentHeight + extraTop);
+  const documentTitleLines = Math.min(3, Math.max(1, Math.floor((box.height - extraTop - 46 - 24 - 8 - 6) / typography.titleLineHeight)));
   const icon = card.icon ?? miniIcon(type?.base);
   const number3 = String(number).padStart(3, '0');
   // El nombre de una Nota es metadato: la pestaña lo identifica de forma compacta y truncable, sin
@@ -367,11 +385,27 @@ export function CanvasCard(props: CanvasCardProps) {
         accessibilityState={{ selected }}
         {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
         onPress={(event) => {
+          if (contextPress.held()) return;
           // Igual que la decisión de captura de arriba: un toque que empezó en una fila de checklist
           // no debe seleccionar ni abrir la ficha entera.
           const { pageX, pageY } = event.nativeEvent;
           if (hitsPreviewAction(event.nativeEvent.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY)) return;
-          if (!controller.justEndedGesture(card.id)) onPress();
+          if (!controller.justEndedGesture(card.id)) {
+            const native = event.nativeEvent;
+            const keyboard = ('key' in native && typeof native.key === 'string') || ('type' in native && native.type === 'click' && 'detail' in native && native.detail === 0);
+            // The body no longer acquires the drag responder, but keeps the same double-tap action.
+            if (Platform.OS === 'web' && !keyboard && controller.canDragCard()) controller.tapCard(card.id);
+            else onPress();
+          }
+        }}
+        onPressIn={contextPress.reset}
+        onPressOut={() => {
+          if (contextPress.held()) { controller.gestureEnded(card.id); controller.openMenu(card.id); }
+        }}
+        onLongPress={(event) => {
+          const { pageX, pageY, target } = event.nativeEvent;
+          if (Platform.OS !== 'web' || !controller.canDragCard() || hitsPreviewAction(target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY)) return;
+          contextPress.hold();
         }}
         onFocus={() => { setFocused(true); props.onFocus(); }}
         onBlur={() => setFocused(false)}
@@ -382,13 +416,17 @@ export function CanvasCard(props: CanvasCardProps) {
           opacity: dragging ? 0.85 : 1,
         }]}
       >
-        {card.primaryResourceState ? (
-          <View style={[styles.documentWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
-            <RetiredCardResource card={card} color={colors.cardText} compact={display !== 'expanded'} showBody={!props.controlsOverBody} testID={`retired-card-${card.id}`} />
+        {compactWithGrip ? (
+          <View testID={`compact-card-${card.id}`} style={[{ flex: 1, minHeight: 0, minWidth: 0, alignItems: 'center', justifyContent: 'center', padding: 2 }, contentInset]}>
+            <Text numberOfLines={1} style={{ color: unifiedFloating ? noteTextColor : colors.cardText, fontSize: 11, lineHeight: 14 }}>{card.primaryResourceState ? '⊘' : document ? 'PDF' : image ? '▧' : number3}</Text>
+          </View>
+        ) : card.primaryResourceState ? (
+          <View style={[styles.documentWrap, contentInset, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+            <RetiredCardResource card={card} color={colors.cardText} compact={display !== 'expanded' || box.height < 180 || box.width < 160} showBody={!props.controlsOverBody} testID={`retired-card-${card.id}`} />
           </View>
         ) : display === 'minimized' ? (
           // Ficha mínima 2 × 2: conserva identidad, nombre y una pista de expansión legibles.
-          <View testID={`minimized-${card.id}`} style={[styles.mini, { backgroundColor: headerColor }]}>
+          <View testID={`minimized-${card.id}`} style={[styles.mini, { backgroundColor: headerColor, ...(Platform.OS === 'web' ? { touchAction: 'none' } : {}) }]}>
             {icon ? <CardIcon kind={icon} testID={`minimized-icon-${card.id}`} /> : null}
             {/* UX7-A4: título borrado conscientemente no dibuja relleno; el nombre accesible del botón ya anuncia «Nota sin título». */}
             {cardDisplayTitle(card) ? (
@@ -404,7 +442,7 @@ export function CanvasCard(props: CanvasCardProps) {
             ) : null}
           </View>
         ) : unifiedFloating && display === 'expanded' ? (
-          <View testID={`unified-content-${card.id}`} style={[styles.floatingTextWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+          <View testID={`unified-content-${card.id}`} style={[styles.floatingTextWrap, contentInset, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             {!note && presentation.title === 'visible' && cardDisplayTitle(card) ? (
               card.titleRichText ? (
                 // ADR 0030: el título mantiene la tipografía del sistema, no la elegida para las notas.
@@ -430,13 +468,13 @@ export function CanvasCard(props: CanvasCardProps) {
             </View>
           </View>
         ) : floatingTitle && display === 'expanded' ? (
-          <View testID={`floating-title-${card.id}`} style={styles.floatingTitleWrap}>
+          <View testID={`floating-title-${card.id}`} style={[styles.floatingTitleWrap, contentInset]}>
             {cardDisplayTitle(card) ? (
               <Text numberOfLines={Math.max(1, Math.floor((box.height - 36) / typography.floatingTitleLineHeight))} style={[styles.floatingTitle, { color: colors.textPrimary, fontSize: typography.floatingTitleSize, lineHeight: typography.floatingTitleLineHeight, paddingRight: box.height >= 100 ? 0 : props.reserveRight }]}>{cardDisplayTitle(card)}</Text>
             ) : null}
           </View>
         ) : floatingText && display === 'expanded' ? (
-          <View testID={`floating-text-${card.id}`} style={[styles.floatingTextWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+          <View testID={`floating-text-${card.id}`} style={[styles.floatingTextWrap, contentInset, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             <Text numberOfLines={Math.max(1, bodyLines)} style={[styles.content, {
               color: floatingTextColor(card.textColor, colors.textPrimary),
               fontSize: contentSize,
@@ -447,27 +485,27 @@ export function CanvasCard(props: CanvasCardProps) {
             </Text>
           </View>
         ) : shape && display === 'expanded' ? (
-          <View style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+          <View style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null, contentInset, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             <ShapePreview card={card} surface={colors.canvas} strokeFallback={colors.border} testID={`shape-${card.id}`} />
           </View>
         ) : connector && display === 'expanded' ? (
           <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
         ) : document && display === 'expanded' ? (
-          <View testID={`document-${card.id}`} style={[styles.documentWrap, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+          <View testID={`document-${card.id}`} style={[styles.documentWrap, contentInset, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             {/* UX7.1-A4-FIX: esta cara no tiene cabecera de color propio — se dibuja directamente sobre
                 `cardSurface`, que se mantiene clara en ambos temas. El icono por defecto usa el texto
                 general de la interfaz (claro en tema oscuro) y se volvía invisible; `cardText` es el
                 mismo tono oscuro constante que ya usa el nombre del archivo justo debajo. */}
             {icon ? <CardIcon kind={icon} color={colors.cardText} testID={`document-icon-${card.id}`} /> : null}
             {cardDisplayTitle(card) ? (
-              <Text testID={`document-title-${card.id}`} numberOfLines={3} style={[styles.title, styles.documentTitle, { color: colors.cardText, fontSize: titleSize, lineHeight: typography.titleLineHeight }]}>
+              <Text testID={`document-title-${card.id}`} numberOfLines={documentTitleLines} style={[styles.title, styles.documentTitle, { color: colors.cardText, fontSize: titleSize, lineHeight: typography.titleLineHeight }]}>
                 {cardDisplayTitle(card)}
               </Text>
             ) : null}
           </View>
         ) : display === 'collapsed' ? (
           <View testID={`collapsed-${card.id}`} style={styles.collapsedShell}>
-            <View style={[styles.header, styles.headerCollapsed, collapsedBodyLines < 1 ? styles.headerCollapsedOnly : null, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
+            <View testID={`card-header-${card.id}`} style={[styles.header, styles.headerCollapsed, collapsedBodyLines < 1 ? styles.headerCollapsedOnly : null, { backgroundColor: headerColor, paddingRight: props.reserveRight + 8, ...(Platform.OS === 'web' ? { touchAction: 'none' } : {}) }]}>
               {icon ? <CardIcon kind={icon} testID={`collapsed-icon-${card.id}`} /> : null}
               <Text numberOfLines={1} style={[styles.headerText, { color: colors.headerText, fontSize: headerTextSize, lineHeight: typography.headerLineHeight }]}>{number3}</Text>
               {cardDisplayTitle(card) ? (
@@ -488,7 +526,7 @@ export function CanvasCard(props: CanvasCardProps) {
         ) : (
           <>
             {/* Cabecera en forma de pestaña de carpeta: número y tipo; los controles se dibujan encima. */}
-            <View testID={`card-header-${card.id}`} style={[styles.header, { borderColor: colors.border, backgroundColor: headerColor, paddingRight: props.reserveRight + 8 }]}>
+            <View testID={`card-header-${card.id}`} style={[styles.header, { borderColor: colors.border, backgroundColor: headerColor, paddingRight: props.reserveRight + 8, ...(Platform.OS === 'web' ? { touchAction: 'none' } : {}) }]}>
               <View testID={`card-tab-${card.id}`} style={[styles.tab, { backgroundColor: headerColor }]}>
                 <Text testID={`card-tab-label-${card.id}`} numberOfLines={1}
                   style={[styles.headerText, { color: colors.headerText, fontSize: headerTextSize, lineHeight: typography.headerLineHeight }]}>
@@ -504,7 +542,7 @@ export function CanvasCard(props: CanvasCardProps) {
               }]}>
               {!note && presentation.title === 'visible' && cardDisplayTitle(card) ? (
                 <Text
-                  numberOfLines={2}
+                  numberOfLines={image ? imageTitleLines : 2}
                   style={[styles.title, { color: colors.cardText, fontSize: titleSize, lineHeight: typography.titleLineHeight }, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}
                 >
                   {cardDisplayTitle(card)}
@@ -615,21 +653,23 @@ export function CanvasCard(props: CanvasCardProps) {
           </Text>
         ) : null}
       </Pressable>
+      {grip ? <CardDragGrip cardId={card.id} title={cardTitle(card, locale)} left={grip.inset} top={grip.inset} size={grip.size} zoom={props.zoom}
+        ink={unifiedFloating || floatingTitle || floatingText || shape ? colors.textPrimary : colors.cardText} controller={controller} /> : null}
     </View>
   );
 }
 
 /** Asas de la tarjeta seleccionada, encima de todas las tarjetas (no compiten con su arrastre). */
-export function ResizeHandles({ cardId, box, controller }: { readonly cardId: Card['id']; readonly box: PixelBox; readonly controller: GestureController }) {
+export function ResizeHandles({ cardId, box, controller, zoom, display }: { readonly cardId: Card['id']; readonly box: PixelBox; readonly controller: GestureController; readonly zoom: number; readonly display: CardDisplayMode }) {
   return (
     <View pointerEvents="box-none" style={[styles.handles, { left: box.left, top: box.top, width: box.width, height: box.height }]}>
-      {(['e', 's', 'se'] as const).map((handle) => <ResizeHandleView key={handle} cardId={cardId} handle={handle} controller={controller} />)}
+      {handlesFor(box, zoom, display).map((handle) => <ResizeHandleView key={handle} cardId={cardId} handle={handle} controller={controller} zoom={zoom} />)}
     </View>
   );
 }
 
-/** Asa de redimensionado: solo puntero o dedo; el teclado usa los botones del inspector. */
-function ResizeHandleView({ cardId, handle, controller }: { readonly cardId: Card['id']; readonly handle: ResizeHandle; readonly controller: GestureController }) {
+/** Asa de puntero/dedo; el teclado y el menú contextual conservan alternativas de tamaño. */
+function ResizeHandleView({ cardId, handle, controller, zoom }: { readonly cardId: Card['id']; readonly handle: ResizeHandle; readonly controller: GestureController; readonly zoom: number }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [handlers] = useState(() => PanResponder.create({
@@ -646,19 +686,68 @@ function ResizeHandleView({ cardId, handle, controller }: { readonly cardId: Car
       testID={`resize-${handle}-${cardId}`}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={[styles.handleHit, handleSpot(handle)]}
+      style={[styles.handleHit, { width: HANDLE_HIT / zoom, height: HANDLE_HIT / zoom, ...(Platform.OS === 'web' ? { touchAction: 'none' } : {}) }, handleSpot(handle, HANDLE_HIT / zoom)]}
       {...handlers}
     >
-      <View style={[styles.handleMark, { backgroundColor: colors.selection, borderColor: colors.cardSurface }]} />
+      <View style={[styles.handleMark, handleMarkSpot(handle, HANDLE_MARK / zoom), { width: HANDLE_MARK / zoom, height: HANDLE_MARK / zoom, backgroundColor: colors.selection, borderColor: colors.cardSurface }]} />
     </View>
   );
 }
 
-function handleSpot(handle: ResizeHandle) {
-  const offset = -HANDLE_HIT / 2;
-  if (handle === 'e') return { right: offset, top: '50%', marginTop: offset } as const;
-  if (handle === 's') return { bottom: offset, left: '50%', marginLeft: offset } as const;
-  return { right: offset, bottom: offset } as const;
+function handleSpot(handle: ResizeHandle, hit: number) {
+  return {
+    ...(handle.includes('w') ? { left: -hit } : handle.includes('e') ? { right: -hit } : { left: '50%' as const, marginLeft: -hit / 2 }),
+    ...(handle.includes('n') ? { top: -hit } : handle.includes('s') ? { bottom: -hit } : { top: '50%' as const, marginTop: -hit / 2 }),
+  };
+}
+
+function handleMarkSpot(handle: ResizeHandle, mark: number) {
+  return {
+    position: 'absolute' as const,
+    ...(handle.includes('w') ? { right: 0 } : handle.includes('e') ? { left: 0 } : { left: '50%' as const, marginLeft: -mark / 2 }),
+    ...(handle.includes('n') ? { bottom: 0 } : handle.includes('s') ? { top: 0 } : { top: '50%' as const, marginTop: -mark / 2 }),
+  };
+}
+
+/** Pista interior de arrastre; las acciones usan las rutas contextuales de la tarjeta. */
+function CardDragGrip({ cardId, title, left, top, size, zoom, ink, controller }: { readonly cardId: Card['id']; readonly title: string; readonly left: number; readonly top: number; readonly size: number; readonly zoom: number; readonly ink: string; readonly controller: GestureController }) {
+  const { theme } = useTheme();
+  const { locale } = useLocale();
+  // Web-only cursor, following the existing Canvas grab style; not a native ViewStyle property.
+  const dragCursor = Platform.OS === 'web' ? ({ cursor: 'move' } as object) : {};
+  const [focus, setFocus] = useState<'move' | null>(null);
+  const [handlers] = useState(() => {
+    let moving = false;
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => controller.canDragCard(),
+      onStartShouldSetPanResponderCapture: () => controller.canDragCard(),
+      onPanResponderGrant: () => { moving = false; controller.begin({ cardId, kind: 'move', handle: 'se' }); },
+      onPanResponderMove: (_event, state) => {
+        if (!moving && isDrag(state.dx, state.dy)) moving = true;
+        if (moving) controller.update(state.dx, state.dy);
+      },
+      onPanResponderRelease: (_event, state) => {
+        controller.gestureEnded(cardId);
+        if (moving) controller.finish(state.dx, state.dy);
+        else controller.abort();
+        moving = false;
+      },
+      onPanResponderTerminate: () => { controller.abort(); moving = false; },
+      onPanResponderTerminationRequest: () => false,
+    }).panHandlers;
+  });
+  return <View {...handlers} style={{ position: 'absolute', left, top, width: size, height: size, zIndex: 31, ...dragCursor, ...(Platform.OS === 'web' ? { touchAction: 'none' } : {}) }}>
+    <Pressable testID={`card-move-${cardId}`} accessibilityRole="button" accessibilityLabel={`${locale === 'es' ? 'Mover' : 'Move'} ${title}`}
+      accessibilityHint={locale === 'es' ? 'Arrastra o usa las flechas para mover. Mayús más F10 abre acciones.' : 'Drag or use arrow keys to move. Shift plus F10 opens actions.'}
+      onPress={(event) => event.stopPropagation()}
+      onFocus={(event) => {
+        const target: unknown = event.nativeEvent.target;
+        setFocus(Platform.OS === 'web' && target instanceof HTMLElement && target.matches(':focus-visible') ? 'move' : null);
+      }} onBlur={() => setFocus(null)}
+      style={{ width: size, height: size, borderWidth: 2 / zoom, borderColor: focus === 'move' ? theme.colors.selection : 'transparent', padding: 4 / zoom, alignItems: 'flex-start', justifyContent: 'flex-start', ...dragCursor }}>
+      <Text accessibilityElementsHidden importantForAccessibility="no" style={{ color: ink, fontSize: 14 / zoom, lineHeight: 18 / zoom }}>✥</Text>
+    </Pressable>
+  </View>;
 }
 
 const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
