@@ -1,3 +1,5 @@
+import { PDF_CHANGE_TAG, RichTextPdfNode, $createRichTextPdfNode } from './RichTextPdfNode.web';
+import { useContentResources } from './ContentResources';
 import { $isLinkNode, LinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
 import {
   $isListNode,
@@ -188,7 +190,7 @@ function TableContextMenu({ anchor, actions, colors, groupLabels, onClose }: {
   );
 }
 
-function EditorToolbar({ onInsertImage, onInsertImageFromAssets, titleOnly = false, compact = false, collapsed = false }: Pick<RichTextEditorProps, 'onInsertImage' | 'onInsertImageFromAssets' | 'titleOnly'> & { readonly compact?: boolean; readonly collapsed?: boolean }) {
+function EditorToolbar({ cardId, onInsertImage, onInsertImageFromAssets, titleOnly = false, compact = false, collapsed = false }: Pick<RichTextEditorProps, 'cardId' | 'onInsertImage' | 'onInsertImageFromAssets' | 'titleOnly'> & { readonly compact?: boolean; readonly collapsed?: boolean }) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -457,7 +459,27 @@ function EditorToolbar({ onInsertImage, onInsertImageFromAssets, titleOnly = fal
   // UX7.1-IMAGES: «Insertar desde Assets» es un botón propio junto al ya existente «Insertar una
   // imagen» — no una acción oculta detrás de él. «Insertar una imagen» sigue subiendo un archivo
   // nuevo con un solo toque, exactamente como antes (no romper el flujo ni las pruebas existentes).
+  const resources = useContentResources();
+  const insertPdf = async () => {
+    const state = editor.getEditorState();
+    const point = state.read(() => {
+      const selection = $getSelection();
+      const top = $isRangeSelection(selection) ? selection.anchor.getNode().getTopLevelElement() : null;
+      return { key: top?.getKey(), last: $getRoot().getLastChild()?.getKey() };
+    });
+    const block = await resources.pickPdf();
+    if (!block || !editor.getRootElement() || JSON.stringify(editor.getEditorState().toJSON().root) !== JSON.stringify(state.toJSON().root)) return;
+    editor.update(() => {
+      const children = $getRoot().getChildren();
+      const target = children.find((node) => node.getKey() === (point.key ?? point.last));
+      const node = $createRichTextPdfNode(block);
+      if (target) target.insertAfter(node); else $getRoot().append(node);
+      const next = $createParagraphNode();
+      node.insertAfter(next); next.selectStart();
+    });
+  };
   const linkImageTableControls = [
+    !titleOnly && resources.canInsert(cardId) ? button('PDF', t('content.insertPdf', locale), false, false, () => { void insertPdf(); }, 'pdf') : null,
     button('↗', t('editor.visual.link', locale), selectionLink !== '', false, openLink, 'link'),
     !titleOnly && onInsertImage ? button('▧', t('editor.visual.image', locale), false, false, () => { void insertImage('upload'); }, 'image') : null,
     !titleOnly && onInsertImageFromAssets ? button('▧+', t('editor.visual.image.fromAssets', locale), false, false, () => { void insertImage('assets'); }, 'image-from-assets') : null,
@@ -753,7 +775,7 @@ function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps
         latestState.current = editorState;
         // Los controles de objetos no desenfocan necesariamente ContentEditable. Publicar antes
         // de transferir la sesión evita perder la última acción en el debounce de escritura.
-        if (tags.has(RICH_TEXT_IMAGE_CHANGE_TAG) || tags.has(HISTORIC_TAG)) { flush(); return; }
+        if (tags.has(PDF_CHANGE_TAG) || tags.has(RICH_TEXT_IMAGE_CHANGE_TAG) || tags.has(HISTORIC_TAG)) { flush(); return; }
         if (timer.current !== null) clearTimeout(timer.current);
         timer.current = setTimeout(flush, 150);
       }}
@@ -782,7 +804,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
   const [initialDocument] = useState(document);
   const [initialConfig] = useState(() => ({
     namespace: `noutynotes-card-${cardId}`,
-    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode, RichTextRetiredImageNode, TableNode, TableRowNode, TableCellNode],
+    nodes: [HeadingNode, LinkNode, ListNode, ListItemNode, RichTextImageNode, RichTextPdfNode, RichTextRetiredImageNode, TableNode, TableRowNode, TableCellNode],
     theme: editorTheme,
     editorState: () => $loadWebRichTextDocument(initialDocument),
     onError: (error: Error) => setProblem(error.message),
@@ -812,7 +834,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
           importantForAccessibility={toolbarCollapsed ? 'no-hide-descendants' : 'auto'}
           style={toolbarCollapsed ? styles.toolbarCollapsed : null}
         >
-          <EditorToolbar onInsertImage={onInsertImage} onInsertImageFromAssets={onInsertImageFromAssets} titleOnly={titleOnly} compact={compact} collapsed={toolbarCollapsed} />
+          <EditorToolbar cardId={cardId} onInsertImage={onInsertImage} onInsertImageFromAssets={onInsertImageFromAssets} titleOnly={titleOnly} compact={compact} collapsed={toolbarCollapsed} />
         </View>
         <View testID="web-rich-text-scroll" style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin

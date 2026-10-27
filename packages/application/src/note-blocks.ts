@@ -8,10 +8,10 @@
  * assets referencia una tarjeta" que ya se usaba aquí, y moverlo evita dos lectores divergentes sin
  * invertir la dependencia de dominio hacia aplicación. Se reexporta tal cual para no romper esta API.
  */
-import { noteImageRefs, parseNoteBlocks, richTextImageRefs } from '@noutynotes/domain';
+import { noteImageRefs, parseNoteBlocks, richTextAssetRefs, richTextImageRefs } from '@noutynotes/domain';
 import type { AssetRef, NoteBlock } from '@noutynotes/domain';
 
-export { noteImageRefs, parseNoteBlocks, richTextImageRefs };
+export { noteImageRefs, parseNoteBlocks, richTextAssetRefs, richTextImageRefs };
 export type { NoteBlock };
 
 export function serializeNoteBlocks(blocks: readonly NoteBlock[]): string {

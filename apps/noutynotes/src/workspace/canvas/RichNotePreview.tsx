@@ -1,7 +1,8 @@
+import { PdfBlockView, useContentResources } from '../ContentResources';
 import type { CaptionPosition, ImageFit, RichTextDocument, RichTextImage, TextSize } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { t } from '../../i18n';
 import { BasicRichTextPreview } from '../BasicRichTextPreview';
@@ -36,6 +37,7 @@ export function RichNotePreview({ document, imageResources, height, width, testI
   readonly banner: boolean;
   readonly onOpenDocument: () => void;
 }) {
+  const resources = useContentResources();
   const { theme } = useTheme();
   const { locale } = useLocale();
   const fontSize = bodyFontSize(bodySize);
@@ -82,7 +84,7 @@ export function RichNotePreview({ document, imageResources, height, width, testI
   return (
     <View testID={testID} onLayout={banner ? (event) => setInnerWidth(event.nativeEvent.layout.width) : undefined}
       style={[styles.wrap, { maxHeight: Math.max(0, height) }]}>
-      {preview.document.blocks.map((block, blockIndex) => block.type === 'image' ? (
+      {preview.document.blocks.map((block, blockIndex) => block.type === 'pdf' ? <PdfBlockView key={blockIndex} block={block} /> : block.type === 'image' ? (
         <View key={blockIndex} style={[sideways ? styles.imageRow : styles.imageBlock, {
           width: block.size === 'small' ? '25%' : block.size === 'medium' ? '50%' : block.size === 'large' ? '75%' : '100%',
           alignSelf: block.alignment === 'left' ? 'flex-start' : block.alignment === 'right' ? 'flex-end' : 'center',
@@ -93,6 +95,7 @@ export function RichNotePreview({ document, imageResources, height, width, testI
             const reading = resolveImageReading(block);
             if (resource?.status === 'ready') {
               return (
+                <Pressable disabled={Platform.OS !== 'web'} style={sideways ? styles.imageSide : { width: '100%' }} accessibilityRole="button" accessibilityLabel={t('content.openImage', locale)} onPress={(event) => { event.stopPropagation(); resources.openImage(block.assetRef, reading.hideImageFromAccessibility ? '' : block.alt); }}>
                 <Image
                   testID={`${testID}-image-${blockIndex}`}
                   accessibilityRole="image"
@@ -100,11 +103,12 @@ export function RichNotePreview({ document, imageResources, height, width, testI
                   aria-hidden={reading.hideImageFromAccessibility}
                   resizeMode={imageFit}
                   source={{ uri: resource.uri }}
-                  style={[styles.image, sideways ? styles.imageSide : null, {
+                  style={[styles.image, {
                     height: imageHeight, borderColor: theme.colors.border, backgroundColor: theme.colors.surface,
                     objectFit: imageFit,
                   }]}
                 />
+                </Pressable>
               );
             }
             const text = resource?.status === 'loading' ? t('image.loading', locale) : t('image.unavailable', locale);

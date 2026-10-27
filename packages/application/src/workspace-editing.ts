@@ -4,13 +4,13 @@ import {
 } from '@noutynotes/domain';
 import type {
   AssetRef, BoardId, BoardLayout, Card, CardAppearanceChanges, CardContentChanges, CardDisplayMode, CardId, CardTypeDefinition, CardTypeId, ConnectorRoutePoint, GridConfig, GridPoint, GridRect, GridSize, RestoreReport,
-  RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, RichTextDocument, RichTextImage, ValidationResult, Workspace, WorkspaceId,
+  RelationArrow, RelationId, RelationTypeDefinition, RelationTypeId, RichTextDocument, ValidationResult, Workspace, WorkspaceId,
 } from '@noutynotes/domain';
 
 import { nextSequentialId, workspaceIdFromName } from './ids';
 import { resolveRelationType } from './relations';
 import { LINK_CARD_TYPE, linkCardTypeFor } from './links';
-import { insertImageBlock, syncNoteAssetRefs } from './note-blocks';
+import { insertImageBlock, noteImageRefs, richTextAssetRefs, syncNoteAssetRefs } from './note-blocks';
 import type { WorkspaceAssets } from './workspace-assets';
 import { describeUntrustedValue, storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageIssue, WorkspaceStorageResult, WorkspaceSummary } from './workspace-storage';
@@ -419,9 +419,7 @@ export function editCardContent(
       // Mismo seguimiento sobre el documento HTML seguro (ADR 0066): sin esto, quitar la última
       // imagen de un cuerpo HTML (p. ej. `node.remove()` en el editor Visual) dejaba `assetRefs`
       // obsoleto, impidiendo que la biblioteca de Assets detectara el archivo como libre.
-      : changes?.contentDocument ? [...new Set(changes.contentDocument.blocks
-          .filter((block): block is RichTextImage => block.type === 'image')
-          .map((block) => block.assetRef))]
+      : changes?.contentDocument ? [...new Set([...(before.assetRefs ?? []).filter((ref) => ![...richTextAssetRefs(before.contentDocument), ...noteImageRefs(before.content ?? '')].includes(ref)), ...richTextAssetRefs(changes.contentDocument)])]
         : undefined;
     if (refs === undefined) return updated;
     return validateWorkspace({ ...updated.value, cards: updated.value.cards.map((card) => {

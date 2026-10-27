@@ -37,7 +37,7 @@ describe('N2: operaciones de imágenes enriquecidas', () => {
   });
   it.each(['upload', 'existing'] as const)('rechaza entrada futura en %s antes de reinterpretar la versión o escribir Assets', async (source) => {
     const { storage, id, card, document } = await fixture();
-    const invalid = unsafe<RichTextDocument>({ ...document, schemaVersion: 4 });
+    const invalid = unsafe<RichTextDocument>({ ...document, schemaVersion: 5 });
     const before = ok(await storage.open(id));
     const assets = ok(await storage.listAssets(id));
     const result = await (source === 'upload'

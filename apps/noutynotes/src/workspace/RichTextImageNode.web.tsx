@@ -1,3 +1,4 @@
+import { useContentResources } from './ContentResources';
 import { validateRichTextDocument } from '@noutynotes/domain';
 import type { RichTextImage, RichTextInline } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
@@ -71,6 +72,7 @@ export function applyReviewedImagePurpose(editor: LexicalEditor, nodeKey: NodeKe
 }
 
 function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly current: RichTextImage }) {
+  const resources = useContentResources();
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -256,7 +258,7 @@ function ImageBlock({ nodeKey, current }: { readonly nodeKey: NodeKey; readonly 
         </div>
         {captionElement}
       </div>
-      {advanced ? <div data-testid="image-advanced-options" style={{ display: 'grid', gap: 8 }}><label style={{ display: 'grid', gap: 4 }}>
+      {advanced ? <div data-testid="image-advanced-options" style={{ display: 'grid', gap: 8 }}><button style={{ minHeight: 44 }} onClick={() => resources.openImage(current.assetRef, current.accessibilityIntent === 'pending' || current.accessibilityIntent === 'decorative' ? '' : current.alt)}>{t('content.openImage', locale)}</button><label style={{ display: 'grid', gap: 4 }}>
         <span style={{ fontSize: 12, fontWeight: 700 }}>Texto alternativo</span>
         <input aria-label={`Texto alternativo de la imagen ${current.alt || 'sin descripción'}`} value={current.alt}
           onChange={(event) => update((node) => node.setAlt(event.currentTarget.value))}

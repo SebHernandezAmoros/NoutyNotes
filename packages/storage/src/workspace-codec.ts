@@ -57,7 +57,7 @@ function cardDocument(card: Card): GeneratedDocument {
   const html = card.contentDocument === undefined ? null : serializeRichTextHtml(card.contentDocument);
   if (html && !html.ok) throw new Error('Workspace validado con contenido no representable por HTML seguro v1/v2.');
   return markdownDocument(compact({
-    schemaVersion: card.noteBackground !== undefined ? 17 : card.contentDocument?.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION ? 16 : card.primaryResourceState !== undefined ? 15 : card.imageFit !== undefined ? 14 : hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
+    schemaVersion: needsContentV4(card) ? 18 : card.noteBackground !== undefined ? 17 : card.contentDocument?.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION ? 16 : card.primaryResourceState !== undefined ? 15 : card.imageFit !== undefined ? 14 : hasVerticalAlignment ? 13 : card.contentDocument !== undefined ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : card.frameOverride ? 5 : card.icon || card.boardTargetId ? 4 : card.createdAt ? 3 : tags ? 2 : 1,
     primaryResourceState: card.primaryResourceState,
     id: card.id, typeId: card.typeId, title: card.title, titleRichText: card.titleRichText,
     fields: card.fields, assetRefs: card.assetRefs, tags, createdAt: card.createdAt, icon: card.icon,
@@ -67,7 +67,7 @@ function cardDocument(card: Card): GeneratedDocument {
     shapeKind: card.shapeKind, shapeFill: card.shapeFill, shapeStroke: card.shapeStroke, shapeStrokeWidth: card.shapeStrokeWidth,
     connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
     connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
-    imageFit: card.imageFit,
+    imageFit: card.imageFit, noteFont: card.noteFont,
     contentPresent: card.content !== undefined || card.contentDocument !== undefined,
     contentFormat: card.contentDocument === undefined ? undefined : HTML_CONTENT_FORMAT,
     contentVersion: card.contentDocument?.schemaVersion,
@@ -89,7 +89,7 @@ function trashData(entry: TrashedCard): unknown {
       content: card.content, contentDocument: card.contentDocument,
       connectorColor: card.connectorColor, connectorWidth: card.connectorWidth, connectorDash: card.connectorDash, connectorArrows: card.connectorArrows,
       connectorDirection: card.connectorDirection, connectorStartCardId: card.connectorStartCardId, connectorEndCardId: card.connectorEndCardId,
-      imageFit: card.imageFit,
+      imageFit: card.imageFit, noteFont: card.noteFont,
     },
     boards: entry.boards.map(({ boardId, index }) => ({ boardId, index })),
     placements: entry.placements.map(({ boardId, rect, display, connectorPath }) => ({ boardId, display, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
@@ -98,12 +98,18 @@ function trashData(entry: TrashedCard): unknown {
   });
 }
 
+function needsContentV4(card: { readonly contentDocument?: unknown; readonly noteFont?: unknown }): boolean {
+  const doc = card.contentDocument;
+  return card.noteFont !== undefined || (typeof doc === 'object' && doc !== null && 'schemaVersion' in doc && doc.schemaVersion === 4);
+}
+
 function hasV3Content(card: { readonly contentDocument?: unknown }): boolean {
   const content = card.contentDocument;
   return typeof content === 'object' && content !== null && 'schemaVersion' in content && content.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION;
 }
 
-function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 | 4 | 5 | 6 | 7 {
+function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 {
+  if (entries.some((entry) => needsContentV4(entry.card))) return 8;
   if (entries.some((entry) => entry.card.noteBackground !== undefined)) return 7;
   if (entries.some((entry) => entry.card.contentDocument?.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION)) return 6;
   if (entries.some((entry) => entry.card.primaryResourceState !== undefined)) return 5;
@@ -114,7 +120,8 @@ function trashSchemaVersion(entries: readonly TrashedCard[]): 1 | 2 | 3 | 4 | 5 
 }
 
 /** v4 solo si hay tableros archivados (ADR 0039); si no, la misma versión selectiva de siempre. */
-function archiveSchemaVersion(entries: readonly TrashedCard[], archivedBoards: readonly ArchivedBoard[]): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 {
+function archiveSchemaVersion(entries: readonly TrashedCard[], archivedBoards: readonly ArchivedBoard[]): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 {
+  if (entries.some((entry) => needsContentV4(entry.card))) return 9;
   if (entries.some((entry) => entry.card.noteBackground !== undefined)) return 8;
   if (entries.some((entry) => entry.card.contentDocument?.schemaVersion === RETIRED_IMAGE_SCHEMA_VERSION)) return 7;
   if (entries.some((entry) => entry.card.primaryResourceState !== undefined)) return 6;
@@ -289,7 +296,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   const cards: Card[] = [];
   for (const id of cardIds) {
     const file = cardPath(id);
-    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+    const read = readMarkdown(files[file] ?? '', file, id, cardFrontmatterSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
     if (!read.ok) {
       issues.push(...read.issues);
       continue;
@@ -317,7 +324,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(storageIssue('invalid-document', `${file}#contentFormat`, 'Formato de contenido no admitido.'));
       continue;
     }
-    if (hasHtml && front.contentVersion !== 1 && front.contentVersion !== HTML_CONTENT_VERSION && front.contentVersion !== RETIRED_IMAGE_SCHEMA_VERSION) {
+    if (hasHtml && front.contentVersion !== 1 && front.contentVersion !== HTML_CONTENT_VERSION && front.contentVersion !== RETIRED_IMAGE_SCHEMA_VERSION && front.contentVersion !== 4) {
       issues.push(storageIssue('unsupported-schema-version', `${file}#contentVersion`, 'Solo se admiten HTML v1, v2 y v3.'));
       continue;
     }
@@ -330,7 +337,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(...parsedHtml.issues.map((found) => storageIssue('invalid-document', `${file}#body.${found.path}`, found.message)));
       continue;
     }
-    const expected = front.noteBackground !== undefined ? 17 : front.contentVersion === RETIRED_IMAGE_SCHEMA_VERSION ? 16 : front.primaryResourceState !== undefined ? 15 : hasImageFit ? 14 : hasVerticalAlignment ? 13 : hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
+    const expected = front.noteFont !== undefined || front.contentVersion === 4 ? 18 : front.noteBackground !== undefined ? 17 : front.contentVersion === RETIRED_IMAGE_SCHEMA_VERSION ? 16 : front.primaryResourceState !== undefined ? 15 : hasImageFit ? 14 : hasVerticalAlignment ? 13 : hasHtml ? 12 : hasUnifiedContent ? 11 : hasConnectorStyle ? 10 : hasShapeStyle ? 9 : hasFloatingTextStyle ? 8 : hasCaption ? 7 : hasSize ? 6 : hasFrame ? 5 : hasAppearance ? 4 : hasDate ? 3 : hasTags ? 2 : 1;
     if (front.schemaVersion !== expected || (front.tags !== undefined && !hasTags)) {
       issues.push(storageIssue('invalid-document', `${file}#schemaVersion`, 'La versión no corresponde al contenido: v2 exige etiquetas y v3 exige fecha de creación; sin ninguna de las dos es v1 (ADR 0019, ADR 0024).'));
       continue;
@@ -344,7 +351,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       shapeKind: front.shapeKind, shapeFill: front.shapeFill, shapeStroke: front.shapeStroke, shapeStrokeWidth: front.shapeStrokeWidth,
       connectorColor: front.connectorColor, connectorWidth: front.connectorWidth, connectorDash: front.connectorDash, connectorArrows: front.connectorArrows,
       connectorDirection: front.connectorDirection, connectorStartCardId: front.connectorStartCardId, connectorEndCardId: front.connectorEndCardId,
-      imageFit: front.imageFit,
+      imageFit: front.imageFit, noteFont: front.noteFont,
       primaryResourceState: front.primaryResourceState,
       content: !hasHtml && front.contentPresent ? body : undefined,
       contentDocument: parsedHtml?.ok ? parsedHtml.value : undefined,
@@ -371,7 +378,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
   if (!layouts.ok) issues.push(...layouts.issues);
   const relations = parseRelations(files[RELATIONS_FILE] ?? '');
   if (!relations.ok) issues.push(...relations.issues);
-  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2, 3, 4, 5, 6, 7]) : null;
+  const trash = hasTrash ? readVersionedYaml(files[TRASH_FILE] ?? '', TRASH_FILE, trashFileSchema, [1, 2, 3, 4, 5, 6, 7, 8]) : null;
   if (trash && !trash.ok) issues.push(...trash.issues);
   if (trash?.ok && trash.value.schemaVersion === 1) {
     trash.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -383,6 +390,9 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     }));
   }
   if (trash?.ok) {
+    const hasNew = trash.value.items.some((entry) => needsContentV4(entry.card));
+    if ((trash.value.schemaVersion === 8) !== hasNew) issues.push(storageIssue('invalid-document', TRASH_FILE, 'Content requires Trash8.'));
+    if (!hasNew) {
     const hasBackground = trash.value.items.some((entry) => entry.card.noteBackground !== undefined);
     if ((trash.value.schemaVersion === 7) !== hasBackground) issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'El fondo explícito requiere Papelera7.'));
     const hasV3 = !hasBackground && trash.value.items.some((entry) => hasV3Content(entry.card));
@@ -394,7 +404,8 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       issues.push(storageIssue('invalid-document', `${TRASH_FILE}#schemaVersion`, 'La versión 4 corresponde exclusivamente a Papelera con contenido HTML seguro.'));
     }
   }
-  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4, 5, 6, 7, 8]) : null;
+    }
+  const archive = hasArchive ? readVersionedYaml(files[ARCHIVE_FILE] ?? '', ARCHIVE_FILE, archiveFileSchema, [1, 2, 3, 4, 5, 6, 7, 8, 9]) : null;
   if (archive && !archive.ok) issues.push(...archive.issues);
   if (archive?.ok && archive.value.schemaVersion === 1) {
     archive.value.items.forEach((entry, itemIndex) => entry.placements.forEach((placement, placementIndex) => {
@@ -422,6 +433,9 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
     ...assetPathIssues(workspace, (index, rest) => `${cardPath(cardIds[index] ?? '')}#${rest}`),
   ];
   if (archive?.ok) {
+    const hasNew = archive.value.items.some((entry) => needsContentV4(entry.card));
+    if ((archive.value.schemaVersion === 9) !== hasNew) located.push(storageIssue('invalid-document', ARCHIVE_FILE, 'Content requires Archive9.'));
+    if (!hasNew) {
     const hasBackground = archive.value.items.some((entry) => entry.card.noteBackground !== undefined);
     if ((archive.value.schemaVersion === 8) !== hasBackground) located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'El fondo explícito requiere Archivo8.'));
     const hasV3 = !hasBackground && archive.value.items.some((entry) => hasV3Content(entry.card));
@@ -433,6 +447,7 @@ function readWorkspacePackage(input: unknown): StorageResult<WorkspacePackage> {
       located.push(storageIssue('invalid-document', `${ARCHIVE_FILE}#schemaVersion`, 'La versión 5 corresponde exclusivamente a Archivo con contenido HTML seguro.'));
     }
   }
+    }
   return located.length > 0 ? fail(located) : succeed({ workspace, files, extras });
 }
 

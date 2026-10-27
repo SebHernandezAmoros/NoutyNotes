@@ -335,6 +335,7 @@ function tableRowToMdast(row: RichTextTableRow): MdTableRow {
 
 function blockToMdast(block: Exclude<RichTextBlock, { readonly type: 'opaque-markdown' }>): RootContent {
   switch (block.type) {
+    case 'pdf': throw new Error('PDF requires safe HTML or ZIP.');
     case 'paragraph': return { type: 'paragraph', children: block.content.map(inlineToMdast) } satisfies Paragraph;
     case 'heading': return { type: 'heading', depth: block.level, children: block.content.map(inlineToMdast) } satisfies Heading;
     case 'list': return listToMdast(block);

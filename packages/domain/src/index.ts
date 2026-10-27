@@ -13,7 +13,7 @@ export type { Board } from './boards/board';
 export { captionPositions, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, contentLayouts, contentVisibilities, floatingTextAlignments, floatingTextColors, frameOverrides, noteBackgrounds, resolveNoteBackground, imageFits, isFloatingTextCard, resolveCardImageFit, richTextInlineText, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths, supportsCardImageFit, textSizes, validateCard } from './cards/card';
 export { MAX_TAG_LENGTH, normalizeTag, withTag, withoutTag } from './cards/tags';
 export { linkDisplay, linkUrlField, normalizeLinkUrl } from './cards/links';
-export type { CaptionPosition, Card, CardContentPresentation, CardIconName, ConnectorArrows, ConnectorDash, ConnectorDirection, ContentLayout, ContentVisibility, FloatingTextAlign, FloatingTextColor, FrameOverride, NoteBackground, ImageFit, NoteVerticalAlignment, PrimaryResourceState, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize } from './cards/card';
+export type { NoteFontOverride, CaptionPosition, Card, CardContentPresentation, CardIconName, ConnectorArrows, ConnectorDash, ConnectorDirection, ContentLayout, ContentVisibility, FloatingTextAlign, FloatingTextColor, FrameOverride, NoteBackground, ImageFit, NoteVerticalAlignment, PrimaryResourceState, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize } from './cards/card';
 export { addCard, deleteCard, pasteCardsOnBoard, updateCard, updateCardAppearance } from './cards/operations';
 export type { AddCardOptions, CardAppearanceChanges, CardContentChanges, DeleteCardOptions, PasteCardsInput } from './cards/operations';
 export { purgeTrashedCard, restoreTrashedCard, trashCard, trashCards } from './cards/trash';
@@ -32,13 +32,13 @@ export {
   MAX_RICH_TEXT_BLOCKS, MAX_RICH_TEXT_INLINES, MAX_RICH_TEXT_LIST_DEPTH,
   MAX_RICH_TEXT_LIST_ITEMS, MAX_RICH_TEXT_TABLE_COLUMNS, MAX_RICH_TEXT_TABLE_ROWS,
   MAX_RICH_TEXT_TEXT_LENGTH, LEGACY_RICH_TEXT_SCHEMA_VERSION, RICH_TEXT_SCHEMA_VERSION, RETIRED_IMAGE_SCHEMA_VERSION, createEmptyRichTextDocument,
-  normalizeRichTextDocument, richTextAlignments, richTextDocumentText, richTextImageAccessibilityIntents, richTextImageAlignments, richTextImageRefs, richTextImageSizes, richTextMarks, richTextVerticalAlignments, toggleRichTextChecklistItem, validateRichTextDocument,
+  normalizeRichTextDocument, richTextAlignments, richTextDocumentText, richTextImageAccessibilityIntents, richTextImageAlignments, richTextAssetRefs, richTextImageRefs, richTextImageSizes, richTextMarks, richTextVerticalAlignments, toggleRichTextChecklistItem, validateRichTextDocument,
 } from './rich-text/rich-text';
 export { noteImageRefs, parseNoteBlocks } from './cards/note-content';
 export type { NoteBlock } from './cards/note-content';
 export type {
   RichTextAlignment, RichTextBlock, RichTextDocument, RichTextHardBreak, RichTextHeading, RichTextHeadingLevel,
-  RichTextImage, RichTextRetiredImage, RichTextImageAccessibilityIntent, RichTextImageCaptionPolicy, RichTextImageAlignment, RichTextImageSize, RichTextInline, RichTextLeaf, RichTextLink, RichTextList, RichTextListItem,
+  RichTextPdf, RichTextImage, RichTextRetiredImage, RichTextImageAccessibilityIntent, RichTextImageCaptionPolicy, RichTextImageAlignment, RichTextImageSize, RichTextInline, RichTextLeaf, RichTextLink, RichTextList, RichTextListItem,
   RichTextListStyle, RichTextMark, RichTextOpaqueMarkdown, RichTextParagraph, RichTextTable,
   RichTextTableCell, RichTextTableRow, RichTextTextRun, RichTextVerticalAlignment,
 } from './rich-text/rich-text';

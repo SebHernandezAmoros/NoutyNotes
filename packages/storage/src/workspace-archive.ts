@@ -139,7 +139,7 @@ export function writeWorkspaceArchive(files: TextFiles, assets: BinaryAssets): S
   if (contents.length > ARCHIVE_LIMITS.maxEntries) return fail([storageIssue('limit-exceeded', 'archivo', `Supera ${ARCHIVE_LIMITS.maxEntries} entradas.`)]);
   let total = 0;
   for (const [path, content] of contents) {
-    if (content.length > ARCHIVE_LIMITS.maxEntryBytes) issues.push(storageIssue('limit-exceeded', path, `Supera ${ARCHIVE_LIMITS.maxEntryBytes} bytes.`));
+    if (content.length > ARCHIVE_LIMITS.maxEntryBytes) issues.push(storageIssue('limit-exceeded', path, `El archivo supera 16 MiB y no puede incluirse en ZIP. Usa una copia menor o conserva el proyecto en carpeta. No se ha eliminado contenido.`));
     total += content.length;
   }
   if (issues.length > 0) return fail(issues);

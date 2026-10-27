@@ -33,7 +33,7 @@ it('rechaza imágenes activas/atributos ejecutables o referencias dentro del fig
   }
   expect(parseRichTextHtml(html, 1).ok).toBe(false);
   expect(parseRichTextHtml(html, 2).ok).toBe(false);
-  expect(parseRichTextHtml(html, 4).ok).toBe(false);
+  expect(parseRichTextHtml(html, 5).ok).toBe(false);
 });
 
 it.each(['archive', 'trash'] as const)('snapshot %s y restauración conservan marcador, vecinos, relaciones y geometría', (kind) => {

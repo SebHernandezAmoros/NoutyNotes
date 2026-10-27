@@ -250,6 +250,7 @@ export interface CardAppearanceChanges {
   /** Tamaño semántico del título/cuerpo (ADR 0050); `null` vuelve a `'medium'` (ausente). */
   readonly titleSize?: TextSize | null;
   readonly bodySize?: TextSize | null;
+  readonly noteFont?: Card['noteFont'] | null;
   /** Posición de la leyenda de imágenes intercaladas (ADR 0051); `null` vuelve a `'bottom'` (ausente). */
   readonly captionPosition?: CaptionPosition | null;
   readonly titleVisibility?: ContentVisibility | null;
@@ -276,7 +277,7 @@ export interface CardAppearanceChanges {
   readonly imageFit?: ImageFit | null;
 }
 
-const appearanceKeys: readonly string[] = ['icon', 'boardTargetId', 'frameOverride', 'noteBackground', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'noteVerticalAlignment', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId', 'imageFit'];
+const appearanceKeys: readonly string[] = ['noteFont', 'icon', 'boardTargetId', 'frameOverride', 'noteBackground', 'titleSize', 'bodySize', 'captionPosition', 'titleVisibility', 'bodyVisibility', 'contentLayout', 'noteVerticalAlignment', 'textAlign', 'textColor', 'shapeKind', 'shapeFill', 'shapeStroke', 'shapeStrokeWidth', 'connectorColor', 'connectorWidth', 'connectorDash', 'connectorArrows', 'connectorDirection', 'connectorStartCardId', 'connectorEndCardId', 'imageFit'];
 
 /** Cambia icono, destino de tablero, excepción de marco, tamaños de texto y posición de leyenda sin abrir el contenido de la tarjeta (ADR 0046, ADR 0049, ADR 0050, ADR 0051). */
 export function updateCardAppearance(workspace: Workspace, cardId: CardId, changes: CardAppearanceChanges): ValidationResult<Workspace> {
@@ -370,10 +371,11 @@ export function updateCardAppearance(workspace: Workspace, cardId: CardId, chang
     captionPosition: _captionPosition, titleVisibility: _titleVisibility, bodyVisibility: _bodyVisibility, contentLayout: _contentLayout, noteVerticalAlignment: _noteVerticalAlignment, textAlign: _textAlign, textColor: _textColor,
     shapeKind: _shapeKind, shapeFill: _shapeFill, shapeStroke: _shapeStroke, shapeStrokeWidth: _shapeStrokeWidth,
     connectorColor: _connectorColor, connectorWidth: _connectorWidth, connectorDash: _connectorDash, connectorArrows: _connectorArrows, connectorDirection: _connectorDirection,
-    connectorStartCardId: _connectorStartCardId, connectorEndCardId: _connectorEndCardId, imageFit: _imageFit, ...base
+    connectorStartCardId: _connectorStartCardId, connectorEndCardId: _connectorEndCardId, imageFit: _imageFit, noteFont: _noteFont, ...base
   } = card;
   const edited: Card = {
     ...base,
+    ...(changes.noteFont === undefined ? (card.noteFont ? { noteFont: card.noteFont } : {}) : changes.noteFont === null ? {} : { noteFont: changes.noteFont as NonNullable<Card['noteFont']> }),
     ...(nextIcon === undefined ? (card.icon === undefined ? {} : { icon: card.icon }) : nextIcon === null ? {} : { icon: nextIcon as CardIconName }),
     ...(nextTarget === undefined ? (card.boardTargetId === undefined ? {} : { boardTargetId: card.boardTargetId })
       : nextTarget === null ? {} : { boardTargetId: nextTarget as BoardId }),

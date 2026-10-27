@@ -1,3 +1,4 @@
+import { useContentResources } from '../ContentResources';
 import { cardContentPresentation, isFloatingTextCard, linkDisplay, linkUrlField, resolveCardImageFit, resolveNoteBackground } from '@noutynotes/domain';
 import type { RichTextCodec } from '@noutynotes/application';
 import type { Card, CardDisplayMode, RichTextDocument, RichTextList, Workspace } from '@noutynotes/domain';
@@ -160,6 +161,7 @@ const connectHints: Readonly<Record<ConnectRole, string | null>> = {
 /** Ficha de papel del lienzo: cabecera por tipo, título, resumen y estado. Solo representa. */
 export function CanvasCard(props: CanvasCardProps) {
   const { workspace, card, number, box, display, selected, dragging, colliding, connectRole, connectSourceName, onPress, hideFrame } = props;
+  const effectiveFontFamily = useContentResources().fontFor(props.card, props.noteFontFamily);
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -207,7 +209,8 @@ export function CanvasCard(props: CanvasCardProps) {
         // `gestureState.x0/y0` no es fiable para un toque simple en web (puede llegar en 0,0 sin que
         // haya habido movimiento); se usa la posición del evento nativo, como hace el Pressable de la
         // ficha para la misma decisión.
-        const { pageX, pageY } = event.nativeEvent;
+        const nativePress = event.nativeEvent ?? (event as unknown as typeof event.nativeEvent);
+          const { pageX, pageY } = nativePress;
         blocked = !controller.canDragCard() || (Platform.OS === 'web' && !isCardDragTarget(event.nativeEvent.target)) || hitsPreviewAction(event.nativeEvent.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY);
         return !blocked;
       },
@@ -256,7 +259,7 @@ export function CanvasCard(props: CanvasCardProps) {
   const blocks = image || htmlAuthored ? [] : parseNoteBlocks(legacyPreviewContent);
   const mixedLegacy = blocks.some((block) => block.kind === 'image');
   const richDocument = image ? null : (card.contentDocument ?? parseWebRichText(props.richTextCodec, card.content ?? ''));
-  const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => block.type === 'image') ?? false);
+  const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => (block.type === 'image' || block.type === 'pdf')) ?? false);
   const mixed = mixedLegacy || hasImageBlock;
   // El visor enriquecido es necesario cuando el legado perdería estructura (tabla + imagen). Para
   // imagen + texto Markdown se conserva NotePreview, que ya cubre las cuatro posiciones de leyenda;
@@ -379,7 +382,10 @@ export function CanvasCard(props: CanvasCardProps) {
     >
       <Pressable
         testID={`card-${card.id}`}
-        accessibilityRole="button"
+        focusable
+        accessibilityRole={Platform.OS === 'web' && display === 'expanded' && mixedRich ? undefined : 'button'}
+        {...(Platform.OS === 'web' && display === 'expanded' && mixedRich ? { role: 'group' as const } : {})}
+        {...(Platform.OS === 'web' && display === 'expanded' && mixedRich ? { onKeyDown: (event: { key: string; target: unknown; currentTarget: unknown; preventDefault(): void }) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onPress(); } } } : {})}
         accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}${displayNames[display]}${card.primaryResourceState ? `. ${t('card.resourceRetired', locale)}` : ''}`}
         accessibilityHint={accessibilityHint}
         accessibilityState={{ selected }}
@@ -388,10 +394,11 @@ export function CanvasCard(props: CanvasCardProps) {
           if (contextPress.held()) return;
           // Igual que la decisión de captura de arriba: un toque que empezó en una fila de checklist
           // no debe seleccionar ni abrir la ficha entera.
-          const { pageX, pageY } = event.nativeEvent;
-          if (hitsPreviewAction(event.nativeEvent.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY)) return;
+          const nativePress = event.nativeEvent ?? (event as unknown as typeof event.nativeEvent);
+          const { pageX, pageY } = nativePress;
+          if (hitsPreviewAction(nativePress.target) || checklistGuard.hitsChecklist(pageX, pageY) || checklistGuard.hitsReader(pageX, pageY)) return;
           if (!controller.justEndedGesture(card.id)) {
-            const native = event.nativeEvent;
+            const native = nativePress;
             const keyboard = ('key' in native && typeof native.key === 'string') || ('type' in native && native.type === 'click' && 'detail' in native && native.detail === 0);
             // The body no longer acquires the drag responder, but keeps the same double-tap action.
             if (Platform.OS === 'web' && !keyboard && controller.canDragCard()) controller.tapCard(card.id);
@@ -458,12 +465,12 @@ export function CanvasCard(props: CanvasCardProps) {
               {presentation.body === 'visible' && fullReader && richDocument ? (
                 <View ref={readerRef} style={styles.readerShell}>
                   <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} imageResources={props.noteImageResources}
-                    color={noteTextColor} fontFamily={props.noteFontFamily} bodySize={card.bodySize}
+                    color={noteTextColor} fontFamily={effectiveFontFamily} bodySize={card.bodySize}
                     captionPosition={card.captionPosition} imageFit={imageFit} />
                 </View>
               ) : presentation.body === 'visible' && previewDocument ? (
                 <BasicRichTextPreview document={previewDocument} numberOfLines={Math.max(1, bodyLines)} color={noteTextColor}
-                  fontSize={contentSize} lineHeight={contentLine} fontFamily={props.noteFontFamily} testID={`card-rich-text-${card.id}`} />
+                  fontSize={contentSize} lineHeight={contentLine} fontFamily={effectiveFontFamily} testID={`card-rich-text-${card.id}`} />
               ) : null}
             </View>
           </View>
@@ -480,7 +487,7 @@ export function CanvasCard(props: CanvasCardProps) {
               fontSize: contentSize,
               lineHeight: contentLine,
               textAlign: card.textAlign ?? 'left',
-            }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>
+            }, effectiveFontFamily === undefined ? null : { fontFamily: effectiveFontFamily }]}>
               {card.content ?? ''}
             </Text>
           </View>
@@ -519,7 +526,7 @@ export function CanvasCard(props: CanvasCardProps) {
             {collapsedBodyLines > 0 && previewDocument ? (
               <View style={styles.collapsedPreview}>
                 <BasicRichTextPreview document={previewDocument} numberOfLines={collapsedBodyLines} color={colors.cardText}
-                  fontSize={contentSize} lineHeight={contentLine} fontFamily={props.noteFontFamily} testID={`collapsed-preview-${card.id}`} />
+                  fontSize={contentSize} lineHeight={contentLine} fontFamily={effectiveFontFamily} testID={`collapsed-preview-${card.id}`} />
               </View>
             ) : null}
           </View>
@@ -572,14 +579,14 @@ export function CanvasCard(props: CanvasCardProps) {
               ) : null}
               {presentation.body === 'visible' && fullReader && richDocument ? (
                 <View ref={readerRef} style={styles.readerShell}>
-                  <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} />
+                  <RichNoteReader testID={`card-reader-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={effectiveFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} />
                 </View>
               ) : presentation.body === 'visible' && mixedRich && richDocument ? (
-                <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
+                <RichNotePreview testID={`rich-note-preview-${card.id}`} document={richDocument} imageResources={props.noteImageResources} fontFamily={effectiveFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
                   onOpenDocument={props.onOpenDocument}
                   banner={presentation.layout === 'banner'} width={box.width} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : presentation.body === 'visible' && mixed ? (
-                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} imageResources={props.noteImageResources} fontFamily={props.noteFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
+                <NotePreview testID={`note-preview-${card.id}`} blocks={blocks} imageResources={props.noteImageResources} fontFamily={effectiveFontFamily} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit}
                   banner={presentation.layout === 'banner'} width={box.width} height={box.height - HEADER - (footerLines > 0 ? 48 + footerLines * 22 : 40) - (link ? 18 : 0)} />
               ) : null}
               {presentation.body === 'visible' && !fullReader && !image && !mixed && previewDocument && bodyLines > 0 ? (
@@ -589,7 +596,7 @@ export function CanvasCard(props: CanvasCardProps) {
                   color={colors.cardText}
                   fontSize={contentSize}
                   lineHeight={contentLine}
-                  fontFamily={props.noteFontFamily}
+                  fontFamily={effectiveFontFamily}
                   testID={`card-rich-text-${card.id}`}
                 />
               ) : null}
@@ -597,7 +604,7 @@ export function CanvasCard(props: CanvasCardProps) {
                 <View style={styles.bodyBlocks}>
                   {bodyBlocks.map((block, index) => block.kind === 'text' ? (
                     <Text key={index} numberOfLines={block.text.split('\n').length}
-                      style={[styles.content, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>
+                      style={[styles.content, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, effectiveFontFamily === undefined ? null : { fontFamily: effectiveFontFamily }]}>
                       {block.text}
                     </Text>
                   ) : (
@@ -613,7 +620,7 @@ export function CanvasCard(props: CanvasCardProps) {
                       style={styles.checkRow}
                     >
                       <Text style={[styles.checkGlyph, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }]}>{block.checked ? '☑' : '☐'}</Text>
-                      <Text numberOfLines={1} style={[styles.content, styles.checkText, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, props.noteFontFamily === undefined ? null : { fontFamily: props.noteFontFamily }]}>
+                      <Text numberOfLines={1} style={[styles.content, styles.checkText, { color: colors.cardText, fontSize: contentSize, lineHeight: contentLine }, effectiveFontFamily === undefined ? null : { fontFamily: effectiveFontFamily }]}>
                         {block.text}
                       </Text>
                     </Pressable>

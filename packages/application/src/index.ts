@@ -90,3 +90,5 @@ export { openDiaryEntry } from './diary';
 export type { DiaryEntryInput } from './diary';
 export type { DeleteAssetsResult, ImportImageAtInput } from './assets-library';
 export type { RichTextCodec, RichTextCodecResult } from './rich-text-codec';
+
+export { MAX_NOTE_PDF_BYTES, hasPdfSignature, inspectNotePdf, prepareNotePdf } from './note-pdfs';

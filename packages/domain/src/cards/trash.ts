@@ -7,7 +7,7 @@ import { validateGridLayout } from '../layouts/grid';
 import type { GridConfig } from '../layouts/grid';
 import type { BoardLayout, CardPlacement } from '../layouts/layout';
 import { findFreeSpace } from '../layouts/operations';
-import { richTextImageRefs } from '../rich-text/rich-text';
+import { richTextAssetRefs } from '../rich-text/rich-text';
 import { validateWorkspace } from '../workspace/workspace';
 import type { Workspace } from '../workspace/workspace';
 import type { Card } from './card';
@@ -210,8 +210,8 @@ function assetsOf(workspace: Workspace, card: Card): string[] {
   const fromFields = Object.entries(card.fields)
     .filter(([key, value]) => kinds.get(key) === 'asset' && typeof value === 'string')
     .map(([, value]) => value as string);
-  const fromContent = type?.base === 'image' ? [] : [...noteImageRefs(card.content ?? ''), ...richTextImageRefs(card.contentDocument)];
-  return [...new Set([...(card.assetRefs ?? []), ...fromFields, ...fromContent])];
+  const fromContent = type?.base === 'image' ? [] : [...noteImageRefs(card.content ?? ''), ...richTextAssetRefs(card.contentDocument)];
+  return [...new Set([...(card.assetRefs ?? []), ...fromFields, ...fromContent, ...(card.noteFont?.kind === 'asset' ? [card.noteFont.assetRef] : [])])];
 }
 
 /**

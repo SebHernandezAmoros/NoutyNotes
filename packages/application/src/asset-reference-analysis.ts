@@ -3,7 +3,7 @@ import type { Card, CardId, Workspace } from '@noutynotes/domain';
 
 export type AssetReferenceStatus = 'complete-used' | 'complete-unused' | 'partial' | 'error' | 'unsupported';
 export type AssetReferenceCollection = 'active' | 'archive' | 'trash';
-export type AssetReferenceKind = 'rich-image' | 'markdown-image' | 'image-card' | 'document-card' | 'asset-field' | 'asset-ref' | 'unknown-field';
+export type AssetReferenceKind = 'pdf-block' | 'note-font' | 'rich-image' | 'markdown-image' | 'image-card' | 'document-card' | 'asset-field' | 'asset-ref' | 'unknown-field';
 
 export interface AssetReferenceOwner {
   readonly id: string;
@@ -96,19 +96,20 @@ export function analyzeAssetReferences(input: AssetReferenceInput): AssetReferen
       if (card.contentDocument !== undefined) {
         const doc = card.contentDocument;
         const unknown = Array.isArray(doc.blocks) && doc.blocks.some((block) =>
-          !['paragraph', 'heading', 'list', 'image', 'retired-image', 'table'].includes(block.type));
-        if (unknown || ![1, 2, 3].includes(doc.schemaVersion)) {
+          !['paragraph', 'heading', 'list', 'image', 'retired-image', 'pdf', 'table'].includes(block.type));
+        if (unknown || ![1, 2, 3, 4].includes(doc.schemaVersion)) {
           issues.push({ kind: 'unsupported', detail: 'Hay contenido enriquecido no admitido; no se puede completar el análisis.' });
         }
         // Validate the document, including inlines; opaque/future blocks are never an empty success.
         const parsed = validateRichTextDocument(doc);
-        if (!parsed.ok && !unknown && [1, 2, 3].includes(doc.schemaVersion)) {
+        if (!parsed.ok && !unknown && [1, 2, 3, 4].includes(doc.schemaVersion)) {
           issues.push({ kind: 'error', detail: 'No se pudo interpretar el documento enriquecido.' });
         }
         if (Array.isArray(doc.blocks)) doc.blocks.forEach((block, index) => {
-          if (block.type === 'image' && block.assetRef === input.ref) add('rich-image', `contentDocument.blocks:${index}`);
+          if ((block.type === 'image' || block.type === 'pdf') && block.assetRef === input.ref) add(block.type === 'pdf' ? 'pdf-block' : 'rich-image', `contentDocument.blocks:${index}`);
         });
       }
+      if (card.noteFont?.kind === 'asset' && card.noteFont.assetRef === input.ref) add('note-font', 'noteFont.assetRef');
       const editorial = occurrences.length > start;
       for (const [key, value] of Object.entries(card.fields)) {
         const field = type?.fields.find((field) => field.key === key);

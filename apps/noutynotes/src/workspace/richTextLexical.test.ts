@@ -1,10 +1,12 @@
+import { RichTextPdfNode } from './RichTextPdfNode.web';
+import { block8Document } from '../../../../tests/fixtures/block8-content';
 import { LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { HeadingNode } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import type { AssetRef, RichTextDocument } from '@noutynotes/domain';
 import { parseRichTextMarkdown } from '@noutynotes/storage';
-import { $getRoot, createEditor } from 'lexical';
+import { $getRoot, $isParagraphNode, createEditor } from 'lexical';
 import { describe, expect, it, vi } from 'vitest';
 
 import { isBasicRichTextDocument, isNativeRichTextDocument, isWebRichTextDocument } from './basicRichText';
@@ -12,6 +14,7 @@ import { RichTextImageNode } from './RichTextImageNode.web';
 import { RichTextRetiredImageNode } from './RichTextRetiredImageNode.web';
 import { removedImageDocument } from '../../../../tests/fixtures/removed-image-blocks';
 import { $loadBasicRichTextDocument, $loadWebRichTextDocument, $readBasicRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
+vi.mock('./ContentResources', () => ({ PdfBlockView: () => null }));
 
 // Este test ejercita el adaptador Lexical sin renderizar React Native. El nodo de
 // imagen comparte componente con la UI web y consulta el tema al decorarse; aislar
@@ -249,4 +252,14 @@ describe('adaptador Lexical de UX7 P04/P07', () => {
 
     expect(read).toEqual(tableDocument);
   });
+});
+
+it('PDF4 con vecinos y retirada sobrevive al transporte Lexical real y edicion vecina', () => {
+  const editor = createEditor({ namespace: 'block8', nodes: [RichTextPdfNode, RichTextRetiredImageNode], onError: (error) => { throw error; } });
+  editor.update(() => $loadWebRichTextDocument(block8Document), { discrete: true });
+  expect(editor.getEditorState().read(() => $readWebRichTextDocument(4))).toEqual(block8Document);
+  editor.update(() => { const paragraph = $getRoot().getFirstChild(); if ($isParagraphNode(paragraph)) paragraph.getFirstChild<import('lexical').TextNode>()?.setTextContent('Editado'); }, { discrete: true });
+  const actual = editor.getEditorState().read(() => $readWebRichTextDocument(4));
+  expect(actual?.schemaVersion).toBe(4);
+  expect(actual?.blocks.slice(1)).toEqual(block8Document.blocks.slice(1));
 });

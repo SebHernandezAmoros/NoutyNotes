@@ -1,3 +1,4 @@
+import { useContentResources } from './ContentResources';
 import {
   addAssetToBoard, addDocumentToBoard, assetKind, assetsOf, buildAssetCatalog, deleteUnusedAssets, fold, importAssetImage, importLibraryFile, importLibraryFont, inspectFont, inspectImage, replaceAsset,
 } from '@noutynotes/application';
@@ -63,6 +64,7 @@ const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round
  * nada usa.
  */
 export function AssetsView({ active, compact, workspace, run, placement, onAdded, onGo, onBack, preferences, onPreferencesChange }: AssetsViewProps) {
+  const contentResources = useContentResources();
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -260,7 +262,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       setProblem(read.issues[0]?.message ?? t('assets.error.readFailed', locale));
       return;
     }
-    const activated = await activateCustomFont(entry.ref, read.value);
+    const activated = await activateCustomFont(entry.ref, read.value, workspace.id);
     if (!activated) {
       setProblem(t('assets.font.activateFailed', locale));
       return;
@@ -333,6 +335,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
 
   const detail = current ? (
     <View testID="asset-detail" style={[styles.detail, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      {Platform.OS === 'web' && current.kind === 'image' && !current.missing ? <ActionButton label={t('content.openImage', locale)} onPress={() => contentResources.openImage(current.ref, current.name)} /> : null}
       <Text accessibilityRole="header" style={[styles.name, { color: colors.textPrimary }]}>{current.name}</Text>
       {thumbs.get(current.ref) ? (
         <Image accessibilityRole="image" accessibilityLabel={t('assets.preview.accessibilityLabel', locale, { name: current.name })} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
@@ -419,6 +422,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       ) : (
         <>
           {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
+          <Text style={{ color: colors.textSecondary }}>{t('content.libraryLimit', locale)}</Text>
           <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
             <ActionButton label={t('assets.import.image', locale)} tone="primary" accessibilityLabel={t('assets.import.image.accessibilityLabel', locale)} onPress={() => void importImage()} />
             {supportsFileImport() ? <ActionButton label={t('assets.import.file', locale)} accessibilityLabel={t('assets.import.file.accessibilityLabel', locale)} onPress={() => void importFile()} /> : null}

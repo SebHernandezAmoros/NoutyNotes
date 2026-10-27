@@ -1,3 +1,4 @@
+import { useContentResources } from './ContentResources';
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { PrintEntry } from '@noutynotes/application';
 import type { CaptionPosition, RichTextImage } from '@noutynotes/domain';
@@ -46,6 +47,7 @@ export function PresentationBody({ entry, images, color, fontSize, lineHeight, t
   readonly lineHeight: number;
   readonly testID: string;
 }) {
+  const fontFamily = useContentResources().fontFor({ id: entry.id, typeId: 'nota' as import('@noutynotes/domain').CardTypeId, fields: {}, ...(entry.noteFont ? { noteFont: entry.noteFont } : {}) });
   const position = entry.captionPosition ?? 'bottom';
   // Cuerpo HTML seguro (ADR 0066): el documento ya está parseado, no hay `content` Markdown que volver
   // a interpretar (quedaría vacío y perdería la estructura real, defecto ya corregido en esta intervención).
@@ -57,7 +59,7 @@ export function PresentationBody({ entry, images, color, fontSize, lineHeight, t
       if (block.type === 'image') return imageBlock(block.assetRef, block.alt, images, position, color, `block-${index}`, block);
       return (
         <BasicRichTextPreview key={`block-${index}`} document={{ schemaVersion: parsed.value.schemaVersion, blocks: [block] }}
-          numberOfLines={UNBOUNDED_LINES} color={color as string} fontSize={fontSize} lineHeight={lineHeight} testID={`${testID}-block-${index}`} />
+          fontFamily={fontFamily} numberOfLines={UNBOUNDED_LINES} color={color as string} fontSize={fontSize} lineHeight={lineHeight} testID={`${testID}-block-${index}`} />
       );
     });
     return <View testID={testID} style={styles.wrap}>{[...standalone, ...body]}</View>;

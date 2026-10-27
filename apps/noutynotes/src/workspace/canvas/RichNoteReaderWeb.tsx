@@ -1,7 +1,8 @@
+import { PdfBlockView } from '../ContentResources';
 import type { CaptionPosition, ImageFit, RichTextDocument, RichTextInline, RichTextList, TextSize } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale } from '@noutynotes/ui';
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode, UIEvent } from 'react';
 
 import { t } from '../../i18n';
@@ -32,6 +33,7 @@ function listItemCount(list: RichTextList): number {
 }
 
 function estimatedHeight(block: RichTextBlock, lineHeight: number): number {
+  if (block.type === 'pdf') return 84;
   if (block.type === 'retired-image') return 24 + (2 + Math.ceil((block.alt.length + inlineText(block.caption ?? []).length) / 42)) * lineHeight;
   if (block.type === 'image') return IMAGE_HEIGHT + (resolveImageReading(block).caption.length > 0 ? Math.max(24, lineHeight + 6) : 0) + 8;
   if (block.type === 'table') return ((block.header ? 1 : 0) + block.rows.length) * Math.max(34, lineHeight + 8) + 8;
@@ -63,8 +65,10 @@ function blockNode(block: RichTextBlock, index: number, props: {
   readonly captionPosition: CaptionPosition;
   readonly imageFit: ImageFit;
   readonly locale: Locale;
+  readonly color?: string | undefined;
 }) {
   const common = { margin: 0 } satisfies CSSProperties;
+  if (block.type === 'pdf') return <PdfBlockView block={block} color={props.color} />;
   if (block.type === 'retired-image') return <RetiredImageBlock block={block} testID={`${props.testID}-retired-${index}`} />;
   if (block.type === 'paragraph') return <p style={{ ...common, textAlign: block.alignment ?? 'left' }}>{inlineNodes(block.content, `${index}`)}</p>;
   if (block.type === 'heading') {
@@ -132,14 +136,18 @@ export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, ima
     const node = event.currentTarget;
     setWindow((current) => current.top === node.scrollTop && current.height === node.clientHeight ? current : { top: node.scrollTop, height: node.clientHeight });
   };
+  const navigation = useRef(0);
+  useEffect(() => () => { navigation.current += 1; }, [document, fontFamily]);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const node = event.currentTarget;
+    const request = ++navigation.current;
     const delta = event.key === 'ArrowDown' ? lineHeight : event.key === 'ArrowUp' ? -lineHeight
       : event.key === 'PageDown' ? node.clientHeight : event.key === 'PageUp' ? -node.clientHeight : 0;
     if (event.key === 'Home' || event.key === 'End' || delta !== 0) event.preventDefault();
     if (event.key === 'Home') node.scrollTop = 0;
     else if (event.key === 'End') {
       const settleAtEnd = (remaining: number) => requestAnimationFrame(() => {
+        if (navigation.current !== request) return;
         node.scrollTop = node.scrollHeight;
         if (remaining > 0) settleAtEnd(remaining - 1);
       });
@@ -154,13 +162,15 @@ export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, ima
       aria-label="Contenido completo de la nota"
       tabIndex={0}
       onScroll={onScroll}
+      onPointerDown={() => { navigation.current += 1; }}
+      onWheel={() => { navigation.current += 1; }}
       onKeyDown={onKeyDown}
       style={{ width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden', color: color ?? theme.colors.cardText, fontFamily, fontSize, lineHeight: `${lineHeight}px`, overscrollBehavior: 'contain' }}
     >
       <div aria-hidden="true" style={{ height: metrics[start] }} />
       {document.blocks.slice(start, end).map((block, relativeIndex) => {
         const index = start + relativeIndex;
-        return <div key={index} data-testid={`${testID}-block-${index}`} style={{ minHeight: estimatedHeight(block, lineHeight), paddingBottom: 4, boxSizing: 'border-box' }}>{blockNode(block, index, { document, imageResources, testID, captionPosition, imageFit, locale })}</div>;
+        return <div key={index} data-testid={`${testID}-block-${index}`} style={{ minHeight: estimatedHeight(block, lineHeight), paddingBottom: 4, boxSizing: 'border-box' }}>{blockNode(block, index, { document, imageResources, testID, captionPosition, imageFit, locale, color })}</div>;
       })}
       <div aria-hidden="true" style={{ height: metrics[document.blocks.length]! - metrics[end]! }} />
     </div>

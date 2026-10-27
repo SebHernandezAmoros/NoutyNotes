@@ -28,6 +28,7 @@ function supportsWebTable(table: Extract<RichTextDocument['blocks'][number], { r
 /** Alcance visual web de P07. Android conserva el subconjunto básico de P05. */
 export function isWebRichTextDocument(document: RichTextDocument): boolean {
   return document.blocks.every((block) => {
+    if (block.type === 'pdf') return true;
     if (block.type === 'retired-image') return (block.caption ?? []).every(supportsWebInline);
     if (block.type === 'paragraph' || block.type === 'heading') return block.content.every(supportsWebInline);
     if (block.type === 'list') return supportsWebList(block);
@@ -38,8 +39,8 @@ export function isWebRichTextDocument(document: RichTextDocument): boolean {
 
 /** Android edita el subconjunto básico y muestra sin transformar el alcance web avanzado. */
 export function isNativeRichTextDocument(document: RichTextDocument): boolean {
-  return document.blocks.every((block) => block.type === 'opaque-markdown'
-    || isWebRichTextDocument({ schemaVersion: document.schemaVersion, blocks: [block] }));
+  return document.blocks.every((block) => block.type !== 'pdf' && (block.type === 'opaque-markdown'
+    || isWebRichTextDocument({ schemaVersion: document.schemaVersion, blocks: [block] })));
 }
 
 /**

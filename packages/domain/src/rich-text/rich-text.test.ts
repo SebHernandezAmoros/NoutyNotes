@@ -140,7 +140,7 @@ describe('RichTextDocument (ADR 0053, UX7 P02)', () => {
   });
 
   it.each([
-    ['versión desconocida', { schemaVersion: 4 }, 'unsupported-schema-version@document.schemaVersion'],
+    ['versión desconocida', { schemaVersion: 5 }, 'unsupported-schema-version@document.schemaVersion'],
     ['documento sin bloques', { blocks: [] }, 'invalid-value@document.blocks'],
     ['nivel de encabezado', { blocks: [{ type: 'heading', level: 7, content: [] }] }, 'invalid-value@document.blocks[0].level'],
     ['marca desconocida', { blocks: [{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: ['underline'] }] }] }, 'invalid-value@document.blocks[0].content[0].marks[0]'],

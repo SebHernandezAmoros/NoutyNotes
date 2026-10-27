@@ -262,6 +262,15 @@ function parseList(node: HtmlNode): RichTextList {
 }
 
 function parseFigure(node: HtmlNode): RichTextBlock {
+  if (node.attrs['data-nouty-pdf-ref'] !== undefined) {
+    exactAttrs(node, ['data-nouty-pdf-ref']);
+    const children = nodesOnly(node.children, 'html.figure');
+    if (children.length > 1 || (children[0] && children[0].tag !== 'figcaption')) throw new HtmlCodecError('html.figure', 'PDF descriptor invalid.');
+    const caption = children[0];
+    if (caption) exactAttrs(caption, []);
+    if (caption?.children.some((child) => typeof child !== 'string')) throw new HtmlCodecError('html.figcaption', 'PDF label must be plain text.');
+    return { type: 'pdf', assetRef: node.attrs['data-nouty-pdf-ref'] as AssetRef, ...(caption ? { label: caption.children.join('') } : {}) };
+  }
   const retired = node.attrs['data-nouty-resource-state'] !== undefined;
   exactAttrs(node, ['data-nouty-image-size', 'data-nouty-image-align', 'data-nouty-image-caption-policy', 'data-nouty-image-accessibility-intent',
     ...(retired ? ['data-nouty-resource-state', 'data-nouty-resource-kind', 'data-nouty-retired-alt'] : [])]);
@@ -374,14 +383,14 @@ function parseBlock(node: HtmlNode): RichTextBlock {
 
 /** El contenedor durable proporciona versión; HTML suelto infiere solo el mínimo requerido. */
 export function parseRichTextHtml(html: string, contentVersion?: number): RichTextCodecResult<RichTextDocument> {
-  if (contentVersion !== undefined && contentVersion !== 1 && contentVersion !== HTML_CONTENT_VERSION && contentVersion !== RETIRED_IMAGE_SCHEMA_VERSION) {
-    return failure('html.contentVersion', 'Solo se admiten HTML v1, v2 y v3.', 'unsupported-schema-version');
+  if (contentVersion !== undefined && contentVersion !== 1 && contentVersion !== HTML_CONTENT_VERSION && contentVersion !== RETIRED_IMAGE_SCHEMA_VERSION && contentVersion !== 4) {
+    return failure('html.contentVersion', 'Solo se admiten HTML v1, v2, v3 y v4.', 'unsupported-schema-version');
   }
   try {
     const blocks = nodesOnly(parseFragment(html), 'html').map(parseBlock);
     if (blocks.length === 0) throw new HtmlCodecError('html', 'El documento debe contener al menos un bloque.');
     const hasPolicy = blocks.some((block) => block.type === 'image' && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined));
-    const schemaVersion = contentVersion === 3 || (contentVersion === undefined && blocks.some((block) => block.type === 'retired-image')) ? RETIRED_IMAGE_SCHEMA_VERSION
+    const schemaVersion = contentVersion === 4 || (contentVersion === undefined && blocks.some((block) => block.type === 'pdf')) ? 4 : contentVersion === 3 || (contentVersion === undefined && blocks.some((block) => block.type === 'retired-image')) ? RETIRED_IMAGE_SCHEMA_VERSION
       : contentVersion === 1 ? LEGACY_RICH_TEXT_SCHEMA_VERSION
       : contentVersion === 2 || hasPolicy ? RICH_TEXT_SCHEMA_VERSION : LEGACY_RICH_TEXT_SCHEMA_VERSION;
     return normalizeRichTextDocument({ schemaVersion, blocks });
@@ -434,6 +443,7 @@ function serializeBlock(block: RichTextBlock, index: number): string {
     ? ` data-nouty-align="${block.alignment}"`
     : '';
   switch (block.type) {
+    case 'pdf': return `<figure data-nouty-pdf-ref="${escapeAttribute(block.assetRef)}">${block.label === undefined ? '' : `<figcaption>${escapeText(block.label)}</figcaption>`}</figure>`;
     case 'paragraph': return `<p${alignment}>${serializeInlines(block.content)}</p>`;
     case 'heading': return `<h${block.level}${alignment}>${serializeInlines(block.content)}</h${block.level}>`;
     case 'list': return serializeList(block);

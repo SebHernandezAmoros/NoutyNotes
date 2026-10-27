@@ -1,3 +1,4 @@
+import { useContentResources } from './ContentResources';
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { RichTextCodec } from '@noutynotes/application';
 import { cardContentPresentation, cardTitleText, isFloatingTextCard, resolveCardImageFit, richTextInlineText } from '@noutynotes/domain';
@@ -162,6 +163,7 @@ interface CardViewProps {
 }
 
 function CardView({ box, card, image, base, imageResource, noteImageResources, selected, onPress, richTextCodec }: CardViewProps) {
+  const family = useContentResources().fontFor(card);
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -186,7 +188,7 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
   const blocks = image || floatingText || shape || connector || htmlAuthored ? [] : parseNoteBlocks(legacyPreviewContent);
   const mixedLegacy = blocks.some((block) => block.kind === 'image');
   const richDocument = image || floatingText || shape || connector ? null : (card.contentDocument ?? parseWebRichText(richTextCodec, card.content ?? ''));
-  const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => block.type === 'image') ?? false);
+  const hasImageBlock = htmlAuthored && (richDocument?.blocks.some((block) => (block.type === 'image' || block.type === 'pdf')) ?? false);
   const mixed = mixedLegacy || hasImageBlock;
   const mixedRich = (mixedLegacy && (richDocument?.blocks.some((block) => block.type === 'table') ?? false)) || hasImageBlock;
   // Tamaño semántico por ficha (ADR 0050): mismo mapa que el lienzo y la impresión.
@@ -196,7 +198,10 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
   return (
     <Pressable
       testID={`card-${card.id}`}
-      accessibilityRole="button"
+        focusable
+      accessibilityRole={Platform.OS === 'web' && mixedRich ? undefined : 'button'}
+      {...(Platform.OS === 'web' && mixedRich ? { role: 'group' as const } : {})}
+        {...(Platform.OS === 'web' && mixedRich ? { onKeyDown: (event: { key: string; target: unknown; currentTarget: unknown; preventDefault(): void }) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onPress(); } } } : {})}
       accessibilityLabel={`Tarjeta ${cardTitle(card, locale)}${card.primaryResourceState ? `. ${t('card.resourceRetired', locale)}` : ''}`}
       accessibilityState={{ selected }}
       {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
@@ -235,9 +240,9 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
           <ConnectorPreview card={card} surface={colors.note} strokeFallback={colors.border} testID={`list-connector-${card.id}`} />
         </View>
       ) : mixedRich && richDocument ? (
-        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} imageResources={noteImageResources} width={box.width} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} onOpenDocument={onPress} />
+        <RichNotePreview testID={`list-rich-note-preview-${card.id}`} document={richDocument} imageResources={noteImageResources} width={box.width} height={bodyHeight} fontFamily={family} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} onOpenDocument={onPress} />
       ) : mixed ? (
-        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} imageResources={noteImageResources} width={box.width} height={bodyHeight} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} />
+        <NotePreview testID={`list-note-preview-${card.id}`} blocks={blocks} imageResources={noteImageResources} width={box.width} height={bodyHeight} fontFamily={family} bodySize={card.bodySize} captionPosition={card.captionPosition} imageFit={imageFit} banner={presentation.layout === 'banner'} />
       ) : richDocument ? (
         <BasicRichTextPreview
           document={richDocument}
@@ -245,7 +250,7 @@ function CardView({ box, card, image, base, imageResource, noteImageResources, s
           color={textColor}
           fontSize={bodySize}
           lineHeight={bodyLine}
-          testID={`list-rich-text-${card.id}`}
+          fontFamily={family} testID={`list-rich-text-${card.id}`}
         />
       ) : (
         <Text numberOfLines={Math.max(1, Math.floor(bodyHeight / bodyLine))} style={[styles.cardContent, { color: textColor, fontSize: bodySize, lineHeight: bodyLine }]}>

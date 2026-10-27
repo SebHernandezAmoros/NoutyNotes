@@ -1,3 +1,5 @@
+import type { Locale } from '@noutynotes/ui';
+import { t } from '../i18n';
 /**
  * Documento HTML para imprimir un tablero (ADR 0031), en una pestaña propia. Puro: no toca el DOM ni
  * abre nada; eso lo hace quien lo llama. El contenido de las tarjetas es texto del usuario y nunca se
@@ -6,7 +8,7 @@
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { PrintEntry } from '@noutynotes/application';
 import type { CaptionPosition, RichTextImage, RichTextInline, RichTextTable } from '@noutynotes/domain';
-import { parseRichTextMarkdown, serializeRichTextMarkdown } from '@noutynotes/storage';
+import { parseRichTextMarkdown, serializeRichTextHtml, serializeRichTextMarkdown } from '@noutynotes/storage';
 
 import { markdownExcerpt } from './markdownLists';
 import { bodyFontSize, bodyLineHeight, titleFontSize, titleLineHeight } from './textSizes';
@@ -84,9 +86,12 @@ function bodyHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): strin
     const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref) => imageHtml(ref, '', images, position));
     const body = parsed.value.blocks.map((block) => {
       if (block.type === 'image') return imageHtml(block.assetRef, block.alt, images, position, block);
+      if (block.type === 'pdf') return `<p class="pdf-attachment">PDF: ${escapeHtml(block.label ?? 'PDF')}</p>`;
       if (block.type === 'table') return tableHtml(block);
-      const encoded = serializeRichTextMarkdown({ schemaVersion: parsed.value.schemaVersion, blocks: [block] });
-      return encoded.ok ? textHtml(encoded.value, bodyPx, bodyLine) : '';
+      const semantic = parsed.value.schemaVersion === 4 || entry.noteFont !== undefined;
+      const encoded = (semantic ? serializeRichTextHtml : serializeRichTextMarkdown)({ schemaVersion: parsed.value.schemaVersion, blocks: [block] });
+      if (!semantic) return encoded.ok ? textHtml(encoded.value, bodyPx, bodyLine) : '';
+      return encoded.ok ? `<div style="font-size:${bodyPx}px;line-height:${bodyLine}px">${encoded.value}</div>` : '<p>Unsupported content</p>';
     });
     return [...standalone, ...body].join('');
   }
@@ -97,7 +102,7 @@ function bodyHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): strin
   return [...standalone, ...body].join('');
 }
 
-function entryHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): string {
+function entryHtml(entry: PrintEntry, images: ReadonlyMap<string, string>, family: string, fallback: string): string {
   const tags = entry.tags.length > 0
     ? `<p class="tags">${entry.tags.map((tag) => `#${escapeHtml(tag)}`).join(' ')}</p>` : '';
   const connections = entry.connections.length > 0
@@ -134,16 +139,25 @@ function entryHtml(entry: PrintEntry, images: ReadonlyMap<string, string>): stri
     <article class="entry">
       <p class="meta">${entry.number}. ${escapeHtml(entry.typeLabel)}</p>
       <h2 style="font-size:${titlePx}px;line-height:${titleLine}px;">${escapeHtml(entry.title)}</h2>
-      ${bodyHtml(entry, images)}
+      <div style="font-family:${escapeHtml(family)}">${fallback}${bodyHtml(entry, images)}</div>
       ${tags}
       ${connections}
     </article>`;
 }
 
 /** Documento completo, listo para `document.write` en una pestaña nueva y `print()`. */
-export function buildPrintHtml(boardTitle: string, entries: readonly PrintEntry[], images: ReadonlyMap<string, string>): string {
+export function buildPrintHtml(boardTitle: string, entries: readonly PrintEntry[], images: ReadonlyMap<string, string>, options: { readonly fonts?: ReadonlyMap<string, string>; readonly inheritedFont?: string | undefined; readonly locale?: Locale } = {}): string {
+  const faces = [...(options.fonts ?? new Map<string, string>())].filter(([, uri]) => /^data:font\/(ttf|otf|woff2);base64,[A-Za-z0-9+/=]+$/.test(uri));
+  const fontNames = new Map(faces.map(([ref], index) => [ref, 'noty-print-' + index]));
+  const fontCss = faces.map(([, uri], index) => '@font-face{font-family:noty-print-' + index + ';src:url("' + uri + '")}').join('');
   const body = entries.length > 0
-    ? entries.map((entry) => entryHtml(entry, images)).join('')
+    ? entries.map((entry) => {
+      const font = entry.noteFont;
+      const family = font?.kind === 'asset' ? fontNames.get(font.assetRef) ?? 'system-ui,sans-serif'
+        : font?.family === 'serif' ? 'Georgia,serif' : font?.family === 'mono' ? 'monospace' : font?.family === 'system' ? 'system-ui,sans-serif' : options.inheritedFont ?? 'Georgia,serif';
+      const fallback = font?.kind === 'asset' && !fontNames.has(font.assetRef) ? '<p role="status">' + escapeHtml(t('content.fontFallback', options.locale ?? 'es')) + '</p>' : '';
+      return entryHtml(entry, images, family, fallback);
+    }).join('')
     : '<p class="empty">Este tablero no tiene tarjetas para imprimir.</p>';
   return `<!doctype html>
 <html lang="es">
@@ -151,6 +165,8 @@ export function buildPrintHtml(boardTitle: string, entries: readonly PrintEntry[
 <meta charset="utf-8" />
 <title>${escapeHtml(boardTitle)}</title>
 <style>
+${fontCss}
+[data-nouty-align="center"]{text-align:center}[data-nouty-align="right"]{text-align:right}[data-nouty-align="justify"]{text-align:justify}
   body { font-family: Georgia, "Times New Roman", serif; color: #1e1f1a; max-width: 720px; margin: 0 auto; padding: 24px; }
   h1 { font-size: 22px; }
   .entry { page-break-inside: avoid; margin-bottom: 28px; border-bottom: 1px solid #ccc; padding-bottom: 16px; }

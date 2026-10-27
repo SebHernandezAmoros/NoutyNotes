@@ -1,3 +1,5 @@
+import { NoteFontPicker } from './NoteFontPicker';
+import { useContentResources } from './ContentResources';
 import { addCardTag, addNoteImage, addNoteImageDocument, assetsOf, connectCards, disconnectCards, editableCardContent, editCardAppearance, editConnectorPath, insertExistingNoteImage, insertExistingNoteImageDocument, removeCardTag, setCardLink, updateConnection, workspaceTags } from '@noutynotes/application';
 import type { DraftSource, DraftValidation, RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { addConnectorDetour, cardContentPresentation, cardIconNames, cardTitleText, connectorArrows, connectorDashes, connectorDirections, createOrthogonalConnectorPath, floatingTextAlignments, floatingTextColors, isFloatingTextCard, linkUrlField, moveConnectorPoint, removeConnectorPoint, resetConnectorPath, shapeFills, shapeKinds, shapeStrokes, shapeStrokeWidths } from '@noutynotes/domain';
@@ -112,7 +114,10 @@ function CardIconChoice({ icon, selected, onPress }: { readonly icon: CardIconNa
  * Editor de la tarjeta seleccionada. Cada botón despacha un caso de uso; los límites y colisiones
  * los decide el motor de grilla y los errores se muestran tal como los devuelve.
  */
-export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, onBodyModeChange, flushPendingText, initialDraft, section: requestedSection, onSectionChange, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily, richTextCodec, htmlCodec, focused = false, onToggleFocus, onOpenBoard, onPickAssetImageRef }: CardInspectorProps) {
+export function CardInspector({ workspace, boardId, card, placement, run, onDraftChange, onBodyModeChange, flushPendingText, initialDraft, section: requestedSection, onSectionChange, onClose, onDisplay, onTrash, onArchive, onSelectMany, inSheet = false, noteImages, noteFontFamily: inheritedFont, richTextCodec, htmlCodec, focused = false, onToggleFocus, onOpenBoard, onPickAssetImageRef }: CardInspectorProps) {
+  const noteFontFamily = useContentResources().fontFor(card, inheritedFont);
+  const fontChange = useRef(0);
+  useEffect(() => () => { fontChange.current += 1; }, [workspace.id, card.id]);
   const { mode } = useWorkspaceSession();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -757,6 +762,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
       {section === 'appearance' ? (
       <>
+      {note ? <NoteFontPicker card={card} onChange={(noteFont) => { const request = ++fontChange.current; void flushPendingText().then((saved) => { if (saved && request === fontChange.current) void run((storage, id) => editCardAppearance(storage, id, card.id, { noteFont }), { label: t('content.noteFont', locale) }, { reactive: true }); }); }} /> : null}
       <View testID="card-icon-picker" style={styles.section}>
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>ICONO</Text>
         <View style={styles.row}>

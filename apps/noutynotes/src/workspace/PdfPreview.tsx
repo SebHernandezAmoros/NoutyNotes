@@ -59,6 +59,13 @@ export function PdfPreview({ state, locale, onClose }: PdfPreviewProps) {
             <Text accessibilityRole="header" numberOfLines={1} style={[styles.title, { color: colors.textPrimary }]}>{state.name}</Text>
             <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
           </View>
+          {state.status === 'ready' && Platform.OS === 'web' ? <View style={{ paddingHorizontal: 12, gap: 6 }}>
+            <Text style={{ color: colors.textSecondary }}>{t('content.pdfFallback', locale)}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <a href={state.url} target="_blank" rel="noopener noreferrer" style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', color: colors.textPrimary }}>{t('content.pdfNewTab', locale)}</a>
+              <a href={state.url} download={`${state.name.replace(/[\\/:*?"<>|]/g, '_').replace(/\.pdf$/i, '') || 'document'}.pdf`} style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', color: colors.textPrimary }}>{t('content.pdfDownload', locale)}</a>
+            </View>
+          </View> : null}
           <View style={styles.body}>
             {state.status === 'loading' ? (
               <Text testID="asset-pdf-preview-loading" style={[styles.message, { color: colors.textSecondary }]}>{t('assets.pdf.preview.loading', locale)}</Text>

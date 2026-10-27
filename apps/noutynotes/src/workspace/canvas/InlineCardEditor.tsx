@@ -1,3 +1,4 @@
+import { useContentResources } from '../ContentResources';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { cardTitleText } from '@noutynotes/domain';
 import type { AssetRef, Card, CardId, RichTextDocument, RichTextImage } from '@noutynotes/domain';
@@ -40,7 +41,8 @@ export interface InlineCardEditorProps {
 }
 
 /** Edición breve colocada sobre la ficha; las propiedades avanzadas siguen en el editor completo. */
-export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily, noteImages, initialDraft, onDraftChange, onSave, onPickAssetImageRef, onPlaceImageDocument, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
+export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily: inheritedFont, noteImages, initialDraft, onDraftChange, onSave, onPickAssetImageRef, onPlaceImageDocument, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
+  const noteFontFamily = useContentResources().fontFor(card, inheritedFont);
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -211,7 +213,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
             onPress={() => setToolsCollapsed((collapsed) => !collapsed)}
             style={[styles.toolsToggle, { borderColor: colors.border }]}
           >
-            <Text style={[styles.toolsToggleText, { color: colors.cardText }]}>{toolsCollapsed ? '+ Mostrar herramientas' : '− Ocultar herramientas'}</Text>
+            <Text style={[styles.toolsToggleText, { color: colors.cardText }]}>{`${toolsCollapsed ? '+' : '\u2212'} ${t(toolsCollapsed ? 'inline.toolbar.show' : 'inline.toolbar.hide', locale)}`}</Text>
           </Pressable>
         </View>
       ) : null}

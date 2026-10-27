@@ -16,6 +16,7 @@ const statusKeys: Record<AssetReferenceStatus, TranslationKey> = {
   partial: 'assets.references.partial', error: 'assets.references.error', unsupported: 'assets.references.unsupported',
 };
 const kindKeys: Record<AssetReferenceKind, TranslationKey> = {
+  'pdf-block': 'content.refs.pdf', 'note-font': 'content.refs.font',
   'rich-image': 'assets.references.richImage', 'markdown-image': 'assets.references.markdownImage',
   'image-card': 'assets.references.imageCard', 'document-card': 'assets.references.documentCard',
   'asset-field': 'assets.references.field', 'asset-ref': 'assets.references.attachment', 'unknown-field': 'assets.references.unknownField',

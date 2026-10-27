@@ -1,3 +1,4 @@
+import { $createRichTextPdfNode, $isRichTextPdfNode } from './RichTextPdfNode.web';
 import { $createLinkNode, $isLinkNode } from '@lexical/link';
 import { $createListItemNode, $createListNode, $isListItemNode, $isListNode } from '@lexical/list';
 import type { ListNode, ListType } from '@lexical/list';
@@ -100,6 +101,7 @@ export function $createWebRichTextNodes(document: RichTextDocument): LexicalNode
       return heading;
     }
     if (block.type === 'list') return createList(block);
+    if (block.type === 'pdf') return $createRichTextPdfNode(block);
     if (block.type === 'image') return $createRichTextImageNode(block);
     if (block.type === 'retired-image') return $createRichTextRetiredImageNode(block);
     if (block.type === 'table') return createTable(block);
@@ -238,6 +240,7 @@ export function $readWebRichTextDocument(sourceVersion: RichTextDocument['schema
       blocks.push(list);
       continue;
     }
+    if ($isRichTextPdfNode(node)) { blocks.push(node.block()); continue; }
     if ($isRichTextRetiredImageNode(node)) {
       blocks.push(node.block());
       continue;
@@ -255,7 +258,7 @@ export function $readWebRichTextDocument(sourceVersion: RichTextDocument['schema
     return null;
   }
   const hasPolicy = blocks.some((block) => block.type === 'image' && (block.captionPolicy !== undefined || block.accessibilityIntent !== undefined));
-  return { schemaVersion: sourceVersion === RETIRED_IMAGE_SCHEMA_VERSION || blocks.some((block) => block.type === 'retired-image') ? RETIRED_IMAGE_SCHEMA_VERSION : hasPolicy ? RICH_TEXT_SCHEMA_VERSION : sourceVersion, blocks: blocks.length === 0 ? [{ type: 'paragraph', content: [] }] : blocks };
+  return { schemaVersion: sourceVersion === 4 || blocks.some((block) => block.type === 'pdf') ? 4 : sourceVersion === RETIRED_IMAGE_SCHEMA_VERSION || blocks.some((block) => block.type === 'retired-image') ? RETIRED_IMAGE_SCHEMA_VERSION : hasPolicy ? RICH_TEXT_SCHEMA_VERSION : sourceVersion, blocks: blocks.length === 0 ? [{ type: 'paragraph', content: [] }] : blocks };
 }
 
 /** Debe ejecutarse dentro de `editor.update`. */

@@ -1,3 +1,5 @@
+import { loadPrintFonts } from './printFonts';
+import { ContentResourcesProvider } from './ContentResources';
 import { isEditorialTarget } from './canvas/cardInteraction';
 import {
   PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, addNoteImage, addNoteImageDocument, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardAppearance, editCardContent, editConnectorPath, importImageCard, importImageCardAt, insertExistingNoteImage, insertExistingNoteImageDocument,
@@ -269,7 +271,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // activar al abrir este workspace si la preferencia la sigue señalando. Si el archivo ya no está, se
   // queda sin activar y `noteFontFamily` cae a la reserva del sistema por diseño; no es un error.
   const customFontRef = preferences.noteFont === 'custom' ? preferences.customFontRef : null;
-  const customFontFamily = customFontRef ? customFontFamilyName(customFontRef) : undefined;
+  const customFontFamily = customFontRef ? customFontFamilyName(customFontRef, workspace?.id ?? '') : undefined;
   const workspaceIdForFont = workspace?.id ?? null;
   const customFontKey = workspaceIdForFont && customFontRef ? `${workspaceIdForFont}:${customFontRef}` : null;
   const customFontAssets = workspaceIdForFont ? assetsOf(session.storage) : null;
@@ -293,7 +295,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         setCustomFontActivation({ key: customFontKey, status: 'missing' });
         return;
       }
-      void activateCustomFont(customFontRef, read.value).then((activated) => {
+      void activateCustomFont(customFontRef, read.value, workspaceIdForFont).then((activated) => {
         if (active) setCustomFontActivation({ key: customFontKey, status: activated ? 'active' : 'failed' });
       });
     });
@@ -1380,10 +1382,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       setFeedback({ tone: 'error', text: 'El navegador bloqueó la pestaña de impresión. Permite las ventanas emergentes e inténtalo de nuevo.' });
       return;
     }
-    tab.document.write(html);
-    tab.document.close();
-    tab.focus();
-    tab.print();
+    if (!workspace) { tab.close(); return; }
+    void loadPrintFonts(assetsOf(session.storage), workspace.id, printEntries).then(async (fonts) => {
+      if (tab.closed) return;
+      const output = buildPrintHtml(board.title, printEntries, previews.refs, { fonts, locale, inheritedFont: noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily) });
+      tab.document.write(output); tab.document.close();
+      await Promise.all([...fonts.keys()].map((_, index) => tab.document.fonts.load('16px noty-print-' + index)));
+      await tab.document.fonts.ready;
+      if (!tab.closed) { tab.focus(); tab.print(); }
+    }).catch(() => { if (!tab.closed) tab.close(); setFeedback({ tone: 'error', text: t('content.failed', locale) }); });
   };
   const showArchive = Platform.OS === 'web' && storageMode === 'memory';
   const unexported = workspace ? session.unexported.includes(workspace.id) : false;
@@ -1481,7 +1488,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onSelectMany={boardView === 'canvas' && tool === 'select' ? () => void startMulti([selected.id]) : undefined}
       inSheet={compact}
       noteImages={previews.refs}
-      noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
+      noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontStatus === 'active' ? customFontFamily : undefined)}
       richTextCodec={markdownRichTextCodec}
       htmlCodec={htmlRichTextCodec}
       initialDraft={recoveredText?.cardId === selected.id ? recoveredText : undefined}
@@ -1779,7 +1786,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         onAreaSelect={(cardIds) => void startMulti(cardIds)}
         showDates={preferences.showDates}
         hideFrames={preferences.hideFrames}
-        noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily)}
+        noteFontFamily={noteFontFamily(preferences.noteFont, Platform.OS, customFontStatus === 'active' ? customFontFamily : undefined)}
         connectSource={connectSource}
         connectorStart={connectorStart}
         onConnectorTarget={pickConnectorTarget}
@@ -1880,6 +1887,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const onSheetScroll = useRevealFocusedInput(keyboard, sheetScroll);
 
   return (
+    <ContentResourcesProvider inheritedFont={noteFontFamily(preferences.noteFont, Platform.OS, customFontStatus === 'active' ? customFontFamily : undefined)} storage={session.storage} workspace={workspace} onOpenPdf={(ref, name) => { void openPdfPreview({ ref, name }); }}>
     <SafeAreaView testID="workspace-screen" style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.frame, compact ? null : styles.frameRow, typing ? { paddingBottom: Math.max(0, keyboard - insets.bottom) } : null]}>
         {/*
@@ -2297,6 +2305,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
         </>
       ) : null}
     </SafeAreaView>
+    </ContentResourcesProvider>
   );
 }
 

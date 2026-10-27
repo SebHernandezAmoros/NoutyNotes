@@ -32,6 +32,7 @@ export interface PrintEntry {
   /** Tamaño semántico de título/cuerpo (ADR 0050); ausente = `'medium'`, el tamaño de hoy. */
   readonly titleSize?: TextSize;
   readonly bodySize?: TextSize;
+  readonly noteFont?: Card['noteFont'];
   /** Posición de la leyenda de imágenes intercaladas (ADR 0051); ausente = `'bottom'`. */
   readonly captionPosition?: CaptionPosition;
   readonly floatingText?: boolean;
@@ -97,6 +98,7 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
       ...(!floating && presentation.body === 'visible' && card.contentDocument !== undefined ? { contentDocument: card.contentDocument } : {}),
       ...(card.titleSize === undefined ? {} : { titleSize: card.titleSize }),
       ...(card.bodySize === undefined ? {} : { bodySize: card.bodySize }),
+      ...(card.noteFont === undefined ? {} : { noteFont: card.noteFont }),
       ...(card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition }),
       ...(floating ? { floatingText: true as const } : {}),
       ...(card.textAlign === undefined ? {} : { textAlign: card.textAlign }),

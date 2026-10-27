@@ -1,3 +1,4 @@
+import { PdfBlockView } from './ContentResources';
 import type { RichTextDocument, RichTextInline, RichTextList, RichTextTableRow } from '@noutynotes/domain';
 import type { ReactNode } from 'react';
 import { useTheme } from '@noutynotes/ui';
@@ -87,10 +88,11 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
 export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID, width, unclamped }: BasicRichTextPreviewProps) {
   const { theme } = useTheme();
   const projectedDocument = unclamped ? document : projectRichTextPreview(document, numberOfLines, width ?? UNBOUNDED_WIDTH, fontSize).document;
-  if (projectedDocument.blocks.some((block) => block.type === 'table' || block.type === 'retired-image')) {
+  if (projectedDocument.blocks.some((block) => block.type === 'table' || block.type === 'pdf' || block.type === 'retired-image')) {
     return (
       <View testID={testID} style={styles.tableDocument}>
         {projectedDocument.blocks.map((block, blockIndex) => {
+          if (block.type === 'pdf') return <PdfBlockView key={blockIndex} block={block} color={color} />;
           if (block.type === 'retired-image') return <RetiredImageBlock key={blockIndex} block={block} testID={`${testID}-retired-${blockIndex}`} />;
           if (block.type !== 'table') {
             return <BasicRichTextPreview key={blockIndex} document={{ schemaVersion: document.schemaVersion, blocks: [block] }} numberOfLines={numberOfLines}

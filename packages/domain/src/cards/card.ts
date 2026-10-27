@@ -10,7 +10,7 @@ import { collectFieldValueIssues } from './field-values';
 import type { FieldValue } from './field-values';
 import { collectTagIssues } from './tags';
 import { isArchiveInstant } from './trashed-card';
-import { LEGACY_RICH_TEXT_SCHEMA_VERSION, richTextImageRefs, validateRichTextDocument } from '../rich-text/rich-text';
+import { LEGACY_RICH_TEXT_SCHEMA_VERSION, richTextAssetRefs, validateRichTextDocument } from '../rich-text/rich-text';
 import type { RichTextDocument, RichTextInline } from '../rich-text/rich-text';
 import { noteImageRefs } from './note-content';
 
@@ -19,6 +19,10 @@ export interface PrimaryResourceState {
   readonly kind: 'retired';
   readonly resourceKind: 'image' | 'pdf';
 }
+
+export type NoteFontOverride =
+  | { readonly kind: 'builtin'; readonly family: 'system' | 'serif' | 'mono' }
+  | { readonly kind: 'asset'; readonly assetRef: AssetRef };
 
 /**
  * Unidad de contenido. Pertenece al workspace, no a un board: los boards la referencian por ID
@@ -54,6 +58,8 @@ export interface Card {
   readonly titleSize?: TextSize;
   /** Tamaño semántico del cuerpo (ADR 0050); no afecta al título ni al pie. Ausente: `'medium'`. */
   readonly bodySize?: TextSize;
+  /** Absent inherits the device preference; never a CSS family or URL. */
+  readonly noteFont?: NoteFontOverride;
   /** Posición de la leyenda de las imágenes intercaladas (ADR 0051). Ausente: `'bottom'`. */
   readonly captionPosition?: CaptionPosition;
   /** Visibilidad independiente de las dos zonas de una nota unificada (P18-C). */
@@ -258,6 +264,16 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
     issues.push(issue('invalid-value', `${path}.fields`, 'Debe ser un objeto de campos.'));
   }
   collectTagIssues(card.tags, `${path}.tags`, issues);
+  if (card.noteFont !== undefined) {
+    const font = card.noteFont;
+    if (type?.base !== 'note' || !isRecord(font)) issues.push(issue('invalid-value', `${path}.noteFont`, 'Fuente de cuerpo solo para Notas.'));
+    else if (font.kind === 'builtin') {
+      if (!['system', 'serif', 'mono'].includes(font.family as string) || Object.keys(font).some((key) => !['kind', 'family'].includes(key))) issues.push(issue('invalid-value', `${path}.noteFont`, 'Fuente del sistema no admitida.'));
+    } else if (font.kind === 'asset') {
+      checkAssetRef(font.assetRef, `${path}.noteFont.assetRef`, issues);
+      if (typeof font.assetRef !== 'string' || !/^assets\/.+\.(ttf|otf|woff2)$/i.test(font.assetRef) || Object.keys(font).some((key) => !['kind', 'assetRef'].includes(key))) issues.push(issue('invalid-value', `${path}.noteFont`, 'Debe ser un Asset de fuente compatible.'));
+    } else issues.push(issue('invalid-value', `${path}.noteFont`, 'Contrato de fuente no admitido.'));
+  }
   if (card.createdAt !== undefined && !isArchiveInstant(card.createdAt)) {
     issues.push(issue('invalid-value', `${path}.createdAt`, 'Debe ser una fecha y hora ISO 8601 en UTC.'));
   }
@@ -347,7 +363,7 @@ export function collectCardIssues(card: unknown, type: CardTypeDefinition | unde
     const hasAssetField = isRecord(fields) && type?.fields.some((field) => field.kind === 'asset' && fields[field.key] !== undefined);
     if ((Array.isArray(card.assetRefs) && card.assetRefs.length > 0) || hasAssetField
       || (typeof card.content === 'string' && noteImageRefs(card.content).length > 0)
-      || (rich?.ok && richTextImageRefs(rich.value).length > 0)) {
+      || (rich?.ok && richTextAssetRefs(rich.value).length > 0)) {
       issues.push(issue('invalid-value', `${path}.primaryResourceState`, 'Una tarjeta retirada no puede conservar referencias cargables a recursos.'));
     }
   }

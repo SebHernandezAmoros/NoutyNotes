@@ -22,7 +22,7 @@ it('conserva versiones históricas y exige la capacidad nueva para el marcador',
     expect(validateRichTextDocument({ schemaVersion, blocks: [removedImageDocument.blocks[0]] }).ok).toBe(true);
     expect(validateRichTextDocument({ ...removedImageDocument, schemaVersion }).ok).toBe(false);
   }
-  expect(validateRichTextDocument({ ...removedImageDocument, schemaVersion: 4 }).ok).toBe(false);
+  expect(validateRichTextDocument({ ...removedImageDocument, schemaVersion: 5 }).ok).toBe(false);
 });
 
 it('solo enumera referencias de imágenes activas o temporalmente inaccesibles, nunca del marcador', () => {

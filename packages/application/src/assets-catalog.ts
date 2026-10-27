@@ -6,7 +6,7 @@ import { cardTitleText } from '@noutynotes/domain';
 import type { AssetRef, BoardId, Card, CardId, Workspace } from '@noutynotes/domain';
 
 import { fold } from './search';
-import { noteImageRefs, parseNoteBlocks, richTextImageRefs, serializeNoteBlocks } from './note-blocks';
+import { noteImageRefs, parseNoteBlocks, richTextAssetRefs, serializeNoteBlocks } from './note-blocks';
 
 export type AssetKind = 'image' | 'document' | 'audio' | 'font' | 'other';
 
@@ -47,8 +47,8 @@ export function cardAssetRefs(workspace: Workspace, card: Card): string[] {
   const type = workspace.cardTypes.find((candidate) => candidate.id === card.typeId);
   const assetFields = new Set(type?.fields.filter((field) => field.kind === 'asset').map((field) => field.key as string) ?? []);
   const fromFields = Object.entries(card.fields).filter(([key, value]) => assetFields.has(key) && typeof value === 'string').map(([, value]) => value as string);
-  const fromContent = type?.base === 'image' ? [] : [...noteImageRefs(card.content ?? ''), ...richTextImageRefs(card.contentDocument)];
-  return [...new Set([...(card.assetRefs ?? []), ...fromFields, ...fromContent])];
+  const fromContent = type?.base === 'image' ? [] : [...noteImageRefs(card.content ?? ''), ...richTextAssetRefs(card.contentDocument)];
+  return [...new Set([...(card.assetRefs ?? []), ...fromFields, ...fromContent, ...(card.noteFont?.kind === 'asset' ? [card.noteFont.assetRef] : [])])];
 }
 
 const byName = (a: string, b: string) => (fold(a) < fold(b) ? -1 : fold(a) > fold(b) ? 1 : 0);
@@ -84,16 +84,17 @@ function replaceInCard(workspace: Workspace, card: Card, from: string, to: strin
     : card.content;
   const next: Card = { ...card, fields };
   const refs = card.assetRefs ? [...new Set(card.assetRefs.map((ref): AssetRef => (ref === from ? to as AssetRef : ref)))] : undefined;
-  const contentDocument = card.contentDocument?.blocks.some((block) => block.type === 'image' && block.assetRef === from)
+  const contentDocument = card.contentDocument?.blocks.some((block) => (block.type === 'image' || block.type === 'pdf') && block.assetRef === from)
     ? {
         ...card.contentDocument,
-        blocks: card.contentDocument.blocks.map((block) => block.type === 'image' && block.assetRef === from
+        blocks: card.contentDocument.blocks.map((block) => (block.type === 'image' || block.type === 'pdf') && block.assetRef === from
           ? { ...block, assetRef: to as AssetRef }
           : block),
       }
     : card.contentDocument;
   return {
     ...next,
+    ...(card.noteFont?.kind === 'asset' && card.noteFont.assetRef === from ? { noteFont: { ...card.noteFont, assetRef: to as AssetRef } } : {}),
     ...(refs ? { assetRefs: refs } : {}),
     ...(content === undefined ? {} : { content }),
     ...(contentDocument === undefined ? {} : { contentDocument }),
