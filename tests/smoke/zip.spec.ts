@@ -244,7 +244,7 @@ test('los cambios sin exportar no se descartan en silencio al salir ni al abrir 
   await page.addInitScript({ content: `window.showDirectoryPicker = async () => { window.__pickerUsed = true; throw Object.assign(new Error('x'), { name: 'AbortError' }); };` });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear temporalmente', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Pendiente');
   await button(page, 'Crear proyecto').click();
   await expect(page.getByTestId('export-status')).toContainText('CAMBIOS SIN EXPORTAR');
@@ -266,8 +266,8 @@ test('los cambios sin exportar no se descartan en silencio al salir ni al abrir 
   await button(page, 'Abrir proyecto').click();
   await expect.poll(() => questions.length).toBe(1);
   expect(questions[0]?.type).toBe('confirm');
-  expect(questions[0]?.message).toContain('1 espacio del navegador sin exportar');
-  await expect(page.getByRole('alert')).toHaveText('No se abrió la carpeta. Exporta antes como ZIP los espacios marcados «SIN EXPORTAR».');
+  expect(questions[0]?.message).toContain('1 proyecto del navegador sin exportar');
+  await expect(page.getByRole('alert')).toHaveText('No se abrió la carpeta. Exporta antes como ZIP los proyectos marcados «SIN EXPORTAR».');
   expect(await page.evaluate(() => (window as unknown as { __pickerUsed?: boolean }).__pickerUsed ?? false)).toBe(false);
   await expect(page.getByTestId('memory-notice')).toContainText('SOLO EN MEMORIA');
 
@@ -407,7 +407,7 @@ test('ZIP: la imagen importada y la Papelera viajan en el ZIP y vuelven al reimp
   const icon = fileURLToPath(new URL('../../apps/noutynotes/assets/branding/app-icon.png', import.meta.url));
   await page.addInitScript({ content: withoutFolderAccess });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear temporalmente', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Viaje');
   await button(page, 'Crear proyecto').click();
   const chooser = page.waitForEvent('filechooser');

@@ -71,7 +71,8 @@ test('inicio responsive, temas y las acciones activas: crear, carpeta/ZIP y plan
   await expectArrangement(page, modeFor(initialWidth));
   await page.screenshot({ path: testInfo.outputPath('home-initial.png'), fullPage: true });
 
-  await expect(page.getByRole('button', { name: 'Nuevo proyecto', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Crear en carpeta', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Crear temporalmente', exact: true })).toBeEnabled();
   await expect(page.getByTestId('memory-notice')).toContainText('se pierden al recargar o cerrar la pestaña');
   // «Abrir proyecto» depende de File System Access: Chromium debe ofrecerla; sin la API (Firefox,
   // Safari, móviles) queda desactivada con la alternativa ZIP (ADR 0011).
@@ -177,8 +178,8 @@ test('accesibilidad básica: teclado, activación, foco visible y controles tác
   const light = page.getByRole('button', { name: 'Tema claro', exact: true });
   const dark = page.getByRole('button', { name: 'Tema oscuro', exact: true });
   const system = page.getByRole('button', { name: 'Tema sistema', exact: true });
-  const actions = ['Nuevo proyecto', 'Abrir proyecto', 'Usar una plantilla'];
-  const create = page.getByRole('button', { name: 'Nuevo proyecto', exact: true });
+  const actions = ['Crear en carpeta', 'Crear temporalmente', 'Abrir proyecto', 'Usar una plantilla'];
+  const create = page.getByRole('button', { name: 'Crear en carpeta', exact: true });
   const screen = page.getByTestId('home-screen');
   await expect(page.getByRole('heading', { name: /Dale un lugar/ })).toBeVisible();
 
@@ -258,7 +259,8 @@ test('antes de cargar JavaScript no se puede abrir un modal que perdería sus da
   });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('./', { waitUntil: 'commit' });
-  const trigger = page.getByRole('button', { name: 'Nuevo proyecto', exact: true });
+  // Este recorrido crea un laboratorio volátil; no debe simular la autorización de una carpeta.
+  const trigger = page.getByRole('button', { name: 'Crear temporalmente', exact: true });
   await expect(trigger).toBeVisible();
   await expect(trigger).toBeDisabled();
 

@@ -727,7 +727,7 @@ const geometry = (page: Page) => page.getByTestId('card-geometry');
 const cellSize = (page: Page) => ((page.viewportSize()?.width ?? 0) >= at.width ? { x: 48, y: 48 } : { x: 40, y: 40 });
 
 async function createWorkspace(page: Page, name: string) {
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear temporalmente', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill(name);
   await button(page, 'Crear proyecto').click();
   const heading = page.getByRole('heading', { name, exact: true });
