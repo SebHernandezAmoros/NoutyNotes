@@ -1,5 +1,5 @@
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -12,6 +12,8 @@ interface DialogProps {
   readonly title: string;
   /** Móvil: hoja inferior temporal que deja ver el lienzo; escritorio: modal centrado. */
   readonly compact: boolean;
+  /** Variante web centrada para lectura; no cambia las hojas existentes. */
+  readonly presentation?: 'adaptive' | 'centered';
   readonly onClose: () => void;
   readonly testID: string;
   readonly children: ReactNode;
@@ -22,7 +24,7 @@ interface DialogProps {
  * `onRequestClose`) y con toque en el fondo. En móvil ocupa como mucho el 62 % inferior; con el teclado
  * abierto (nativo) se apoya sobre él y puede ocupar todo el alto restante, para que se vea lo que se escribe.
  */
-export function Dialog({ visible, title, compact, onClose, testID, children }: DialogProps) {
+export function Dialog({ visible, title, compact, presentation = 'adaptive', onClose, testID, children }: DialogProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -30,6 +32,8 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
   const scroll = useRef<ScrollView>(null);
   const onScroll = useRevealFocusedInput(keyboard, scroll);
   const typing = compact && keyboard > 0;
+  const centered = Platform.OS === 'web' && presentation === 'centered';
+  const centeredOpener = useRef<{ element: HTMLElement; label: string | null; tag: string } | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !visible) return;
@@ -44,30 +48,72 @@ export function Dialog({ visible, title, compact, onClose, testID, children }: D
   // semántica táctil/de teclado nativo, igual que decidió `CardMenu`), primer elemento enfocable del
   // propio diálogo, y restaura el foco a quien lo abrió al desmontar.
   useEffect(() => {
-    if (compact || Platform.OS !== 'web' || !visible) return;
+    if ((compact && !centered) || Platform.OS !== 'web' || !visible) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const first = requestAnimationFrame(() => {
       document.querySelector<HTMLElement>(`[data-testid="${testID}"] button, [data-testid="${testID}"] input, [data-testid="${testID}"] textarea, [data-testid="${testID}"] [href]`)?.focus();
     });
-    return () => { cancelAnimationFrame(first); opener?.focus(); };
-  }, [compact, visible, testID]);
+    return () => { cancelAnimationFrame(first); if (!centered) opener?.focus(); };
+  }, [compact, centered, visible, testID]);
+
+  useLayoutEffect(() => {
+    if (!centered || !visible) return;
+    // Antes del focus trap pasivo de Modal; después ya puede estar enfocado su botón Cerrar.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    centeredOpener.current = opener ? { element: opener, label: opener.getAttribute('aria-label'), tag: opener.tagName } : null;
+  }, [centered, visible, testID]);
+
+  const restoreCenteredFocus = () => {
+    const opener = centeredOpener.current;
+    centeredOpener.current = null;
+    if (!opener) return;
+    if (opener.element.isConnected && opener.element.getClientRects().length > 0) { opener.element.focus(); return; }
+    // Resize puede reemplazar el botón. Solo restaurar a un equivalente inequívoco.
+    if (opener.label) {
+      const matches = [...document.querySelectorAll<HTMLElement>('[aria-label]')]
+        .filter((element) => element.tagName === opener.tag && element.getAttribute('aria-label') === opener.label && element.getClientRects().length > 0);
+      if (matches.length === 1) matches[0]?.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (!centered || !visible) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const root = document.querySelector<HTMLElement>(`[data-testid="${testID}"]`);
+      if (!root) return;
+      const focusable = [...root.querySelectorAll<HTMLElement>('button, [href], input, textarea, select, [tabindex]')]
+        .filter((element) => element.tabIndex >= 0 && !element.matches(':disabled') && element.getClientRects().length > 0);
+      const first = focusable[0]; const last = focusable.at(-1);
+      if (!first || !last) return;
+      if (!root.contains(document.activeElement) || (event.shiftKey && document.activeElement === first)) {
+        event.preventDefault(); (event.shiftKey ? last : first).focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    window.addEventListener('keydown', onTab, true);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener('keydown', onTab, true); };
+  }, [centered, visible, testID]);
 
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={[styles.backdrop, compact ? styles.backdropCompact : styles.backdropWide, typing ? { paddingBottom: keyboard } : null]}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} onDismiss={centered ? restoreCenteredFocus : undefined}>
+      <View style={[styles.backdrop, centered ? styles.backdropCentered : compact ? styles.backdropCompact : styles.backdropWide, typing ? { paddingBottom: keyboard } : null]}>
         <Pressable accessibilityLabel={`${t('dialog.close', locale)} ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={onClose} />
         <View
           testID={testID}
           accessibilityViewIsModal
           {...(Platform.OS === 'web' ? { role: 'dialog', 'aria-modal': true, 'aria-label': title } : {})}
-          style={[compact ? styles.sheet : styles.panel, typing ? styles.sheetTyping : null, { backgroundColor: colors.background, borderColor: colors.border }]}
+          style={[centered ? styles.centeredPanel : compact ? styles.sheet : styles.panel, typing ? styles.sheetTyping : null, { backgroundColor: colors.background, borderColor: colors.border }]}
         >
           <View style={styles.header}>
             <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
             <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
           </View>
-          <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={[styles.scroll, centered ? styles.centeredScroll : null]} contentContainerStyle={[styles.content, centered ? styles.centeredContent : null]} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>
       </View>
     </Modal>
@@ -116,6 +162,10 @@ const styles = StyleSheet.create({
   // y Firefox medía 43,99 px un botón de 44 (auditoría de 7a).
   backdropWide: { alignItems: 'center', justifyContent: 'flex-start', padding: 24, paddingTop: 48 },
   backdropCompact: { justifyContent: 'flex-end' },
+  backdropCentered: { alignItems: 'center', justifyContent: 'center', padding: 16 },
+  centeredPanel: { width: '100%', maxWidth: 800, maxHeight: '100%', borderWidth: 2, overflow: 'hidden' },
+  centeredScroll: { flexGrow: 0, flexShrink: 1, flexBasis: 'auto' },
+  centeredContent: { paddingBottom: 16 },
   // `overflow: hidden` es necesario (defecto real encontrado al añadir el Centro de recuperación,
   // UX7-SAVE: primer contenido de este diálogo compartido lo bastante alto como para exponerlo): sin
   // él, `maxHeight` acota la caja pero no recorta el contenido — este se derramaba en silencio más

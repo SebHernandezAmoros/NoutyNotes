@@ -8,6 +8,7 @@
 import type { Locale } from '@noutynotes/ui';
 
 export const TRANSLATIONS = {
+  'content.pdfHelp': { es: 'Ayuda del visor', en: 'Viewer help' },
   'content.pdfFallback': { es: 'Si no aparecen las p\u00e1ginas, abre el PDF en otra pesta\u00f1a o desc\u00e1rgalo para leerlo con tu visor.', en: 'If pages do not appear, open the PDF in another tab or download it to read it in your viewer.' },
   'content.pdfNewTab': { es: 'Abrir PDF en otra pesta\u00f1a', en: 'Open PDF in another tab' },
   'content.pdfDownload': { es: 'Descargar PDF', en: 'Download PDF' },

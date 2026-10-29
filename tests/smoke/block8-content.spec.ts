@@ -43,6 +43,7 @@ async function lab(page: Page, options: { readonly font?: 'missing' | 'real'; re
   await page.getByRole('button', { name: 'Importar un ZIP', exact: true }).click();
   await (await chooser).setFiles({ name: 'content.zip', mimeType: 'application/zip', buffer: Buffer.from(zip) });
   await expect(page.getByRole('heading', { name: 'Contenido B8', exact: true })).toBeVisible();
+  return { png };
 }
 async function edit(page: Page) {
   const card = page.getByTestId('card-idea-a');
@@ -114,7 +115,10 @@ test('B8: PDF entre párrafos, apertura explícita, inserción, Undo/Redo y ZIP 
 });
 
 test('B8: visor original de imagen', async ({ page }, info) => {
-  await lab(page);
+  const theme = info.project.name === 'mobile' ? 'dark' : 'light';
+  await page.emulateMedia({ colorScheme: theme });
+  await page.addInitScript((choice) => localStorage.setItem('noutynotes.theme.v1', choice), theme);
+  const { png } = await lab(page);
   const more = page.getByRole('button', { name: 'M\u00e1s secciones', exact: true });
   if (await more.isVisible()) await more.click();
   await page.getByRole('button', { name: 'Abrir los assets', exact: true }).click();
@@ -122,19 +126,109 @@ test('B8: visor original de imagen', async ({ page }, info) => {
   await page.getByRole('button', { name: 'Abrir imagen', exact: true }).click();
   const viewer = page.getByTestId('image-viewer');
   await expect(viewer).toBeVisible();
-  await viewer.getByRole('button', { name: '100%', exact: true }).click();
+  const close = viewer.getByRole('button', { name: 'Cerrar planificador.png', exact: true });
+  await expect(close).toBeFocused();
+  const centered = async () => viewer.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return { x: Math.abs(rect.x + rect.width / 2 - window.innerWidth / 2), y: Math.abs(rect.y + rect.height / 2 - window.innerHeight / 2) };
+  });
+  await expect.poll(async () => (await centered()).y).toBeLessThanOrEqual(2);
+  await expect.poll(async () => (await centered()).x).toBeLessThanOrEqual(2);
   const image = viewer.locator('img');
+  const region = viewer.getByRole('region');
+  const fits = () => image.evaluate((node) => {
+    if (!(node instanceof HTMLImageElement)) return false;
+    const rect = node.getBoundingClientRect(); const parent = node.parentElement!.getBoundingClientRect();
+    return node.naturalWidth > 0 && rect.width > 0 && rect.width <= node.naturalWidth
+      && Math.abs(rect.width / rect.height - node.naturalWidth / node.naturalHeight) < 0.01
+      && rect.left >= parent.left - 1 && rect.right <= parent.right + 1 && rect.top >= parent.top - 1 && rect.bottom <= parent.bottom + 1;
+  });
+  await expect.poll(fits).toBe(true);
+  await page.screenshot({ path: `artifacts/block8-viewer-corrective-${info.project.name}-image.png`, fullPage: true });
+  await page.keyboard.press('Shift+Tab');
+  await expect(region).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await viewer.getByRole('button', { name: '100%', exact: true }).click();
   await expect.poll(() => image.evaluate((node) => node.getBoundingClientRect().width)).toBeGreaterThan(0);
   await page.screenshot({ path: `artifacts/block8-${info.project.name}-image.png`, fullPage: true });
   const originalWidth = await image.evaluate((node) => node.getBoundingClientRect().width);
   await viewer.getByRole('region').focus();
   await page.keyboard.press('+');
   await expect.poll(() => image.evaluate((node) => node.getBoundingClientRect().width)).toBeGreaterThan(originalWidth);
+  for (let index = 0; index < 6; index += 1) await page.keyboard.press('+');
+  await expect.poll(() => region.evaluate((node) => node.scrollHeight - node.clientHeight)).toBeGreaterThan(20);
+  const box = (await region.boundingBox())!;
+  const backgroundScroll = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2 - 50, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBeGreaterThan(20);
+  expect(await page.evaluate(() => window.scrollY)).toBe(backgroundScroll);
+  await viewer.getByRole('button', { name: 'Ajustar', exact: true }).click();
+  await expect.poll(fits).toBe(true);
+  await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBe(0);
+  const originalViewport = page.viewportSize()!;
+  await page.setViewportSize(info.project.name === 'mobile' ? { width: 844, height: 390 } : { width: 768, height: 600 });
+  await expect.poll(fits).toBe(true);
+  await expect.poll(async () => (await centered()).y).toBeLessThanOrEqual(2);
+  await page.setViewportSize(originalViewport);
+  await expect.poll(fits).toBe(true);
+  await expect.poll(async () => (await centered()).y).toBeLessThanOrEqual(2);
+  await region.focus();
   await page.keyboard.press('0');
   await expect.poll(() => image.evaluate((node) => node.getBoundingClientRect().width)).toBeLessThanOrEqual(originalWidth);
   await page.keyboard.press('Escape');
   await expect(viewer).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Abrir imagen', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Abrir imagen', exact: true }).click();
+  await close.click();
+  await expect(viewer).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Abrir imagen', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Volver al tablero', exact: true }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar este espacio como ZIP', exact: true }).click();
+  const downloaded = await downloadPromise;
+  const archive = value(readWorkspaceArchive(new Uint8Array(readFileSync((await downloaded.path())!))));
+  expect(archive.assets[detachmentRef]).toEqual(png);
+  expect(archive.assets[pdfRef]).toEqual(block8PdfBytes());
+});
+
+test('B8 correctivo: PDF de Nota y A4 sin aviso permanente, ayuda explícita y bytes íntegros', async ({ page }, info) => {
+  const theme = info.project.name === 'desktop' ? 'dark' : 'light';
+  await page.emulateMedia({ colorScheme: theme });
+  await page.addInitScript((choice) => localStorage.setItem('noutynotes.theme.v1', choice), theme);
+  await lab(page);
+  for (const source of ['note', 'a4']) {
+    if (source === 'note') await page.getByTestId('card-idea-a').getByRole('button', { name: /PDF.*Manual.*Abrir/ }).click();
+    else {
+      const card = page.getByTestId('card-pdf'); const box = (await card.boundingBox())!;
+      // El centro de esta tarjeta pequeña al50% coincide con la cruz de arrastre B7; abrir desde el cuerpo libre.
+      await card.dblclick({ position: { x: box.width * 0.8, y: box.height * 0.75 } });
+    }
+    const viewer = page.getByTestId('asset-pdf-preview');
+    const frame = viewer.getByTestId('asset-pdf-preview-frame');
+    await expect(frame).toBeVisible();
+    const help = viewer.getByText(/Si no aparecen las páginas/);
+    await expect(help).not.toBeVisible();
+    const url = await frame.getAttribute('src');
+    await expect(viewer.getByRole('link', { name: 'Abrir PDF en otra pestaña', exact: true })).toHaveAttribute('href', url!);
+    await expect(viewer.getByRole('link', { name: 'Abrir PDF en otra pestaña', exact: true })).toHaveAttribute('rel', 'noopener noreferrer');
+    const downloadPromise = page.waitForEvent('download');
+    await viewer.getByRole('link', { name: 'Descargar PDF', exact: true }).click();
+    const downloaded = await downloadPromise;
+    expect(new Uint8Array(readFileSync((await downloaded.path())!))).toEqual(block8PdfBytes());
+    const summary = viewer.locator('summary');
+    await summary.focus(); await summary.press('Enter');
+    await expect(help).toBeVisible();
+    await summary.press('Enter');
+    await expect(help).not.toBeVisible();
+    await expect(frame).toHaveAttribute('src', url!);
+    await page.screenshot({ path: `artifacts/block8-viewer-corrective-${info.project.name}-pdf-${source}.png`, fullPage: true });
+    await viewer.getByRole('button', { name: /^Cerrar vista previa de/ }).click();
+    await expect(viewer).not.toBeVisible();
+  }
 });
 
 test('B8: fuente por Nota persiste y Visual/HTML conserva PDF y formato', async ({ page }, info) => {
