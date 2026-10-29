@@ -1,3 +1,4 @@
+import { SaveProjectToFolder } from '../session/SaveProjectToFolder';
 import { loadPrintFonts } from './printFonts';
 import { ContentResourcesProvider } from './ContentResources';
 import { isEditorialTarget } from './canvas/cardInteraction';
@@ -176,6 +177,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Tarjeta del tablero sin posición a la que se llegó desde la búsqueda: se ofrece colocarla (ADR 0020).
   const [placeOffer, setPlaceOffer] = useState<{ readonly cardId: CardId; readonly boardId: BoardId; readonly title: string } | null>(null);
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [saveFolderOpen, setSaveFolderOpen] = useState(false);
   // Expandir falló por colisión: se ofrece, sin hacerlo por su cuenta, expandir en un hueco libre.
   const [relocateOffer, setRelocateOffer] = useState<CardId | null>(null);
   const [archiveMessage, setArchiveMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(
@@ -1590,6 +1592,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     <View testID="export-bar" style={[styles.exportBar, compact ? styles.exportBarCompact : null, { backgroundColor: colors.surface, borderColor: colors.gridLine }]}>
       <View style={styles.exportRow}>
         {exportStatus}
+        {session.folderSupported ? <ActionButton label={t('folder.copy.action', locale)} onPress={() => setSaveFolderOpen(true)} /> : null}
         {exportButton}
       </View>
       {archiveMessage ? (
@@ -2258,6 +2261,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
           <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} />
+          {saveFolderOpen && workspace ? <SaveProjectToFolder visible id={workspace.id}
+            beforeCopy={async () => await flushPendingText() && await flushWorkspace()}
+            onClose={() => setSaveFolderOpen(false)}
+            onActivate={async (handle, name, summary) => {
+              const activated = await recentConnections.connectSelectedWebFolder(handle, name);
+              if (!activated.ok) return false;
+              recentConnections.recordProjectUse({ workspaceId: summary.id, name: summary.name, backend: 'web', folderId: activated.folderId });
+              return true;
+            }} /> : null}
           <AssetImagePickerDialog
             visible={assetImagePicker.visible}
             compact={compact}

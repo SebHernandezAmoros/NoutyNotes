@@ -4,7 +4,7 @@ import type { WorkspaceStorage, WorkspaceStorageIssue, WorkspaceSummary } from '
 import type { BrowserDirectory } from '../session/folderAccess';
 import type { RecentProjectBackend } from '../session/recentItems';
 
-export type ProjectCreationTarget = {
+export type ProjectCreationTarget = { readonly kind: 'local-pending'; readonly folderName: string } | {
   readonly kind: 'current';
   readonly storage: WorkspaceStorage;
   readonly backend: RecentProjectBackend;
@@ -24,7 +24,7 @@ type ActivateSelectedFolder = (
 
 export type CreateProjectResult =
   | { readonly ok: true; readonly summary: WorkspaceSummary; readonly backend: RecentProjectBackend; readonly folderId: string | null }
-  | { readonly ok: false; readonly stage: 'validation'; readonly reason: 'required' | 'invalid' }
+  | { readonly ok: false; readonly stage: 'validation'; readonly reason: 'required' | 'invalid' | 'destination' }
   | { readonly ok: false; readonly stage: 'create'; readonly issues: readonly WorkspaceStorageIssue[] }
   | { readonly ok: false; readonly stage: 'activate'; readonly created: WorkspaceSummary; readonly message: string };
 
@@ -37,6 +37,7 @@ interface CreateProjectAtTargetInput {
 }
 
 export async function createProjectAtTarget(input: CreateProjectAtTargetInput): Promise<CreateProjectResult> {
+  if (input.target.kind === 'local-pending') return { ok: false, stage: 'validation', reason: 'destination' };
   const name = input.name.trim();
   if (!name) return { ok: false, stage: 'validation', reason: 'required' };
   if (/\p{Cc}/u.test(name)) return { ok: false, stage: 'validation', reason: 'invalid' };

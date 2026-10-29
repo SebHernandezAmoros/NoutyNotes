@@ -11,7 +11,7 @@ test('los handles reales de Chromium guardan y reabren un workspace v1', async (
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   await expect(page.getByTestId('memory-notice')).toContainText('CARPETA LOCAL');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Handle real');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -31,7 +31,7 @@ test('los handles reales de Chromium guardan y reabren un workspace v1', async (
   expect(files.card).toContain('Persistió');
   await page.reload();
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Abrir proyecto' }).click();
+  await page.getByTestId('open-folder').click();
   await page.getByRole('button', { name: 'Abrir el proyecto Handle real' }).click();
   await expect(page.getByTestId('card-tarjeta-1')).toContainText('Persistió');
 });

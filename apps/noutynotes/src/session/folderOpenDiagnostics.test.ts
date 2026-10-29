@@ -52,13 +52,35 @@ it('AbortError después de obtener handle es fallo de lectura, no cancelación d
 });
 
 it('invoca el picker inmediatamente y conserva exactamente el handle; reconexión solicita permiso solo si hace falta', async () => {
-  const root = { name: 'lab', kind: 'directory', queryPermission: vi.fn(async () => 'prompt'), requestPermission: vi.fn(async () => 'denied') } as unknown as BrowserDirectory;
+  const root = { name: 'lab', kind: 'directory', entries: async function* () {}, queryPermission: vi.fn(async () => 'granted'), requestPermission: vi.fn(async () => 'denied') } as unknown as BrowserDirectory;
   const picker = vi.fn(async () => root); vi.stubGlobal('showDirectoryPicker', picker);
   const promise = chooseFolder();
-  expect(picker).toHaveBeenCalledWith({ mode: 'readwrite' });
+  expect(picker).toHaveBeenCalledWith({ mode: 'read' });
   expect((await promise)?.handle).toBe(root);
+  vi.mocked(root.queryPermission).mockResolvedValue('prompt');
   expect(await reopenHandle(root)).toEqual({ ok: false, reason: 'denied' });
   vi.mocked(root.queryPermission).mockResolvedValue('granted');
   expect(await reopenHandle(root)).toMatchObject({ ok: true, name: 'lab' });
   expect(root.requestPermission).toHaveBeenCalledTimes(1);
+});
+
+it('conserva el handle con lectura permitida mientras espera autorización explícita de escritura', async () => {
+  let granted = false; let release: (value: boolean) => void = () => {};
+  const root = { name: 'lab', kind: 'directory', entries: async function* () {},
+    queryPermission: vi.fn(async ({ mode }: { mode: 'read' | 'readwrite' }) => mode === 'read' || granted ? 'granted' : 'prompt'),
+    requestPermission: vi.fn(),
+  } as unknown as BrowserDirectory;
+  vi.stubGlobal('showDirectoryPicker', async () => root);
+  let observed: BrowserDirectory | null = null;
+  const promise = chooseFolder((handle) => { observed = handle; return new Promise<boolean>((resolve) => { release = resolve; }); });
+  await vi.waitFor(() => expect(observed).toBe(root));
+  expect(root.requestPermission).not.toHaveBeenCalled();
+  granted = true; release(true);
+  expect((await promise)?.handle).toBe(root);
+});
+
+it('cancelar autorización no degrada a memoria ni pierde la fase de permiso', async () => {
+  const root = { name: 'lab', kind: 'directory', entries: async function* () {}, queryPermission: async ({ mode }: { mode: 'read' | 'readwrite' }) => mode === 'read' ? 'granted' : 'denied' } as unknown as BrowserDirectory;
+  vi.stubGlobal('showDirectoryPicker', async () => root);
+  await expect(chooseFolder(async () => false)).rejects.toMatchObject({ diagnostic: { stage: 'authorization', outcome: 'cancelled', handleObtained: true } });
 });

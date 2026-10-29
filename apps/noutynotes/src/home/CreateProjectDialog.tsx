@@ -40,7 +40,7 @@ export function CreateProjectDialog(props: CreateProjectDialogProps) {
       <View testID="create-project-destination" style={[styles.destination, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
         <Text style={[styles.label, { color: colors.textSecondary }]}>{t('home.create.dialog.destination', locale)}</Text>
         <Text style={[styles.folder, { color: colors.textPrimary }]}>{props.target.folderName}</Text>
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('home.create.dialog.destinationHint', locale)}</Text>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t(props.target.kind === 'local-pending' ? 'folder.choose.destination' : props.target.kind === 'current' && props.target.backend === 'memory' ? 'folder.temporary.warning' : 'home.create.dialog.destinationHint', locale)}</Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('home.create.dialog.chooseFolder', locale)}
@@ -55,7 +55,7 @@ export function CreateProjectDialog(props: CreateProjectDialogProps) {
       {props.error ? <Text accessibilityRole="alert" style={[styles.error, { borderColor: colors.border, color: colors.textPrimary }]}>{props.error}</Text> : null}
       <View style={styles.actions}>
         <ActionButton label={t('home.create.dialog.cancel', locale)} disabled={props.creating} onPress={props.onCancel} style={styles.button} />
-        <ActionButton label={t(props.creating ? 'home.create.dialog.creating' : props.createdPending ? 'home.create.dialog.retryOpen' : 'home.create.dialog.submit', locale)} disabled={disabled} onPress={props.onCreate} tone="primary" style={styles.button} />
+        <ActionButton label={t(props.creating ? 'home.create.dialog.creating' : props.createdPending ? 'home.create.dialog.retryOpen' : 'home.create.dialog.submit', locale)} disabled={disabled || props.target.kind === 'local-pending'} onPress={props.onCreate} tone="primary" style={styles.button} />
       </View>
     </Dialog>
   );

@@ -70,7 +70,7 @@ test('carpeta web: crear, guardar, recargar y reconectar sin perder las tarjetas
   await expect(page.getByRole('button', { name: 'Abrir proyecto' })).toBeEnabled();
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   await expect(page.getByTestId('memory-notice')).toContainText('CARPETA LOCAL');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Mi carpeta');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await expect(page.getByRole('heading', { name: 'Mi carpeta' })).toBeVisible();
@@ -109,7 +109,7 @@ test('UX7-SAVE: estado compacto (pendiente/guardando/guardado), Guardar ahora y 
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Estado de guardado');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -152,7 +152,7 @@ test('UX7-CONSOLIDATION: un fallo de escritura se revisa bajo el proyecto sin pe
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Guardado protegido');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -204,7 +204,7 @@ test('UX7.2-C3: Recovery separa reconexión conocida y selección manual sin per
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Recovery C3');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -225,7 +225,7 @@ test('E3-A: IndexedDB recupera un borrador editorial después de recargar sin al
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Recuperación privada');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -255,7 +255,7 @@ test('P18-E3-B2: alternar Visual y HTML sin editar no reescribe el archivo durab
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Alternancia inerte');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -276,7 +276,7 @@ test('P18-E3-B2: recupera HTML inválido exacto sin escribirlo en la nota durabl
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('HTML inválido');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -323,7 +323,7 @@ test('P18-E0/UX7-SAVE: borrador de una nota archivada explica el Archivo y no of
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Archivo con borrador');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -354,7 +354,7 @@ test('P18-E0/UX7-SAVE: borrador de una nota en la Papelera explica la Papelera; 
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Papelera con borrador');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -391,7 +391,7 @@ test('P18-E0/UX7-SAVE: descartar un borrador huérfano cierra la insignia para s
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Descarte sin fantasma');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -434,7 +434,7 @@ test('P18-E0/UX7-SAVE: eliminar definitivamente una nota desde la Papelera desca
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Purga con borrador');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -462,7 +462,7 @@ test('P18-E0/UX7-SAVE: cerrar el Centro de recuperación no descarta el borrador
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Cierre temporal');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -484,7 +484,7 @@ test('P07: el formato visual avanzado sobrevive al archivo Markdown, la recarga 
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Documento avanzado');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -519,7 +519,7 @@ test('arrastre con escritura retenida: la tarjeta permanece en destino hasta con
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Arrastre pendiente');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -567,7 +567,7 @@ test('carpeta web: posición negativa y lejana (más allá de 12 columnas) conse
     return bytes ? new TextDecoder().decode(new Uint8Array(bytes)) : '';
   });
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Mundo');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -636,7 +636,7 @@ test('P2: una tarjeta a casi un millón de celdas se pinta con coordenadas peque
   await page.goto('./');
   const press = (name: string) => page.getByRole('button', { name, exact: true }).click();
   await press('Abrir proyecto');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Lejos');
   await press('Crear proyecto');
   await insertFromMenu(page, 'Insertar nota');
@@ -675,7 +675,7 @@ test('P3: título flotante y checklist Markdown se guardan y reaparecen desde la
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Editorial');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar título flotante');
@@ -725,7 +725,7 @@ test('un cambio externo bloquea el siguiente guardado y conserva sus bytes', asy
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Conflicto');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   const changed = await page.evaluate(() => {
@@ -754,7 +754,7 @@ test('salir del editor inmediatamente conserva el texto pendiente en la carpeta'
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Salida rápida');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -771,7 +771,7 @@ test('volver al inicio inmediatamente espera al guardado del borrador', async ({
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Navegación');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -789,7 +789,7 @@ test('cambiar de proyecto guarda antes el texto pendiente en su carpeta (ADR 001
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
   for (const name of ['Uno', 'Dos']) {
-    await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+    await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
     await page.getByLabel('Nombre del proyecto').fill(name);
     await page.getByRole('button', { name: 'Crear proyecto' }).click();
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
@@ -817,7 +817,7 @@ test('recargar con texto pendiente exige confirmar la salida', async ({ page }) 
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Recarga');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -836,7 +836,7 @@ test('un fallo al guardar el borrador mantiene abierto el editor y conserva el t
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Borrador en conflicto');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -862,7 +862,7 @@ test('carpeta: arrastrar guarda el layout y un destino inválido no cambia ning�
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Lienzo');
   await page.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Lienzo', exact: true })).toBeVisible();
@@ -941,7 +941,7 @@ test('carpeta: imagen real, representación y Papelera sobreviven a recargar; el
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Galería');
   await button('Crear proyecto').click();
   await expect(page.getByRole('heading', { name: 'Galería', exact: true })).toBeVisible();
@@ -999,7 +999,7 @@ test('carpeta: las etiquetas se guardan en la tarjeta como v2, sobreviven a reca
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Rutas');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1050,7 +1050,7 @@ test('carpeta: la excepción de marco por ficha se guarda en la tarjeta como v5,
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Marcos');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1085,7 +1085,7 @@ test('carpeta: el tamaño de título/cuerpo por ficha se guarda en la tarjeta co
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Medidas');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1124,7 +1124,7 @@ test('carpeta: la posición de la leyenda por ficha se guarda en la tarjeta como
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Leyendas');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1171,7 +1171,7 @@ test('carpeta: el enlace se guarda en fields de la tarjeta y la búsqueda global
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Fuentes');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar enlace');
@@ -1186,7 +1186,7 @@ test('carpeta: el enlace se guarda en fields de la tarjeta y la búsqueda global
   await expect.poll(file).toContain('url: https://archivo.example.org/mapa');
   expect(await file()).toContain('schemaVersion: 3');
   await page.getByRole('button', { name: 'Volver a mis espacios' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Notas');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await expect(page.getByRole('heading', { name: 'Notas', exact: true })).toBeVisible();
@@ -1215,7 +1215,7 @@ test('carpeta: una nota con imágenes guarda la línea en el Markdown, assetRefs
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Diario');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1269,7 +1269,7 @@ test('carpeta: la biblioteca lista lo que hay en assets/ (también lo que nada u
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Material');
   await button('Crear proyecto').click();
   await expect(page.getByRole('heading', { name: 'Material', exact: true })).toBeVisible();
@@ -1303,7 +1303,7 @@ test('carpeta: archivar crea .nouty/archive.yaml, sobrevive a recargar y restaur
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Cajón');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1346,7 +1346,7 @@ test('carpeta: la entrada del diario y la fecha de creación se guardan en el Ma
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await page.getByRole('button', { name: 'Abrir proyecto' }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Bitácora');
   await page.getByRole('button', { name: 'Crear proyecto' }).click();
   // Crear ya no abre el editor por sí solo (auditoría de interacción, 2026-09-29): la fecha de
@@ -1391,7 +1391,7 @@ test('carpeta: mover un conjunto seleccionado es una sola escritura y se conserv
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Grupo');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1426,7 +1426,7 @@ test('carpeta: deshacer un movimiento se guarda en la carpeta y se conserva al r
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Vuelta');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');
@@ -1463,7 +1463,7 @@ test('carpeta: el marco se guarda en layout.yaml (v3) y reaparece al recargar; q
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await button('Abrir proyecto').click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Álbum');
   await button('Crear proyecto').click();
   await insertFromMenu(page, 'Insertar nota');

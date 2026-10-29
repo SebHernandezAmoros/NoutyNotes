@@ -51,12 +51,11 @@ test('D1: el modal valida nombre, muestra el destino actual y se puede cancelar'
   await page.screenshot({ path: `artifacts/ux7-d1/home-dark-${surface}.png`, fullPage: true });
   await page.getByTestId('home-workspace').screenshot({ path: `artifacts/ux7-d1/home-workspace-dark-${surface}.png` });
   await page.getByRole('button', { name: 'Tema claro', exact: true }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   const dialog = page.getByTestId('create-project-dialog');
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByTestId('create-project-destination')).toContainText('Memoria de esta sesión');
-  await dialog.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Escribe un nombre');
+  await expect(dialog.getByTestId('create-project-destination')).toContainText('Elige y autoriza');
+  await expect(dialog.getByRole('button', { name: 'Crear proyecto', exact: true })).toBeDisabled();
   await page.screenshot({ path: `artifacts/ux7-d1/modal-${surface}.png`, fullPage: true });
   await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await expect(dialog).toBeHidden();
@@ -66,7 +65,7 @@ test('D1: elegir destino no cambia la sesión y crear activa la carpeta solo des
   await page.addInitScript({ content: fakeFolder });
   await page.goto('./');
   await expect(page.getByTestId('memory-notice')).toContainText('MEMORIA');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   const dialog = page.getByTestId('create-project-dialog');
   await dialog.getByLabel('Nombre del proyecto').fill('Proyecto en destino');
   await dialog.getByRole('button', { name: 'Elegir otra carpeta', exact: true }).click();
@@ -76,13 +75,13 @@ test('D1: elegir destino no cambia la sesión y crear activa la carpeta solo des
   await dialog.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Proyecto en destino', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Volver a mis espacios', exact: true }).click();
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   await expect(page.getByTestId('create-project-destination')).toContainText('PROYECTOS D1');
 });
 
 test('D1: el proyecto de la sesión aparece una sola vez y se abre desde Inicio', async ({ page }, testInfo) => {
   await page.goto('./');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear temporalmente', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Proyecto reciente D1');
   await page.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Proyecto reciente D1', exact: true })).toBeVisible();
@@ -122,20 +121,20 @@ test('D1: cancelar o denegar el selector conserva el modal y la sesión', async 
     };
   });
   await page.goto('./');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear en carpeta', exact: true }).click();
   const dialog = page.getByTestId('create-project-dialog');
   await dialog.getByRole('button', { name: 'Elegir otra carpeta', exact: true }).click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await expect(dialog.getByRole('alert')).toContainText('No se completó');
   await page.evaluate(() => { (window as typeof window & { __d1PickerMode?: string }).__d1PickerMode = 'denied'; });
   await dialog.getByRole('button', { name: 'Elegir otra carpeta', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('No se pudo comprobar');
+  await expect(dialog.getByRole('alert')).toContainText('no concedió');
   await expect(page.getByTestId('memory-notice')).toContainText('MEMORIA');
 });
 
 test('D1: una doble confirmación crea un único proyecto', async ({ page }) => {
   await page.goto('./');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear temporalmente', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Único');
   const submit = page.getByRole('button', { name: 'Crear proyecto', exact: true });
   await submit.evaluate((element: HTMLElement) => { element.click(); element.click(); });

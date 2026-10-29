@@ -234,8 +234,18 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
   /** Reconocer explícitamente cambios externos tras mostrar el conflicto al usuario. */
   acknowledgeExternalChange(id: WorkspaceId): void { this.#baseline.delete(id); }
 
-  async create(workspace: Workspace): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
-    const serialized = serializeWorkspace(workspace);
+  async exportDocuments(id: WorkspaceId): Promise<WorkspaceStorageResult<TextFiles>> {
+    if (!isValidId(id)) return invalidWorkspaceIdFailure(id, 'id');
+    const denied = await this.#allowed<TextFiles>(); if (denied) return denied;
+    try {
+      const found = (await this.#packages()).find((item) => item.workspace.id === id);
+      if (!found) return storageFailure('workspace-not-found', 'id', 'No existe el proyecto.');
+      return success({ ...found.files });
+    } catch { return error('io-failure', 'documents', 'No se pudieron leer los documentos del proyecto.'); }
+  }
+
+  async create(workspace: Workspace, documents?: TextFiles): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+    const serialized = serializeWorkspace(workspace, documents);
     if (!serialized.ok) return storageFailure('invalid-workspace', 'workspace', 'Workspace inválido.', serialized.issues);
     const denied = await this.#allowed<WorkspaceSummary>();
     if (denied) return denied;

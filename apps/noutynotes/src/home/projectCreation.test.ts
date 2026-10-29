@@ -6,6 +6,15 @@ import type { WorkspaceStorage } from '@noutynotes/application';
 import { createProjectAtTarget } from './projectCreation';
 
 describe('creación segura desde Inicio', () => {
+  it('no crea en memoria cuando el destino local todavía no está autorizado', async () => {
+    const storage = new ArchiveStorage();
+    const result = await createProjectAtTarget({ name: 'Local pendiente',
+      target: { kind: 'local-pending', storage } as never,
+      activate: async () => ({ ok: true, folderId: 'never' }),
+    });
+    expect(result).toMatchObject({ ok: false, stage: 'validation', reason: 'destination' });
+    expect(await storage.list()).toMatchObject({ ok: true, value: [] });
+  });
   it('crea en el destino pendiente antes de activarlo', async () => {
     const target = new ArchiveStorage();
     const order: string[] = [];

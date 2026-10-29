@@ -7,6 +7,7 @@ import { MemoryStorage } from './memory-storage';
 import { readWorkspaceArchive, writeWorkspaceArchive } from './workspace-archive';
 import type { BinaryAssets } from './workspace-archive';
 import { serializeWorkspace } from './workspace-codec';
+import type { TextFiles } from './text-files';
 
 export interface ArchiveImport {
   readonly summary: WorkspaceSummary;
@@ -125,7 +126,19 @@ export class ArchiveStorage implements WorkspaceStorage, WorkspaceAssets {
     return [...this.#revisions.keys()].filter((id) => this.#isUnexported(id)).sort() as WorkspaceId[];
   }
 
-  async create(workspace: Workspace): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  async exportDocuments(id: WorkspaceId): Promise<WorkspaceStorageResult<TextFiles>> { return this.#memory.exportPackage(id); }
+
+  async create(workspace: Workspace, documents?: TextFiles): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+    if (documents !== undefined) {
+      const prepared = serializeWorkspace(workspace, documents);
+      if (!prepared.ok) return storageFailure('invalid-workspace', 'documents', 'No se pudo conservar el paquete original.', prepared.issues);
+      const existing = await this.#memory.list();
+      if (!existing.ok) return existing;
+      if (existing.value.some((item) => item.id === workspace.id)) return storageFailure('workspace-already-exists', 'workspace', 'El destino ya existe.');
+      const copied = this.#memory.importPackage(prepared.value);
+      if (copied.ok) this.#markUnexported(copied.value.id);
+      return copied;
+    }
     const created = await this.#memory.create(workspace);
     if (created.ok) this.#markUnexported(created.value.id);
     return created;

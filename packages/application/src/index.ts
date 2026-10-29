@@ -92,3 +92,5 @@ export type { DeleteAssetsResult, ImportImageAtInput } from './assets-library';
 export type { RichTextCodec, RichTextCodecResult } from './rich-text-codec';
 
 export { MAX_NOTE_PDF_BYTES, hasPdfSignature, inspectNotePdf, prepareNotePdf } from './note-pdfs';
+export { copyWorkspaceToStorage, verifyWorkspaceCopy } from './copy-workspace-to-storage';
+export type { WorkspaceCopyResult } from './copy-workspace-to-storage';

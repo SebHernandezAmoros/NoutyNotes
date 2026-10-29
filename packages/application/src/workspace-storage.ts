@@ -27,6 +27,11 @@ export interface WorkspaceStorageIssue {
 
 export type WorkspaceStorageResult<T> = ValidationResult<T, WorkspaceStorageIssue>;
 
+/** Transporte de los documentos textuales del paquete existente (incluye extras admitidos).
+ * No es otro formato durable: permite conservar comentarios/README al copiar entre adaptadores.
+ */
+export type WorkspaceDocumentFiles = Readonly<Record<string, string>>;
+
 export interface WorkspaceSummary {
   readonly id: WorkspaceId;
   readonly name: string;
@@ -38,7 +43,9 @@ export interface WorkspaceSummary {
  */
 export interface WorkspaceStorage {
   /** Guarda un workspace nuevo. Falla si su ID ya existe; nunca sobrescribe. */
-  create(workspace: Workspace): Promise<WorkspaceStorageResult<WorkspaceSummary>>;
+  create(workspace: Workspace, documents?: WorkspaceDocumentFiles): Promise<WorkspaceStorageResult<WorkspaceSummary>>;
+  /** Capacidad opcional: una copia íntegra requiere origen Y destino capaces de verificar documentos. */
+  exportDocuments?(id: WorkspaceId): Promise<WorkspaceStorageResult<WorkspaceDocumentFiles>>;
   /** Sustituye un workspace existente por esta instantánea, conservando los documentos sin cambios. */
   save(workspace: Workspace): Promise<WorkspaceStorageResult<WorkspaceSummary>>;
   /** Lee y valida un workspace; cada llamada devuelve objetos nuevos. */

@@ -24,10 +24,15 @@ import { loadRecentItems } from './recentItemsStore';
 import { resolveResumeBoard, SessionResume } from './sessionResume';
 import type { ResumeState } from './sessionResume';
 import { isReload, readResumeIntent, writeResumeIntent } from './sessionResumeStore';
+import { useFolderChoice } from './useFolderChoice';
 
 type Outcome<T = null> = { readonly ok: true; readonly value: T; readonly message: string } | { readonly ok: false; readonly message: string };
 
 interface Session {
+  readonly folderPermissionDialog: ReactNode;
+  chooseWebFolder(): ReturnType<typeof chooseFolder>;
+  readonly temporaryStorage: WorkspaceStorage;
+  useTemporaryStorage(): void;
   readonly storage: WorkspaceStorage;
   /** Borradores privados del dispositivo; nunca forman parte del workspace ni del ZIP. */
   readonly drafts: DraftStore;
@@ -77,6 +82,7 @@ const StorageContext = createContext<Session | null>(null);
  * cerrar si no se exportan. Las pantallas solo conocen el puerto `WorkspaceStorage`.
  */
 export function WorkspaceSessionProvider({ children }: { readonly children: ReactNode }) {
+  const folderChoice = useFolderChoice();
   const hydrated = useHydrated();
   const [archive] = useState(() => new ArchiveStorage());
   const [drafts] = useState(() => createDeviceDraftStore());
@@ -161,7 +167,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
         if (picked) box.chosen = { key: picked.folder.uri, name: picked.folder.name };
         return picked;
       }
-      const selected = await chooseFolder();
+      const selected = await folderChoice.choose();
       if (selected) {
         box.chosen = { key: selected.name, name: selected.name };
         box.webHandle = selected.handle;
@@ -246,7 +252,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   const archiveSupported = hydrated && mode === 'memory' && supportsArchiveFiles();
   return (
     <StorageContext.Provider value={{
-      storage, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
+      storage, folderPermissionDialog: folderChoice.permissionDialog, temporaryStorage: archive, useTemporaryStorage: () => { resume.cancel(); setStorage(archive); setMode('memory'); setActiveFolderId(null); setActiveFolderKey(null); }, chooseWebFolder: folderChoice.choose, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
       savedFolder: mode === 'memory' ? savedFolder : null, activeFolderKey: mode === 'folder' ? activeFolderKey : null, reconnectFolder,
       activeFolderId: mode === 'folder' ? activeFolderId : null, boardResume, acknowledgeBoardResume, identifyWebFolder, beginResume, reconnectResume, cancelResume, leaveProject,
       unexported: mode === 'memory' ? unexported : [], connectFolder, connectFolderWithHandle, importArchive, exportArchive, confirmExported,

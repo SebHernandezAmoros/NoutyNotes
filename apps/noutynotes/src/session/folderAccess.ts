@@ -18,8 +18,8 @@ export interface BrowserDirectory {
   getFileHandle(name: string, options?: { create?: boolean }): Promise<BrowserFile>;
   removeEntry(name: string): Promise<void>;
   entries(): AsyncIterable<[string, BrowserDirectory | { kind: 'file' }]>;
-  queryPermission(options: { mode: 'readwrite' }): Promise<Permission>;
-  requestPermission(options: { mode: 'readwrite' }): Promise<Permission>;
+  queryPermission(options: { mode: 'read' | 'readwrite' }): Promise<Permission>;
+  requestPermission(options: { mode: 'read' | 'readwrite' }): Promise<Permission>;
   /** Única prueba real de identidad física entre dos handles — nunca el nombre (UX7-E2A/D73). */
   isSameEntry(other: BrowserDirectory): Promise<boolean>;
 }
@@ -27,7 +27,7 @@ export interface BrowserDirectory {
 const parts = (path: string): string[] => path.split('/');
 
 class BrowserWorkspaceDirectory implements WorkspaceDirectory {
-  constructor(readonly handle: BrowserDirectory) {}
+  constructor(readonly handle: BrowserDirectory, readonly readOnly = false) {}
 
   async listPaths(): Promise<readonly string[]> {
     const paths: string[] = [];
@@ -62,6 +62,7 @@ class BrowserWorkspaceDirectory implements WorkspaceDirectory {
   }
 
   async write(path: string, bytes: Uint8Array): Promise<void> {
+    if (this.readOnly) throw new Error('Read-only inspection');
     const [directory, name] = await this.#parent(path, true);
     const writable = await (await directory.getFileHandle(name, { create: true })).createWritable();
     await writable.write(bytes);
@@ -69,6 +70,7 @@ class BrowserWorkspaceDirectory implements WorkspaceDirectory {
   }
 
   async remove(path: string): Promise<void> {
+    if (this.readOnly) throw new Error('Read-only inspection');
     try {
       const [directory, name] = await this.#parent(path, false);
       await directory.removeEntry(name);
@@ -79,23 +81,24 @@ class BrowserWorkspaceDirectory implements WorkspaceDirectory {
 }
 
 class BrowserFolderPort implements FolderPort {
-  constructor(readonly root: BrowserDirectory) {}
-  async permission(): Promise<boolean> { return (await this.root.queryPermission({ mode: 'readwrite' })) === 'granted'; }
+  constructor(readonly root: BrowserDirectory, readonly readOnly = false) {}
+  async permission(): Promise<boolean> { return (await this.root.queryPermission({ mode: this.readOnly ? 'read' : 'readwrite' })) === 'granted'; }
   async folders(): Promise<readonly { key: string; folder: WorkspaceDirectory }[]> {
     const found: { key: string; folder: WorkspaceDirectory }[] = [];
-    const rootDirectory = new BrowserWorkspaceDirectory(this.root);
+    const rootDirectory = new BrowserWorkspaceDirectory(this.root, this.readOnly);
     if ((await rootDirectory.listPaths()).includes('.nouty/workspace.yaml')) {
       found.push({ key: '.', folder: rootDirectory });
       return found;
     }
     for await (const [key, entry] of this.root.entries()) {
       if (entry.kind !== 'directory') continue;
-      const folder = new BrowserWorkspaceDirectory(entry);
+      const folder = new BrowserWorkspaceDirectory(entry, this.readOnly);
       found.push({ key, folder });
     }
     return found;
   }
   async createFolder(key: string): Promise<WorkspaceDirectory> {
+    if (this.readOnly) throw new Error('Read-only inspection');
     if ((await new BrowserWorkspaceDirectory(this.root).listPaths()).includes('.nouty/workspace.yaml')) {
       throw new Error('La carpeta seleccionada es un workspace. Elige su carpeta padre para crear otro.');
     }
@@ -112,14 +115,38 @@ export function supportsFolderAccess(): boolean {
  * en el objeto devuelto por el navegador — para que la sesión registre el uso en Recientes (UX7-E1) y,
  * si corresponde, guarde el handle para una reconexión silenciosa futura (UX7-E2B).
  */
-export async function chooseFolder(): Promise<{ readonly storage: FolderStorage; readonly name: string; readonly handle: BrowserDirectory; readonly diagnostic: FolderOpenDiagnostic } | null> {
+export type FolderAuthorization = (handle: BrowserDirectory) => Promise<boolean>;
+export async function chooseFolder(authorize?: FolderAuthorization): Promise<{ readonly storage: FolderStorage; readonly name: string; readonly handle: BrowserDirectory; readonly diagnostic: FolderOpenDiagnostic } | null> {
   if (!supportsFolderAccess()) return null;
-  const picker = (globalThis as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<BrowserDirectory> }).showDirectoryPicker;
-  const context = captureFolderContext();
+  const picker = (globalThis as unknown as { showDirectoryPicker: (options: { mode: 'read' }) => Promise<BrowserDirectory> }).showDirectoryPicker;
+  const context = captureFolderContext('read');
   let root: BrowserDirectory;
-  try { root = await picker({ mode: 'readwrite' }); }
+  try { root = await picker({ mode: 'read' }); }
   catch (cause) { throw new FolderPickerError(folderDiagnostic(context, 'picker', cause)); }
-  return { storage: storageForHandle(root), name: root.name, handle: root, diagnostic: folderDiagnostic(context, 'validation', null) };
+  const inspection = new FolderStorage(new BrowserFolderPort(root, true), { readRecovery: 'defer' });
+  const inspected = await inspection.list();
+  // Un journal pendiente solo se recuperará mediante el flujo existente DESPUÉS de autorizar escritura.
+  if (!inspected.ok && !inspection.recoveryRequired) throw new FolderPickerError(folderDiagnostic(context, 'read', null, inspected.issues[0]?.code));
+  try {
+    if (await root.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+      if (authorize && !await authorize(root)) {
+        throw new FolderPickerError({ ...folderDiagnostic({ ...context, mode: 'readwrite' }, 'authorization', null), outcome: 'cancelled' });
+      }
+      if (!authorize || await root.queryPermission({ mode: 'readwrite' }) !== 'granted') {
+        throw new FolderPickerError(folderDiagnostic({ ...context, mode: 'readwrite' }, 'authorization', null, 'permission-denied'));
+      }
+    }
+  } catch (cause) {
+    if (cause instanceof FolderPickerError) throw cause;
+    throw new FolderPickerError(folderDiagnostic({ ...context, mode: 'readwrite' }, 'authorization', cause));
+  }
+  return { storage: storageForHandle(root), name: root.name, handle: root, diagnostic: folderDiagnostic({ ...context, mode: 'readwrite' }, 'validation', null) };
+}
+
+/** Transferencias: solo contenedora completamente vacía. No limpia ni sobrescribe archivos. */
+export async function isEmptyFolder(handle: BrowserDirectory): Promise<boolean> {
+  for await (const _entry of handle.entries()) { return false; }
+  return true;
 }
 
 /** Misma envoltura que usa `chooseFolder`, reutilizable sobre un handle ya obtenido (recordado o

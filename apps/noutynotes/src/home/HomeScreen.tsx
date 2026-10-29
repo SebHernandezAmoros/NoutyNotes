@@ -9,7 +9,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandMark } from '../components/BrandMark';
 import { useHydrated } from '../components/useHydrated';
 import { t } from '../i18n';
-import { chooseFolder } from '../session/folderAccess';
 import { describeFolderOpenFailure, FolderPickerError } from '../session/folderOpenDiagnostics';
 import type { FolderOpenDiagnostic } from '../session/folderOpenDiagnostics';
 import type { RecentFolderEntry, RecentProjectEntry } from '../session/recentItems';
@@ -90,9 +89,11 @@ export function HomeScreen() {
       : 'Memoria de esta sesión',
   });
 
-  const openCreateDialog = () => {
+  const openCreateDialog = (temporary = false) => {
     setProjectName('');
-    setCreationTarget(currentTarget());
+    setCreationTarget(temporary
+      ? { kind: 'current', storage: session.temporaryStorage, backend: 'memory', folderId: null, folderName: t('folder.temporary', locale) }
+      : session.mode === 'folder' ? currentTarget() : { kind: 'local-pending', folderName: t('folder.choose.destination', locale) });
     setCreatedPendingActivation(null);
     setDialogError(null);
     setCreateOpen(true);
@@ -109,8 +110,9 @@ export function HomeScreen() {
     if (selectingFolder || creating || createdPendingActivation) return;
     setSelectingFolder(true);
     setDialogError(null);
+    setCreationTarget({ kind: 'local-pending', folderName: t('folder.choose.destination', locale) });
     try {
-      const selected = await chooseFolder();
+      const selected = await session.chooseWebFolder();
       if (!selected) {
         setDialogError('Este navegador no permite elegir carpetas locales.');
         return;
@@ -137,6 +139,7 @@ export function HomeScreen() {
   };
 
   const completeCreatedProject = (summary: WorkspaceSummary, backend: 'web' | 'android' | 'memory', folderId: string | null) => {
+    if (backend === 'memory') session.useTemporaryStorage();
     recent.recordProjectUse({ workspaceId: summary.id, name: summary.name, backend, folderId });
     setCreateOpen(false);
     setCreatedPendingActivation(null);
@@ -145,6 +148,7 @@ export function HomeScreen() {
 
   const createProject = async () => {
     if (createGuard.current || creating || selectingFolder || !creationTarget) return;
+    if (creationTarget.kind === 'local-pending') { setDialogError(t('folder.choose.destination', locale)); return; }
     if (creationTarget.kind === 'selected-web-folder' && !confirmLeavingMemory()) {
       setDialogError('La creación se canceló; tus proyectos temporales siguen en esta sesión.');
       return;
@@ -403,23 +407,29 @@ export function HomeScreen() {
                 <Text style={[styles.actionGroupLabel, { color: colors.textSecondary }]}>{t('home.actions.primary', locale)}</Text>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={t('home.create.dialog.title', locale)}
+                  accessibilityLabel={t('folder.create.local', locale)}
                   accessibilityHint={session.mode === 'folder' ? t('home.create.hint.folder', locale) : t('home.create.hint.memory', locale)}
                   accessibilityState={{ busy: creating, disabled: !hydrated || creating }}
                   disabled={!hydrated || creating}
-                  onPress={openCreateDialog}
+                  onPress={() => openCreateDialog()}
                   {...actionFocus('create')}
                   style={[styles.action, actionBorder('create')]}
                 >
                   <Text style={[styles.actionNumber, { color: colors.textSecondary }]}>{numbers.create}</Text>
                   <View style={styles.actionText}>
-                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('home.create.title', locale)}</Text>
+                    <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('folder.create.local', locale)}</Text>
                     <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.create.description', locale)}</Text>
                   </View>
                   <View style={[styles.actionBadge, { backgroundColor: colors.accent, borderColor: colors.border }]}>
                     <Text style={[styles.actionSymbol, { color: colors.accentText }]}>+</Text>
                   </View>
                 </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={t('folder.create.temporary', locale)} disabled={!hydrated || creating} onPress={() => openCreateDialog(true)} style={[styles.action, { borderColor: colors.border }]}>
+                  <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('folder.create.temporary', locale)}</Text>
+                </Pressable>
+                {session.mode === 'folder' ? <Pressable accessibilityRole="button" onPress={() => session.useTemporaryStorage()} style={[styles.action, { borderColor: colors.border }]}>
+                  <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('folder.temporary.show', locale)}</Text>
+                </Pressable> : null}
                 <Pressable
                   testID="open-folder"
                   disabled={!hydrated || !session.folderSupported}

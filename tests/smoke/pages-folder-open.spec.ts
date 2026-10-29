@@ -29,7 +29,7 @@ for (const container of [false, true]) {
     await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
     const project = page.getByRole('button', { name: 'Abrir el proyecto Apertura laboratorio', exact: true });
     await expect(project).toBeVisible();
-    expect(await page.evaluate(() => (window as unknown as { __folderActivation: unknown }).__folderActivation)).toEqual({ active: true, mode: 'readwrite' });
+    expect(await page.evaluate(() => (window as unknown as { __folderActivation: unknown }).__folderActivation)).toEqual({ active: true, mode: 'read' });
     await project.click();
     await expect(page.getByRole('heading', { name: 'Apertura laboratorio', exact: true })).toBeVisible();
     const unchanged = await page.evaluate(async () => {
@@ -48,7 +48,8 @@ for (const container of [false, true]) {
       await page.getByRole('button', { name: 'Cerrar el editor de la tarjeta', exact: true }).click();
       await expect.poll(() => page.evaluate(async () => {
         const { project } = (window as unknown as { __folderOpenLab: { project: FileSystemDirectoryHandle } }).__folderOpenLab;
-        return (await (await (await project.getDirectoryHandle('cards')).getFileHandle('idea-a.md')).getFile()).text();
+        try { return (await (await (await project.getDirectoryHandle('cards')).getFileHandle('idea-a.md')).getFile()).text(); }
+        catch (error) { if (error instanceof DOMException && error.name === 'NotFoundError') return null; throw error; }
       })).toContain('Guardado laboratorio');
     }
     // Evita un error de transporte Response/GUID del driver; se sigue esperando la recarga real.
@@ -98,7 +99,7 @@ test('folder-open: handle obtenido pero proyecto inválido explica estructura si
   await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('.nouty/workspace.yaml');
   const details = page.getByTestId('folder-open-diagnostic'); await details.locator('summary').click();
-  await expect(details).toContainText('"stage": "validation"');
+  await expect(details).toContainText('"stage": "read"');
   await expect(details).toContainText('"handleObtained": true');
   expect(await page.evaluate(async () => {
     const root = await navigator.storage.getDirectory();

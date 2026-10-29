@@ -6,11 +6,12 @@ import { Platform } from 'react-native';
 
 import { registerOfflineWorker } from '../offline/registerOfflineWorker';
 
-import { WorkspaceSessionProvider } from '../session/WorkspaceSession';
+import { useWorkspaceSession, WorkspaceSessionProvider } from '../session/WorkspaceSession';
 import { loadLocalePreference, loadThemePreference, saveLocalePreference, saveThemePreference } from '../session/viewPreferencesStore';
 
 function AppNavigation() {
   const { theme } = useTheme();
+  const session = useWorkspaceSession();
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -24,6 +25,7 @@ function AppNavigation() {
     <>
       <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }} />
+      {session.folderPermissionDialog}
     </>
   );
 }
