@@ -8,6 +8,13 @@
 import type { Locale } from '@noutynotes/ui';
 
 export const TRANSLATIONS = {
+  'folder.open.aborted': { es: 'No se completó la selección: el selector se cerró o el navegador no autorizó la carpeta. Si la elegiste, comprueba el aviso de acceso de Chrome y vuelve a intentarlo.', en: 'Selection did not complete: the picker was closed or the browser did not authorize the folder. If you selected it, check the browser access prompt and try again.' },
+  'folder.open.denied': { es: 'El navegador no concedió acceso de lectura y escritura. Permite el acceso a esta aplicación y vuelve a intentarlo; los permisos de localhost no se transfieren a Pages.', en: 'The browser did not grant read and write access. Allow access for this app and try again; localhost permissions do not transfer to Pages.' },
+  'folder.open.security': { es: 'El navegador bloqueó el selector por seguridad. Abre la aplicación directamente en una pestaña segura y vuelve a pulsar Abrir proyecto.', en: 'The browser blocked the picker for security reasons. Open the app directly in a secure tab and click Open project again.' },
+  'folder.open.invalid': { es: 'No se pudo validar el proyecto: puede haber datos inválidos o una recuperación pendiente. Elige su carpeta con .nouty/workspace.yaml, boards y cards, o su contenedora directa. Conserva los archivos originales.', en: 'The project could not be validated: data may be invalid or recovery may be pending. Choose its folder containing .nouty/workspace.yaml, boards and cards, or its direct parent. Keep the original files.' },
+  'folder.open.technical': { es: 'No se pudo leer la carpeta por un fallo técnico. La sesión anterior se conserva. Reintenta y, si persiste, consulta Detalles de apertura.', en: 'The folder could not be read due to a technical failure. The previous session is preserved. Retry and, if it persists, check Opening details.' },
+  'folder.open.empty': { es: 'No se encontraron proyectos. Elige una carpeta con .nouty/workspace.yaml, boards y cards, o su contenedora directa. No necesitas borrar ni recrear tus proyectos.', en: 'No projects were found. Choose a folder with .nouty/workspace.yaml, boards and cards, or its direct parent. You do not need to delete or recreate projects.' },
+  'folder.open.diagnostic': { es: 'Detalles de apertura', en: 'Opening details' },
   'content.pdfHelp': { es: 'Ayuda del visor', en: 'Viewer help' },
   'content.pdfFallback': { es: 'Si no aparecen las p\u00e1ginas, abre el PDF en otra pesta\u00f1a o desc\u00e1rgalo para leerlo con tu visor.', en: 'If pages do not appear, open the PDF in another tab or download it to read it in your viewer.' },
   'content.pdfNewTab': { es: 'Abrir PDF en otra pesta\u00f1a', en: 'Open PDF in another tab' },

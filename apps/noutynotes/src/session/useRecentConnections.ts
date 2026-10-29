@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 
 import { reopenHandle, sameEntry } from './folderAccess';
 import type { BrowserDirectory } from './folderAccess';
+import type { FolderOpenFailure } from './folderOpenDiagnostics';
 import { deleteFolderHandle, loadAllFolderHandles, loadFolderHandle, saveFolderHandle } from './folderHandles';
 import { newFolderId, useRecentItems } from './useRecentItems';
 import { resolveProjectStatus } from './recentItems';
@@ -20,7 +21,7 @@ export interface RecentConnectionsApi {
    * (`isSameEntry`, evidencia física real) o, en Android, contra la URI SAF; solo si alguno coincide
    * reutiliza su `id`. En cualquier otro caso crea una identidad nueva.
    */
-  connectNewFolder(): Promise<{ readonly ok: true; readonly folderId: string } | { readonly ok: false; readonly message: string }>;
+  connectNewFolder(): Promise<{ readonly ok: true; readonly folderId: string } | FolderOpenFailure>;
   /** Activa un handle que otra UI ya eligió y validó. No debe llamarse durante la selección: solo al
    * confirmar una operación que necesita cambiar la sesión (por ejemplo, crear un proyecto allí). */
   connectSelectedWebFolder(handle: BrowserDirectory, name: string): Promise<{ readonly ok: true; readonly folderId: string } | { readonly ok: false; readonly message: string }>;
@@ -82,7 +83,7 @@ export function useRecentConnections(): RecentConnectionsApi {
     return id;
   };
 
-  const connectNewFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
+  const connectNewFolder = async (): Promise<{ ok: true; folderId: string } | FolderOpenFailure> => {
     const result = await session.connectFolder();
     if (!result.ok) return result;
     const folderId = result.webHandle

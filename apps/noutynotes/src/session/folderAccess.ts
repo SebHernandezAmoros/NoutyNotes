@@ -1,6 +1,8 @@
 import { FolderStorage } from '@noutynotes/storage';
 import type { FolderPort, WorkspaceDirectory } from '@noutynotes/storage';
 import { Platform } from 'react-native';
+import { captureFolderContext, folderDiagnostic, FolderPickerError } from './folderOpenDiagnostics';
+import type { FolderOpenDiagnostic } from './folderOpenDiagnostics';
 
 type Permission = 'granted' | 'prompt' | 'denied';
 interface BrowserFile {
@@ -110,11 +112,14 @@ export function supportsFolderAccess(): boolean {
  * en el objeto devuelto por el navegador — para que la sesión registre el uso en Recientes (UX7-E1) y,
  * si corresponde, guarde el handle para una reconexión silenciosa futura (UX7-E2B).
  */
-export async function chooseFolder(): Promise<{ readonly storage: FolderStorage; readonly name: string; readonly handle: BrowserDirectory } | null> {
+export async function chooseFolder(): Promise<{ readonly storage: FolderStorage; readonly name: string; readonly handle: BrowserDirectory; readonly diagnostic: FolderOpenDiagnostic } | null> {
   if (!supportsFolderAccess()) return null;
   const picker = (globalThis as unknown as { showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<BrowserDirectory> }).showDirectoryPicker;
-  const root = await picker({ mode: 'readwrite' });
-  return { storage: storageForHandle(root), name: root.name, handle: root };
+  const context = captureFolderContext();
+  let root: BrowserDirectory;
+  try { root = await picker({ mode: 'readwrite' }); }
+  catch (cause) { throw new FolderPickerError(folderDiagnostic(context, 'picker', cause)); }
+  return { storage: storageForHandle(root), name: root.name, handle: root, diagnostic: folderDiagnostic(context, 'validation', null) };
 }
 
 /** Misma envoltura que usa `chooseFolder`, reutilizable sobre un handle ya obtenido (recordado o

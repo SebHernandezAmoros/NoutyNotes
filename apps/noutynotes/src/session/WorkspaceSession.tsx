@@ -13,6 +13,7 @@ import type { SavedFolder } from './androidFolder';
 import { downloadFile, pickZipFile, supportsArchiveFiles } from './archiveFiles';
 import { chooseFolder, storageForHandle, supportsFolderAccess } from './folderAccess';
 import type { BrowserDirectory } from './folderAccess';
+import type { FolderOpenFailure } from './folderOpenDiagnostics';
 import { chooseFolderInto, reopenRememberedInto } from './folderSession';
 import type { FolderState } from './folderSession';
 import { describeImport, describeImportFailure } from './messages';
@@ -39,7 +40,7 @@ interface Session {
   readonly unexported: readonly WorkspaceId[];
   /** `webHandle` solo en éxito en web — identidad física real del handle recién elegido (UX7-E2A/B):
    * sirve para comparar con `isSameEntry()` y, si corresponde, guardarlo para una reconexión futura. */
-  connectFolder(): Promise<{ ok: true; folder: { key: string; name: string }; webHandle: BrowserDirectory | null } | { ok: false; message: string }>;
+  connectFolder(): Promise<{ ok: true; folder: { key: string; name: string }; webHandle: BrowserDirectory | null } | FolderOpenFailure>;
   /** UX7-E2B: conecta directamente un handle web ya obtenido (recordado o recién verificado), sin
    * abrir el selector nativo. Misma garantía que `connectFolder`: solo cambia la sesión si `list()`
    * de esa carpeta responde bien. */
@@ -147,7 +148,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
   };
 
   /** La sesión y la carpeta recordada solo cambian si la carpeta elegida se lee bien (folderSession.ts). */
-  const connectFolder = async (): Promise<{ ok: true; folder: { key: string; name: string }; webHandle: BrowserDirectory | null } | { ok: false; message: string }> => {
+  const connectFolder = async (): Promise<{ ok: true; folder: { key: string; name: string }; webHandle: BrowserDirectory | null } | FolderOpenFailure> => {
     resume.cancel();
     // UX7-E1/E2B: captura por cierre la identidad de la carpeta elegida (nombre web / URI Android) y,
     // en web, el handle real, para registrarla en Recientes y permitir guardarlo solo si
@@ -165,7 +166,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
         box.chosen = { key: selected.name, name: selected.name };
         box.webHandle = selected.handle;
       }
-      return selected ? { storage: selected.storage, folder: null } : null;
+      return selected ? { storage: selected.storage, folder: null, diagnostic: selected.diagnostic } : null;
     };
     const { state, result } = await chooseFolderInto({ storage, mode, saved: savedFolder }, choose, memory);
     apply(state);

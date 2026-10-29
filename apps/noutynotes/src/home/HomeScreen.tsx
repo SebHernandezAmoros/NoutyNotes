@@ -10,6 +10,8 @@ import { BrandMark } from '../components/BrandMark';
 import { useHydrated } from '../components/useHydrated';
 import { t } from '../i18n';
 import { chooseFolder } from '../session/folderAccess';
+import { describeFolderOpenFailure, FolderPickerError } from '../session/folderOpenDiagnostics';
+import type { FolderOpenDiagnostic } from '../session/folderOpenDiagnostics';
 import type { RecentFolderEntry, RecentProjectEntry } from '../session/recentItems';
 import { describeFailure } from '../session/messages';
 import { useRecentConnections } from '../session/useRecentConnections';
@@ -65,6 +67,7 @@ export function HomeScreen() {
   // En el HTML estático el campo no admite escritura: el render del cliente la perdería.
   const hydrated = useHydrated();
   const [createError, setCreateError] = useState<string | null>(null);
+  const [folderDiagnostic, setFolderDiagnostic] = useState<{ readonly diagnostic: FolderOpenDiagnostic; readonly message: string } | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [focusedAction, setFocusedAction] = useState<string | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -119,7 +122,8 @@ export function HomeScreen() {
       }
       setCreationTarget({ kind: 'selected-web-folder', storage: selected.storage, handle: selected.handle, folderName: selected.name });
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) setDialogError('No se pudo comprobar la carpeta elegida.');
+      if (error instanceof FolderPickerError) setDialogError(describeFolderOpenFailure({ message: '', diagnostic: error.diagnostic }, locale));
+      else if (!(error instanceof DOMException && error.name === 'AbortError')) setDialogError('No se pudo comprobar la carpeta elegida.');
     } finally {
       setSelectingFolder(false);
     }
@@ -179,6 +183,7 @@ export function HomeScreen() {
    * dejarían de estar disponibles, así que nunca se descartan sin confirmación (ADR 0011). La
    * identidad/reconexión real vive en `useRecentConnections` (UX7-E2A/B), compartida con `ProjectSheet`. */
   const openFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
+    setFolderDiagnostic(null);
     const pending = session.unexported.length;
     if (pending > 0 && Platform.OS === 'web') {
       const pendingText = t(pending === 1 ? 'home.openFolder.pending.one' : 'home.openFolder.pending.many', locale, { count: String(pending) });
@@ -190,7 +195,9 @@ export function HomeScreen() {
       }
     }
     const result = await recent.connectNewFolder();
-    setCreateError(result.ok ? null : result.message);
+    const message = result.ok ? null : describeFolderOpenFailure(result, locale);
+    setFolderDiagnostic(!result.ok && result.diagnostic && message ? { diagnostic: result.diagnostic, message } : null);
+    setCreateError(message);
     return result;
   };
 
@@ -341,7 +348,7 @@ export function HomeScreen() {
                 {homeProjects.length === 0 ? (
                   <View testID="home-projects-empty" style={[styles.emptyProjects, { borderColor: colors.gridLine }]}>
                     <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>{t('home.projects.empty.title', locale)}</Text>
-                    <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t('home.projects.empty.description', locale)}</Text>
+                    <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>{t(session.mode === 'folder' ? 'folder.open.empty' : 'home.projects.empty.description', locale)}</Text>
                   </View>
                 ) : homeProjects.map((entry) => {
                   const status = entry.recent ? projectStatus(entry.recent) : 'available';
@@ -388,6 +395,10 @@ export function HomeScreen() {
                   {createError}
                 </Text>
               ) : null}
+              {folderDiagnostic && createError === folderDiagnostic.message && Platform.OS === 'web' ? <details data-testid="folder-open-diagnostic" style={{ color: colors.textPrimary, marginTop: 8 }}>
+                <summary style={{ minHeight: 44, alignContent: 'center', cursor: 'pointer' }}>{t('folder.open.diagnostic', locale)}</summary>
+                <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 12 }}>{JSON.stringify(folderDiagnostic.diagnostic, null, 2)}</pre>
+              </details> : null}
               <View style={styles.actions}>
                 <Text style={[styles.actionGroupLabel, { color: colors.textSecondary }]}>{t('home.actions.primary', locale)}</Text>
                 <Pressable
