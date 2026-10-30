@@ -19,7 +19,7 @@ function installedTestFont(): Uint8Array {
   if (!name) throw new Error('No installed font fixture.');
   return new Uint8Array(readFileSync(join(directory, name)));
 }
-async function lab(page: Page, options: { readonly font?: 'missing' | 'real'; readonly long?: boolean; readonly pdf?: 'missing' | 'broken' } = {}) {
+async function lab(page: Page, options: { readonly font?: 'missing' | 'real'; readonly long?: boolean; readonly pdf?: 'missing' | 'broken'; readonly pdfCardSize?: { readonly w: number; readonly h: number }; readonly pdfCard?: 'long' | 'missing' | 'retired' } = {}) {
   const png = new Uint8Array(await page.evaluate(() => {
     const canvas = window.document.createElement('canvas'); canvas.width = 360; canvas.height = 540;
     const context = canvas.getContext('2d')!;
@@ -32,11 +32,14 @@ async function lab(page: Page, options: { readonly font?: 'missing' | 'real'; re
   }));
   const base = canvasCardsWorkspace();
   const document = options.long ? { ...block8Document, blocks: [...block8Document.blocks, ...Array.from({ length: 80 }, (_, index) => ({ type: 'paragraph' as const, content: [{ type: 'text' as const, text: `Párrafo B8 ${index + 1}: texto para comprobar fuente y scroll sin mover la Nota.` }] }))] } : block8Document;
-  const workspace = { ...base, metadata: { name: 'Contenido B8' }, cards: base.cards.map((card, index) => index === 0 ? { ...card, contentDocument: document,
-    ...(options.font ? { noteFont: { kind: 'asset' as const, assetRef: fontRef } } : {}) } : card) };
-  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { ...(options.pdf === 'missing' ? {} : { [pdfRef]: options.pdf === 'broken' ? new TextEncoder().encode('invalid PDF') : block8PdfBytes() }), [detachmentPdfRef]: block8PdfBytes(), [detachmentRef]: png,
+  // Área libre para redimensionar el PDF sin colisionar con la tarjeta retirada del fixture B7.
+  const workspace = { ...base, ...(options.pdfCardSize ? { layouts: base.layouts.map((layout) => ({ ...layout, placements: layout.placements.map((p) => p.cardId === 'pdf' ? { ...p, rect: { ...p.rect, x: 20, y: 0, ...options.pdfCardSize } } : p) })) } : {}), metadata: { name: 'Contenido B8' }, cards: base.cards.map((card, index) => index === 0 ? { ...card, contentDocument: document,
+    ...(options.font ? { noteFont: { kind: 'asset' as const, assetRef: fontRef } } : {}) }
+    : card.id === 'pdf' && options.pdfCard === 'long' ? { ...card, title: 'Documento PDF con un título extenso que debe permanecer legible y centrado al redimensionar' }
+    : card.id === 'pdf' && options.pdfCard === 'retired' ? { ...card, assetRefs: [], primaryResourceState: { kind: 'retired' as const, resourceKind: 'pdf' as const } } : card) };
+  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { ...(options.pdf === 'missing' ? {} : { [pdfRef]: options.pdf === 'broken' ? new TextEncoder().encode('invalid PDF') : block8PdfBytes() }), ...(options.pdfCard === 'missing' ? {} : { [detachmentPdfRef]: block8PdfBytes() }), [detachmentRef]: png,
     ...(options.font === 'real' ? { [fontRef]: installedTestFont() } : {}) }));
-  if (!options.font && !options.long && !options.pdf) writeFileSync('artifacts/block8-fixture.zip', zip);
+  if (!options.font && !options.long && !options.pdf && !options.pdfCard && !options.pdfCardSize) writeFileSync('artifacts/block8-fixture.zip', zip);
   await page.addInitScript(() => Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true }));
   await page.goto('./', { waitUntil: 'domcontentloaded' });
   const chooser = page.waitForEvent('filechooser');
@@ -122,7 +125,19 @@ test('B8: visor original de imagen', async ({ page }, info) => {
   const more = page.getByRole('button', { name: 'M\u00e1s secciones', exact: true });
   if (await more.isVisible()) await more.click();
   await page.getByRole('button', { name: 'Abrir los assets', exact: true }).click();
+  const enlarge = page.getByRole('button', { name: 'Ampliar planificador.png', exact: true });
+  await expect(enlarge).toBeVisible();
   await page.getByRole('button', { name: 'Ver planificador.png', exact: true }).click();
+  await expect(page.getByTestId('image-viewer')).not.toBeVisible();
+  await enlarge.click();
+  await expect(page.getByTestId('image-viewer')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(enlarge).toBeFocused();
+  const thumbnail = page.getByRole('button', { name: 'Ampliar vista previa de planificador.png', exact: true });
+  await thumbnail.click();
+  await expect(page.getByTestId('image-viewer')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(thumbnail).toBeFocused();
   await page.getByRole('button', { name: 'Abrir imagen', exact: true }).click();
   const viewer = page.getByTestId('image-viewer');
   await expect(viewer).toBeVisible();
@@ -195,7 +210,7 @@ test('B8: visor original de imagen', async ({ page }, info) => {
   expect(archive.assets[pdfRef]).toEqual(block8PdfBytes());
 });
 
-test('B8 correctivo: PDF de Nota y A4 sin aviso permanente, ayuda explícita y bytes íntegros', async ({ page }, info) => {
+test('B8 correctivo: PDF de Nota y A4 con cabecera compacta y bytes íntegros', async ({ page }, info) => {
   const theme = info.project.name === 'desktop' ? 'dark' : 'light';
   await page.emulateMedia({ colorScheme: theme });
   await page.addInitScript((choice) => localStorage.setItem('noutynotes.theme.v1', choice), theme);
@@ -215,20 +230,106 @@ test('B8 correctivo: PDF de Nota y A4 sin aviso permanente, ayuda explícita y b
     const url = await frame.getAttribute('src');
     await expect(viewer.getByRole('link', { name: 'Abrir PDF en otra pestaña', exact: true })).toHaveAttribute('href', url!);
     await expect(viewer.getByRole('link', { name: 'Abrir PDF en otra pestaña', exact: true })).toHaveAttribute('rel', 'noopener noreferrer');
+    const opened = page.waitForEvent('popup');
+    await viewer.getByRole('link', { name: 'Abrir PDF en otra pestaña', exact: true }).click();
+    const external = await opened;
+    // Chromium headless puede convertir el PDF externo en descarga y dejar URL vacía.
+    // El evento comprueba apertura real; href/target/rel y descarga exacta protegen el destino.
+    await test.info().attach(`pdf-popup-${source}`, { body: JSON.stringify({ requested: url, observed: external.url(), closed: external.isClosed() }), contentType: 'application/json' });
+    await external.close();
     const downloadPromise = page.waitForEvent('download');
     await viewer.getByRole('link', { name: 'Descargar PDF', exact: true }).click();
     const downloaded = await downloadPromise;
     expect(new Uint8Array(readFileSync((await downloaded.path())!))).toEqual(block8PdfBytes());
-    const summary = viewer.locator('summary');
-    await summary.focus(); await summary.press('Enter');
-    await expect(help).toBeVisible();
-    await summary.press('Enter');
-    await expect(help).not.toBeVisible();
+    await expect(viewer.locator('summary')).toHaveCount(0);
+    const controls = viewer.getByTestId('asset-pdf-header');
+    const links = controls.getByRole('link');
+    await expect(links).toHaveCount(2);
+    for (const link of await links.all()) {
+      const bounds = (await link.boundingBox())!;
+      expect(bounds.width).toBeGreaterThanOrEqual(44);
+      expect(Math.abs(bounds.width - bounds.height)).toBeLessThanOrEqual(1);
+      await expect(link).toHaveAttribute('title', /.+/);
+    }
+    const rows = await controls.locator('a, button').evaluateAll((nodes) => nodes.map((node) => { const r = node.getBoundingClientRect(); return r.y + r.height / 2; }));
+    expect(Math.max(...rows) - Math.min(...rows)).toBeLessThanOrEqual(1);
+    await expect(controls.getByRole('button', { name: /^Cerrar/ }).locator('..')).toHaveAttribute('title', 'Cerrar');
+    await expect(controls.getByTestId('icon-external-link')).toBeVisible();
+    await expect(controls.getByTestId('icon-download')).toBeVisible();
     await expect(frame).toHaveAttribute('src', url!);
     await page.screenshot({ path: `artifacts/block8-viewer-corrective-${info.project.name}-pdf-${source}.png`, fullPage: true });
     await viewer.getByRole('button', { name: /^Cerrar vista previa de/ }).click();
     await expect(viewer).not.toBeVisible();
   }
+});
+
+test('B8 final: PDF centra icono y título en la tarjeta completa a 50, 100 y 125%', async ({ page }, info) => {
+  const theme = info.project.name === 'mobile' ? 'dark' : 'light';
+  await page.emulateMedia({ colorScheme: theme });
+  await page.addInitScript((choice) => localStorage.setItem('noutynotes.theme.v1', choice), theme);
+  const card = page.getByTestId('card-pdf');
+  const measurements: unknown[] = [];
+  const measure = () => card.evaluate((node) => {
+    const card = node.getBoundingClientRect();
+    const icon = node.querySelector('[data-testid="document-icon-pdf"]')!.getBoundingClientRect();
+    const title = node.querySelector('[data-testid="document-title-pdf"]')!.getBoundingClientRect();
+    const group = { left: Math.min(icon.left, title.left), right: Math.max(icon.right, title.right), top: Math.min(icon.top, title.top), bottom: Math.max(icon.bottom, title.bottom) };
+    return { dx: Math.abs(card.x + card.width / 2 - (group.left + group.right) / 2), dy: Math.abs(card.y + card.height / 2 - (group.top + group.bottom) / 2), card: { x: card.x, y: card.y, width: card.width, height: card.height }, group };
+  });
+  for (const size of [{ w: 8, h: 6 }, { w: 10, h: 8 }]) {
+  await lab(page, { pdfCardSize: size, ...(size.w === 10 ? { pdfCard: 'long' as const } : {}) });
+  await card.focus();
+  for (const zoom of [1, 1.25, 0.5]) {
+    const content = page.getByTestId('canvas-content');
+    const current = await content.evaluate((node) => new DOMMatrixReadOnly(getComputedStyle(node).transform).a);
+    await page.getByTestId('board-canvas').evaluate((node, deltaY) => {
+      const r = node.getBoundingClientRect();
+      node.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, deltaY, clientX: r.left + 20, clientY: r.top + 20 }));
+    }, -1200 * Math.log(zoom / current));
+    await expect.poll(() => content.evaluate((node) => new DOMMatrixReadOnly(getComputedStyle(node).transform).a)).toBeCloseTo(zoom, 3);
+    await page.getByTestId('board-canvas').focus(); await card.focus();
+    const measured = await measure(); measurements.push({ size, zoom, ...measured });
+    // 2 CSS px absorben redondeo de borde/fuente escalados; referencia: tarjeta completa.
+    await expect.poll(async () => (await measure()).dy).toBeLessThanOrEqual(2);
+    expect(measured.dx).toBeLessThanOrEqual(2);
+  }
+  }
+  await card.press('Enter');
+  const beforeResize = await measure();
+  const handle = (await page.getByTestId('resize-se-pdf').boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 35, handle.y + handle.height / 2 + 30, { steps: 5 }); await page.mouse.up();
+  await expect.poll(async () => (await measure()).card.width).toBeGreaterThan(beforeResize.card.width);
+  const resized = await measure();
+  expect(resized.dx).toBeLessThanOrEqual(2); expect(resized.dy).toBeLessThanOrEqual(2);
+  measurements.push({ afterResize: true, zoom: 0.5, ...resized });
+  writeFileSync(`artifacts/block8-final-${info.project.name}-geometry.json`, JSON.stringify(measurements, null, 2));
+  await test.info().attach('pdf-centering-dom', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' });
+  await page.screenshot({ path: `artifacts/block8-final-${info.project.name}-card.png`, fullPage: true });
+});
+
+test('B8 final: PDF ausente, retirado y mínimo conserva contenido y acciones', async ({ page }, info) => {
+  for (const state of ['missing', 'retired'] as const) {
+    await lab(page, { pdfCard: state, pdfCardSize: { w: 8, h: 6 } });
+    const card = page.getByTestId('card-pdf');
+    await expect(card).toContainText('PDF');
+    const content = state === 'retired' ? card.getByTestId('retired-card-pdf') : card.getByTestId('document-group-pdf');
+    await expect(content).toBeVisible();
+    const rect = (await card.boundingBox())!, body = (await content.boundingBox())!;
+    expect(Math.abs(body.x + body.width / 2 - rect.x - rect.width / 2)).toBeLessThanOrEqual(2);
+    expect(Math.abs(body.y + body.height / 2 - rect.y - rect.height / 2)).toBeLessThanOrEqual(2);
+    if (state === 'missing') {
+      await card.dblclick({ position: { x: rect.width * 0.8, y: rect.height * 0.75 } });
+      await expect(page.getByTestId('asset-pdf-preview-error')).toBeVisible();
+      await page.keyboard.press('Escape');
+    } else await expect(card).toContainText('Recurso retirado');
+  }
+  await lab(page, { pdfCardSize: { w: 1, h: 1 } });
+  await expect(page.getByTestId('compact-card-pdf')).toHaveText('PDF');
+  await page.getByTestId('card-pdf').focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByTestId('card-menu')).toBeVisible();
+  await page.screenshot({ path: `artifacts/block8-final-${info.project.name}-pdf-small.png`, fullPage: true });
 });
 
 test('B8: fuente por Nota persiste y Visual/HTML conserva PDF y formato', async ({ page }, info) => {

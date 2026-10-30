@@ -428,7 +428,7 @@ export function CanvasCard(props: CanvasCardProps) {
             <Text numberOfLines={1} style={{ color: unifiedFloating ? noteTextColor : colors.cardText, fontSize: 11, lineHeight: 14 }}>{card.primaryResourceState ? '⊘' : document ? 'PDF' : image ? '▧' : number3}</Text>
           </View>
         ) : card.primaryResourceState ? (
-          <View style={[styles.documentWrap, contentInset, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+          <View style={[styles.documentWrap, document ? styles.documentCentered : contentInset, !document && props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
             <RetiredCardResource card={card} color={colors.cardText} compact={display !== 'expanded' || box.height < 180 || box.width < 160} showBody={!props.controlsOverBody} testID={`retired-card-${card.id}`} />
           </View>
         ) : display === 'minimized' ? (
@@ -498,7 +498,8 @@ export function CanvasCard(props: CanvasCardProps) {
         ) : connector && display === 'expanded' ? (
           <View testID={`connector-hit-${card.id}`} style={[styles.shapeWrap, box.height < 80 ? styles.shapeWrapCompact : null]} />
         ) : document && display === 'expanded' ? (
-          <View testID={`document-${card.id}`} style={[styles.documentWrap, contentInset, props.controlsOverBody ? { paddingRight: props.reserveRight } : null]}>
+          <View testID={`document-${card.id}`} style={[styles.documentWrap, styles.documentCentered]}>
+            <View testID={`document-group-${card.id}`} style={styles.documentGroup}>
             {/* UX7.1-A4-FIX: esta cara no tiene cabecera de color propio — se dibuja directamente sobre
                 `cardSurface`, que se mantiene clara en ambos temas. El icono por defecto usa el texto
                 general de la interfaz (claro en tema oscuro) y se volvía invisible; `cardText` es el
@@ -509,6 +510,7 @@ export function CanvasCard(props: CanvasCardProps) {
                 {cardDisplayTitle(card)}
               </Text>
             ) : null}
+            </View>
           </View>
         ) : display === 'collapsed' ? (
           <View testID={`collapsed-${card.id}`} style={styles.collapsedShell}>
@@ -785,6 +787,9 @@ const styles = StyleSheet.create({
   floatingTextWrap: { flex: 1, padding: 8, paddingTop: 36 },
   shapeWrap: { flex: 1, padding: 10, paddingTop: 36 },
   documentWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, paddingTop: 36 },
+  // La cruceta ya es absoluta: el PDF se centra en toda la tarjeta, sin reservarle una fila.
+  documentCentered: { paddingTop: 10 },
+  documentGroup: { alignItems: 'center', justifyContent: 'center', gap: 8, maxWidth: '100%', maxHeight: '100%' },
   documentTitle: { textAlign: 'center' },
   // En una sola fila no se añade relleno vertical: RN Web lo suma al tamaño flex y deformaba la grilla.
   shapeWrapCompact: { padding: 0, paddingTop: 0, paddingHorizontal: 0, minHeight: 0, minWidth: 0 },

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DialogCloseButton } from '../components/Dialog';
+import { AppIcon } from '../components/AppIcon';
 import { t } from '../i18n';
 
 export type PdfPreviewState =
@@ -55,20 +56,23 @@ export function PdfPreview({ state, locale, onClose }: PdfPreviewProps) {
           {...(Platform.OS === 'web' ? { role: 'dialog', 'aria-modal': true, 'aria-label': title } : {})}
           style={[styles.panel, { backgroundColor: colors.background, borderColor: colors.border }]}
         >
-          <View style={styles.header}>
+          <View testID="asset-pdf-header" style={styles.header}>
             <Text accessibilityRole="header" numberOfLines={1} style={[styles.title, { color: colors.textPrimary }]}>{state.name}</Text>
-            <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
-          </View>
-          {state.status === 'ready' && Platform.OS === 'web' ? <View style={{ paddingHorizontal: 12, gap: 6 }}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              <a href={state.url} target="_blank" rel="noopener noreferrer" style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', color: colors.textPrimary }}>{t('content.pdfNewTab', locale)}</a>
-              <a href={state.url} download={`${state.name.replace(/[\\/:*?"<>|]/g, '_').replace(/\.pdf$/i, '') || 'document'}.pdf`} style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', color: colors.textPrimary }}>{t('content.pdfDownload', locale)}</a>
+            <View style={styles.headerActions}>
+            {state.status === 'ready' && Platform.OS === 'web' ? <>
+              <a aria-label={t('content.pdfNewTab', locale)} title={t('content.pdfNewTab', locale)} href={state.url} target="_blank" rel="noopener noreferrer"
+                style={{ width: 44, height: 44, boxSizing: 'border-box', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${colors.border}`, background: colors.surface, color: colors.textPrimary }}>
+                <AppIcon name="external-link" size={20} />
+              </a>
+              <a aria-label={t('content.pdfDownload', locale)} title={t('content.pdfDownload', locale)} href={state.url} download={`${state.name.replace(/[\\/:*?"<>|]/g, '_').replace(/\.pdf$/i, '') || 'document'}.pdf`}
+                style={{ width: 44, height: 44, boxSizing: 'border-box', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${colors.border}`, background: colors.surface, color: colors.textPrimary }}>
+                <AppIcon name="download" size={20} />
+              </a>
+            </> : null}
+            {Platform.OS === 'web' ? <span title={t('dialog.close', locale)} style={{ display: 'flex', flexShrink: 0 }}><DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} /></span>
+              : <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />}
             </View>
-            <details key={state.url} style={{ color: colors.textSecondary }}>
-              <summary style={{ cursor: 'pointer', minHeight: 44, alignContent: 'center' }}>{t('content.pdfHelp', locale)}</summary>
-              <Text style={{ color: colors.textSecondary, marginBottom: 8 }}>{t('content.pdfFallback', locale)}</Text>
-            </details>
-          </View> : null}
+          </View>
           <View style={styles.body}>
             {state.status === 'loading' ? (
               <Text testID="asset-pdf-preview-loading" style={[styles.message, { color: colors.textSecondary }]}>{t('assets.pdf.preview.loading', locale)}</Text>
@@ -91,8 +95,9 @@ export function PdfPreview({ state, locale, onClose }: PdfPreviewProps) {
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(20, 22, 18, 0.6)', alignItems: 'center', justifyContent: 'center', padding: 16 },
   panel: { width: '100%', maxWidth: 960, height: '90%', borderWidth: 2, overflow: 'hidden' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, paddingBottom: 8 },
-  title: { flex: 1, fontSize: 18, fontWeight: '900' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  title: { flex: 1, minWidth: 0, fontSize: 18, fontWeight: '900' },
   body: { flex: 1 },
   message: { flex: 1, padding: 16, fontSize: 14, lineHeight: 20, textAlign: 'center', textAlignVertical: 'center' },
 });

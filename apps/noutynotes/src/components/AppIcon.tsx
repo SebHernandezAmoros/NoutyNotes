@@ -7,7 +7,8 @@ export type AppIconName =
   | 'trash' | 'undo' | 'redo' | 'minus' | 'plus'
   | 'home' | 'diary' | 'archive' | 'assets' | 'present' | 'print' | 'settings'
   | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star' | 'frame'
-  | 'copy' | 'cut' | 'paste' | 'duplicate' | 'recover' | 'document';
+  | 'copy' | 'cut' | 'paste' | 'duplicate' | 'recover' | 'document'
+  | 'external-link' | 'download' | 'maximize';
 
 /**
  * Catálogo de línea portable para la interfaz (ADR 0047). Usa primitivas de React Native y evita
@@ -20,6 +21,22 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
   const common = { borderColor: ink, borderWidth: line };
   const fill = { backgroundColor: ink };
   const box = { width: size, height: size };
+
+  if (name === 'external-link' || name === 'download' || name === 'maximize') return (
+    <View testID={`icon-${name}`} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.root, box]}>
+      {name === 'external-link' ? <>
+        <View style={{ position: 'absolute', left: 1, bottom: 1, width: size * 0.7, height: size * 0.7, ...common, borderTopWidth: 0, borderRightWidth: 0 }} />
+        <View style={{ position: 'absolute', right: 1, top: 1, width: size * 0.45, height: size * 0.45, borderColor: ink, borderTopWidth: line, borderRightWidth: line }} />
+        <View style={{ position: 'absolute', left: size * 0.25, top: size * 0.44, width: size * 0.8, height: line, ...fill, transform: [{ rotate: '-45deg' }] }} />
+      </> : name === 'download' ? <>
+        <View style={{ position: 'absolute', top: 1, left: size / 2 - line / 2, width: line, height: size * 0.6, ...fill }} />
+        <View style={{ position: 'absolute', top: size * 0.3, left: size * 0.3, width: size * 0.4, height: size * 0.4, borderColor: ink, borderRightWidth: line, borderBottomWidth: line, transform: [{ rotate: '45deg' }] }} />
+        <View style={{ position: 'absolute', left: 1, right: 1, bottom: 1, height: size * 0.22, ...common, borderTopWidth: 0 }} />
+      </> : [0, 1, 2, 3].map((corner) => <View key={corner} style={{ position: 'absolute', width: size * 0.35, height: size * 0.35, borderColor: ink,
+        ...(corner < 2 ? { top: 1, borderTopWidth: line } : { bottom: 1, borderBottomWidth: line }),
+        ...(corner % 2 === 0 ? { left: 1, borderLeftWidth: line } : { right: 1, borderRightWidth: line }) }} />)}
+    </View>
+  );
 
   if (name === 'plus' || name === 'minus' || name === 'close') return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.root, box]}>

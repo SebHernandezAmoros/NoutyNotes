@@ -7,9 +7,10 @@ import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
 import type { Locale } from '@noutynotes/ui';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
-import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { AppIcon } from '../components/AppIcon';
 import { t } from '../i18n';
 import { isPdfFileName } from '../session/assetMime';
 import { activateCustomFont, supportsCustomFont } from '../session/customFont';
@@ -338,7 +339,13 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       {Platform.OS === 'web' && current.kind === 'image' && !current.missing ? <ActionButton label={t('content.openImage', locale)} onPress={() => contentResources.openImage(current.ref, current.name)} /> : null}
       <Text accessibilityRole="header" style={[styles.name, { color: colors.textPrimary }]}>{current.name}</Text>
       {thumbs.get(current.ref) ? (
-        <Image accessibilityRole="image" accessibilityLabel={t('assets.preview.accessibilityLabel', locale, { name: current.name })} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
+        current.kind === 'image' && !current.missing && Platform.OS === 'web' ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={t('assets.image.enlargePreview', locale, { name: current.name })}
+            onPress={() => contentResources.openImage(current.ref, current.name)} style={{ position: 'relative' }}>
+            <Image accessibilityRole="image" accessibilityLabel={t('assets.preview.accessibilityLabel', locale, { name: current.name })} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
+            <View pointerEvents="none" style={{ position: 'absolute', right: 6, bottom: 6, padding: 6, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }}><AppIcon name="maximize" size={18} /></View>
+          </Pressable>
+        ) : <Image accessibilityRole="image" accessibilityLabel={t('assets.preview.accessibilityLabel', locale, { name: current.name })} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
       ) : null}
       <Text style={[styles.meta, { color: colors.textSecondary }]}>
         {`${kindLabel[current.kind].toUpperCase()}${bytes.has(current.ref) ? ` · ${size(bytes.get(current.ref) ?? 0)}` : ''}${current.missing ? t('assets.missingSuffix', locale) : ''}`}
@@ -403,8 +410,15 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
             <Text numberOfLines={1} style={[styles.meta, { color: entry.missing ? colors.danger : colors.textSecondary }]}>
               {entry.missing ? t('assets.item.missing', locale) : entry.unused ? t('assets.item.unused', locale) : t('assets.item.usedIn', locale, { count: String(entry.usedBy.length) })}
             </Text>
+            <View style={styles.row}>
             <ActionButton label={entry.ref === selected ? t('assets.viewing', locale) : t('assets.view', locale)} pressed={entry.ref === selected} accessibilityLabel={t('assets.view.accessibilityLabel', locale, { name: entry.name })}
               onPress={() => { setSelected(entry.ref); setConfirm(null); setCopied(false); }} />
+            {Platform.OS === 'web' && entry.kind === 'image' && !entry.missing ? <Pressable accessibilityRole="button" accessibilityLabel={t('assets.image.enlargeLabel', locale, { name: entry.name })}
+              onPress={() => contentResources.openImage(entry.ref, entry.name)}
+              style={{ minHeight: 44, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <AppIcon name="maximize" size={18} /><Text style={{ color: colors.textPrimary }}>{t('assets.image.enlarge', locale)}</Text>
+            </Pressable> : null}
+            </View>
           </View>
         </View>
       ))}
