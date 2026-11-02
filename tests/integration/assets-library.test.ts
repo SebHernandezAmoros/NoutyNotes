@@ -234,7 +234,7 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     expect(buildAssetCatalog(ok(await storage.open(id)), ok(await storage.listAssets(id))).find((entry) => entry.ref === google.ref)?.kind).toBe('font');
   });
 
-  it('UX7.1-A4: una tarjeta de documento referencia un PDF ya catalogado sin copiarlo; rechaza formatos que no son PDF y referencias de otro tipo', async () => {
+  it('UX7.1-A4/B9-R3-06: una tarjeta de documento referencia un PDF, Markdown o texto plano ya catalogado sin copiarlo; rechaza otros formatos de documento y referencias de otro tipo', async () => {
     const { storage } = make();
     const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Documentos'));
     const pdfBytes = Uint8Array.from([37, 80, 68, 70, 1, 2, 3]);
@@ -253,9 +253,16 @@ describe.each(stores)('biblioteca de assets en %s (ADR 0022)', (_name, make) => 
     expect([...ok(await storage.listAssets(id))]).toEqual([ref]);
     expect(ok(await storage.readAsset(id, ref as AssetRef))).toEqual(pdfBytes);
 
-    // Un documento que no es PDF (mismo `assetKind` «document») se rechaza — este bloque es solo PDF.
+    // B9-R3-06: .md y .txt ya tienen un visor seguro propio — se aceptan igual que el PDF, sin copiar bytes.
     const txtRef = ok(await importLibraryFile(storage, storage, id, { bytes: new TextEncoder().encode('notas'), fileName: 'notas.txt' }));
-    const rejectedKind = await addDocumentToBoard(storage, id, { ref: txtRef });
+    const txtCardId = ok(await addDocumentToBoard(storage, id, { ref: txtRef }));
+    expect(ok(await storage.open(id)).cards.find((candidate) => candidate.id === txtCardId)).toMatchObject({ assetRefs: [txtRef] });
+    const mdRef = ok(await importLibraryFile(storage, storage, id, { bytes: new TextEncoder().encode('# Título'), fileName: 'guia.md' }));
+    ok(await addDocumentToBoard(storage, id, { ref: mdRef }));
+
+    // Otro formato de `document` sin visor seguro propio todavía (mismo `assetKind`) sigue rechazado.
+    const csvRef = ok(await importLibraryFile(storage, storage, id, { bytes: new TextEncoder().encode('a,b'), fileName: 'datos.csv' }));
+    const rejectedKind = await addDocumentToBoard(storage, id, { ref: csvRef });
     expect(rejectedKind.ok ? null : rejectedKind.issues[0]?.code).toBe('invalid-asset');
 
     // Una referencia de imagen tampoco puede añadirse como tarjeta de documento.

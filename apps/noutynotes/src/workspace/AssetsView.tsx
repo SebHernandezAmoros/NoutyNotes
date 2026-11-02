@@ -8,11 +8,13 @@ import type { Locale } from '@noutynotes/ui';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { useEffect, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import type { ViewStyle } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { AppIcon } from '../components/AppIcon';
+import { Dialog } from '../components/Dialog';
 import { t } from '../i18n';
-import { isPdfFileName } from '../session/assetMime';
+import { isDocumentCardFileName, isPdfFileName } from '../session/assetMime';
 import { activateCustomFont, supportsCustomFont } from '../session/customFont';
 import { downloadAssetFile, supportsAssetDownload } from '../session/downloadAsset';
 import { pickLibraryFile, supportsFileImport } from '../session/fileImport';
@@ -24,8 +26,10 @@ import { useWorkspaceSession } from '../session/WorkspaceSession';
 import type { ViewPreferences } from './canvas/preferences';
 import { dataUri } from './dataUri';
 import { PdfPreview } from './PdfPreview';
+import { TextAssetPreviewDialog } from './TextAssetPreviewDialog';
 import { useEscapeBack } from './useEscapeBack';
 import { usePdfPreview } from './usePdfPreview';
+import { useTextAssetPreview } from './useTextAssetPreview';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 import { AssetReferenceDetails } from './AssetReferenceDetails';
 
@@ -81,6 +85,11 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const [tab, setTab] = useState<Tab>('all');
   const [unusedOnly, setUnusedOnly] = useState(false);
   const [query, setQuery] = useState('');
+  // B9-R2-09: orden a nivel de vista, nunca reescribe el proyecto. Solo Nombre y Tipo: no hay ningún
+  // campo de fecha de importación real y fiable que ofrecer (ver `AssetEntry`/`listAssets`, sin
+  // marca de tiempo) — inventar una a partir del ID o del orden de lectura queda explícitamente fuera.
+  const [sortBy, setSortBy] = useState<'name' | 'type'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   // Cuadrícula en escritorio y lista en móvil, salvo que la persona elija otra vista.
   const [gridChoice, setGridChoice] = useState<boolean | null>(null);
   const grid = gridChoice ?? !compact;
@@ -93,6 +102,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const [fontDraft, setFontDraft] = useState<{ readonly bytes: Uint8Array; readonly name: string } | null>(null);
   const [fontConsent, setFontConsent] = useState(false);
   const [licenseNote, setLicenseNote] = useState('');
+  const [fontHelpOpen, setFontHelpOpen] = useState(false);
   const [googleSearchOpen, setGoogleSearchOpen] = useState(false);
   const [googleQuery, setGoogleQuery] = useState('');
   const [googleSearching, setGoogleSearching] = useState(false);
@@ -146,7 +156,12 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const counts = new Map<Tab, number>(tabs.map(({ tab: key }) => [key, key === 'all' ? catalog.length : catalog.filter((entry) => entry.kind === key).length]));
   const unused = catalog.filter((entry) => entry.unused);
   const text = fold(query.trim());
-  const shown = catalog.filter((entry) => (tab === 'all' || entry.kind === tab) && (!unusedOnly || entry.unused) && (text === '' || fold(entry.name).includes(text)));
+  const filtered = catalog.filter((entry) => (tab === 'all' || entry.kind === tab) && (!unusedOnly || entry.unused) && (text === '' || fold(entry.name).includes(text)));
+  const sortKey = (entry: AssetEntry) => (sortBy === 'type' ? `${kindLabel[entry.kind]}\u0000${entry.name}` : entry.name);
+  const shown = [...filtered].sort((a, b) => {
+    const order = fold(sortKey(a)) < fold(sortKey(b)) ? -1 : fold(sortKey(a)) > fold(sortKey(b)) ? 1 : 0;
+    return sortDir === 'asc' ? order : -order;
+  });
   const current = catalog.find((entry) => entry.ref === selected) ?? null;
 
   const reload = () => setRefresh((value) => value + 1);
@@ -279,10 +294,15 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
     }
     openAssetFile(entry.name, read.value);
   };
+  const previewText = async (entry: AssetEntry) => {
+    await textPreview.open({ ref: entry.ref, name: entry.name });
+  };
 
   // UX7-F/UX7.1-A4: vista previa de PDF embebida (no sale de Assets ni del Workspace); el ciclo de vida
   // del Blob URL vive en `usePdfPreview`, compartido con la tarjeta de documento del Canvas.
   const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assets, workspace.id);
+  // B9-R3-06: mismo criterio, ahora también para `.md`/`.txt` compartidos con una tarjeta de documento.
+  const textPreview = useTextAssetPreview(assets, workspace.id);
   const download = async (entry: AssetEntry) => {
     if (!assets) return;
     const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
@@ -336,7 +356,6 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
 
   const detail = current ? (
     <View testID="asset-detail" style={[styles.detail, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-      {Platform.OS === 'web' && current.kind === 'image' && !current.missing ? <ActionButton label={t('content.openImage', locale)} onPress={() => contentResources.openImage(current.ref, current.name)} /> : null}
       <Text accessibilityRole="header" style={[styles.name, { color: colors.textPrimary }]}>{current.name}</Text>
       {thumbs.get(current.ref) ? (
         current.kind === 'image' && !current.missing && Platform.OS === 'web' ? (
@@ -347,10 +366,17 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
           </Pressable>
         ) : <Image accessibilityRole="image" accessibilityLabel={t('assets.preview.accessibilityLabel', locale, { name: current.name })} source={{ uri: thumbs.get(current.ref) }} resizeMode="contain" style={styles.preview} />
       ) : null}
-      <Text style={[styles.meta, { color: colors.textSecondary }]}>
-        {`${kindLabel[current.kind].toUpperCase()}${bytes.has(current.ref) ? ` · ${size(bytes.get(current.ref) ?? 0)}` : ''}${current.missing ? t('assets.missingSuffix', locale) : ''}`}
-      </Text>
-      <Text selectable testID="asset-path" style={[styles.path, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{current.ref}</Text>
+      {/* B9-R4-06: tipo, peso, ruta y estado de uso ya eran datos reales, solo repartidos entre esta
+          zona y el botón «Consultar uso»; agrupados aquí bajo «Detalles» sin inventar fecha/MIME ni
+          mover ninguna acción existente (`asset-path` y «Consultar uso» conservan su lugar). */}
+      <View testID="asset-details" style={[styles.detailsSection, { borderColor: colors.gridLine }]}>
+        <Text accessibilityRole="header" style={[styles.detailsHeading, { color: colors.textPrimary }]}>{t('assets.details.heading', locale)}</Text>
+        <Text style={[styles.meta, { color: colors.textSecondary }]}>
+          {`${kindLabel[current.kind].toUpperCase()}${bytes.has(current.ref) ? ` · ${size(bytes.get(current.ref) ?? 0)}` : ''}${current.missing ? t('assets.missingSuffix', locale) : ''}`}
+        </Text>
+        <Text selectable testID="asset-path" style={[styles.path, { color: colors.textPrimary, borderColor: colors.gridLine }]}>{current.ref}</Text>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t(current.unused ? 'assets.details.unused' : 'assets.details.inUse', locale)}</Text>
+      </View>
       <View style={styles.row}>
         {Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard ? (
           <ActionButton label={copied ? t('assets.copyPath.copied', locale) : t('assets.copyPath', locale)} accessibilityLabel={t('assets.copyPath.accessibilityLabel', locale, { ref: current.ref })} onPress={() => void copy(current.ref)} />
@@ -358,10 +384,17 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         {current.kind === 'document' && isPdfFileName(current.name) && !current.missing && Platform.OS === 'web' ? (
           <ActionButton label={t('assets.pdf.preview.label', locale)} accessibilityLabel={t('assets.pdf.preview.accessibilityLabel', locale, { name: current.name })} onPress={() => void openPdfPreview(current)} />
         ) : null}
+        {current.kind === 'image' && !current.missing && Platform.OS === 'web' ? <ActionButton label={locale === 'es' ? 'Vista previa' : 'Preview'}
+          accessibilityLabel={`${locale === 'es' ? 'Vista previa de' : 'Preview of'} ${current.name}`} onPress={() => contentResources.openImage(current.ref, current.name)} /> : null}
+        {current.kind === 'document' && /\.(?:md|markdown|txt)$/i.test(current.name) && !current.missing ? <ActionButton
+          label={locale === 'es' ? 'Vista previa' : 'Preview'} accessibilityLabel={`${locale === 'es' ? 'Vista previa de' : 'Preview of'} ${current.name}`}
+          onPress={() => void previewText(current)} /> : null}
         {!current.missing && supportsAssetDownload() ? (
           <ActionButton label={t('assets.download', locale)} accessibilityLabel={t('assets.download.accessibilityLabel', locale, { name: current.name })} onPress={() => void download(current)} />
         ) : null}
-        {(current.kind === 'image' || (current.kind === 'document' && isPdfFileName(current.name))) && !current.missing ? (
+        {/* B9-R3-06: ya no es exclusivo de PDF — Markdown y texto plano también tienen visor propio
+            (`addDocumentToBoard` acepta exactamente este mismo conjunto, única fuente de verdad). */}
+        {(current.kind === 'image' || (current.kind === 'document' && isDocumentCardFileName(current.name))) && !current.missing ? (
           <>
             <ActionButton label={t('assets.addToBoard', locale)} accessibilityLabel={t('assets.addToBoard.accessibilityLabel', locale, { name: current.name })} onPress={() => void addToBoard(current)} />
             {current.kind === 'image' ? <ActionButton label={t('assets.replace', locale)} accessibilityLabel={t('assets.replace.accessibilityLabel', locale, { name: current.name })} onPress={() => void replace(current)} /> : null}
@@ -377,7 +410,8 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
             <ActionButton label={t('assets.font.useInNotes', locale)} accessibilityLabel={t('assets.font.useInNotes.accessibilityLabel', locale, { name: current.name })} onPress={() => void applyFontToNotes(current)} />
           )
         ) : null}
-        {current.unused ? <ActionButton label={t('assets.delete', locale)} accessibilityLabel={t('assets.delete.accessibilityLabel', locale, { name: current.name })} onPress={() => setConfirm('one')} /> : null}
+        {current.unused ? <ActionButton label={t('assets.delete', locale)} accessibilityLabel={t('assets.delete.accessibilityLabel', locale, { name: current.name })} onPress={() => setConfirm('one')} />
+          : <Text style={[styles.hint, { color: colors.textSecondary }]}>{locale === 'es' ? 'No se puede eliminar: este recurso tiene referencias. Consulta su uso.' : 'Cannot delete: this asset has references. Check its usage.'}</Text>}
       </View>
       {confirm === 'one' ? (
         <View testID="assets-confirm-one" style={[styles.confirm, { borderColor: colors.danger }]}>
@@ -395,7 +429,7 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   ) : null;
 
   const list = (
-    <View style={grid ? styles.grid : styles.list}>
+    <View testID="assets-list" style={grid ? styles.grid : styles.list}>
       {shown.map((entry) => (
         <View key={entry.ref} testID={`asset-${entry.name}`} style={[grid ? styles.tile : styles.line, { borderColor: entry.ref === selected ? colors.selection : colors.border, backgroundColor: colors.surface }]}>
           {thumbs.get(entry.ref) ? (
@@ -411,13 +445,13 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
               {entry.missing ? t('assets.item.missing', locale) : entry.unused ? t('assets.item.unused', locale) : t('assets.item.usedIn', locale, { count: String(entry.usedBy.length) })}
             </Text>
             <View style={styles.row}>
-            <ActionButton label={entry.ref === selected ? t('assets.viewing', locale) : t('assets.view', locale)} pressed={entry.ref === selected} accessibilityLabel={t('assets.view.accessibilityLabel', locale, { name: entry.name })}
-              onPress={() => { setSelected(entry.ref); setConfirm(null); setCopied(false); }} />
-            {Platform.OS === 'web' && entry.kind === 'image' && !entry.missing ? <Pressable accessibilityRole="button" accessibilityLabel={t('assets.image.enlargeLabel', locale, { name: entry.name })}
-              onPress={() => contentResources.openImage(entry.ref, entry.name)}
-              style={{ minHeight: 44, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <AppIcon name="maximize" size={18} /><Text style={{ color: colors.textPrimary }}>{t('assets.image.enlarge', locale)}</Text>
-            </Pressable> : null}
+            <Pressable testID={`asset-view-${entry.ref}`} accessibilityRole="button" accessibilityLabel={t('assets.view.accessibilityLabel', locale, { name: entry.name })}
+              accessibilityState={{ selected: entry.ref === selected }} {...(Platform.OS === 'web' ? { title: t('assets.view.accessibilityLabel', locale, { name: entry.name }) } : {})}
+              onPress={() => { setSelected(entry.ref); setConfirm(null); setCopied(false); }}
+              style={{ width: 44, height: 44, borderWidth: 2, borderColor: entry.ref === selected ? colors.selection : colors.border,
+                backgroundColor: entry.ref === selected ? colors.accent : colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+              <AppIcon name="eye" size={20} />
+            </Pressable>
             </View>
           </View>
         </View>
@@ -437,24 +471,56 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         <>
           {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
           <Text style={{ color: colors.textSecondary }}>{t('content.libraryLimit', locale)}</Text>
-          <View style={[styles.toolbar, { borderColor: colors.gridLine }]}>
-            <ActionButton label={t('assets.import.image', locale)} tone="primary" accessibilityLabel={t('assets.import.image.accessibilityLabel', locale)} onPress={() => void importImage()} />
-            {supportsFileImport() ? <ActionButton label={t('assets.import.file', locale)} accessibilityLabel={t('assets.import.file.accessibilityLabel', locale)} onPress={() => void importFile()} /> : null}
-            {supportsFontImport() ? <ActionButton label={t('assets.import.font', locale)} accessibilityLabel={t('assets.import.font.accessibilityLabel', locale)} onPress={() => void pickFont()} /> : null}
-            {/* Solo donde ya se puede activar una fuente (ADR 0042): no tiene sentido descargar lo que no se puede usar todavía. */}
-            {supportsGoogleFonts() && supportsCustomFont() ? (
-              <ActionButton label={t('assets.google.button', locale)} accessibilityLabel={t('assets.google.button.accessibilityLabel', locale)} onPress={() => setGoogleSearchOpen(true)} />
-            ) : null}
-            <ActionButton label={grid ? t('assets.view.list', locale) : t('assets.view.grid', locale)} accessibilityLabel={grid ? t('assets.view.list.accessibilityLabel', locale) : t('assets.view.grid.accessibilityLabel', locale)} onPress={() => setGridChoice(!grid)} />
-            {tabs.map(({ tab: key, label }) => (
-              <ActionButton key={key} label={`${label} · ${counts.get(key) ?? 0}`} pressed={tab === key}
-                accessibilityLabel={t('assets.tab.accessibilityLabel', locale, { label, count: String(counts.get(key) ?? 0) })} onPress={() => setTab(key)} />
-            ))}
-            <ActionButton label={t('assets.tab.unused', locale, { count: String(unused.length) })} pressed={unusedOnly} accessibilityLabel={t('assets.tab.unused.accessibilityLabel', locale, { count: String(unused.length) })} onPress={() => setUnusedOnly((value) => !value)} />
+          {/* B9-R2-10: antes, una sola fila con todos los botones; ahora tres grupos visuales/funcionales
+              (Importar, Explorar, Filtrar), sin quitar ni duplicar ninguna capacidad existente. */}
+          <View testID="assets-toolbar" style={[styles.toolbarGroups, compact ? styles.toolbarGroupsCompact : null, { borderColor: colors.gridLine }]}>
+            <View testID="assets-toolbar-import" accessibilityRole="toolbar" accessibilityLabel={t('assets.group.import', locale)} style={styles.toolbarGroup}>
+              <Text style={[styles.toolbarGroupLabel, { color: colors.textSecondary }]}>{t('assets.group.import', locale).toUpperCase()}</Text>
+              <View style={styles.row}>
+                <ActionButton label={t('assets.import.image', locale)} tone="primary" accessibilityLabel={t('assets.import.image.accessibilityLabel', locale)} onPress={() => void importImage()} />
+                {supportsFileImport() ? <ActionButton label={t('assets.import.file', locale)} accessibilityLabel={t('assets.import.file.accessibilityLabel', locale)} onPress={() => void importFile()} /> : null}
+                {supportsFontImport() ? <ActionButton label={t('assets.import.font', locale)} accessibilityLabel={t('assets.import.font.accessibilityLabel', locale)} onPress={() => setFontHelpOpen(true)} /> : null}
+                {/* Solo donde ya se puede activar una fuente (ADR 0042): no tiene sentido descargar lo que no se puede usar todavía. */}
+                {supportsGoogleFonts() && supportsCustomFont() ? (
+                  <ActionButton label={t('assets.google.button', locale)} accessibilityLabel={t('assets.google.button.accessibilityLabel', locale)} onPress={() => setGoogleSearchOpen(true)} />
+                ) : null}
+              </View>
+            </View>
+            <View testID="assets-toolbar-explore" accessibilityRole="toolbar" accessibilityLabel={t('assets.group.explore', locale)} style={styles.toolbarGroup}>
+              <Text style={[styles.toolbarGroupLabel, { color: colors.textSecondary }]}>{t('assets.group.explore', locale).toUpperCase()}</Text>
+              {/* B9-R4-05: Buscar y Ordenar comparten una misma fila cuando hay ancho suficiente (en vez
+                  de apilarse uno sobre otro dejando un hueco vacío a la derecha); se envuelven igual que
+                  el resto de grupos cuando no cabe, sin otro sistema de layout. */}
+              <View style={styles.toolbarExploreRow}>
+                <View style={styles.toolbarSearchRow}>
+                  <TextField label={t('assets.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('assets.search.placeholder', locale)} testID="assets-search" />
+                </View>
+                <View style={styles.row}>
+                  {/* B9-R3-04: un único selector de criterio en vez de dos botones Nombre/Tipo lado a
+                      lado — el estado activo ya se lee en la propia etiqueta. */}
+                  <ActionButton testID="assets-sort-criterion" label={`${t('assets.sort.criterion', locale)}: ${t(sortBy === 'name' ? 'assets.sort.name' : 'assets.sort.type', locale)}`}
+                    accessibilityLabel={t(sortBy === 'name' ? 'assets.sort.toType' : 'assets.sort.toName', locale)}
+                    onPress={() => setSortBy((value) => (value === 'name' ? 'type' : 'name'))} />
+                  <ActionButton testID="assets-sort-direction" label={sortDir === 'asc' ? '↑' : '↓'}
+                    accessibilityLabel={t(sortDir === 'asc' ? 'assets.sort.toAscending' : 'assets.sort.toDescending', locale)}
+                    onPress={() => setSortDir((value) => (value === 'asc' ? 'desc' : 'asc'))} />
+                  <ActionButton label={grid ? t('assets.view.list', locale) : t('assets.view.grid', locale)} accessibilityLabel={grid ? t('assets.view.list.accessibilityLabel', locale) : t('assets.view.grid.accessibilityLabel', locale)} onPress={() => setGridChoice(!grid)} />
+                </View>
+              </View>
+            </View>
+            <View testID="assets-toolbar-filter" accessibilityRole="toolbar" accessibilityLabel={t('assets.group.filter', locale)} style={styles.toolbarGroup}>
+              <Text style={[styles.toolbarGroupLabel, { color: colors.textSecondary }]}>{t('assets.group.filter', locale).toUpperCase()}</Text>
+              <View style={styles.row}>
+                {tabs.map(({ tab: key, label }) => (
+                  <ActionButton key={key} label={`${label} · ${counts.get(key) ?? 0}`} pressed={tab === key}
+                    accessibilityLabel={t('assets.tab.accessibilityLabel', locale, { label, count: String(counts.get(key) ?? 0) })} onPress={() => setTab(key)} />
+                ))}
+                <ActionButton label={t('assets.tab.unused', locale, { count: String(unused.length) })} pressed={unusedOnly} accessibilityLabel={t('assets.tab.unused.accessibilityLabel', locale, { count: String(unused.length) })} onPress={() => setUnusedOnly((value) => !value)} />
+              </View>
+            </View>
           </View>
           <ScrollView contentContainerStyle={[styles.content, compact ? null : styles.contentWide]}>
             <View style={compact ? styles.column : styles.mainColumn}>
-              <TextField label={t('assets.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('assets.search.placeholder', locale)} testID="assets-search" />
               {problem ? <Text testID="assets-problem" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>{problem}</Text> : null}
               {googleSearchOpen ? (
                 <View testID="assets-google-search" style={[styles.confirm, { borderColor: colors.border }]}>
@@ -502,11 +568,39 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
               {compact ? detail : null}
               {list}
             </View>
-            {!compact ? <View style={styles.sideColumn}>{detail}</View> : null}
+            {/* B9-R3-05: sigue visible al desplazar una biblioteca larga — `position: sticky` es la
+                solución más simple que ya resuelve el caso con el layout existente (misma técnica que
+                la barra de la imagen en el editor enriquecido), sin un mecanismo de posicionamiento
+                nuevo. Con scroll interno propio si su contenido no cupiera en la altura visible. */}
+            {!compact ? <View testID="assets-detail-sticky" style={[styles.sideColumn, Platform.OS === 'web' ? styles.sideColumnSticky : null]}>{detail}</View> : null}
           </ScrollView>
         </>
       )}
       <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} />
+      <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} onClose={textPreview.close} testID="asset-text-preview" />
+      {/* B9-R2-11: explica antes de elegir el archivo — nunca sustituye al selector real ni descarga
+          nada por su cuenta; «Buscar en Google Fonts» sigue siendo el único camino de red, con su
+          propio consentimiento de licencia ya existente. */}
+      <Dialog visible={fontHelpOpen} title={t('assets.font.help.title', locale)} compact={compact} presentation="centered" onClose={() => setFontHelpOpen(false)} testID="assets-font-help">
+        <View style={{ gap: 12 }}>
+          {([
+            ['assets.font.help.formats.title', 'assets.font.help.formats.body'],
+            ['assets.font.help.pick.title', 'assets.font.help.pick.body'],
+            ['assets.font.help.name.title', 'assets.font.help.name.body'],
+            ['assets.font.help.use.title', 'assets.font.help.use.body'],
+            ['assets.font.help.limits.title', 'assets.font.help.limits.body'],
+            ['assets.font.help.google.title', 'assets.font.help.google.body'],
+          ] as const).map(([titleKey, bodyKey]) => <View key={titleKey} style={{ gap: 4 }}>
+            <Text accessibilityRole="header" style={{ color: colors.textPrimary, fontWeight: '800' }}>{t(titleKey, locale)}</Text>
+            <Text style={{ color: colors.textSecondary }}>{t(bodyKey, locale)}</Text>
+          </View>)}
+          {supportsGoogleFonts() && supportsCustomFont() ? <Text style={{ color: colors.textSecondary }}>{t('assets.font.help.googleInApp', locale)}</Text> : null}
+          <View style={styles.row}>
+            <ActionButton testID="assets-font-help-continue" tone="primary" label={t('assets.font.help.continue', locale)} onPress={() => { setFontHelpOpen(false); void pickFont(); }} />
+            <ActionButton label={t('trash.cancel', locale)} onPress={() => setFontHelpOpen(false)} />
+          </View>
+        </View>
+      </Dialog>
     </View>
   );
 }
@@ -517,12 +611,27 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: 2 },
   heading: { fontSize: 22, fontWeight: '900' },
-  toolbar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', padding: 12, borderBottomWidth: 1 },
+  toolbarGroups: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, padding: 12, borderBottomWidth: 1 },
+  // Igual que `Toolbar.tsx`: en compacto, los grupos se apilan en columna en vez de intentar
+  // compartir una misma fila ancha, que es lo que producía botones superpuestos en móvil.
+  toolbarGroupsCompact: { flexDirection: 'column', flexWrap: 'nowrap' },
+  toolbarGroup: { gap: 4 },
+  toolbarGroupLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
+  // El campo de búsqueda no tiene ancho propio (se estira): en su propia fila, no compite por
+  // espacio con los botones de orden/vista y deja de taparlos al envolver en móvil.
+  toolbarSearchRow: { width: 220, maxWidth: '100%' },
+  // B9-R4-05: fila compartida por Buscar y Ordenar cuando el ancho lo permite; envuelve igual que
+  // `toolbarGroups`/`row` en vez de un mecanismo de layout nuevo.
+  toolbarExploreRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 },
   content: { padding: 16, gap: 16 },
   contentWide: { flexDirection: 'row', alignItems: 'flex-start' },
   column: { gap: 8 },
   mainColumn: { flex: 1, gap: 8, minWidth: 0 },
   sideColumn: { width: 320, flexShrink: 0, gap: 8 },
+  // Propiedades CSS web puras (`sticky`/`calc`/`auto`), fuera del tipo `ViewStyle` de RN pero ya
+  // soportadas en tiempo de ejecución por React Native Web (B9-R3-05); el cast evita que su forma
+  // ambigua degrade la inferencia de tipos del resto de este mismo `StyleSheet.create`.
+  sideColumnSticky: { position: 'sticky', top: 16, maxHeight: 'calc(100vh - 32px)', overflow: 'auto' } as unknown as ViewStyle,
   pad: { padding: 16 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
   hint: { fontSize: 13, lineHeight: 18 },
@@ -540,6 +649,8 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '800' },
   meta: { fontFamily: mono, fontSize: 11, fontWeight: '700' },
   detail: { borderWidth: 2, padding: 10, gap: 8 },
+  detailsSection: { borderWidth: 1, borderRadius: 4, padding: 8, gap: 4 },
+  detailsHeading: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
   preview: { width: '100%', height: 180 },
   path: { fontFamily: mono, fontSize: 13, borderWidth: 1, padding: 8 },
   useRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

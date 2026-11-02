@@ -37,6 +37,9 @@ interface ToolbarProps {
   /** Móvil: «Más» abre la hoja de secciones (Assets, Configuración…; ADR 0022). */
   readonly onOpenMore: () => void;
   readonly onOpenSearch: () => void;
+  /** B9-R2-07: mismo diálogo que ya abría Configuración (`ShortcutHelpDialog`), ahora también al
+      alcance directo junto a «Buscar» — sin un segundo contenido de ayuda independiente. */
+  readonly onOpenHelp: () => void;
   /** Deshacer y rehacer (ADR 0026): el nombre de la acción, o null si no hay. En móvil van en la línea de aviso. */
   readonly undoLabel: string | null;
   readonly redoLabel: string | null;
@@ -80,6 +83,8 @@ export function Toolbar(props: ToolbarProps) {
         active={props.tool === 'pan'} disabled={!onCanvas} onPress={() => props.onTool('pan')} style={cell} /> : null}
       <ToolButton testID="open-search" icon="search" label={t('tool.search', locale)} accessibilityLabel={t('tool.search.label', locale)} accessibilityHint={t('tool.search.hint', locale)}
         onPress={props.onOpenSearch} style={cell} />
+      <ToolButton testID="open-help" glyph="?" label={t('tool.help', locale)} accessibilityLabel={t('help.open', locale)} accessibilityHint={t('help.hint', locale)}
+        onPress={props.onOpenHelp} style={cell} />
       {props.compact ? (
         <>
           <ToolButton icon="list" label={t('view.list', locale)} accessibilityLabel={t('view.list.label', locale)} active={!onCanvas} onPress={props.onToggleView} style={cell} />

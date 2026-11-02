@@ -1,9 +1,10 @@
 import { moveNoteBlock, parseNoteBlocks, removeNoteBlock, setNoteImageAlt } from '@noutynotes/application';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
 import { markdownExcerpt } from './markdownLists';
+import { t } from '../i18n';
 
 interface NoteBlocksEditorProps {
   readonly content: string;
@@ -21,24 +22,25 @@ interface NoteBlocksEditorProps {
  */
 export function NoteBlocksEditor({ content, onChange, images, onInsert, onReplace, canPickImages }: NoteBlocksEditorProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const blocks = parseNoteBlocks(content);
   const imageCount = blocks.filter((block) => block.kind === 'image').length;
   const name = (index: number) => {
     const block = blocks[index];
-    if (block?.kind === 'image') return `la imagen ${block.alt || blocks.slice(0, index + 1).filter((candidate) => candidate.kind === 'image').length}`;
-    return `el párrafo ${blocks.slice(0, index + 1).filter((candidate) => candidate.kind === 'text').length}`;
+    if (block?.kind === 'image') return t('blocks.image', locale, { name: block.alt || String(blocks.slice(0, index + 1).filter((candidate) => candidate.kind === 'image').length) });
+    return t('blocks.paragraph', locale, { number: String(blocks.slice(0, index + 1).filter((candidate) => candidate.kind === 'text').length) });
   };
 
   return (
     <View testID="note-blocks" style={styles.section}>
-      <Text style={[styles.hint, { color: colors.textSecondary }]}>CONTENIDO EN ORDEN</Text>
-      <ActionButton label="Insertar imagen" tone="primary" accessibilityLabel="Insertar una imagen en la nota" onPress={onInsert} />
-      <Text style={[styles.hint, { color: colors.textSecondary }]}>Se coloca después del párrafo donde está el cursor (al final si no has escrito en el texto).</Text>
-      {!canPickImages ? <Text style={[styles.hint, { color: colors.textSecondary }]}>Este entorno no permite elegir imágenes.</Text> : null}
+      <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('blocks.title', locale)}</Text>
+      <ActionButton label={t('blocks.insert', locale)} tone="primary" accessibilityLabel={t('blocks.insertLabel', locale)} onPress={onInsert} />
+      <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('blocks.insertHint', locale)}</Text>
+      {!canPickImages ? <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('blocks.pickUnavailable', locale)}</Text> : null}
       {imageCount === 0 ? (
         <Text style={[styles.hint, { color: colors.textSecondary }]}>
-          Las imágenes se guardan en el texto como una línea «![texto](assets/images/…)»: su posición es su orden.
+          {t('blocks.markdownHint', locale)}
         </Text>
       ) : null}
       {blocks.length > 1 || imageCount > 0 ? blocks.map((block, index) => (
@@ -47,34 +49,34 @@ export function NoteBlocksEditor({ content, onChange, images, onInsert, onReplac
           {block.kind === 'image' ? (
             <>
               {images.get(block.ref) ? (
-                <Image accessibilityRole="image" accessibilityLabel={block.alt || 'Imagen de la nota'} source={{ uri: images.get(block.ref) }}
+                <Image accessibilityRole="image" accessibilityLabel={block.alt || t('blocks.imageAlt', locale)} source={{ uri: images.get(block.ref) }}
                   // «contain», no «cover» (UX7-C2, mismo criterio que la ficha de imagen única en CanvasCard):
                   // recortar sin que la persona lo pida oculta parte de su imagen.
                   resizeMode="contain"
                   style={[styles.thumb, { borderColor: colors.border, backgroundColor: colors.background }]} />
               ) : (
-                <Text style={[styles.hint, { color: colors.danger }]}>{`Imagen no disponible: ${block.ref}`}</Text>
+                <Text style={[styles.hint, { color: colors.danger }]}>{t('blocks.imageMissing', locale, { ref: block.ref })}</Text>
               )}
-              <TextField label={`Texto alternativo de la imagen ${blocks.slice(0, index + 1).filter((candidate) => candidate.kind === 'image').length}`}
-                value={block.alt} onChangeText={(alt) => onChange(setNoteImageAlt(content, index, alt))} placeholder="Describe la imagen" />
+              <TextField label={t('blocks.altLabel', locale, { number: String(blocks.slice(0, index + 1).filter((candidate) => candidate.kind === 'image').length) })}
+                value={block.alt} onChangeText={(alt) => onChange(setNoteImageAlt(content, index, alt))} placeholder={t('blocks.altPlaceholder', locale)} />
             </>
           ) : (
             <Text numberOfLines={3} style={[styles.text, { color: colors.textPrimary }]}>{markdownExcerpt(block.text)}</Text>
           )}
           <View style={styles.row}>
-            <ActionButton label="↑" accessibilityLabel={`Subir ${name(index)}`} onPress={() => onChange(moveNoteBlock(content, index, -1))} />
-            <ActionButton label="↓" accessibilityLabel={`Bajar ${name(index)}`} onPress={() => onChange(moveNoteBlock(content, index, 1))} />
+            <ActionButton label="↑" accessibilityLabel={t('blocks.moveUp', locale, { name: name(index) })} onPress={() => onChange(moveNoteBlock(content, index, -1))} />
+            <ActionButton label="↓" accessibilityLabel={t('blocks.moveDown', locale, { name: name(index) })} onPress={() => onChange(moveNoteBlock(content, index, 1))} />
             {block.kind === 'image' ? (
               <>
-                <ActionButton label="Reemplazar" accessibilityLabel={`Reemplazar ${name(index)}`} onPress={() => onReplace(index)} />
-                <ActionButton label="Quitar" accessibilityLabel={`Quitar ${name(index)} de la nota`} onPress={() => onChange(removeNoteBlock(content, index))} />
+                <ActionButton label={t('blocks.replace', locale)} accessibilityLabel={t('blocks.replaceNamed', locale, { name: name(index) })} onPress={() => onReplace(index)} />
+                <ActionButton label={t('blocks.remove', locale)} accessibilityLabel={t('blocks.removeNamed', locale, { name: name(index) })} onPress={() => onChange(removeNoteBlock(content, index))} />
               </>
             ) : null}
           </View>
         </View>
       )) : null}
       {imageCount > 0 ? (
-        <Text style={[styles.hint, { color: colors.textSecondary }]}>Quitar o reemplazar una imagen no borra su archivo: queda sin usar en assets/images.</Text>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('blocks.keepFile', locale)}</Text>
       ) : null}
     </View>
   );

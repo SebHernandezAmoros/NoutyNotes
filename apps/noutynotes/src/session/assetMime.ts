@@ -22,6 +22,18 @@ export function isPdfFileName(fileName: string): boolean {
   return mimeForFileName(fileName) === 'application/pdf';
 }
 
+/**
+ * B9-R3-06: qué archivos de `kind: 'document'` pueden añadirse al tablero como tarjeta de documento
+ * (`base: 'file'`) — antes, solo PDF. `.md`/`.txt` ya tienen un visor seguro propio (B9-R2-12,
+ * `useTextAssetPreview`); el resto de `document` (docx, csv, xlsx…) no tiene vista previa ni
+ * descodificador seguro todavía, así que no se ofrecen aquí para no abrir una tarjeta sin forma real
+ * de verla. Única fuente de verdad: la usan `addDocumentToBoard`, `AssetsView` y la activación de la
+ * tarjeta en el Canvas, para que los tres acuerden siempre el mismo conjunto.
+ */
+export function isDocumentCardFileName(fileName: string): boolean {
+  return /\.(?:pdf|md|markdown|txt)$/i.test(fileName);
+}
+
 const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d]; // "%PDF-"
 
 /** UX7-F (PDF-08/PDF-09): el nombre del archivo nunca es prueba suficiente — un `.pdf` renombrado o

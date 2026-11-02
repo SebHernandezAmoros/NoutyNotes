@@ -4,7 +4,7 @@ import { ContentResourcesProvider } from './ContentResources';
 import { isEditorialTarget } from './canvas/cardInteraction';
 import {
   PROTOTYPE_BOARD, addBoardShortcut, addBoardToWorkspace, addCardToBoard, addNoteImage, addNoteImageDocument, archiveSelectionForExport, assetsOf, connectCards, createDraftKey, disconnectCards, draftRevision, duplicateSelection, editCardAppearance, editCardContent, editConnectorPath, importImageCard, importImageCardAt, insertExistingNoteImage, insertExistingNoteImageDocument,
-  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, resizeCardRectOnBoard, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, restoreCardsFromTrash, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
+  groupCardsInFrame, moveBoardToArchive, moveFrameOnBoard, moveCardOnBoard, moveCardToArchive, moveCardToTrash, moveCardsOnBoard, moveCardsToArchive, moveCardsToTrash, pasteSnapshot, placeCardOnBoard, printableDocument, purgeCardFromTrash, removeTagEverywhere, renameBoardInWorkspace, renameTag, reorderBoardInWorkspace, reorderCardsOnBoard, resizeCardRectOnBoard, resizeCardOnBoard, restoreBoardFromArchive, restoreCardFromArchive, restoreCardFromTrash, restoreCardsFromArchive, restoreCardsFromTrash, searchAllWorkspaces, sendArchivedCardsToTrash, sendArchivedToTrash, setCardDisplay, snapshotSelection, storageFailure, updateConnection,
 } from '@noutynotes/application';
 import type { ClipboardSnapshot, DraftGeneration, DraftSurface, EditorialDraft, EditorialSessionLease, PrototypeCardKind, SearchResult, WorkspaceSummary } from '@noutynotes/application';
 import type { AssetRef, BoardId, Card, CardDisplayMode, CardId, GridPoint, GridRect, GridSize, RelationArrow, RelationId, RichTextDocument, Workspace, WorkspaceId } from '@noutynotes/domain';
@@ -28,7 +28,12 @@ import type { TranslationKey } from '../i18n';
 import { noteFontFamily } from './fonts';
 import { PresentView } from './PresentView';
 import { buildPrintHtml } from './printHtml';
+import type { PrintOptions } from './printHtml';
+import { PrintOptionsDialog } from './PrintOptionsDialog';
+import { ShortcutHelpDialog } from './ShortcutHelpDialog';
+import { resolveImageResources } from './imageResources';
 import { downloadFile } from '../session/archiveFiles';
+import { isDocumentCardFileName, isPdfFileName } from '../session/assetMime';
 import { activateCustomFont, customFontFamilyName, supportsCustomFont } from '../session/customFont';
 import { describeFailure } from '../session/messages';
 import { printHtmlNative, supportsNativePrint } from '../session/printNative';
@@ -56,7 +61,9 @@ import type { Point } from './canvas/viewport';
 import { CardInspector } from './CardInspector';
 import type { CardInspectorSection } from './CardInspector';
 import { PdfPreview } from './PdfPreview';
+import { TextAssetPreviewDialog } from './TextAssetPreviewDialog';
 import { usePdfPreview } from './usePdfPreview';
+import { useTextAssetPreview } from './useTextAssetPreview';
 import { FrameInspector } from './FrameInspector';
 import { ProjectSheet } from './ProjectTabs';
 import { SettingsPanel } from './SettingsPanel';
@@ -81,6 +88,7 @@ import { composeSavedWithNotes } from './actionFeedback';
 import type { EditableCardDraft } from './editorialDraft';
 
 /** Desde este ancho la navegación de espacios y tableros va en una barra lateral. */
+const block9LayerOpen = () => typeof document !== 'undefined' && !!document.querySelector('[data-testid="shortcut-help"], [data-testid="print-options"], [data-testid="present-view"]');
 const SIDEBAR_MIN_WIDTH = 1100;
 const START_PAN: Point = { x: 16, y: 16 };
 // UX7-D1: el 100 % es ahora el tamaño normal de trabajo (antes 75 %, ADR 0048); la densidad visual
@@ -166,6 +174,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setVisitedViews((current) => (current.has(next) ? current : new Set(current).add(next)));
   };
   const [presentOpen, setPresentOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [multiMoreOpen, setMultiMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -243,6 +253,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // UX7.1-A4: mismo visor y mismo hook de ciclo de vida que Assets — una tarjeta de documento abre su
   // PDF ya catalogado, sin un segundo sistema de vista previa.
   const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assetsOf(session.storage), workspace?.id);
+  // B9-R3-06: mismo criterio para Markdown/texto plano, compartido con Assets.
+  const textPreview = useTextAssetPreview(assetsOf(session.storage), workspace?.id);
   const boardActions = workspace?.boards.find((candidate) => candidate.id === boardActionsId) ?? null;
   const archiveCount = workspace?.archive?.length ?? 0;
   const summaries = useSessionSummaries(workspace);
@@ -418,13 +430,13 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     setSavingNow(true);
     try {
       if (!await flushPendingText()) {
-        setFeedback({ tone: 'error', text: 'No se pudo guardar: revisa primero el aviso del borrador en el Centro de recuperación.' });
+        setFeedback({ tone: 'error', text: t('workspace.saveDraftFailed', locale) });
         return;
       }
       const ok = await flushWorkspace();
       // UX7-LAYOUT-CORRECTION: un guardado manual correcto no anuncia nada — el guardado normal es
       // silencioso (el estado ya refleja «guardado» por sí solo); solo un error real se notifica.
-      if (!ok) setFeedback({ tone: 'error', text: 'No se pudo guardar. Revisa el aviso.', saveFailed: true });
+      if (!ok) setFeedback({ tone: 'error', text: t('workspace.saveFailed', locale), saveFailed: true });
     } finally {
       setSavingNow(false);
     }
@@ -437,7 +449,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const onKey = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
+      if (block9LayerOpen() || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
       event.preventDefault();
       void saveNowRef.current();
     };
@@ -515,11 +527,15 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       showCardInspector(cardId, 'appearance', compact);
       return;
     }
-    // UX7.1-A4: una tarjeta de documento no abre edición ni inspector al activarla — abre el PDF ya
-    // catalogado que referencia, igual que «Vista previa» en Assets (mismo visor, mismo hook).
+    // UX7.1-A4/B9-R3-06: una tarjeta de documento no abre edición ni inspector al activarla — abre el
+    // PDF, Markdown o texto plano ya catalogado que referencia, igual que «Vista previa» en Assets
+    // (mismo visor, mismo hook — `isDocumentCardFileName` es la misma fuente de verdad que ya usa
+    // `addDocumentToBoard` para decidir qué puede llegar a ser esta tarjeta).
     if (base === 'file') {
       const ref = card?.assetRefs?.[0];
-      if (ref) void openPdfPreview({ ref, name: cardTitleText(card) || t('card.untitled', locale) });
+      const name = (card ? cardTitleText(card) : '') || t('card.untitled', locale);
+      if (ref && isPdfFileName(ref)) void openPdfPreview({ ref, name });
+      else if (ref && isDocumentCardFileName(ref)) void textPreview.open({ ref, name: ref.split('/').pop() ?? name });
       return;
     }
     // Formas y conectores no tienen cuerpo de nota: su edición pertenece al inspector de propiedades.
@@ -945,7 +961,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (Platform.OS !== 'web') return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (event.defaultPrevented || isEditorialTarget(target)) return;
+      if (event.defaultPrevented || block9LayerOpen() || isEditorialTarget(target)) return;
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
       const key = event.key.toLowerCase();
       if (key === 'z' && !event.shiftKey) { event.preventDefault(); void shortcuts.current.undoLast(); }
@@ -967,7 +983,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Escape sale de la selección múltiple (web).
   useEffect(() => {
     if (Platform.OS !== 'web' || multi === null) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMulti(null); };
+    const onKey = (event: KeyboardEvent) => { if (!block9LayerOpen() && event.key === 'Escape') setMulti(null); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [multi]);
@@ -975,7 +991,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // Escape abandona la conexión a medias (el lienzo cancela aparte un arrastre en curso).
   useEffect(() => {
     if (Platform.OS !== 'web' || connectSource === null) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setConnectSource(null); };
+    const onKey = (event: KeyboardEvent) => { if (!block9LayerOpen() && event.key === 'Escape') setConnectSource(null); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [connectSource]);
@@ -983,7 +999,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   useEffect(() => {
     if (Platform.OS !== 'web' || tool !== 'connector') return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (block9LayerOpen() || event.key !== 'Escape') return;
       setConnectorStart(null);
       setTool('select');
     };
@@ -998,7 +1014,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (Platform.OS !== 'web' || multi === null || multiIds.length === 0) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (event.defaultPrevented || isEditorialTarget(target) || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.defaultPrevented || block9LayerOpen() || isEditorialTarget(target) || event.ctrlKey || event.metaKey || event.altKey) return;
       const delta = event.key === 'ArrowLeft' ? { x: -1, y: 0 }
         : event.key === 'ArrowRight' ? { x: 1, y: 0 }
         : event.key === 'ArrowUp' ? { x: 0, y: -1 }
@@ -1048,7 +1064,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       const target = event.target as HTMLElement | null;
       const editingText = target !== null && (target.isContentEditable
         || target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]') !== null);
-      if (editingText || event.key !== 'Delete' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (block9LayerOpen() || editingText || event.key !== 'Delete' || event.ctrlKey || event.metaKey || event.altKey) return;
       event.preventDefault();
       void deleteSelectionRef.current();
     };
@@ -1121,6 +1137,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       'action.boardReordered',
     );
     return result.ok;
+  };
+  /** B9-R3-02: Lista escribe el orden principal de lectura del tablero (reutilizado por defecto en
+   * Imprimir/Presentar); una sola escritura al cerrar el diálogo de orden, no una por cada paso. */
+  const reorderCardsOnBoardById = (targetBoardId: BoardId, orderedIds: readonly CardId[]) => {
+    void run((storage, workspaceId) => reorderCardsOnBoard(storage, workspaceId, targetBoardId, orderedIds), 'action.cardsReordered');
   };
   const restoreArchivedBoardById = async (boardId: BoardId, title: string) => {
     const result = await run((storage, workspaceId) => restoreBoardFromArchive(storage, workspaceId, boardId), { key: 'action.boardRestored', params: { title } });
@@ -1258,7 +1279,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (Platform.OS !== 'web') return;
     const onPaste = (event: ClipboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (block9LayerOpen() || (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))) return;
       const clipboardData = event.clipboardData;
       if (!clipboardData) return;
       const imageFile = [...clipboardData.files].find((file) => file.type.startsWith('image/'));
@@ -1369,30 +1390,45 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   // Documento de lectura del tablero visible, en orden de lectura (ADR 0031); vacío sin tablero.
   const printEntries = workspace && board ? printableDocument(workspace, board.id) : [];
-  const printBoard = () => {
-    if (!board) return;
-    const html = buildPrintHtml(board.title, printEntries, previews.refs);
-    if (supportsNativePrint()) {
-      void printHtmlNative(html).then((opened) => {
-        if (!opened) setFeedback({ tone: 'error', text: 'No se pudo abrir el diálogo de impresión.' });
-      });
-      return;
-    }
-    if (Platform.OS !== 'web') return;
-    const tab = window.open('', '_blank');
-    if (!tab) {
-      setFeedback({ tone: 'error', text: 'El navegador bloqueó la pestaña de impresión. Permite las ventanas emergentes e inténtalo de nuevo.' });
-      return;
-    }
-    if (!workspace) { tab.close(); return; }
-    void loadPrintFonts(assetsOf(session.storage), workspace.id, printEntries).then(async (fonts) => {
-      if (tab.closed) return;
-      const output = buildPrintHtml(board.title, printEntries, previews.refs, { fonts, locale, inheritedFont: noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily) });
+  const printImageRefs = [...new Set(printEntries.flatMap((entry) => [
+    ...entry.imageRefs,
+    ...(entry.contentDocument?.blocks.flatMap((block) => block.type === 'image' ? [block.assetRef] : []) ?? []),
+  ]))];
+  const printBoard = (options: Pick<PrintOptions, 'paper' | 'orientation' | 'style'> & { readonly orderIds: readonly string[] }) => {
+    if (!workspace || !board) return;
+    setPrintOpen(false);
+    // El popup debe abrirse directamente en el gesto; luego se comprueban borradores y recursos.
+    const tab = Platform.OS === 'web' ? window.open('', '_blank') : null;
+    if (Platform.OS === 'web' && !tab) { setFeedback({ tone: 'error', text: t('print.popupBlocked', locale) }); return; }
+    const boardId = board.id;
+    void (async () => {
+      if (!await flushPendingText() || !await flushWorkspace()) throw new Error('draft-not-flushed');
+      const current = currentWorkspace();
+      const currentBoard = current?.boards.find((candidate) => candidate.id === boardId);
+      if (!current || !currentBoard) throw new Error('board-changed');
+      const defaults = printableDocument(current, boardId);
+      const byId = new Map(defaults.map((entry) => [entry.id, entry]));
+      const orderedIds = [...new Set([...options.orderIds, ...defaults.map((entry) => entry.id)])];
+      const entries = orderedIds.flatMap((id) => { const entry = byId.get(id as CardId); return entry ? [entry] : []; })
+        .map((entry, index) => ({ ...entry, number: index + 1 }));
+      const refs = [...new Set(entries.flatMap((entry) => [...entry.imageRefs,
+        ...(entry.contentDocument?.blocks.flatMap((block) => block.type === 'image' ? [block.assetRef] : []) ?? [])]))] as AssetRef[];
+      const assets = assetsOf(session.storage);
+      const [fonts, resolved] = await Promise.all([
+        loadPrintFonts(assets, current.id, entries),
+        assets && refs.length ? resolveImageResources(assets, current.id, refs) : Promise.resolve(new Map()),
+      ]);
+      if (tab?.closed) return;
+      const images = new Map([...resolved].flatMap(([ref, resource]) => resource.status === 'ready' ? [[ref, resource.uri] as const] : []));
+      const output = buildPrintHtml(currentBoard.title, entries, images, { ...options, fonts, locale, inheritedFont: noteFontFamily(preferences.noteFont, Platform.OS, customFontFamily) });
+      if (supportsNativePrint()) { if (!await printHtmlNative(output)) throw new Error('native-print-failed'); return; }
+      if (!tab) return;
       tab.document.write(output); tab.document.close();
       await Promise.all([...fonts.keys()].map((_, index) => tab.document.fonts.load('16px noty-print-' + index)));
       await tab.document.fonts.ready;
+      await Promise.all([...tab.document.images].map((image) => image.decode().catch(() => {})));
       if (!tab.closed) { tab.focus(); tab.print(); }
-    }).catch(() => { if (!tab.closed) tab.close(); setFeedback({ tone: 'error', text: t('content.failed', locale) }); });
+    })().catch(() => { if (tab && !tab.closed) tab.close(); setFeedback({ tone: 'error', text: t('print.saveFailed', locale) }); });
   };
   const showArchive = Platform.OS === 'web' && storageMode === 'memory';
   const unexported = workspace ? session.unexported.includes(workspace.id) : false;
@@ -1688,10 +1724,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       onOpenDiary={() => openView('diary')}
       onOpenPresent={() => setPresentOpen(true)}
       canPrint={Platform.OS === 'web' || supportsNativePrint()}
-      onOpenPrint={() => printBoard()}
+      onOpenPrint={() => setPrintOpen(true)}
       archiveCount={archiveCount}
       onOpenMore={() => setMoreOpen(true)}
       onOpenSearch={() => setSearchOpen(true)}
+      onOpenHelp={() => setHelpOpen(true)}
       undoLabel={undoLabel}
       redoLabel={redoLabel}
       onUndo={() => void undoLast()}
@@ -1855,8 +1892,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       <ScrollView testID="board-list-scroll" contentContainerStyle={styles.listPage}>
         {/* La vista de lista no tiene un botón «Editar» propio (a diferencia del lienzo): seleccionar
             sigue abriendo el editor directamente aquí, fuera del alcance de esta corrección. */}
-        <Board workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)} richTextCodec={markdownRichTextCodec}
-          imageResources={previews.cardResources} noteImageResources={previews.refResources} />
+        <Board key={board?.id ?? 'empty'} workspace={workspace} layout={layout} mode="compact" selectedId={selectedOnBoard?.id ?? null} onSelect={(cardId) => void editCard(cardId)} richTextCodec={markdownRichTextCodec}
+          imageResources={previews.cardResources} noteImageResources={previews.refResources} onReorderCards={reorderCardsOnBoardById} />
       </ScrollView>
     )
   ) : null;
@@ -1930,7 +1967,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => openView('assets')} />
                 <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => openView('archive')} />
                 <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => setPresentOpen(true)} />
-                {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => printBoard()} /> : null}
+                {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => setPrintOpen(true)} /> : null}
                 <NavItem icon="trash" label={t("nav.trash", locale)} count={trashCount} accessibilityLabel={`${t("nav.trash.open", locale)} (${trashCount})`} onPress={() => setTrashOpen(true)} />
                 {/* UX7-CONSOLIDATION: «Archivar tablero» ya vive en la barra lateral derecha (Opciones
                     del tablero → BoardActionsDialog) a este mismo ancho — repetirlo aquí era un
@@ -1947,8 +1984,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                     siendo fácil de encontrar sin desplazar la lista central). «Recuperación» no es una
                     entrada de navegación propia (ver `identityStatus` arriba y «Centro de recuperación»
                     dentro de Configuración, siempre disponible). */}
-                <NavItem icon="folder" label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => setProjectsOpen(true)} />
-                <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => void saveNow()} />
+                <NavItem icon="folder" label={t('workspace.projects', locale)} accessibilityLabel={t('workspace.changeProject', locale)} onPress={() => setProjectsOpen(true)} />
+                <NavItem icon="check" label={t(savingNow ? 'workspace.saving' : 'workspace.save', locale)} accessibilityLabel={t('workspace.saveNow', locale)} onPress={() => void saveNow()} />
                 <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => setSettingsOpen(true)} />
               </View>
             ) : null}
@@ -2159,6 +2196,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onResetView={() => { setZoom(DEFAULT_ZOOM); setPan(START_PAN); }}
             onOpenFontLibrary={() => { setSettingsOpen(false); openView('assets'); }}
             onOpenRecovery={() => { setSettingsOpen(false); setRecoveryOpen(true); }}
+            onOpenHelp={() => { setSettingsOpen(false); setHelpOpen(true); }}
             recoverableCount={recoverableCount}
             customFontStatus={customFontStatus}
             onClose={() => setSettingsOpen(false)}
@@ -2193,7 +2231,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
                 <NavItem icon="assets" label={t("nav.assets", locale)} accessibilityLabel={t("nav.assets.open", locale)} onPress={() => { setMoreOpen(false); openView('assets'); }} />
                 <NavItem icon="archive" label={t("nav.archive", locale)} count={archiveCount} accessibilityLabel={`${t("nav.archive.open", locale)} (${archiveCount})`} onPress={() => { setMoreOpen(false); openView('archive'); }} />
                 <NavItem icon="present" label={t("nav.present", locale)} accessibilityLabel={t("nav.present.open", locale)} onPress={() => { setMoreOpen(false); setPresentOpen(true); }} />
-                {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); printBoard(); }} /> : null}
+                {Platform.OS === "web" || supportsNativePrint() ? <NavItem icon="print" label={t("nav.print", locale)} accessibilityLabel={t("nav.print.open", locale)} onPress={() => { setMoreOpen(false); setPrintOpen(true); }} /> : null}
                 {board && board.cardIds.length > 0 ? (
                   <NavItem icon="archive" label={t("archive.navItem.label", locale)} accessibilityLabel={t("archive.navItem.accessibilityLabel", locale, { title: board.title })} onPress={() => { setMoreOpen(false); void archiveCurrentBoard(); }} />
                 ) : null}
@@ -2202,20 +2240,34 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             {/* Proyectos y Guardar: acciones puntuales, nunca una fila nueva sobre el lienzo —
                 la barra de herramientas ya no se oculta al enfocar una tarjeta, así que «Más»
                 sigue alcanzable incluso editando. */}
-            <NavItem icon="folder" label="Proyectos" accessibilityLabel="Cambiar de proyecto" onPress={() => { setMoreOpen(false); setProjectsOpen(true); }} />
-            <NavItem icon="check" label={savingNow ? 'Guardando…' : 'Guardar'} accessibilityLabel="Guardar ahora (Ctrl+S)" onPress={() => { setMoreOpen(false); void saveNow(); }} />
+            <NavItem icon="folder" label={t('workspace.projects', locale)} accessibilityLabel={t('workspace.changeProject', locale)} onPress={() => { setMoreOpen(false); setProjectsOpen(true); }} />
+            <NavItem icon="check" label={t(savingNow ? 'workspace.saving' : 'workspace.save', locale)} accessibilityLabel={t('workspace.saveNow', locale)} onPress={() => { setMoreOpen(false); void saveNow(); }} />
             {compact ? (
               <NavItem icon="settings" label={t("nav.settings", locale)} accessibilityLabel={t("nav.settings.open", locale)} onPress={() => { setMoreOpen(false); setSettingsOpen(true); }} />
             ) : null}
           </Dialog>
           {presentOpen ? (
             <PresentView
-              boardTitle={board?.title ?? 'sin tablero'}
+              key={board?.id ?? 'none'}
+              boardTitle={board?.title ?? ''}
               entries={printEntries}
               images={previews.refs}
+              relations={workspace?.relations ?? []}
+              childOpen={pdfPreview !== null}
               onClose={() => setPresentOpen(false)}
             />
           ) : null}
+          <PrintOptionsDialog visible={printOpen && !!board} compact={compact} boardTitle={board?.title ?? ''} entries={printEntries} images={previews.refs}
+            missing={printImageRefs.filter((ref) => previews.refResources.get(ref)?.status === 'missing').length}
+            loading={printImageRefs.filter((ref) => previews.refResources.get(ref)?.status !== 'missing' && previews.refResources.get(ref)?.status !== 'ready').length}
+            onClose={() => setPrintOpen(false)} onContinue={printBoard} />
+          <ShortcutHelpDialog visible={helpOpen} compact={compact} onClose={() => {
+            setHelpOpen(false);
+            if (Platform.OS === 'web') requestAnimationFrame(() => requestAnimationFrame(() => {
+              [...document.querySelectorAll<HTMLElement>('[aria-label]')]
+                .find((element) => [t('nav.settings.open', locale), t('more.label', locale)].includes(element.getAttribute('aria-label') ?? '') && element.getClientRects().length > 0)?.focus();
+            }));
+          }} />
           <TrashPanel
             visible={trashOpen}
             compact={compact}
@@ -2261,6 +2313,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
           <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} />
+          <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} onClose={textPreview.close} testID="card-text-preview" />
           {saveFolderOpen && workspace ? <SaveProjectToFolder visible id={workspace.id}
             beforeCopy={async () => await flushPendingText() && await flushWorkspace()}
             onClose={() => setSaveFolderOpen(false)}

@@ -404,6 +404,33 @@ export function reorderBoardInWorkspace(
   });
 }
 
+/**
+ * Orden principal de lectura de un tablero (B9-R3-02): reutiliza `board.cardIds`, ya durable e
+ * independiente de la geometría del lienzo (`trashCards`/`restoreCardsFromTrash` ya conservan y
+ * restauran su posición exacta ahí). `orderedIds` debe ser exactamente las mismas tarjetas del
+ * tablero, solo reordenadas — nunca añade, quita ni toca identidad, contenido, layouts o relaciones.
+ * Imprimir y Presentar leen este mismo orden por defecto (`printableDocument`); pueden ajustarlo de
+ * forma temporal sin llamar a esta función.
+ */
+export function reorderCardsOnBoard(
+  storage: WorkspaceStorage, workspaceId: WorkspaceId, boardId: BoardId, orderedIds: readonly CardId[],
+): Promise<WorkspaceStorageResult<WorkspaceSummary>> {
+  return modifyWorkspace(storage, workspaceId, (workspace) => {
+    const board = workspace.boards.find((candidate) => candidate.id === boardId);
+    if (!board) {
+      return { ok: false, issues: [{ code: 'missing-reference', path: 'boardId', message: 'El tablero no existe en el workspace.' }] };
+    }
+    const current = new Set(board.cardIds);
+    const noDuplicates = new Set(orderedIds).size === orderedIds.length;
+    const sameMembership = orderedIds.length === board.cardIds.length && orderedIds.every((id) => current.has(id));
+    if (!noDuplicates || !sameMembership) {
+      return { ok: false, issues: [{ code: 'invalid-value', path: 'orderedIds', message: 'El nuevo orden debe incluir exactamente las mismas tarjetas del tablero, sin añadir, quitar ni repetir ninguna.' }] };
+    }
+    if (orderedIds.every((id, index) => id === board.cardIds[index])) return { ok: true, value: workspace };
+    return validateWorkspace({ ...workspace, boards: workspace.boards.map((candidate) => (candidate.id === boardId ? { ...candidate, cardIds: [...orderedIds] } : candidate)) });
+  });
+}
+
 export function editCardContent(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, cardId: CardId, changes: CardContentChanges,
 ): Promise<WorkspaceStorageResult<WorkspaceSummary>> {

@@ -17,13 +17,13 @@ describe('cámara del mundo bidireccional', () => {
 });
 
 describe('zoom del lienzo (ADR 0013)', () => {
-  it('sube y baja por pasos fijos entre 50 % y 200 %', () => {
-    expect(MIN_ZOOM).toBe(0.5);
+  it('sube y baja por pasos fijos entre 5 % y 200 %', () => {
+    expect(MIN_ZOOM).toBe(0.05);
     expect(MAX_ZOOM).toBe(2);
     expect(zoomIn(1)).toBe(1.25);
     expect(zoomOut(1)).toBe(0.75);
     expect(zoomIn(2)).toBe(2);
-    expect(zoomOut(0.5)).toBe(0.5);
+    expect(zoomOut(0.05)).toBe(0.05);
     // Un valor intermedio va al paso siguiente o anterior.
     expect(zoomIn(0.8)).toBe(1);
     expect(zoomOut(0.8)).toBe(0.75);
@@ -37,9 +37,9 @@ describe('zoom del lienzo (ADR 0013)', () => {
 });
 
 describe('zoom alrededor del cursor (Ctrl/⌘ + rueda, auditoría de interacción, 2026-09-29)', () => {
-  it('fuera de rango, se recorta a 50–200 %', () => {
+  it('fuera de rango, se recorta a 5–200 %', () => {
     expect(clampZoom(10)).toBe(MAX_ZOOM);
-    expect(clampZoom(0.1)).toBe(MIN_ZOOM);
+    expect(clampZoom(0.01)).toBe(MIN_ZOOM);
     expect(clampZoom(1)).toBe(1);
   });
 

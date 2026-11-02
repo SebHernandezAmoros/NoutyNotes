@@ -2,15 +2,18 @@ import { useContentResources } from './ContentResources';
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { RichTextCodec } from '@noutynotes/application';
 import { cardContentPresentation, cardTitleText, isFloatingTextCard, resolveCardImageFit, richTextInlineText } from '@noutynotes/domain';
-import type { BaseCardKind, BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
+import type { BaseCardKind, BoardId, BoardLayout, Card, CardId, Workspace } from '@noutynotes/domain';
 import type { ImageResourceState } from './imageResources';
 import { RetiredCardResource } from './RetiredCardResource';
 import { useLocale, useTheme } from '@noutynotes/ui';
 import type { Locale, LayoutMode } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActionButton } from '../components/controls';
+import { ReadingOrderDialog } from './ReadingOrderControl';
+import { mergeHiddenIntoOrder, readingPreviewText, readingThumbnailRef, reconcileReadingOrder } from './readingOrder';
 
-import { BOARD_ROW_HEIGHT, boardBoxes, relationSegments } from './board-geometry';
+import { BOARD_GAP, BOARD_ROW_HEIGHT, boardBoxes, relationSegments } from './board-geometry';
 import type { CardBox } from './board-geometry';
 import { ConnectorPreview } from './ConnectorPreview';
 import { floatingTextColor } from './floatingText';
@@ -79,22 +82,75 @@ interface BoardProps {
   readonly imageResources?: ReadonlyMap<CardId, ImageResourceState>;
   /** Estado de disponibilidad de las imágenes intercaladas en notas, por ruta (OBS-N2-IMAGE-FIT-F2). */
   readonly noteImageResources?: ReadonlyMap<string, ImageResourceState>;
+  /** B9-R3-02: persiste el orden principal de lectura del tablero (`board.cardIds`), reutilizado por
+   * defecto en Imprimir y Presentar. Opcional: sin ella, el orden solo vive en esta sesión. */
+  readonly onReorderCards?: (boardId: BoardId, orderedIds: readonly CardId[]) => void;
 }
 
 /**
  * Vista de lista (ADR 0013): la proyección de una columna del layout canónico, en orden de lectura.
  * Solo representa y selecciona; mover y redimensionar se hacen en el lienzo o con el inspector.
  */
-export function Board({ workspace, layout, mode, selectedId, onSelect, imageResources, noteImageResources, richTextCodec }: BoardProps) {
+export function Board({ workspace, layout, mode, selectedId, onSelect, imageResources, noteImageResources, richTextCodec, onReorderCards }: BoardProps) {
+  const { locale } = useLocale();
   const { theme } = useTheme();
   const colors = theme.colors;
   const [width, setWidth] = useState(0);
-  const geometry = boardBoxes(layout ?? { boardId: '' as BoardLayout['boardId'], placements: [] }, mode, width);
+  const [manualOrder, setManualOrder] = useState<string[]>([]);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const defaultGeometry = boardBoxes(layout ?? { boardId: '' as BoardLayout['boardId'], placements: [] }, mode, width);
   const cards = new Map(workspace.cards.map((card) => [card.id, card]));
+  // B9-R3-02: el orden base ya no es la geometría del lienzo — es `board.cardIds`, el orden principal
+  // durable de lectura (reutilizado por defecto en Imprimir/Presentar vía `printableDocument`).
+  const board = workspace.boards.find((candidate) => candidate.id === layout?.boardId);
+  const visibleIds = defaultGeometry?.boxes.map((box) => box.cardId) ?? [];
+  const mainOrder = reconcileReadingOrder(board?.cardIds ?? [], visibleIds);
+  const orderedIds = reconcileReadingOrder(manualOrder, mainOrder);
+  const geometry = defaultGeometry && manualOrder.length && mode !== 'wide' ? (() => {
+    const byId = new Map(defaultGeometry.boxes.map((box) => [box.cardId, box]));
+    let top = 0;
+    const boxes = orderedIds.flatMap((id) => {
+      const box = byId.get(id as CardId);
+      if (!box) return [];
+      const placed = { ...box, top: top + BOARD_GAP / 2 };
+      top += Math.ceil((box.height + BOARD_GAP) / BOARD_ROW_HEIGHT) * BOARD_ROW_HEIGHT;
+      return [placed];
+    });
+    return { ...defaultGeometry, boxes, height: top };
+  })() : defaultGeometry;
   const segments = mode === 'wide' && geometry ? relationSegments(workspace.relations, geometry.boxes) : [];
   const empty = !layout || layout.placements.length === 0;
 
-  return (
+  return (<View style={{ gap: 8 }}>
+    <ActionButton testID="list-organize" label="Ordenar Lista" onPress={() => setOrderOpen(true)} />
+    {/* B9-R3-01, miniatura corregida en B9-R4-01: extracto siempre disponible (puro, sin E/S);
+        miniatura de la imagen propia (`imageResources`, tarjetas de imagen) o, si no tiene, de la
+        primera imagen intercalada de la Nota (`readingThumbnailRef` + `noteImageResources`, ya
+        resueltos por el mismo lote que usa el lienzo — sin un segundo gestor de imágenes). */}
+    {/* B9-R3-02, corregido en B9-R4-02: `board.cardIds` puede incluir una tarjeta sin colocación
+        visible — Lista solo reordena lo que se ve, pero `mergeHiddenIntoOrder` reintercala esas
+        tarjetas en su posición relativa antes de escribir, para que el conjunto final sea exactamente
+        `board.cardIds` y `reorderCardsOnBoard` no rechace la escritura. «Restaurar orden
+        predeterminado» (dentro del propio control) ya vuelve a `mainOrder`, porque ese es el orden
+        real que recibe como `items`, sin necesitar un segundo mecanismo aquí. */}
+    <ReadingOrderDialog testID="list-reading-order" visible={orderOpen} compact={mode !== 'wide'}
+      onClose={() => {
+        setOrderOpen(false);
+        if (manualOrder.length > 0 && board && onReorderCards) {
+          const fullOrder = mergeHiddenIntoOrder(board.cardIds, orderedIds);
+          if (!fullOrder.every((id, index) => id === board.cardIds[index])) onReorderCards(board.id, fullOrder as CardId[]);
+        }
+        setManualOrder([]);
+      }}
+      items={mainOrder.flatMap((id) => {
+        const card = cards.get(id as CardId);
+        if (!card) return [];
+        const image = imageResources?.get(card.id);
+        const inlineRef = readingThumbnailRef(card);
+        const inlineImage = inlineRef ? noteImageResources?.get(inlineRef) : undefined;
+        const thumbnailUri = image?.status === 'ready' ? image.uri : inlineImage?.status === 'ready' ? inlineImage.uri : undefined;
+        return [{ id: card.id, title: cardTitle(card, locale), excerpt: readingPreviewText(card), ...(thumbnailUri ? { thumbnailUri } : {}) }];
+      })} order={manualOrder} onChange={setManualOrder} />
     <View
       testID="board-list"
       accessibilityLabel={`Lista del tablero en ${mode === 'wide' ? 'grilla de 12 columnas' : 'una columna'}`}
@@ -144,7 +200,7 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageReso
         </View>
       ))}
     </View>
-  );
+  </View>);
 }
 
 interface CardViewProps {

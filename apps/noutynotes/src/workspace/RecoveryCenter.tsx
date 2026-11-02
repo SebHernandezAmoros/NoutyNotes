@@ -1,12 +1,15 @@
 import { cardTitleText, richTextInlineText } from '@noutynotes/domain';
 import type { CardId, RichTextDocument, Workspace } from '@noutynotes/domain';
 import type { EditorialDraft } from '@noutynotes/application';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
+import type { Locale } from '@noutynotes/ui';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/controls';
 import { Dialog } from '../components/Dialog';
+import { t } from '../i18n';
+import type { TranslationKey } from '../i18n';
 
 export type DraftCardStatus = 'active' | 'trash' | 'archive' | 'deleted';
 
@@ -50,7 +53,7 @@ interface DraftEntry {
   readonly updatedAt: string;
 }
 
-function entriesOf(workspace: Workspace, drafts: readonly EditorialDraft[]): readonly DraftEntry[] {
+function entriesOf(workspace: Workspace, drafts: readonly EditorialDraft[], locale: Locale): readonly DraftEntry[] {
   const cardIds = [...new Set(drafts.map((draft) => draft.key.cardId as CardId))];
   return cardIds.map((cardId) => {
     const status = draftCardStatus(workspace, cardId);
@@ -61,17 +64,17 @@ function entriesOf(workspace: Workspace, drafts: readonly EditorialDraft[]): rea
       ?? workspace.archive?.find((entry) => entry.card.id === cardId)?.card;
     const titleFromDraft = titleDraft?.source.format === 'rich-text' && titleDraft.source.value.blocks.length === 1
       && titleDraft.source.value.blocks[0]?.type === 'paragraph' ? richTextInlineText(titleDraft.source.value.blocks[0].content) : '';
-    const title = (card ? cardTitleText(card) : '') || titleFromDraft || '(sin título disponible)';
+    const title = (card ? cardTitleText(card) : '') || titleFromDraft || t('recovery.untitled', locale);
     const updatedAt = [titleDraft?.updatedAt, bodyDraft?.updatedAt].filter((value): value is string => value !== undefined).sort().at(-1) ?? '';
     return { cardId, status, title, preview: sourcePreview(bodyDraft ?? titleDraft), exact: sourceExact(bodyDraft ?? titleDraft), updatedAt };
   });
 }
 
-const STATUS_LABEL: Record<DraftCardStatus, string> = {
-  active: 'Nota activa: este borrador se puede recuperar entero.',
-  trash: 'Esta nota está en la Papelera. Restáurala primero para recuperar el borrador; mientras tanto puedes copiarlo o descartarlo.',
-  archive: 'Esta nota está en el Archivo. Restáurala primero para recuperar el borrador; mientras tanto puedes copiarlo o descartarlo.',
-  deleted: 'Esta nota ya no existe (se eliminó definitivamente). El borrador no puede recrearla; puedes copiarlo o descartarlo.',
+const STATUS_LABEL: Record<DraftCardStatus, TranslationKey> = {
+  active: 'recovery.status.active',
+  trash: 'recovery.status.trash',
+  archive: 'recovery.status.archive',
+  deleted: 'recovery.status.deleted',
 };
 
 interface RecoveryCenterProps {
@@ -98,10 +101,11 @@ interface RecoveryCenterProps {
  */
 export function RecoveryCenter({ visible, compact, workspace, drafts, problem, saveProblem, saveProblemKind, onRetrySave, onRecoverExternal, onReconnectFolder, onReselectFolder, onRecover, onDiscard, onClose }: RecoveryCenterProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [confirming, setConfirming] = useState<CardId | null>(null);
   const [showingExact, setShowingExact] = useState<CardId | null>(null);
-  const entries = entriesOf(workspace, drafts);
+  const entries = entriesOf(workspace, drafts, locale);
   const close = () => { setConfirming(null); setShowingExact(null); onClose(); };
 
   const copy = async (text: string) => {
@@ -109,9 +113,9 @@ export function RecoveryCenter({ visible, compact, workspace, drafts, problem, s
   };
 
   return (
-    <Dialog visible={visible} title="Centro de recuperación" compact={compact} onClose={close} testID="recovery-center">
+    <Dialog visible={visible} title={t('recovery.title', locale)} compact={compact} onClose={close} testID="recovery-center">
       <Text style={[styles.intro, { color: colors.textSecondary }]}>
-        Borradores privados de seguridad que todavía no están confirmados en el workspace. Cerrar esto no descarta nada.
+        {t('recovery.intro', locale)}
       </Text>
       {problem ? <Text testID="recovery-problem" accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{problem}</Text> : null}
       {saveProblem ? (
@@ -119,15 +123,15 @@ export function RecoveryCenter({ visible, compact, workspace, drafts, problem, s
           <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{saveProblem}</Text>
           <View style={styles.actions}>
             {saveProblemKind === 'conflict' ? (
-              <ActionButton label="Recargar y reaplicar" accessibilityLabel="Recargar el proyecto y reaplicar los cambios pendientes" tone="primary" onPress={onRecoverExternal} />
+              <ActionButton label={t('recovery.reload', locale)} accessibilityLabel={t('recovery.reloadLabel', locale)} tone="primary" onPress={onRecoverExternal} />
             ) : null}
             {saveProblemKind === 'retry' ? (
-              <ActionButton label="Reintentar" accessibilityLabel="Reintentar los cambios pendientes" tone="primary" onPress={onRetrySave} />
+              <ActionButton label={t('recovery.retry', locale)} accessibilityLabel={t('recovery.retryLabel', locale)} tone="primary" onPress={onRetrySave} />
             ) : null}
             {saveProblemKind === 'retry' || saveProblemKind === 'reselect' ? (
               <>
-                <ActionButton label="Reconectar" accessibilityLabel="Reconectar la carpeta conocida" onPress={onReconnectFolder} />
-                <ActionButton label="Elegir otra carpeta" accessibilityLabel="Elegir otra carpeta" onPress={onReselectFolder} />
+                <ActionButton label={t('recovery.reconnect', locale)} accessibilityLabel={t('recovery.reconnectLabel', locale)} onPress={onReconnectFolder} />
+                <ActionButton label={t('recovery.chooseFolder', locale)} accessibilityLabel={t('recovery.chooseFolder', locale)} onPress={onReselectFolder} />
               </>
             ) : null}
           </View>
@@ -135,13 +139,13 @@ export function RecoveryCenter({ visible, compact, workspace, drafts, problem, s
       ) : null}
       {entries.length === 0 ? (
         <Text testID="recovery-empty" style={[styles.empty, { color: colors.textSecondary, borderColor: colors.gridLine }]}>
-          No hay borradores pendientes de revisar.
+          {t('recovery.empty', locale)}
         </Text>
       ) : entries.map((entry) => (
         <View key={entry.cardId} testID={`recovery-item-${entry.cardId}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
           <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.title}</Text>
           <Text testID={`recovery-status-${entry.cardId}`} style={[styles.status, { color: entry.status === 'active' ? colors.textSecondary : colors.danger }]}>
-            {STATUS_LABEL[entry.status]}
+            {t(STATUS_LABEL[entry.status], locale)}
           </Text>
           {entry.preview ? (
             <Text testID={`recovery-preview-${entry.cardId}`} numberOfLines={4} style={[styles.preview, { color: colors.textPrimary, borderColor: colors.gridLine }]}>
@@ -149,8 +153,8 @@ export function RecoveryCenter({ visible, compact, workspace, drafts, problem, s
             </Text>
           ) : null}
           <ActionButton
-            label={showingExact === entry.cardId ? 'Ocultar fuente exacta' : 'Ver fuente exacta'}
-            accessibilityLabel={`${showingExact === entry.cardId ? 'Ocultar' : 'Ver'} la fuente exacta de ${entry.title}`}
+            label={t(showingExact === entry.cardId ? 'recovery.hideExact' : 'recovery.showExact', locale)}
+            accessibilityLabel={t(showingExact === entry.cardId ? 'recovery.hideExactNamed' : 'recovery.showExactNamed', locale, { title: entry.title })}
             onPress={() => setShowingExact((current) => (current === entry.cardId ? null : entry.cardId))}
           />
           {showingExact === entry.cardId ? (
@@ -161,21 +165,21 @@ export function RecoveryCenter({ visible, compact, workspace, drafts, problem, s
           {confirming === entry.cardId ? (
             <View testID={`recovery-discard-confirm-${entry.cardId}`} style={[styles.confirm, { borderColor: colors.danger }]}>
               <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>
-                Este trabajo privado todavía no está confirmado en el workspace.
+                {t('recovery.discardWarning', locale)}
               </Text>
               <View style={styles.actions}>
-                <ActionButton label="Descartar" accessibilityLabel={`Confirmar descartar el borrador de ${entry.title}`}
+                <ActionButton label={t('recovery.discard', locale)} accessibilityLabel={t('recovery.confirmDiscardNamed', locale, { title: entry.title })}
                   onPress={() => { setConfirming(null); onDiscard(entry.cardId); }} />
-                <ActionButton label="Cancelar" accessibilityLabel="Cancelar el descarte del borrador" onPress={() => setConfirming(null)} />
+                <ActionButton label={t('recovery.cancel', locale)} accessibilityLabel={t('recovery.cancelDiscard', locale)} onPress={() => setConfirming(null)} />
               </View>
             </View>
           ) : (
             <View style={styles.actions}>
               {entry.status === 'active' ? (
-                <ActionButton label="Recuperar" accessibilityLabel={`Recuperar el borrador de ${entry.title}`} tone="primary" onPress={() => onRecover(entry.cardId)} />
+                <ActionButton label={t('recovery.recover', locale)} accessibilityLabel={t('recovery.recoverNamed', locale, { title: entry.title })} tone="primary" onPress={() => onRecover(entry.cardId)} />
               ) : null}
-              <ActionButton label="Copiar" accessibilityLabel={`Copiar el borrador de ${entry.title}`} onPress={() => void copy(entry.exact)} />
-              <ActionButton label="Descartar" accessibilityLabel={`Descartar el borrador de ${entry.title}`} onPress={() => setConfirming(entry.cardId)} />
+              <ActionButton label={t('recovery.copy', locale)} accessibilityLabel={t('recovery.copyNamed', locale, { title: entry.title })} onPress={() => void copy(entry.exact)} />
+              <ActionButton label={t('recovery.discard', locale)} accessibilityLabel={t('recovery.discardNamed', locale, { title: entry.title })} onPress={() => setConfirming(entry.cardId)} />
             </View>
           )}
         </View>

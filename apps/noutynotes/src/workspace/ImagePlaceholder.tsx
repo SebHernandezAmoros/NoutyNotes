@@ -1,5 +1,6 @@
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { StyleSheet, Text, View } from 'react-native';
+import { t } from '../i18n';
 
 /**
  * Marcador de imagen dibujado con vistas: no hay archivo ni asset detrás (ADR 0009). Las imágenes
@@ -7,17 +8,18 @@ import { StyleSheet, Text, View } from 'react-native';
  */
 export function ImagePlaceholder() {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   return (
     <View
       accessibilityRole="image"
-      accessibilityLabel="Imagen de ejemplo (marcador de posición, sin archivo)"
+      accessibilityLabel={t('placeholder.imageLabel', locale)}
       style={[styles.frame, { backgroundColor: colors.surface, borderColor: colors.border }]}
     >
       <View style={[styles.sun, { backgroundColor: colors.accent, borderColor: colors.border }]} />
       <View style={[styles.hill, styles.hillBack, { backgroundColor: colors.gridLine, borderColor: colors.border }]} />
       <View style={[styles.hill, styles.hillFront, { backgroundColor: colors.note, borderColor: colors.border }]} />
-      <Text style={[styles.caption, { color: colors.textPrimary, backgroundColor: colors.surface }]}>IMAGEN DE EJEMPLO</Text>
+      <Text style={[styles.caption, { color: colors.textPrimary, backgroundColor: colors.surface }]}>{t('placeholder.image', locale)}</Text>
     </View>
   );
 }

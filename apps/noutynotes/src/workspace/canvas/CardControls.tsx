@@ -1,6 +1,6 @@
 import type { CardDisplayMode, CardId } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '../../components/AppIcon';
@@ -112,19 +112,35 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
   const { locale } = useLocale();
   const colors = theme.colors;
   const [sizeOpen, setSizeOpen] = useState(false);
+  const sizeOpenRef = useRef(false);
+  useEffect(() => { sizeOpenRef.current = sizeOpen; }, [sizeOpen]);
+  const [sizeTop, setSizeTop] = useState(8);
   const screen = useWindowDimensions();
   const actions = cardActions(display);
   const displayActions = actions.filter((action) => action.kind !== 'trash');
   const trash = actions.find((action) => action.kind === 'trash');
   const quickEditLabel = t('cardMenu.edit.inline.accessibilityLabel', locale, { title });
+  // El propio `<Modal>` (RN Web, `ModalContent`) ya escucha Escape (en `keyup`) y llama a
+  // `onRequestClose` — ver más abajo, hecho consciente del submenú. Tener aquí además un segundo
+  // listener manual en `keydown` competía con ese, en la misma pulsación: este handler podía poner
+  // `sizeOpen` en `false` primero, de forma que cuando el `keyup` del Modal leía el estado ya
+  // actualizado, cerraba el menú entero en vez de solo el submenú — dos mecanismos independientes
+  // resolviendo la misma tecla con información que cambiaba entre uno y otro. Un único punto de
+  // decisión (`onRequestClose`) evita la carrera.
   useEffect(() => {
     if (compact || Platform.OS !== 'web') return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const first = requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="card-menu"] button')?.focus());
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', escape);
-    return () => { cancelAnimationFrame(first); window.removeEventListener('keydown', escape); opener?.focus(); };
-  }, [compact, onClose]);
+    return () => { cancelAnimationFrame(first); opener?.focus(); };
+  }, [compact]);
+  // B9-R2-05: mismo criterio que el foco al abrir el menú principal, aplicado al nivel del submenú de
+  // tamaño — entrar deja el foco en «Volver» (primer botón), salir lo devuelve a quien lo abrió.
+  useEffect(() => {
+    if (compact || Platform.OS !== 'web' || !sizeOpen) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const first = requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="card-size-submenu"] button')?.focus());
+    return () => { cancelAnimationFrame(first); opener?.focus(); };
+  }, [compact, sizeOpen]);
   // UX7.3-MENU: lista vertical de una sola columna — sin recuadro propio por acción ni encabezados de
   // sección repetidos (TRABAJAR/APARIENCIA/ORGANIZAR). El orden conserva las mismas 12-13 acciones de
   // siempre, agrupadas solo por su posición; un único divisor separa la acción destructiva del resto.
@@ -146,18 +162,12 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
       {backgroundTransparent !== null ? <MenuRow icon="frame" label={t(backgroundTransparent ? 'cardMenu.background.paper' : 'cardMenu.background.transparent', locale)}
         accessibilityLabel={t(backgroundTransparent ? 'cardMenu.background.paper.label' : 'cardMenu.background.transparent.label', locale, { title })}
         onPress={() => { onClose(); onToggleBackground(); }} /> : null}
-      <MenuRow icon="expand" label={locale === 'es' ? 'Ajustar tamaño' : 'Adjust size'} accessibilityLabel={locale === 'es' ? 'Ajustar tamaño' : 'Adjust size'} onPress={() => setSizeOpen((open) => !open)} />
-      {sizeOpen ? <View testID="card-size-options" style={{ gap: 4 }}>
-        <Text style={{ color: colors.textSecondary }}>{locale === 'es' ? 'Flechas: mover. Mayús + flechas: tamaño. El Inspector permite leer todo el contenido.' : 'Arrows: move. Shift + arrows: resize. The Inspector shows all content.'}</Text>
-        {display === 'minimized' ? <Text style={{ color: colors.textPrimary }}>{locale === 'es' ? 'Expande la tarjeta para ajustar su tamaño.' : 'Expand the Card to resize it.'}</Text> : <>
-          <ActionButton label={locale === 'es' ? 'Más ancha' : 'Wider'} onPress={() => onResizeBy(1, 0)} />
-          <ActionButton label={locale === 'es' ? 'Más estrecha' : 'Narrower'} onPress={() => onResizeBy(-1, 0)} />
-          {display === 'expanded' ? <>
-            <ActionButton label={locale === 'es' ? 'Más alta' : 'Taller'} onPress={() => onResizeBy(0, 1)} />
-            <ActionButton label={locale === 'es' ? 'Más baja' : 'Shorter'} onPress={() => onResizeBy(0, -1)} />
-          </> : null}
-        </>}
-      </View> : null}
+      <MenuRow testID="card-size-trigger" icon="expand" label={t('cardControls.resize', locale)} accessibilityLabel={t('cardControls.resize', locale)}
+        hasSubmenu={!compact}
+        onPress={() => {
+          if (Platform.OS === 'web') setSizeTop(document.querySelector('[data-testid="card-size-trigger"]')?.getBoundingClientRect().top ?? 8);
+          setSizeOpen((open) => compact ? !open : true);
+        }} />
       <MenuRow icon="copy" label={t('cardMenu.copy', locale)} accessibilityLabel={t('cardMenu.copy.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onCopy(); }} />
       <MenuRow icon="duplicate" label={t('cardMenu.duplicate', locale)} accessibilityLabel={t('cardMenu.duplicate.accessibilityLabel', locale, { title })} onPress={() => { onClose(); onDuplicate(); }} />
       {canPaste ? <MenuRow icon="paste" label={t('cardMenu.paste', locale)} accessibilityLabel={t('cardMenu.paste.accessibilityLabel', locale)} onPress={() => { onClose(); onPaste(); }} /> : null}
@@ -171,18 +181,35 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
       ) : null}
     </View>
   );
+  const sizeContent = <View testID="card-size-options" style={{ gap: 4 }}>
+    <Text style={{ color: colors.textSecondary }}>{locale === 'es' ? 'Flechas: mover. Mayús + flechas: tamaño.' : 'Arrows: move. Shift + arrows: resize.'}</Text>
+    {display === 'minimized' ? <Text style={{ color: colors.textPrimary }}>{locale === 'es' ? 'Expande la tarjeta para ajustar su tamaño.' : 'Expand the card to resize it.'}</Text> : <>
+      <ActionButton label={locale === 'es' ? 'Más ancha' : 'Wider'} onPress={() => onResizeBy(1, 0)} />
+      <ActionButton label={locale === 'es' ? 'Más estrecha' : 'Narrower'} onPress={() => onResizeBy(-1, 0)} />
+      {display === 'expanded' ? <>
+        <ActionButton label={locale === 'es' ? 'Más alta' : 'Taller'} onPress={() => onResizeBy(0, 1)} />
+        <ActionButton label={locale === 'es' ? 'Más baja' : 'Shorter'} onPress={() => onResizeBy(0, -1)} />
+      </> : null}
+    </>}
+  </View>;
   const menuTitle = t('cardControls.actionsOf', locale, { title });
-  if (compact) return <Dialog visible title={menuTitle} compact onClose={onClose} testID="card-menu">{content}</Dialog>;
+  if (compact) return <Dialog visible title={menuTitle} compact onClose={onClose} testID="card-menu">
+    {sizeOpen ? <><ActionButton label={t('inspector.sheet.back', locale)} onPress={() => setSizeOpen(false)} />{sizeContent}</> : content}
+  </Dialog>;
   const width = Math.min(220, screen.width - 16);
   // Altura real estimada a partir del número de filas visibles (antes, un valor fijo de 470 pensado
   // para la cuadrícula anterior) — decide si el menú se abre encima o debajo del ancla.
-  const rowCount = (canQuickEdit ? 1 : 0) + 3 + displayActions.length + 2 + 2 + (canPaste ? 1 : 0) + 2 + (trash ? 1 : 0) + (sizeOpen ? 7 : 0) + (backgroundTransparent !== null ? 1 : 0);
+  const rowCount = (canQuickEdit ? 1 : 0) + 3 + displayActions.length + 2 + 2 + (canPaste ? 1 : 0) + 2 + (trash ? 1 : 0) + (backgroundTransparent !== null ? 1 : 0);
   const height = Math.min(screen.height - 16, 52 + rowCount * 46 + (trash ? 9 : 0));
   const left = Math.max(8, Math.min(anchor?.left ?? 8, screen.width - width - 8));
   const below = (anchor?.top ?? 8) + CONTROL_SIZE + 4;
   const top = below + height <= screen.height - 8 ? below : Math.max(8, (anchor?.top ?? 8) - height - 4);
+  // RN Web pide cerrar (Escape/atrás) a través de `onRequestClose`, independiente del listener manual
+  // de abajo: sin esta misma comprobación de nivel, cerraba el menú entero aunque solo el submenú de
+  // tamaño estuviera abierto.
+  const requestClose = () => { if (sizeOpenRef.current) setSizeOpen(false); else onClose(); };
   return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible transparent animationType="none" onRequestClose={requestClose}>
       <View style={styles.backdrop}>
         <Pressable accessible={false} style={StyleSheet.absoluteFill} onPress={onClose} />
         <View testID="card-menu" accessibilityViewIsModal
@@ -194,25 +221,41 @@ export function CardMenu({ title, display, compact, canQuickEdit, canPaste, fram
           </View>
           <ScrollView keyboardShouldPersistTaps="handled">{content}</ScrollView>
         </View>
+        {sizeOpen ? <View testID="card-size-submenu" accessibilityViewIsModal
+          {...(Platform.OS === 'web' ? { role: 'dialog', 'aria-modal': true, 'aria-label': t('cardControls.resize', locale) } : {})}
+          style={[styles.popover, {
+            left: left + width + 208 <= screen.width ? left + width + 4 : Math.max(8, left - 204),
+            top: Math.max(8, Math.min(sizeTop, screen.height - 300)), width: 200, maxHeight: screen.height - 16,
+            backgroundColor: colors.background, borderColor: colors.border,
+          }]}>
+          <ActionButton label={t('inspector.sheet.back', locale)} onPress={() => setSizeOpen(false)} />
+          {sizeContent}
+        </View> : null}
       </View>
     </Modal>
   );
 }
 
 /** UX7.3-MENU: fila de ancho completo, sin recuadro propio — el resaltado de foco/presión basta para
- * distinguirla, igual que un menú contextual nativo del sistema. */
-function MenuRow({ icon, label, accessibilityLabel, onPress, danger = false }: {
+ * distinguirla, igual que un menú contextual nativo del sistema.
+ * B9-R2-05: `hasSubmenu` añade el indicador `›` de las filas que abren un nivel aparte («Ajustar
+ * tamaño»); esa fila ya solo abre con click/teclado (antes también con `onHoverIn`, retirado porque
+ * un simple paso del ratón no debía abrir un nivel nuevo sin una acción explícita). */
+function MenuRow({ icon, label, accessibilityLabel, onPress, hasSubmenu = false, danger = false, testID }: {
   readonly icon: AppIconName;
   readonly label: string;
   readonly accessibilityLabel: string;
   readonly onPress: () => void;
+  readonly hasSubmenu?: boolean;
   readonly danger?: boolean;
+  readonly testID?: string;
 }) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
@@ -225,6 +268,7 @@ function MenuRow({ icon, label, accessibilityLabel, onPress, danger = false }: {
     >
       <AppIcon name={icon} size={17} color={danger ? colors.danger : colors.textPrimary} />
       <Text numberOfLines={1} style={[styles.menuRowText, { color: danger ? colors.danger : colors.textPrimary }]}>{label}</Text>
+      {hasSubmenu ? <Text accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ color: colors.textSecondary, fontSize: 16, fontWeight: '900' }}>›</Text> : null}
     </Pressable>
   );
 }

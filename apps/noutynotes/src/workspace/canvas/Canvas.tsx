@@ -357,8 +357,12 @@ export function Canvas(props: CanvasProps) {
         if (double) latest.current.props.onCardOpen(cardId);
         else latest.current.props.onCardPress(cardId);
       },
-      canResize: () => latest.current.props.tool === 'select',
+      canResize: () => latest.current.props.tool === 'select' && latest.current.props.zoom >= 0.5,
       begin: (next) => {
+        if (latest.current.props.zoom < 0.5) {
+          latest.current.props.onRejected('Acerca al 50 % para mover o redimensionar. La vista alejada es para navegar.');
+          return;
+        }
         cancelled = false;
         swallowTap = false;
         const { selectedIds } = latest.current.props;
@@ -914,14 +918,19 @@ export function Canvas(props: CanvasProps) {
       {tool === 'connector' ? (
         <ConnectorPicker onPick={pickConnectorAt} />
       ) : <View testID="canvas-background" style={StyleSheet.absoluteFill} {...background} />}
+      {zoom < 0.5 ? <View pointerEvents="none" style={{ position: 'absolute', left: 12, top: 12, zIndex: 4, backgroundColor: colors.surface, padding: 6, borderWidth: 1, borderColor: colors.border }}>
+        <Text style={{ color: colors.textPrimary }}>{locale === 'es' ? 'Vista general: acerca al 50 % para editar' : 'Overview: zoom to 50% to edit'}</Text>
+      </View> : null}
       {showGrid ? (
         <View testID="canvas-grid" style={styles.overlay} pointerEvents="none">
-          {/* Sin imán, los cuartos son destinos persistibles reales (ADR 0046). */}
-          {visibleGridLines(pan.x, zoom, snap ? metrics.cell : metrics.cell / 4, viewport.width).map((left) => (
-            <View key={`c${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine, opacity: snap ? 1 : 0.45 }]} />
+          {/* B9-R2-08: la densidad fina es la única apariencia (antes, un interruptor aparte en
+              Configuración); sigue sin depender del imán — visible/oculto y ajustar a celdas son los
+              únicos controles. A escala de vista general se evitan miles de líneas subpíxel. */}
+          {visibleGridLines(pan.x, zoom, (metrics.cell / 4) * Math.max(1, Math.ceil(8 / (zoom * (metrics.cell / 4)))), viewport.width).map((left) => (
+            <View key={`c${left}`} style={[styles.gridColumn, { left, backgroundColor: colors.gridLine, opacity: 0.45 }]} />
           ))}
-          {visibleGridLines(pan.y, zoom, snap ? metrics.row : metrics.row / 4, viewport.height).map((top) => (
-            <View key={`r${top}`} style={[styles.gridRow, { top, backgroundColor: colors.gridLine, opacity: snap ? 1 : 0.45 }]} />
+          {visibleGridLines(pan.y, zoom, (metrics.row / 4) * Math.max(1, Math.ceil(8 / (zoom * (metrics.row / 4)))), viewport.height).map((top) => (
+            <View key={`r${top}`} style={[styles.gridRow, { top, backgroundColor: colors.gridLine, opacity: 0.45 }]} />
           ))}
         </View>
       ) : null}

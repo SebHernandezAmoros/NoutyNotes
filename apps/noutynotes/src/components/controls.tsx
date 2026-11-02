@@ -30,6 +30,7 @@ export function ActionButton({ label, accessibilityLabel, onPress, tone = 'defau
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      {...(Platform.OS === 'web' ? { title: accessibilityLabel ?? label } : {})}
       {...(pressed === undefined ? (disabled ? { accessibilityState: { disabled } } : {}) : { accessibilityState: { selected: pressed, disabled } })}
       disabled={disabled}
       {...(Platform.OS === 'web' && pressed !== undefined ? { 'aria-pressed': pressed } : {})}

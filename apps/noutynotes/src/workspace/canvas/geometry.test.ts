@@ -32,15 +32,22 @@ describe('geometría del lienzo (ADR 0013)', () => {
     expect(canvasSize(routed, WIDE_METRICS).rows).toBe(19);
   });
 
-  it('el arrastre se convierte en celdas dividiendo por el zoom y redondeando', () => {
+  it('B9-R3-07: el arrastre se convierte en cuartos de celda dividiendo por el zoom y redondeando, con o sin imán — la cuadrícula visible es siempre fina (B9-R2-08)', () => {
     const rect = { x: 2, y: 1, w: 4, h: 3 };
-    expect(dragTarget(rect, 96 * 2 + 40, 64 * 1 - 20, 1, WIDE_METRICS)).toEqual({ x: 4, y: 2 });
-    // Al 50 %, 96 px de pantalla son dos columnas.
+    expect(dragTarget(rect, 96 * 2 + 40, 64 * 1 - 20, 1, WIDE_METRICS)).toEqual({ x: 4.5, y: 1.75 });
+    // Al 50 %, 96 px de pantalla son dos columnas exactas: sin resto fraccionario que redondear.
     expect(dragTarget(rect, 96, 0, 0.5, WIDE_METRICS)).toEqual({ x: 4, y: 1 });
-    expect(dragTarget(rect, -500, -500, 1, WIDE_METRICS)).toEqual({ x: -3, y: -7 });
+    expect(dragTarget(rect, -500, -500, 1, WIDE_METRICS)).toEqual({ x: -3.25, y: -6.75 });
   });
 
-  it('sin imán guarda el destino en cuartos de celda', () => {
+  it('el imán ya no redondea a celda completa: antes de B9-R3-07, este mismo arrastre daba {x:4,y:2}', () => {
+    // Antes del correctivo, `snap=true` usaba `subdivisions=1` (celda completa); el imán solo decide
+    // ahora, en `previewBox`, si la vista previa se ajusta a la celda de destino o sigue al puntero.
+    const rect = { x: 2, y: 1, w: 4, h: 3 };
+    expect(dragTarget(rect, 96 * 2 + 40, 64 * 1 - 20, 1, WIDE_METRICS, true)).not.toEqual({ x: 4, y: 2 });
+  });
+
+  it('sin imán guarda el destino en cuartos de celda (misma precisión fina que con imán)', () => {
     const rect = { x: 2, y: 1, w: 4, h: 3 };
     expect(dragTarget(rect, 20, 36, 1, { cell: 64, row: 64, gap: 8 }, false)).toEqual({ x: 2.25, y: 1.5 });
   });

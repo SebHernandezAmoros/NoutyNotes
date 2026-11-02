@@ -8,7 +8,7 @@ export type AppIconName =
   | 'home' | 'diary' | 'archive' | 'assets' | 'present' | 'print' | 'settings'
   | 'edit' | 'close' | 'expand' | 'collapse' | 'folder' | 'check' | 'star' | 'frame'
   | 'copy' | 'cut' | 'paste' | 'duplicate' | 'recover' | 'document'
-  | 'external-link' | 'download' | 'maximize';
+  | 'external-link' | 'download' | 'maximize' | 'eye';
 
 /**
  * Catálogo de línea portable para la interfaz (ADR 0047). Usa primitivas de React Native y evita
@@ -21,6 +21,11 @@ export function AppIcon({ name, size = 22, color }: { readonly name: AppIconName
   const common = { borderColor: ink, borderWidth: line };
   const fill = { backgroundColor: ink };
   const box = { width: size, height: size };
+
+  if (name === 'eye') return <View testID="icon-eye" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.root, box]}>
+    <View style={{ width: size * 0.86, height: size * 0.52, borderWidth: line, borderColor: ink, borderRadius: size * 0.55, transform: [{ rotate: '-8deg' }] }} />
+    <View style={{ position: 'absolute', width: size * 0.24, height: size * 0.24, borderRadius: size, backgroundColor: ink }} />
+  </View>;
 
   if (name === 'external-link' || name === 'download' || name === 'maximize') return (
     <View testID={`icon-${name}`} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.root, box]}>

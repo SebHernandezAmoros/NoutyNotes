@@ -2,6 +2,7 @@ import type { BoardId, BoardLayout, CardId } from '@noutynotes/domain';
 import { describe, expect, it } from 'vitest';
 
 import { cardsInArea, contentBounds, fitView, minimap, panToCenter, shouldConsumeFitRequest, visibleWorld } from './overview';
+import { MIN_ZOOM } from './viewport';
 
 const metrics = { cell: 100, row: 50, gap: 0 };
 const place = (cardId: string, x: number, y: number, w: number, h: number, display: 'expanded' | 'minimized' = 'expanded') =>
@@ -27,10 +28,10 @@ describe('vista general del lienzo (ADR 0028)', () => {
     expect(small.pan).toEqual({ x: 300, y: 250 });
     // 1000 px en 800 de ancho (menos márgenes): 75 %.
     expect(fitView({ left: 0, top: 0, width: 1000, height: 100 }, { width: 800, height: 600 }).zoom).toBe(0.75);
-    // Enorme: el mínimo, centrado de todos modos.
+    // Enorme: el mínimo (B9-OBS-15: ahora 5 %, no 50 %), centrado de todos modos.
     const huge = fitView({ left: 1000, top: 0, width: 100_000, height: 100 }, { width: 800, height: 600 });
-    expect(huge.zoom).toBe(0.5);
-    expect(huge.pan.x).toBe(400 - (1000 + 50_000) * 0.5);
+    expect(huge.zoom).toBe(MIN_ZOOM);
+    expect(huge.pan.x).toBe(400 - (1000 + 50_000) * MIN_ZOOM);
     // Con los controles inferiores (64 px) reservados, el contenido se centra en el alto que queda.
     expect(fitView({ left: 0, top: 0, width: 200, height: 100 }, { width: 800, height: 600 }, 64).pan).toEqual({ x: 300, y: 218 });
   });

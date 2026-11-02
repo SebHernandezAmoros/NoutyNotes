@@ -80,21 +80,16 @@ const displayKeys: readonly { display: CardDisplayMode; labelKey: 'inspector.dis
   { display: 'minimized', labelKey: 'inspector.display.minimized' },
 ];
 
-/** Catálogo ampliado de iconos de ficha (UX7-D5): mismo nombre que en `AppIcon`, con su etiqueta en español (ADR 0032: el editor de tarjeta no se traduce). */
-const iconLabels: Record<CardIconName, string> = {
-  note: 'Nota', image: 'Imagen', document: 'Documento', folder: 'Carpeta', link: 'Enlace', check: 'Tarea', star: 'Estrella',
-  text: 'Texto', board: 'Tablero', diary: 'Diario', assets: 'Archivos', present: 'Presentar', print: 'Imprimir', settings: 'Ajustes',
-};
-
 function CardIconChoice({ icon, selected, onPress }: { readonly icon: CardIconName; readonly selected: boolean; readonly onPress: () => void }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const [focused, setFocused] = useState(false);
   const colors = theme.colors;
   return (
     <Pressable
       testID={`card-icon-option-${icon}`}
       accessibilityRole="button"
-      accessibilityLabel={`Usar icono ${iconLabels[icon]}`}
+      accessibilityLabel={t('inspector.iconUse', locale, { icon: t(`inspector.icon.${icon}`, locale) })}
       accessibilityState={{ selected }}
       {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
       onPress={onPress}
@@ -644,11 +639,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         </View> : null}
         {section === 'content' && !card.primaryResourceState ? <>
         {Platform.OS === 'web' && supportsVisualEditor && visualAvailable ? (
-          <View testID="body-mode-switch" style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Modo de edición del cuerpo">
-            <ActionButton label="Visual" accessibilityLabel="Editar el cuerpo visualmente" pressed={bodyMode === 'visual'} onPress={() => {
+          <View testID="body-mode-switch" style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.bodyMode', locale)}>
+            <ActionButton label="Visual" accessibilityLabel={t('inspector.bodyVisual', locale)} pressed={bodyMode === 'visual'} onPress={() => {
               if (bodyMode === 'html') applyHtml(true);
             }} />
-            <ActionButton label="HTML" accessibilityLabel="Editar el código HTML del cuerpo" pressed={bodyMode === 'html'} onPress={openHtml} />
+            <ActionButton label="HTML" accessibilityLabel={t('inspector.bodyHtml', locale)} pressed={bodyMode === 'html'} onPress={openHtml} />
           </View>
         ) : null}
         {Platform.OS !== 'web' && focused && supportsVisualEditor && visualAvailable && !visualEditing && !nativeHtmlReadOnly ? (
@@ -660,7 +655,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
           }} />
         ) : null}
         {nativeHtmlReadOnly ? (
-          <Text testID="native-html-read-only" style={[styles.hint, { color: colors.textSecondary }]}>Este cuerpo HTML se conserva en solo lectura en Android. Edítalo en la versión web.</Text>
+          <Text testID="native-html-read-only" style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.nativeHtmlReadOnly', locale)}</Text>
         ) : null}
         {visualEditing && visualDocument ? (
           <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} fontFamily={noteFontFamily}
@@ -673,16 +668,16 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         ) : null}
         {Platform.OS === 'web' && bodyMode === 'html' ? (
           <View testID="html-source-editor" style={styles.htmlEditor}>
-            <TextField testID="html-source-input" label="Código HTML del cuerpo" value={content} onChangeText={changeHtml} multiline
-              fontFamily={mono} placeholder="<p>Contenido</p>" />
+            <TextField testID="html-source-input" label={t('inspector.htmlSource', locale)} value={content} onChangeText={changeHtml} multiline
+              fontFamily={mono} placeholder={t('inspector.htmlPlaceholder', locale)} />
             {htmlIssue ? <Text testID="html-source-error" accessibilityLiveRegion="assertive" style={[styles.hint, { color: colors.danger }]}>
               {htmlErrorPath ? `${htmlErrorPath}: ` : ''}{htmlIssue.message}
             </Text> : <Text testID="html-source-status" accessibilityLiveRegion="polite" style={[styles.hint, { color: colors.textSecondary }]}>
-              {htmlValidation.status === 'pending' ? 'Fuente modificada. Aplícala para actualizar la vista visual.' : 'Fuente válida aplicada a la sesión.'}
+              {t(htmlValidation.status === 'pending' ? 'inspector.htmlPending' : 'inspector.htmlApplied', locale)}
             </Text>}
             <View style={styles.row}>
-              <ActionButton label="Aplicar HTML" accessibilityLabel="Validar y aplicar el código HTML" tone="primary" onPress={() => { applyHtml(false); }} />
-              <ActionButton label="Descartar cambios HTML" accessibilityLabel="Descartar los cambios del código HTML" onPress={discardHtml} />
+              <ActionButton label={t('inspector.htmlApply', locale)} accessibilityLabel={t('inspector.htmlApplyLabel', locale)} tone="primary" onPress={() => { applyHtml(false); }} />
+              <ActionButton label={t('inspector.htmlDiscard', locale)} accessibilityLabel={t('inspector.htmlDiscardLabel', locale)} onPress={discardHtml} />
             </View>
           </View>
         ) : null}
@@ -764,21 +759,21 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
       <>
       {note ? <NoteFontPicker card={card} onChange={(noteFont) => { const request = ++fontChange.current; void flushPendingText().then((saved) => { if (saved && request === fontChange.current) void run((storage, id) => editCardAppearance(storage, id, card.id, { noteFont }), { label: t('content.noteFont', locale) }, { reactive: true }); }); }} /> : null}
       <View testID="card-icon-picker" style={styles.section}>
-        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>ICONO</Text>
+        <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.icon', locale)}</Text>
         <View style={styles.row}>
           <AppIcon name={card.icon ?? 'note'} size={24} color={colors.textPrimary} />
           <Text testID="selected-card-icon" style={[styles.body, { color: colors.textPrimary }]}>
-            {`Seleccionado: ${iconLabels[card.icon ?? 'note']}`}
+            {t('inspector.iconSelected', locale, { icon: t(`inspector.icon.${card.icon ?? 'note'}`, locale) })}
           </Text>
         </View>
         <View style={styles.iconGrid}>
           {cardIconNames.map((icon) => (
             <CardIconChoice key={icon} icon={icon} selected={(card.icon ?? 'note') === icon}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { icon }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { icon }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
           ))}
         </View>
         {card.boardTargetId ? (
-          <ActionButton label="Abrir tablero" accessibilityLabel={`Abrir tablero ${workspace.boards.find((candidate) => candidate.id === card.boardTargetId)?.title ?? card.boardTargetId}`}
+          <ActionButton label={t('inspector.openBoard', locale)} accessibilityLabel={t('inspector.openBoardNamed', locale, { board: workspace.boards.find((candidate) => candidate.id === card.boardTargetId)?.title ?? card.boardTargetId })}
             tone="primary" onPress={() => onOpenBoard?.(card.boardTargetId as BoardId)} />
         ) : null}
       </View>
@@ -787,11 +782,11 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
         <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.frame.section', locale)}</Text>
         <View style={styles.row}>
           <ActionButton label={t('inspector.frame.followGlobal', locale)} pressed={card.frameOverride === undefined}
-            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: null }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: null }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
           <ActionButton label={t('inspector.frame.visible', locale)} pressed={card.frameOverride === 'visible'}
-            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'visible' }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
           <ActionButton label={t('inspector.frame.hidden', locale)} pressed={card.frameOverride === 'hidden'}
-            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'hidden' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+            onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { frameOverride: 'hidden' }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
         </View>
         {!shape && !connector && !documentCard ? (
           <>
@@ -799,24 +794,24 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <View style={styles.row}>
               {cardBase === 'note' ? null : <ActionButton label={t('inspector.contentVisibility.title', locale)} pressed={presentation.title === 'visible'}
                 accessibilityLabel={t('inspector.contentVisibility.title.accessibilityLabel', locale)}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleVisibility: presentation.title === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />}
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { titleVisibility: presentation.title === 'visible' ? 'hidden' : 'visible' }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />}
               <ActionButton label={t('inspector.contentVisibility.body', locale)} pressed={presentation.body === 'visible'}
                 accessibilityLabel={t('inspector.contentVisibility.body.accessibilityLabel', locale)}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodyVisibility: presentation.body === 'visible' ? 'hidden' : 'visible' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { bodyVisibility: presentation.body === 'visible' ? 'hidden' : 'visible' }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             </View>
             <View style={styles.row}>
               <ActionButton label={t('inspector.contentLayout.document', locale)} pressed={presentation.layout === 'document'}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'document' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'document' }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
               <ActionButton label={t('inspector.contentLayout.banner', locale)} pressed={presentation.layout === 'banner'}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'banner' }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { contentLayout: 'banner' }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             </View>
             {cardBase === 'note' ? <>
-              <Text style={[styles.hint, { color: colors.textSecondary }]}>Alineación vertical del cuerpo</Text>
-              <View testID="note-vertical-alignment" style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Alineación vertical del cuerpo de la Nota">
+              <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.verticalBody', locale)}</Text>
+              <View testID="note-vertical-alignment" style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.verticalBodyLabel', locale)}>
                 {(['top', 'center', 'bottom'] as const).map((alignment) => <ActionButton key={alignment}
-                  label={alignment === 'top' ? 'Arriba' : alignment === 'center' ? 'Centro' : 'Abajo'}
+                  label={t(`inspector.align.${alignment}`, locale)}
                   pressed={(card.noteVerticalAlignment ?? 'top') === alignment}
-                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { noteVerticalAlignment: alignment === 'top' ? null : alignment }), { label: 'Alineación vertical actualizada' }, { reactive: true })} />)}
+                  onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { noteVerticalAlignment: alignment === 'top' ? null : alignment }), { label: t('inspector.verticalUpdated', locale) }, { reactive: true })} />)}
               </View>
             </> : null}
           </>
@@ -826,37 +821,37 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
       {shape ? (
         <View testID="shape-style-picker" style={styles.section}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>FORMA</Text>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Tipo</Text>
-          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Tipo de forma">
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.shape', locale)}</Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.shape.type', locale)}</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.shape.typeLabel', locale)}>
             {shapeKinds.map((kind) => (
-              <ActionButton key={kind} label={kind === 'rectangle' ? 'Rectángulo' : kind === 'rounded-rectangle' ? 'Redondeado' : kind === 'ellipse' ? 'Elipse' : 'Línea'}
+              <ActionButton key={kind} label={t(`inspector.shape.kind.${kind}`, locale)}
                 pressed={(card.shapeKind ?? 'rectangle') === kind}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeKind: kind }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeKind: kind }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             ))}
           </View>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Relleno</Text>
-          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color de relleno">
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.shape.fill', locale)}</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.shape.fillLabel', locale)}>
             {shapeFills.map((fill) => (
-              <ActionButton key={fill} label={fill === 'transparent' ? 'Transparente' : fill === 'red' ? 'Rojo' : fill === 'orange' ? 'Naranja' : fill === 'yellow' ? 'Amarillo' : fill === 'green' ? 'Verde' : fill === 'blue' ? 'Azul' : 'Morado'}
+              <ActionButton key={fill} label={t(`inspector.color.${fill}`, locale)}
                 pressed={(card.shapeFill ?? 'blue') === fill}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeFill: fill }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeFill: fill }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             ))}
           </View>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Borde</Text>
-          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color del borde">
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.shape.stroke', locale)}</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.shape.strokeLabel', locale)}>
             {shapeStrokes.map((stroke) => (
-              <ActionButton key={stroke} label={stroke === 'default' ? 'Tema' : stroke === 'red' ? 'Rojo' : stroke === 'orange' ? 'Naranja' : stroke === 'yellow' ? 'Amarillo' : stroke === 'green' ? 'Verde' : stroke === 'blue' ? 'Azul' : 'Morado'}
+              <ActionButton key={stroke} label={t(`inspector.color.${stroke}`, locale)}
                 pressed={(card.shapeStroke ?? 'default') === stroke}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStroke: stroke }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStroke: stroke }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             ))}
           </View>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Grosor</Text>
-          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Grosor del borde">
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.shape.thickness', locale)}</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.shape.thicknessLabel', locale)}>
             {shapeStrokeWidths.map((width) => (
-              <ActionButton key={width} label={width === 'thin' ? 'Fino' : width === 'medium' ? 'Medio' : 'Grueso'}
+              <ActionButton key={width} label={t(`inspector.thickness.${width}`, locale)}
                 pressed={(card.shapeStrokeWidth ?? 'medium') === width}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStrokeWidth: width }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { shapeStrokeWidth: width }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             ))}
           </View>
         </View>
@@ -938,21 +933,21 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
 
       {floatingText ? (
         <View testID="floating-text-style-picker" style={styles.section}>
-          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>TEXTO FLOTANTE</Text>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Alineación</Text>
-          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Alineación del texto flotante">
+          <Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{t('inspector.floating', locale)}</Text>
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.floatingAlign', locale)}</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.floatingAlignLabel', locale)}>
             {floatingTextAlignments.map((alignment) => (
-              <ActionButton key={alignment} label={alignment === 'left' ? 'Izquierda' : alignment === 'center' ? 'Centro' : 'Derecha'}
+              <ActionButton key={alignment} label={t(`inspector.align.${alignment}`, locale)}
                 pressed={(card.textAlign ?? 'left') === alignment}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textAlign: alignment === 'left' ? null : alignment }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textAlign: alignment === 'left' ? null : alignment }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             ))}
           </View>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>Color</Text>
-          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel="Color del texto flotante">
+          <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.color', locale)}</Text>
+          <View style={styles.row} accessibilityRole="toolbar" accessibilityLabel={t('inspector.floatingColorLabel', locale)}>
             {floatingTextColors.map((color) => (
-              <ActionButton key={color} label={color === 'default' ? 'Tema' : color === 'red' ? 'Rojo' : color === 'orange' ? 'Naranja' : color === 'green' ? 'Verde' : color === 'blue' ? 'Azul' : 'Morado'}
+              <ActionButton key={color} label={t(`inspector.color.${color}`, locale)}
                 pressed={(card.textColor ?? 'default') === color}
-                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textColor: color === 'default' ? null : color }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+                onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { textColor: color === 'default' ? null : color }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
             ))}
           </View>
         </View>
@@ -965,7 +960,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
             <ActionButton key={position} label={t(`inspector.captionPosition.${position}`, locale)}
               accessibilityLabel={t(`inspector.captionPosition.${position}.accessibilityLabel`, locale)}
               pressed={(card.captionPosition ?? 'bottom') === position}
-              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { captionPosition: position === 'bottom' ? null : position }), { label: 'Apariencia actualizada' }, { reactive: true })} />
+              onPress={() => void run((storage, id) => editCardAppearance(storage, id, card.id, { captionPosition: position === 'bottom' ? null : position }), { label: t('inspector.appearanceUpdated', locale) }, { reactive: true })} />
           ))}
         </View>
         <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('inspector.captionPosition.hint', locale)}</Text>

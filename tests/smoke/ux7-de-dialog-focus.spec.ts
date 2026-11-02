@@ -13,7 +13,7 @@ test('UX7.3-D/E: abrir un Dialog mueve el foco dentro y cerrarlo lo devuelve al 
   // aplica.
   test.skip(isCompactWidth(page), 'Gestión de foco solo aplica en escritorio ancho (igual que CardMenu).');
   await page.goto('./');
-  await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click();
+  await page.getByRole('button', { name: 'Crear temporalmente', exact: true }).click();
   await page.getByLabel('Nombre del proyecto').fill('Foco de diálogo');
   await page.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Foco de diálogo', exact: true })).toBeVisible();

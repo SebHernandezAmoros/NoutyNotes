@@ -30,6 +30,17 @@ describe('documento de impresiÃ³n (ADR 0031)', () => {
     expect(html).toContain('page-break-inside: avoid');
   });
 
+  it('B9-R2-02: una Nota no se parte entre paginas cuando cabe entera (defecto real en el estilo visual)', () => {
+    const html = buildPrintHtml('T', [
+      { id: id('a'), number: 1, title: 'A', typeLabel: 'Nota', content: 'Cuerpo', tags: [], imageRefs: [], connections: [] },
+    ] satisfies PrintEntry[], new Map(), { style: 'visual' });
+    expect(html).toContain('.entry { margin-bottom: 28px; border-bottom: 1px solid #ccc; padding-bottom: 16px; overflow-wrap: anywhere; break-inside: avoid-page; page-break-inside: avoid; }');
+    // Defecto real corregido: el estilo visual forzaba el corte dentro de la tarjeta ("break-inside: auto"),
+    // justo lo contrario de lo que pide evitar la cabecera partida de su cuerpo.
+    expect(html).not.toContain('break-inside: auto');
+    expect(html).toContain('<article class="entry visual-note">');
+  });
+
   it('un tablero sin tarjetas produce un documento vÃ¡lido con un aviso, no una pÃ¡gina en blanco confusa', () => {
     const html = buildPrintHtml('VacÃ­o', [], new Map());
     expect(html).toContain('VacÃ­o');

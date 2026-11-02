@@ -35,13 +35,6 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
   const centered = Platform.OS === 'web' && presentation === 'centered';
   const centeredOpener = useRef<{ element: HTMLElement; label: string | null; tag: string } | null>(null);
 
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !visible) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [visible, onClose]);
-
   // UX7.3-D/E (A11Y-01): ningún diálogo compartido movía el foco al abrir ni lo devolvía al disparador
   // al cerrar — confirmado leyendo este archivo, sin ningún efecto de foco. Mismo patrón ya probado en
   // `CardMenu` (`canvas/CardControls.tsx`): solo escritorio ancho (`compact` usa una hoja con su propia
@@ -51,7 +44,7 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
     if ((compact && !centered) || Platform.OS !== 'web' || !visible) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const first = requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(`[data-testid="${testID}"] button, [data-testid="${testID}"] input, [data-testid="${testID}"] textarea, [data-testid="${testID}"] [href]`)?.focus();
+      document.querySelector<HTMLElement>(`[data-testid="${testID}"] [role="button"], [data-testid="${testID}"] button, [data-testid="${testID}"] input, [data-testid="${testID}"] textarea, [data-testid="${testID}"] [href]`)?.focus();
     });
     return () => { cancelAnimationFrame(first); if (!centered) opener?.focus(); };
   }, [compact, centered, visible, testID]);
@@ -75,6 +68,16 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
       if (matches.length === 1) matches[0]?.focus();
     }
   };
+  const closeDialog = () => {
+    onClose();
+    if (centered) requestAnimationFrame(restoreCenteredFocus);
+  };
+
+  useEffect(() => {
+    if (visible || !centered || !centeredOpener.current) return;
+    const frame = requestAnimationFrame(restoreCenteredFocus);
+    return () => cancelAnimationFrame(frame);
+  }, [visible, centered]);
 
   useEffect(() => {
     if (!centered || !visible) return;
@@ -100,9 +103,10 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
 
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} onDismiss={centered ? restoreCenteredFocus : undefined}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={closeDialog} onDismiss={centered ? restoreCenteredFocus : undefined}
+      onShow={centered ? () => requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="${testID}"] [role="button"], [data-testid="${testID}"] button`)?.focus()) : undefined}>
       <View style={[styles.backdrop, centered ? styles.backdropCentered : compact ? styles.backdropCompact : styles.backdropWide, typing ? { paddingBottom: keyboard } : null]}>
-        <Pressable accessibilityLabel={`${t('dialog.close', locale)} ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable accessibilityLabel={`${t('dialog.close', locale)} ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={closeDialog} />
         <View
           testID={testID}
           accessibilityViewIsModal
@@ -111,7 +115,7 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
         >
           <View style={styles.header}>
             <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
-            <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />
+            <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={closeDialog} />
           </View>
           <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={[styles.scroll, centered ? styles.centeredScroll : null]} contentContainerStyle={[styles.content, centered ? styles.centeredContent : null]} keyboardShouldPersistTaps="handled">{children}</ScrollView>
         </View>

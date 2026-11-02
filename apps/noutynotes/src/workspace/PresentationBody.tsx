@@ -1,32 +1,41 @@
 import { useContentResources } from './ContentResources';
 import { parseNoteBlocks } from '@noutynotes/application';
 import type { PrintEntry } from '@noutynotes/application';
-import type { CaptionPosition, RichTextImage } from '@noutynotes/domain';
+import type { CaptionPosition, RichTextImage, RichTextInline } from '@noutynotes/domain';
 import { parseRichTextMarkdown } from '@noutynotes/storage';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import type { ColorValue } from 'react-native';
+import { useLocale } from '@noutynotes/ui';
+import type { Locale } from '@noutynotes/ui';
 
 import { BasicRichTextPreview } from './BasicRichTextPreview';
 import { markdownExcerpt } from './markdownLists';
+import { resolveImageReading } from './canvas/imageReadingPresentation';
+import { t } from '../i18n';
 
 // Una presentación es un documento de lectura (ADR 0031): a diferencia de `NotePreview`/Lista, nunca
 // recorta ni añade «+n bloques más»; este número solo evita que `numberOfLines` trunque un párrafo real.
 const UNBOUNDED_LINES = 9999;
 
-function imageBlock(ref: string, alt: string, images: ReadonlyMap<string, string>, position: CaptionPosition, color: ColorValue, key: string, layout?: Pick<RichTextImage, 'size' | 'alignment'>) {
+function imageBlock(ref: string, alt: string, images: ReadonlyMap<string, string>, position: CaptionPosition, color: ColorValue, key: string, locale: Locale, layout?: RichTextImage) {
   const uri = images.get(ref);
+  const reading = layout ? resolveImageReading(layout) : null;
+  const captionInlines: readonly RichTextInline[] = reading?.caption ?? (alt ? [{ type: 'text', text: alt }] : []);
+  const imageAlt = reading?.alt ?? alt;
   const sideways = position === 'left' || position === 'right';
   const image = uri ? (
-    <Image key="image" accessibilityRole="image" accessibilityLabel={alt || 'Imagen'} source={{ uri }}
+    <Image key="image" accessibilityRole="image" accessibilityLabel={imageAlt || t('present.image', locale)} accessible={!reading?.hideImageFromAccessibility} source={{ uri }}
       resizeMode="contain" style={[styles.image, sideways ? styles.imageSide : null]} />
   ) : (
-    <View key="image" accessibilityLabel={`Imagen no disponible: ${alt || ref}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null]}>
-      <Text style={[styles.missingText, { color }]}>{`▣ ${alt || 'Imagen'}`}</Text>
+    <View key="image" accessibilityLabel={`${t('present.imageMissing', locale)}: ${imageAlt || t('present.image', locale)}`} style={[styles.image, styles.missing, sideways ? styles.imageSide : null]}>
+      <Text style={[styles.missingText, { color }]}>{`▣ ${imageAlt || t('present.image', locale)}`}</Text>
     </View>
   );
   const layoutStyle = { width: layout?.size === 'small' ? '25%' : layout?.size === 'medium' ? '50%' : layout?.size === 'large' ? '75%' : '100%', alignSelf: layout?.alignment === 'left' ? 'flex-start' : layout?.alignment === 'right' ? 'flex-end' : 'center' } as const;
-  if (alt === '') return <View key={key} style={[styles.imageBlock, layoutStyle]}>{image}</View>;
-  const caption = <Text key="caption" style={[styles.caption, { color }, sideways ? styles.captionSide : null]}>{alt}</Text>;
+  if (captionInlines.length === 0) return <View key={key} style={[styles.imageBlock, layoutStyle]}>{image}</View>;
+  const caption = <View key="caption" style={[styles.caption, sideways ? styles.captionSide : null]}><BasicRichTextPreview
+    document={{ schemaVersion: 2, blocks: [{ type: 'paragraph', content: captionInlines }] }}
+    numberOfLines={UNBOUNDED_LINES} color={color as string} fontSize={14} lineHeight={20} testID={`${key}-caption`} /></View>;
   if (position === 'top') return <View key={key} style={[styles.imageBlock, layoutStyle]}>{caption}{image}</View>;
   if (position === 'left') return <View key={key} style={[styles.imageRow, layoutStyle]}>{caption}{image}</View>;
   if (position === 'right') return <View key={key} style={[styles.imageRow, layoutStyle]}>{image}{caption}</View>;
@@ -47,6 +56,7 @@ export function PresentationBody({ entry, images, color, fontSize, lineHeight, t
   readonly lineHeight: number;
   readonly testID: string;
 }) {
+  const { locale } = useLocale();
   const fontFamily = useContentResources().fontFor({ id: entry.id, typeId: 'nota' as import('@noutynotes/domain').CardTypeId, fields: {}, ...(entry.noteFont ? { noteFont: entry.noteFont } : {}) });
   const position = entry.captionPosition ?? 'bottom';
   // Cuerpo HTML seguro (ADR 0066): el documento ya está parseado, no hay `content` Markdown que volver
@@ -54,9 +64,9 @@ export function PresentationBody({ entry, images, color, fontSize, lineHeight, t
   const parsed = entry.contentDocument ? { ok: true as const, value: entry.contentDocument } : parseRichTextMarkdown(entry.content);
   if (parsed.ok) {
     const inline = new Set<string>(parsed.value.blocks.filter((block) => block.type === 'image').map((block) => block.assetRef));
-    const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref, index) => imageBlock(ref, '', images, position, color, `standalone-${index}`));
+    const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref, index) => imageBlock(ref, '', images, position, color, `standalone-${index}`, locale));
     const body = parsed.value.blocks.map((block, index) => {
-      if (block.type === 'image') return imageBlock(block.assetRef, block.alt, images, position, color, `block-${index}`, block);
+      if (block.type === 'image') return imageBlock(block.assetRef, block.alt, images, position, color, `block-${index}`, locale, block);
       return (
         <BasicRichTextPreview key={`block-${index}`} document={{ schemaVersion: parsed.value.schemaVersion, blocks: [block] }}
           fontFamily={fontFamily} numberOfLines={UNBOUNDED_LINES} color={color as string} fontSize={fontSize} lineHeight={lineHeight} testID={`${testID}-block-${index}`} />
@@ -66,9 +76,9 @@ export function PresentationBody({ entry, images, color, fontSize, lineHeight, t
   }
   const blocks = parseNoteBlocks(entry.content);
   const inline = new Set<string>(blocks.filter((block) => block.kind === 'image').map((block) => block.ref));
-  const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref, index) => imageBlock(ref, '', images, position, color, `legacy-standalone-${index}`));
+  const standalone = entry.imageRefs.filter((ref) => !inline.has(ref)).map((ref, index) => imageBlock(ref, '', images, position, color, `legacy-standalone-${index}`, locale));
   const body = blocks.map((block, index) => (block.kind === 'image'
-    ? imageBlock(block.ref, block.alt, images, position, color, `legacy-${index}`)
+    ? imageBlock(block.ref, block.alt, images, position, color, `legacy-${index}`, locale)
     : <Text key={`legacy-${index}`} style={[styles.content, { color, fontSize, lineHeight }]}>{markdownExcerpt(block.text)}</Text>));
   return <View testID={testID} style={styles.wrap}>{[...standalone, ...body]}</View>;
 }
@@ -82,6 +92,6 @@ const styles = StyleSheet.create({
   imageSide: { flex: 2, width: undefined, height: 240 },
   missing: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   missingText: { fontSize: 14, fontWeight: '700' },
-  caption: { fontSize: 14, fontStyle: 'italic' },
+  caption: {},
   captionSide: { flex: 1 },
 });

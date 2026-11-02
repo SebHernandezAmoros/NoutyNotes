@@ -50,9 +50,18 @@ export function canvasSize(layout: BoardLayout | undefined, metrics: CanvasMetri
 const cells = (pixels: number, zoom: number, unit: number, subdivisions = 1) =>
   Math.round(pixels / zoom / unit * subdivisions) / subdivisions + 0;
 
-/** Esquina de destino de un arrastre de (dx, dy) px de pantalla. No recorta: eso lo decide el motor. */
-export function dragTarget(cell: GridPoint, dx: number, dy: number, zoom: number, metrics: CanvasMetrics, snap = true): GridPoint {
-  const subdivisions = snap ? 1 : 4;
+/**
+ * Esquina de destino de un arrastre de (dx, dy) px de pantalla. No recorta: eso lo decide el motor.
+ *
+ * B9-R3-07: la cuadrícula visible es siempre fina (cuarto de celda, B9-R2-08) — antes, el movimiento
+ * con el imán activo redondeaba a celda completa (`subdivisions = snap ? 1 : 4`), así que arrastrar
+ * una tarjeta no coincidía con las líneas que realmente se veían. Ambos modos usan ya la misma
+ * subdivisión fina: `snap` deja de cambiar la precisión del redondeo y solo decide, en `previewBox`,
+ * si la vista previa se ajusta a la celda de destino o sigue al puntero sin encajar — sin alterar la
+ * unidad geométrica persistida (sigue en celdas del mundo, solo con más resolución fraccionaria).
+ */
+export function dragTarget(cell: GridPoint, dx: number, dy: number, zoom: number, metrics: CanvasMetrics, _snap = true): GridPoint {
+  const subdivisions = 4;
   return { x: cell.x + cells(dx, zoom, metrics.cell, subdivisions), y: cell.y + cells(dy, zoom, metrics.row, subdivisions) };
 }
 

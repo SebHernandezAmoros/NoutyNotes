@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPdfFileName, isPdfSignature, mimeForFileName } from './assetMime';
+import { isDocumentCardFileName, isPdfFileName, isPdfSignature, mimeForFileName } from './assetMime';
 
 describe('MIME de un asset descargado o abierto (ADR 0038, ADR 0043)', () => {
   it('sale de la extensión real del archivo, sin distinguir mayúsculas; sin extensión conocida, genérico', () => {
@@ -20,6 +20,16 @@ describe('UX7-F: detección de PDF para la vista previa', () => {
     expect(isPdfFileName('manual.docx')).toBe(false);
     expect(isPdfFileName('manual.txt')).toBe(false);
     expect(isPdfFileName('manual')).toBe(false);
+  });
+
+  it('B9-R3-06: isDocumentCardFileName acepta PDF/Markdown/texto plano, no otros formatos de documento', () => {
+    expect(isDocumentCardFileName('Manual.PDF')).toBe(true);
+    expect(isDocumentCardFileName('guia.md')).toBe(true);
+    expect(isDocumentCardFileName('guia.markdown')).toBe(true);
+    expect(isDocumentCardFileName('notas.TXT')).toBe(true);
+    expect(isDocumentCardFileName('informe.docx')).toBe(false);
+    expect(isDocumentCardFileName('datos.csv')).toBe(false);
+    expect(isDocumentCardFileName('mapa.png')).toBe(false);
   });
 
   it('isPdfSignature (PDF-08/PDF-09) exige la cabecera real "%PDF-" — el nombre nunca basta', () => {

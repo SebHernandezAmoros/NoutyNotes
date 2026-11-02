@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addBoardToWorkspace, addCardToBoard, createEmptyWorkspaceNamed, renameBoardInWorkspace, reorderBoardInWorkspace } from '../../packages/application/src/index';
+import { addBoardToWorkspace, addCardToBoard, createEmptyWorkspaceNamed, renameBoardInWorkspace, reorderBoardInWorkspace, reorderCardsOnBoard } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId } from '../../packages/domain/src/index';
 import { MemoryStorage } from '../../packages/storage/src/index';
@@ -104,6 +104,38 @@ describe('tableros del workspace (experiencia del workspace, ADR 0013)', () => {
 
     expect((await reorderBoardInWorkspace(storage, workspaceId, 'no-existe' as BoardId, 0)).ok).toBe(false);
     expect((await reorderBoardInWorkspace(storage, workspaceId, boardId, 2)).ok).toBe(false);
+    expect(ok(await storage.open(workspaceId))).toEqual(before);
+  });
+
+  it('B9-R3-02: reordena el orden principal de lectura de un tablero (board.cardIds), sin tocar layout, tarjetas ni relaciones', async () => {
+    const { storage, workspaceId } = await session();
+    const boardId = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Ideas' }));
+    const a = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', boardId }));
+    const b = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', boardId }));
+    const c = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', boardId }));
+    const before = ok(await storage.open(workspaceId));
+
+    ok(await reorderCardsOnBoard(storage, workspaceId, boardId, [c, a, b]));
+
+    const reopened = ok(await storage.open(workspaceId));
+    expect(reopened.boards.find((board) => board.id === boardId)?.cardIds).toEqual([c, a, b]);
+    // Nada más cambia: mismo layout, mismas tarjetas, mismas relaciones.
+    expect(reopened.layouts).toEqual(before.layouts);
+    expect(reopened.cards).toEqual(before.cards);
+    expect(reopened.relations).toEqual(before.relations);
+  });
+
+  it('B9-R3-02: rechaza de forma atómica un tablero inexistente o un orden que no sea exactamente las mismas tarjetas', async () => {
+    const { storage, workspaceId } = await session();
+    const boardId = ok(await addBoardToWorkspace(storage, workspaceId, { title: 'Ideas' }));
+    const a = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', boardId }));
+    const b = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', boardId }));
+    const before = ok(await storage.open(workspaceId));
+
+    expect((await reorderCardsOnBoard(storage, workspaceId, 'no-existe' as BoardId, [a, b])).ok).toBe(false);
+    expect((await reorderCardsOnBoard(storage, workspaceId, boardId, [a])).ok).toBe(false); // falta b
+    expect((await reorderCardsOnBoard(storage, workspaceId, boardId, [a, b, a])).ok).toBe(false); // duplicado
+    expect((await reorderCardsOnBoard(storage, workspaceId, boardId, [a, b, 'otra-tarjeta' as typeof a])).ok).toBe(false); // id ajeno
     expect(ok(await storage.open(workspaceId))).toEqual(before);
   });
 });

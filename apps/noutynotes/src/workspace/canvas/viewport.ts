@@ -1,6 +1,6 @@
 /** Zoom por pasos y desplazamiento acotado del lienzo (ADR 0013). Puro: sin React ni plataforma. */
 
-const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+const ZOOM_STEPS = [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 export const MIN_ZOOM = ZOOM_STEPS[0];
 export const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1] as number;
 

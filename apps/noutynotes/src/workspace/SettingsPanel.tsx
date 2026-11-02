@@ -26,6 +26,7 @@ interface SettingsPanelProps {
   /** UX7-CONSOLIDATION: acceso estable al Centro de recuperación — ya no es una entrada de
    * navegación propia; esta es la vía siempre disponible, con o sin incidencia real. */
   readonly onOpenRecovery: () => void;
+  readonly onOpenHelp: () => void;
   readonly recoverableCount: number;
   readonly customFontStatus: 'inactive' | 'loading' | 'active' | 'missing' | 'failed' | 'unsupported';
   readonly onClose: () => void;
@@ -173,6 +174,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
         />
         <Text style={[styles.note, { color: colors.textSecondary, borderColor: colors.gridLine }]}>{t('settings.canvas.note', locale)}</Text>
         <ActionButton label={t('settings.resetDefaults', locale)} accessibilityLabel={t('settings.resetDefaults.label', locale)} onPress={props.onResetDefaults} />
+      </View>
+      <View style={styles.section}>
+        <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.textPrimary }]}>{locale === 'es' ? 'Ayuda' : 'Help'}</Text>
+        <ActionButton label={t('help.title', locale)} accessibilityLabel={t('help.open', locale)} onPress={props.onOpenHelp} />
       </View>
     </Dialog>
   );

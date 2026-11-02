@@ -49,16 +49,18 @@ export function addAssetToBoard(
 }
 
 /**
- * Tarjeta de documento que referencia un PDF ya catalogado en Assets, sin copiarlo (UX7.1-A4). Igual
- * patrón que `addAssetToBoard` para imágenes: la validación de qué puede añadirse vive aquí, no en
- * `addCardToBoard` (genérico para cualquier tipo). Solo PDF — `assetKind` también clasifica otros
- * formatos de documento (docx, txt, md…) bajo `'document'`, pero este bloque es exclusivamente PDF.
+ * Tarjeta de documento que referencia un PDF, Markdown o texto plano ya catalogado en Assets, sin
+ * copiarlo (UX7.1-A4; ampliado en B9-R3-06 — antes, solo PDF). Igual patrón que `addAssetToBoard` para
+ * imágenes: la validación de qué puede añadirse vive aquí, no en `addCardToBoard` (genérico para
+ * cualquier tipo). Solo estos tres formatos tienen un visor seguro propio en la interfaz
+ * (`usePdfPreview`/`useTextAssetPreview`); el resto de `document` (docx, csv, xlsx…) no lo tiene
+ * todavía, así que `assetKind` los sigue clasificando como `'document'` sin que puedan añadirse aquí.
  */
 export function addDocumentToBoard(
   storage: WorkspaceStorage, workspaceId: WorkspaceId, input: { readonly ref: string; readonly boardId?: BoardId; readonly near?: AddCardInput['near']; readonly createdAt?: string },
 ): Promise<WorkspaceStorageResult<CardId>> {
-  if (typeof input.ref !== 'string' || assetKind(input.ref) !== 'document' || !/\.pdf$/i.test(input.ref)) {
-    return Promise.resolve(storageFailure('invalid-asset', 'ref', 'Solo un PDF del proyecto puede añadirse al tablero como tarjeta de documento.'));
+  if (typeof input.ref !== 'string' || assetKind(input.ref) !== 'document' || !/\.(?:pdf|md|markdown|txt)$/i.test(input.ref)) {
+    return Promise.resolve(storageFailure('invalid-asset', 'ref', 'Solo un PDF, Markdown o texto plano del proyecto puede añadirse al tablero como tarjeta de documento.'));
   }
   const name = input.ref.split('/').pop() ?? input.ref;
   return addCardToBoard(storage, workspaceId, {

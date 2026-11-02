@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, editCardAppearance, editCardContent, editConnectorPath, moveCardOnBoard, nudgeCardOnBoard, pasteSnapshot, resizeCardOnBoard, snapshotSelection,
+  addBoardShortcut, addBoardToWorkspace, addCardToBoard, connectCards, createEmptyWorkspaceNamed, disconnectCards, duplicateSelection, editCardAppearance, editCardContent, editConnectorPath, moveCardOnBoard, moveCardsOnBoard, nudgeCardOnBoard, pasteSnapshot, resizeCardOnBoard, snapshotSelection,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
 import type { BoardId, CardId, RelationId, WorkspaceId } from '../../packages/domain/src/index';
@@ -125,6 +125,42 @@ describe('añadir tarjetas (fase 7)', () => {
     expect(placement(cardId)).toEqual({ x: 0, y: 0, w: 4, h: 3 });
     const copiedId = reopened.cards.find((card) => card.id !== cardId)?.id;
     expect(copiedId && placement(copiedId)).toEqual({ x: 10, y: 8, w: 4, h: 3 });
+  });
+
+  it('duplica una nota situada en un cuarto de celda sin redondear la geometría original', async () => {
+    const { storage, workspaceId } = await session();
+    const original = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', title: 'Fraccionaria' }));
+    ok(await moveCardsOnBoard(storage, workspaceId, { boardId: board, cardIds: [original], delta: { x: 0.25, y: 0.5 } }));
+    ok(await duplicateSelection(storage, workspaceId, board, [original]));
+    const reopened = ok(await storage.open(workspaceId));
+    const placements = reopened.layouts[0]?.placements ?? [];
+    expect(placements.find((placement) => placement.cardId === original)?.rect).toEqual({ x: 0.25, y: 0.5, w: 4, h: 3 });
+    const copy = placements.find((placement) => placement.cardId !== original);
+    expect(copy?.rect.x! % 1).toBe(0.25);
+    expect(copy?.rect.y! % 1).toBe(0.5);
+    expect(copy?.rect.w).toBe(4);
+    expect(copy?.rect.h).toBe(3);
+  });
+
+  it('duplica un grupo fraccionario con su relación y conserva la distancia interna', async () => {
+    const { storage, workspaceId } = await session();
+    const a = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', title: 'A' }));
+    const b = ok(await addCardToBoard(storage, workspaceId, { kind: 'note', title: 'B' }));
+    ok(await moveCardsOnBoard(storage, workspaceId, { boardId: board, cardIds: [a, b], delta: { x: 0.25, y: 0.5 } }));
+    ok(await connectCards(storage, workspaceId, { from: a, to: b }));
+    const before = ok(await storage.open(workspaceId));
+    const originals = before.layouts[0]!.placements.filter((placement) => placement.cardId === a || placement.cardId === b);
+    ok(await duplicateSelection(storage, workspaceId, board, [a, b]));
+    const after = ok(await storage.open(workspaceId));
+    const copies = after.layouts[0]!.placements.filter((placement) => placement.cardId !== a && placement.cardId !== b);
+    expect(copies).toHaveLength(2);
+    const dx = copies[0]!.rect.x - originals[0]!.rect.x;
+    const dy = copies[0]!.rect.y - originals[0]!.rect.y;
+    expect(Number.isInteger(dx)).toBe(true);
+    expect(Number.isInteger(dy)).toBe(true);
+    expect(copies.map((placement) => placement.rect)).toEqual(originals.map((placement) => ({ ...placement.rect, x: placement.rect.x + dx, y: placement.rect.y + dy })));
+    expect(after.relations).toHaveLength(2);
+    expect(after.relations[1]).toMatchObject({ from: copies[0]!.cardId, to: copies[1]!.cardId });
   });
 
   it('crea texto flotante como una nota unificada sin título ni marco, con estilo portable, y su contenido es HTML seguro literal (ADR 0057, ADR 0066)', async () => {

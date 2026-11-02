@@ -170,6 +170,27 @@ test('B7: el cuerpo no arrastra; cabecera, asa noroeste y teclado tienen histori
   await page.screenshot({ path: info.outputPath('block7-eight-handles.png') });
 });
 
+test('B9-R3-07: con el imán activo, mover una tarjeta ya alinea a cuarto de celda, no solo a celda completa', async ({ page }, info) => {
+  test.skip(info.project.use.hasTouch === true, 'La precisión de ratón mide esto de forma directa; el gesto táctil ya se cubre en B7.');
+  await openLab(page);
+  await select(page, 'idea-a');
+  const original = await rect(page);
+  // Cuarto de celda real a 100 % (WIDE_METRICS.cell = 96 px). Antes de este correctivo, con el imán
+  // activo (por defecto) un arrastre tan pequeño no movía la tarjeta en absoluto: redondeaba a celda
+  // completa (96 px), no a la misma cuadrícula fina que ya se ve siempre desde B9-R2-08.
+  await drag(page, 'card-header-idea-a', 24, 0);
+  const moved = await rect(page);
+  const delta = moved.x - original.x;
+  // Antes de este correctivo, el imán activo redondeaba a celda completa: un arrastre tan pequeño
+  // habría dado delta = 0 (no se mueve) o un salto de celda completa (96 px). Aquí debe quedar un
+  // movimiento real pero parcial, menor que una celda completa.
+  expect(delta).toBeGreaterThan(0);
+  expect(delta).toBeLessThan(96);
+  expect(moved.y).toBeCloseTo(original.y, 0);
+  await page.getByRole('button', { name: /^Deshacer:/ }).click();
+  await expect.poll(() => rect(page)).toEqual(original);
+});
+
 test('B7: cámara y pérdida de captura invalidan el gesto y su finalización tardía', async ({ page }) => {
   await openLab(page);
   await select(page, 'idea-a');
@@ -221,6 +242,52 @@ test('B7: 1×1 conserva acceso contextual y tamaño accesible en ambos temas', a
     }
     expect(await rect(page, 'tiny')).toEqual(original);
   }
+});
+
+test('B9-OBS-09: el submenú de tamaño se abre aparte del menú principal, con foco, Escape por nivel y posición dentro de la ventana', async ({ page }, info) => {
+  test.skip(test.info().project.use.hasTouch === true, 'El submenú lateral es la variante de escritorio; en táctil, el tamaño vive dentro del mismo Dialog (ya cubierto por B7).');
+  await openLab(page);
+  await select(page, 'idea-a');
+  await openCardActions(page, 'idea-a');
+  await expect(page.getByTestId('card-menu')).toBeVisible();
+  const sizeTrigger = page.getByRole('button', { name: 'Ajustar tamaño', exact: true });
+  await expect(sizeTrigger).toHaveText(/›\s*$/);
+  // B9-R2-05: solo abre con click/teclado — pasar el ratón por encima ya no debe abrir el submenú.
+  await sizeTrigger.hover();
+  await expect(page.getByTestId('card-size-submenu')).toHaveCount(0);
+  await sizeTrigger.click();
+  const submenu = page.getByTestId('card-size-submenu');
+  await expect(submenu).toBeVisible();
+  await expect(submenu).toHaveAttribute('aria-label', 'Ajustar tamaño');
+  // El menú principal sigue montado detrás, no se cierra al abrir el submenú.
+  await expect(page.getByTestId('card-menu')).toBeVisible();
+  const box = (await submenu.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  await page.screenshot({ path: info.outputPath('b9-obs-09-size-submenu.png') });
+
+  const original = await rect(page, 'idea-a');
+  await page.getByRole('button', { name: 'Más alta', exact: true }).click();
+  await expect.poll(async () => (await rect(page, 'idea-a')).h).toBeGreaterThan(original.h);
+
+  // Escape cierra primero el submenú, no el menú entero (ADR 0048, mismo contrato que el tamaño en móvil).
+  await page.keyboard.press('Escape');
+  await expect(submenu).toHaveCount(0);
+  await expect(page.getByTestId('card-menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('card-menu')).toHaveCount(0);
+
+  // «Volver» también regresa al menú principal sin cerrarlo.
+  await openCardActions(page, 'idea-a');
+  await page.getByRole('button', { name: 'Ajustar tamaño', exact: true }).click();
+  await expect(page.getByTestId('card-size-submenu')).toBeVisible();
+  await page.getByRole('button', { name: 'Volver', exact: true }).click();
+  await expect(page.getByTestId('card-size-submenu')).toHaveCount(0);
+  await expect(page.getByTestId('card-menu')).toBeVisible();
+
+  expect(await rect(page, 'idea-a')).not.toEqual(original);
 });
 
 test('B7: grupo conserva distancia relativa con agarre, lector y Undo', async ({ page }, info) => {

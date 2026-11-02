@@ -159,7 +159,7 @@ export const RichNoteReaderWeb = memo(function RichNoteReaderWeb({ document, ima
   return (
     <div
       data-testid={testID}
-      aria-label="Contenido completo de la nota"
+      aria-label={t('reader.fullContent', locale)}
       tabIndex={0}
       onScroll={onScroll}
       onPointerDown={() => { navigation.current += 1; }}

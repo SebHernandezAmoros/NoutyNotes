@@ -3,7 +3,7 @@
  * proyección pura, en el orden de lectura de las tarjetas (fila, luego columna, igual que su numeración
  * en el lienzo). Sin reloj ni acceso a archivos: se arma a partir del workspace ya cargado.
  */
-import { cardContentPresentation, cardTitleText, footprint, isFloatingTextCard, richTextInlineText } from '@noutynotes/domain';
+import { cardContentPresentation, cardTitleText, footprint, isFloatingTextCard, richTextImageRefs, richTextInlineText } from '@noutynotes/domain';
 import type { BoardId, CaptionPosition, Card, CardId, ConnectorArrows, ConnectorDash, ConnectorDirection, FloatingTextAlign, FloatingTextColor, RichTextDocument, ShapeFill, ShapeKind, ShapeStroke, ShapeStrokeWidth, TextSize, Workspace } from '@noutynotes/domain';
 
 import { noteImageRefs } from './note-blocks';
@@ -33,6 +33,8 @@ export interface PrintEntry {
   readonly titleSize?: TextSize;
   readonly bodySize?: TextSize;
   readonly noteFont?: Card['noteFont'];
+  readonly frameOverride?: Card['frameOverride'];
+  readonly noteBackground?: Card['noteBackground'];
   /** Posición de la leyenda de imágenes intercaladas (ADR 0051); ausente = `'bottom'`. */
   readonly captionPosition?: CaptionPosition;
   readonly floatingText?: boolean;
@@ -69,7 +71,15 @@ function connectionsOf(workspace: Workspace, cardId: CardId, cards: ReadonlyMap<
     });
 }
 
-/** Documento de un tablero en orden de lectura. Sin layout, sin tarjetas o el board no existe: lista vacía. */
+/**
+ * Documento de un tablero en orden de lectura. Sin layout, sin tarjetas o el board no existe: lista vacía.
+ *
+ * B9-R3-02: el orden principal es `board.cardIds` (ya persistido, ya independiente de la geometría del
+ * lienzo — `trashCards`/`restoreCardsFromTrash` ya conservan y restauran su posición exacta ahí, aunque
+ * hasta ahora nada lo exponía como un orden de lectura editable). Imprimir y Presentar heredan este orden
+ * por defecto en vez del antiguo orden por coordenadas; cualquier colocación no reflejada en `cardIds`
+ * (no debería ocurrir con datos válidos) se añade al final, por coordenadas, como red de seguridad.
+ */
 export function printableDocument(workspace: Workspace, boardId: BoardId): readonly PrintEntry[] {
   const layout = workspace.layouts.find((candidate) => candidate.boardId === boardId);
   if (!layout) return [];
@@ -79,18 +89,26 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
   // imágenes intercaladas (ADR 0021), pero sin garantizar el orden del documento tras editarlo: se
   // vuelve a leer del texto para que las imágenes salgan en el orden en que aparecen.
   const typeBase = new Map(workspace.cardTypes.map((type) => [type.id, type.base]));
-  const ordered = [...layout.placements].sort((a, b) => {
+  const byCardId = new Map(layout.placements.map((placement) => [placement.cardId, placement]));
+  const board = workspace.boards.find((candidate) => candidate.id === boardId);
+  const byGeometry = [...layout.placements].sort((a, b) => {
     const cellA = footprint(a);
     const cellB = footprint(b);
     return cellA.y - cellB.y || cellA.x - cellB.x;
   });
+  const fromBoard = (board?.cardIds ?? []).flatMap((id) => { const placement = byCardId.get(id); return placement ? [placement] : []; });
+  const remaining = byGeometry.filter((placement) => !fromBoard.includes(placement));
+  const ordered = [...fromBoard, ...remaining];
   return ordered.flatMap((placement, index): PrintEntry[] => {
     const card = cards.get(placement.cardId);
     if (!card) return [];
     const base = typeBase.get(card.typeId);
     const presentation = cardContentPresentation(card, base);
     const floating = isFloatingTextCard(card, base);
-    const imageRefs = presentation.body === 'hidden' ? [] : base === 'image' ? [...(card.assetRefs ?? [])] : noteImageRefs(card.content ?? '');
+    // B9-R4-01: una Nota v2/HTML guarda su contenido en `contentDocument`, no en `content` (que queda
+    // vacío) — leer solo `noteImageRefs(card.content)` dejaba sin imagen de referencia a esas Notas.
+    const imageRefs = presentation.body === 'hidden' ? [] : base === 'image' ? [...(card.assetRefs ?? [])]
+      : card.contentDocument ? richTextImageRefs(card.contentDocument) : noteImageRefs(card.content ?? '');
     const body = floating && card.contentDocument !== undefined ? floatingTextPlain(card.contentDocument) : card.content ?? '';
     return [{
       id: card.id, number: index + 1, title: presentation.title === 'visible' ? titleOf(card) : '', typeLabel: typeLabel.get(card.typeId) ?? '',
@@ -99,6 +117,8 @@ export function printableDocument(workspace: Workspace, boardId: BoardId): reado
       ...(card.titleSize === undefined ? {} : { titleSize: card.titleSize }),
       ...(card.bodySize === undefined ? {} : { bodySize: card.bodySize }),
       ...(card.noteFont === undefined ? {} : { noteFont: card.noteFont }),
+      ...(card.frameOverride === undefined ? {} : { frameOverride: card.frameOverride }),
+      ...(card.noteBackground === undefined ? {} : { noteBackground: card.noteBackground }),
       ...(card.captionPosition === undefined ? {} : { captionPosition: card.captionPosition }),
       ...(floating ? { floatingText: true as const } : {}),
       ...(card.textAlign === undefined ? {} : { textAlign: card.textAlign }),

@@ -1,6 +1,6 @@
 import { footprint } from '@noutynotes/domain';
 import type { BoardLayout } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { StyleSheet, Text, View } from 'react-native';
 import type { GestureResponderEvent } from 'react-native';
 
@@ -10,6 +10,7 @@ import type { CanvasMetrics } from './geometry';
 import { contentBounds, minimap, panToCenter, visibleWorld } from './overview';
 import { MAX_ZOOM, MIN_ZOOM, formatZoom } from './viewport';
 import type { Point, Size } from './viewport';
+import { t } from '../../i18n';
 
 interface CanvasOverviewProps {
   readonly layout: BoardLayout | undefined;
@@ -36,6 +37,7 @@ const MAP_PADDING = 6;
  */
 export function CanvasOverview(props: CanvasOverviewProps) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const { layout, metrics, zoom, pan, viewport } = props;
   const mapSize: Size = props.showZoom ? { width: 150, height: 96 } : { width: 190, height: 120 };
@@ -44,6 +46,8 @@ export function CanvasOverview(props: CanvasOverviewProps) {
   const map = minimap(bounds, view, mapSize, MAP_PADDING);
   const cards = layout?.placements.length ?? 0;
   const frames = layout?.frames?.length ?? 0;
+  const cardSummary = t(cards === 1 ? 'canvas.minimapCardOne' : 'canvas.minimapCardMany', locale, { count: String(cards) });
+  const frameSummary = frames > 0 ? t('canvas.minimapWithFrames', locale, { frames: t(frames === 1 ? 'canvas.minimapFrameOne' : 'canvas.minimapFrameMany', locale, { count: String(frames) }) }) : '';
   const go = (event: GestureResponderEvent) => {
     const { locationX, locationY } = event.nativeEvent;
     props.onPan(panToCenter(map.toWorld({ x: locationX, y: locationY }), zoom, viewport));
@@ -55,7 +59,7 @@ export function CanvasOverview(props: CanvasOverviewProps) {
         <View
           testID="canvas-minimap"
           accessibilityRole="button"
-          accessibilityLabel={`Minimapa: ${cards === 1 ? '1 tarjeta' : `${cards} tarjetas`}${frames > 0 ? ` y ${frames === 1 ? '1 marco' : `${frames} marcos`}` : ''}; toca para ir a esa zona`}
+          accessibilityLabel={t('canvas.minimapSummary', locale, { cards: cardSummary, frames: frameSummary })}
           onStartShouldSetResponder={() => true}
           onResponderTerminationRequest={() => false}
           onResponderRelease={go}
@@ -73,15 +77,15 @@ export function CanvasOverview(props: CanvasOverviewProps) {
       <View testID="canvas-controls" style={[styles.controls, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         {props.showZoom ? (
           <>
-            <ActionButton label="−" accessibilityLabel="Alejar la vista" disabled={zoom <= MIN_ZOOM} onPress={props.onZoomOut} style={styles.button} />
-            <ActionButton testID="canvas-zoom" label={formatZoom(zoom)} accessibilityLabel={`Zoom ${formatZoom(zoom)}, restablecer la vista`} onPress={props.onZoomReset} style={styles.button} />
-            <ActionButton label="+" accessibilityLabel="Acercar la vista" disabled={zoom >= MAX_ZOOM} onPress={props.onZoomIn} style={styles.button} />
+            <ActionButton label="−" accessibilityLabel={t('canvas.zoomOut', locale)} disabled={zoom <= MIN_ZOOM} onPress={props.onZoomOut} style={styles.button} />
+            <ActionButton testID="canvas-zoom" label={formatZoom(zoom)} accessibilityLabel={t('canvas.zoomReset', locale, { zoom: formatZoom(zoom) })} onPress={props.onZoomReset} style={styles.button} />
+            <ActionButton label="+" accessibilityLabel={t('canvas.zoomIn', locale)} disabled={zoom >= MAX_ZOOM} onPress={props.onZoomIn} style={styles.button} />
           </>
         ) : null}
-        <ActionButton label="⌖" accessibilityLabel="Ver todo el tablero" onPress={props.onFit} style={styles.button} />
-        <ActionButton label="▦" accessibilityLabel={props.minimapOpen ? 'Ocultar el minimapa' : 'Mostrar el minimapa'} pressed={props.minimapOpen} onPress={props.onToggleMinimap} style={styles.button} />
+        <ActionButton label="⌖" accessibilityLabel={t('canvas.fit', locale)} onPress={props.onFit} style={styles.button} />
+        <ActionButton label="▦" accessibilityLabel={t(props.minimapOpen ? 'canvas.hideMinimap' : 'canvas.showMinimap', locale)} pressed={props.minimapOpen} onPress={props.onToggleMinimap} style={styles.button} />
       </View>
-      {bounds === null && props.minimapOpen ? <Text style={[styles.empty, { color: colors.textSecondary }]}>Tablero vacío</Text> : null}
+      {bounds === null && props.minimapOpen ? <Text style={[styles.empty, { color: colors.textSecondary }]}>{t('canvas.empty', locale)}</Text> : null}
     </View>
   );
 }

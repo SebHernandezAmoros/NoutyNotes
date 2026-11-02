@@ -1,8 +1,9 @@
 import type { Board, BoardId } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { t } from '../i18n';
 
 
 interface BoardTabsProps {
@@ -21,24 +22,25 @@ export const BOARD_RAIL_HORIZONTAL_MIN = 176;
 
 /** Tableros reales del workspace y «+ Tablero», que crea uno con el caso de uso (ADR 0013, decisión 7). */
 export function BoardTabs({ boards, current, onSelect, onCreate, vertical, scroll = false }: BoardTabsProps) {
+  const { locale } = useLocale();
   const tabs = (
     <>
       {boards.map((board) => (
         <Tab key={board.id} label={board.title} count={board.cardIds.length} active={board.id === current} vertical={vertical}
-          accessibilityLabel={`Tablero ${board.title}`} onPress={() => onSelect(board.id)} />
+          accessibilityLabel={t('boards.tab', locale, { board: board.title })} onPress={() => onSelect(board.id)} />
       ))}
-      <Tab label="+ Tablero" active={false} vertical={vertical} accessibilityLabel="Crear un tablero" onPress={onCreate} />
+      <Tab label={t('boards.new', locale)} active={false} vertical={vertical} accessibilityLabel={t('boards.create', locale)} onPress={onCreate} />
     </>
   );
   if (scroll) {
     return (
-      <ScrollView testID="board-tabs" accessibilityLabel="Tableros" horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.scrollRow}>
+      <ScrollView testID="board-tabs" accessibilityLabel={t('boards.all', locale)} horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.scrollRow}>
         {tabs}
       </ScrollView>
     );
   }
   return (
-    <View testID="board-tabs" accessibilityLabel="Tableros" style={[styles.row, vertical ? styles.vertical : null]}>
+    <View testID="board-tabs" accessibilityLabel={t('boards.all', locale)} style={[styles.row, vertical ? styles.vertical : null]}>
       {tabs}
     </View>
   );
@@ -52,6 +54,7 @@ export function BoardRail({ boards, current, width, onSelect, onCreate, onAction
   readonly onReorder: (boardId: BoardId, targetIndex: number) => void;
 }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [dragging, setDragging] = useState<BoardId | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
@@ -59,12 +62,12 @@ export function BoardRail({ boards, current, width, onSelect, onCreate, onAction
   const expanded = width >= BOARD_RAIL_HORIZONTAL_MIN;
   const tabWidth = expanded ? Math.max(RAIL_WIDTH, width - 24) : RAIL_WIDTH;
   return (
-    <ScrollView testID="board-tabs" accessibilityLabel="Tableros" showsVerticalScrollIndicator
+    <ScrollView testID="board-tabs" accessibilityLabel={t('boards.all', locale)} showsVerticalScrollIndicator
       style={[styles.rail, { width, borderColor: colors.border, backgroundColor: colors.surfaceRaised }, Platform.OS === 'web' ? { scrollbarGutter: 'stable' } as object : null]}
       contentContainerStyle={[styles.railContent, expanded ? styles.railContentWide : null]}>
       <View style={[styles.railHeader, expanded ? styles.railHeaderWide : null]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Opciones de tableros" onPress={onOrganize}
-          {...(Platform.OS === 'web' ? { title: 'Opciones de tableros' } : {})}
+        <Pressable accessibilityRole="button" accessibilityLabel={t('boards.options', locale)} onPress={onOrganize}
+          {...(Platform.OS === 'web' ? { title: t('boards.options', locale) } : {})}
           onFocus={() => setOptionsFocused(true)} onBlur={() => setOptionsFocused(false)}
           style={({ pressed }) => [styles.railOptions, expanded ? styles.railOptionsWide : null, {
             borderColor: optionsFocused ? colors.selection : colors.border,
@@ -72,7 +75,7 @@ export function BoardRail({ boards, current, width, onSelect, onCreate, onAction
             opacity: pressed ? 0.8 : 1,
           }]}>
           <Text style={[styles.railOptionsGlyph, { color: colors.textPrimary }]}>☷</Text>
-          {expanded ? <Text numberOfLines={1} style={[styles.railOptionsLabel, { color: colors.textPrimary }]}>Opciones de tableros</Text> : null}
+          {expanded ? <Text numberOfLines={1} style={[styles.railOptionsLabel, { color: colors.textPrimary }]}>{t('boards.options', locale)}</Text> : null}
         </Pressable>
       </View>
       {boards.map((board, index) => (
@@ -89,7 +92,7 @@ export function BoardRail({ boards, current, width, onSelect, onCreate, onAction
           }}
           onDragEnd={() => { setDragging(null); setDropIndex(null); }} />
       ))}
-      <Pressable accessibilityRole="button" accessibilityLabel="Crear un tablero" onPress={onCreate}
+      <Pressable accessibilityRole="button" accessibilityLabel={t('boards.create', locale)} onPress={onCreate}
         style={[styles.railAdd, { borderColor: colors.border, backgroundColor: colors.surface }]}>
         <Text style={[styles.railAddText, { color: colors.textPrimary }]}>+</Text>
       </Pressable>
@@ -114,6 +117,7 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
   readonly onDragEnd: () => void;
 }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const suppressPress = useRef(false);
@@ -125,7 +129,7 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
     },
   } : {};
   const tabButton = (
-    <Pressable accessibilityRole="button" accessibilityLabel={`Tablero ${label}`} accessibilityState={{ selected: active }}
+    <Pressable accessibilityRole="button" accessibilityLabel={t('boards.tab', locale, { board: label })} accessibilityState={{ selected: active }}
       {...(Platform.OS === 'web' ? { 'aria-pressed': active } : {})} {...webMenu}
       onPress={() => { if (!suppressPress.current) onPress(); }} onLongPress={onActions}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -170,7 +174,7 @@ function RailTab({ number, label, count, active, dragging, dropTarget, expanded,
   return (
     <View style={[styles.railTabWrap, expanded ? styles.railTabWrapWide : null, { width }]}>
     {draggableTab}
-    <Pressable accessibilityRole="button" accessibilityLabel={`Opciones del tablero ${label}`} onPress={onActions}
+    <Pressable accessibilityRole="button" accessibilityLabel={t('boards.tabOptions', locale, { board: label })} onPress={onActions}
       style={[styles.railMore, { backgroundColor: active ? colors.brand : colors.surface, borderColor: colors.border }]}>
       <Text style={[styles.moreGlyph, { color: active ? colors.brandText : colors.textPrimary }]}>⋯</Text>
     </Pressable>

@@ -1,10 +1,11 @@
 import type { Board, BoardId } from '@noutynotes/domain';
-import { useTheme } from '@noutynotes/ui';
+import { useLocale, useTheme } from '@noutynotes/ui';
 import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton } from '../components/controls';
 import { Dialog } from '../components/Dialog';
+import { t } from '../i18n';
 
 interface OpenTabsProps {
   /** Pestañas abiertas en esta sesión, en su orden de apertura (ADR 0035). */
@@ -30,6 +31,7 @@ interface OpenTabsProps {
  * `BoardTabs`: un subconjunto que se puede cerrar sin borrar nada y reabrir desde el selector `+`.
  */
 export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, onCreate, onInsertShortcut, onActions, onOrganize, compact, scroll = false }: OpenTabsProps) {
+  const { locale } = useLocale();
   const [pickerOpen, setPickerOpen] = useState(false);
   const canClose = boards.length > 1;
   const tabs = (
@@ -45,33 +47,33 @@ export function OpenTabs({ boards, current, onSelect, onClose, closed, onOpen, o
           onActions={() => onActions(board.id)}
         />
       ))}
-      <ActionButton label="+" accessibilityLabel="Abrir un tablero" testID="open-tabs-add" onPress={() => setPickerOpen(true)} />
-      <ActionButton label="Organizar" accessibilityLabel="Organizar tableros" onPress={onOrganize} />
+      <ActionButton label="+" accessibilityLabel={t('boards.open', locale)} testID="open-tabs-add" onPress={() => setPickerOpen(true)} />
+      <ActionButton label={t('boards.organize', locale)} accessibilityLabel={t('boards.organize', locale)} onPress={onOrganize} />
     </>
   );
   return (
     <>
       {scroll ? (
-        <ScrollView testID="open-tabs" accessibilityLabel="Pestañas abiertas" horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.scrollRow}>
+        <ScrollView testID="open-tabs" accessibilityLabel={t('boards.openTabs', locale)} horizontal showsHorizontalScrollIndicator={false} style={styles.scroll} contentContainerStyle={styles.scrollRow}>
           {tabs}
         </ScrollView>
       ) : (
-        <View testID="open-tabs" accessibilityLabel="Pestañas abiertas" style={styles.row}>
+        <View testID="open-tabs" accessibilityLabel={t('boards.openTabs', locale)} style={styles.row}>
           {tabs}
         </View>
       )}
-      <Dialog visible={pickerOpen} title="Abrir un tablero" compact={compact} onClose={() => setPickerOpen(false)} testID="open-tabs-picker">
+      <Dialog visible={pickerOpen} title={t('boards.open', locale)} compact={compact} onClose={() => setPickerOpen(false)} testID="open-tabs-picker">
         <View style={styles.picker}>
           {closed.map((board) => (
             <ActionButton
               key={board.id}
               label={board.title}
-              accessibilityLabel={`Abrir el tablero ${board.title}`}
+              accessibilityLabel={t('boards.openNamed', locale, { board: board.title })}
               onPress={() => { setPickerOpen(false); onOpen(board.id); }}
             />
           ))}
-          <ActionButton label="+ Tablero" accessibilityLabel="Crear un tablero" onPress={() => { setPickerOpen(false); onCreate(); }} />
-          <ActionButton label="Acceso rápido a un tablero" accessibilityLabel="Crear acceso rápido a un tablero" onPress={() => { setPickerOpen(false); onInsertShortcut(); }} />
+          <ActionButton label={t('boards.new', locale)} accessibilityLabel={t('boards.create', locale)} onPress={() => { setPickerOpen(false); onCreate(); }} />
+          <ActionButton label={t('boards.shortcut', locale)} accessibilityLabel={t('boards.createShortcut', locale)} onPress={() => { setPickerOpen(false); onInsertShortcut(); }} />
         </View>
       </Dialog>
     </>
@@ -87,6 +89,7 @@ function Tab({ board, active, closable, onSelect, onClose, onActions }: {
   readonly onActions: () => void;
 }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   const webMenu = Platform.OS === 'web' ? {
@@ -102,7 +105,7 @@ function Tab({ board, active, closable, onSelect, onClose, onActions }: {
     <View style={styles.tab}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Tablero ${board.title}`}
+        accessibilityLabel={t('boards.tab', locale, { board: board.title })}
         accessibilityState={{ selected: active }}
         {...(Platform.OS === 'web' ? { 'aria-pressed': active } : {})}
         {...webMenu}
@@ -118,14 +121,14 @@ function Tab({ board, active, closable, onSelect, onClose, onActions }: {
         <Text numberOfLines={1} style={[styles.label, { color: active ? colors.brandText : colors.textPrimary }]}>{board.title}</Text>
         <Text style={[styles.count, { color: active ? colors.brandText : colors.textSecondary }]}>{board.cardIds.length}</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Opciones del tablero ${board.title}`} onPress={onActions}
+      <Pressable accessibilityRole="button" accessibilityLabel={t('boards.tabOptions', locale, { board: board.title })} onPress={onActions}
         style={[styles.closeButton, { borderColor: colors.border }]}>
         <Text style={[styles.moreGlyph, { color: colors.textSecondary }]}>⋯</Text>
       </Pressable>
       {closable ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Cerrar la pestaña de ${board.title}`}
+          accessibilityLabel={t('boards.closeTab', locale, { board: board.title })}
           onPress={onClose}
           style={[styles.closeButton, { borderColor: focused ? colors.selection : colors.border }]}
         >
