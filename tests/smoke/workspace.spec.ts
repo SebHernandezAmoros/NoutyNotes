@@ -1024,10 +1024,13 @@ test('UX7 visual: la Nota larga conserva su toolbar y la geometría cotidiana us
   const visual = page.getByLabel('Contenido visual');
   await expect(page.getByText('Sin cambios pendientes')).toBeVisible();
   const scroll = visual;
-  const more = page.getByTestId('editor-more-format-toggle');
+  // B9-R4-FINAL: la edición rápida ya no tiene un botón «⋯» que revele una segunda fila — la propia
+  // toolbar fija (párrafo + negrita) es la que debe seguir pegada al desplazar contenido largo.
+  const toolbar = page.getByTestId('editor-toolbar');
   await expect(inline).toBeVisible();
   await expect(page.getByTestId('inline-card-title')).toHaveCount(0);
-  await expect(more).toBeVisible();
+  await expect(toolbar).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: 'Negrita', exact: true })).toBeVisible();
   await visual.fill('Línea editorial 1');
   for (let index = 2; index <= 36; index += 1) {
     await page.keyboard.press('Enter');
@@ -1036,14 +1039,10 @@ test('UX7 visual: la Nota larga conserva su toolbar y la geometría cotidiana us
   await scroll.evaluate((element) => { element.scrollTop = 0; });
   await page.screenshot({ path: testInfo.outputPath('nota-larga-antes-scroll.png') });
   await expect.poll(() => scroll.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
-  const toolbarY = (await box(more)).y;
+  const toolbarY = (await box(toolbar)).y;
   await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await expect.poll(() => scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  expect(Math.abs((await box(more)).y - toolbarY)).toBeLessThanOrEqual(1);
-  await more.click();
-  await expect(page.getByTestId('editor-more-format-row')).toBeVisible();
-  await expect(button(page, 'Editar enlace')).toBeVisible();
-  await expect(button(page, 'Insertar una tabla')).toBeVisible();
+  expect(Math.abs((await box(toolbar)).y - toolbarY)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: testInfo.outputPath('nota-larga-toolbar.png') });
   await button(page, 'Guardar y cerrar la edición rápida').click();
 

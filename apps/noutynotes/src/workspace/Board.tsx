@@ -105,8 +105,14 @@ export function Board({ workspace, layout, mode, selectedId, onSelect, imageReso
   const board = workspace.boards.find((candidate) => candidate.id === layout?.boardId);
   const visibleIds = defaultGeometry?.boxes.map((box) => box.cardId) ?? [];
   const mainOrder = reconcileReadingOrder(board?.cardIds ?? [], visibleIds);
+  // B9-R4-FINAL: `orderedIds` ya equivale a `mainOrder` en cuanto `manualOrder` está vacío (el diálogo
+  // cerrado) — antes la reconstrucción por orden solo se aplicaba mientras se arrastraba dentro del
+  // diálogo (`manualOrder.length`), así que Lista volvía a la proyección geométrica cruda justo al
+  // cerrar, incluso cuando `board.cardIds` ya tenía el nuevo orden persistido. Aplicarla siempre en modo
+  // columna (nunca en `wide`, que dibuja el layout canónico real del lienzo) hace que Lista muestre el
+  // mismo orden principal que ya heredan Imprimir y Presentar, sin un segundo mecanismo.
   const orderedIds = reconcileReadingOrder(manualOrder, mainOrder);
-  const geometry = defaultGeometry && manualOrder.length && mode !== 'wide' ? (() => {
+  const geometry = defaultGeometry && mode !== 'wide' ? (() => {
     const byId = new Map(defaultGeometry.boxes.map((box) => [box.cardId, box]));
     let top = 0;
     const boxes = orderedIds.flatMap((id) => {

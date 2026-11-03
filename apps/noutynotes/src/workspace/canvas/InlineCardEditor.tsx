@@ -2,13 +2,12 @@ import { useContentResources } from '../ContentResources';
 import type { RichTextCodec, WorkspaceStorageResult } from '@noutynotes/application';
 import { cardTitleText } from '@noutynotes/domain';
 import type { AssetRef, Card, CardId, RichTextDocument, RichTextImage } from '@noutynotes/domain';
-import { useLocale, useTheme } from '@noutynotes/ui';
+import { useTheme } from '@noutynotes/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppIcon } from '../../components/AppIcon';
 import { DialogCloseButton } from '../../components/Dialog';
-import { t } from '../../i18n';
 import { pickImageFile, supportsImageImport } from '../../session/imageFiles';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import type { EditableCardDraft } from '../editorialDraft';
@@ -44,7 +43,6 @@ export interface InlineCardEditorProps {
 export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFontFamily: inheritedFont, noteImages, initialDraft, onDraftChange, onSave, onPickAssetImageRef, onPlaceImageDocument, onAdvanced, onCollapse, onClose }: InlineCardEditorProps) {
   const noteFontFamily = useContentResources().fontFor(card, inheritedFont);
   const { theme } = useTheme();
-  const { locale } = useLocale();
   const colors = theme.colors;
   const initialHtml = card.contentDocument ? htmlCodec.serialize(card.contentDocument) : null;
   const [title] = useState(initialDraft?.title ?? cardTitleText(card));
@@ -69,7 +67,6 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   // silencioso); `setSaving` se conserva porque `persist()` todavía lo usa para no solapar guardados.
   const [, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [toolsCollapsed, setToolsCollapsed] = useState(false);
   // UX7-VISUAL-FINALIZATION: el título se conserva en la sesión y en el guardado, pero se edita como
   // metadato desde las propiedades del Inspector. La edición rápida dedica toda su superficie al cuerpo.
   const visualAvailable = visualDocument !== null;
@@ -188,7 +185,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
       }]}
     >
       <View style={[styles.bar, { backgroundColor: colors.headerNote, borderColor: colors.border }]}>
-        <Text style={[styles.eyebrow, { color: colors.headerText }]}>{toolsCollapsed ? 'EDICIÓN RÁPIDA · HERRAMIENTAS PLEGADAS' : 'EDICIÓN RÁPIDA'}</Text>
+        <Text style={[styles.eyebrow, { color: colors.headerText }]}>EDICIÓN RÁPIDA</Text>
         <Pressable testID="inline-collapse-note" accessibilityRole="button" accessibilityLabel="Contraer Nota" onPress={collapse} style={[styles.iconButton, { borderColor: colors.border }]}>
           <Text accessibilityElementsHidden style={[styles.toolbarToggleText, { color: colors.headerText }]}>−</Text>
         </Pressable>
@@ -197,26 +194,6 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
         </Pressable>
         <DialogCloseButton label="Guardar y cerrar la edición rápida" onPress={close} />
       </View>
-      {!floatingText && Platform.OS === 'web' ? (
-        <View
-          testID="inline-body-mode-switch"
-          style={styles.modeRow}
-          accessibilityRole="toolbar"
-          accessibilityLabel="Modo de edición del cuerpo"
-        >
-          <Pressable
-            testID="inline-toolbar-toggle"
-            accessibilityRole="button"
-            accessibilityLabel={t(toolsCollapsed ? 'inline.toolbar.show' : 'inline.toolbar.hide', locale)}
-            accessibilityState={{ expanded: !toolsCollapsed }}
-            aria-expanded={!toolsCollapsed}
-            onPress={() => setToolsCollapsed((collapsed) => !collapsed)}
-            style={[styles.toolsToggle, { borderColor: colors.border }]}
-          >
-            <Text style={[styles.toolsToggleText, { color: colors.cardText }]}>{`${toolsCollapsed ? '+' : '\u2212'} ${t(toolsCollapsed ? 'inline.toolbar.show' : 'inline.toolbar.hide', locale)}`}</Text>
-          </Pressable>
-        </View>
-      ) : null}
       {floatingText ? (
         <TextInput
           testID="inline-floating-text"
@@ -231,7 +208,7 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
           style={[styles.plainText, { color: colors.cardText }, noteFontFamily === undefined ? null : { fontFamily: noteFontFamily }]}
         />
       ) : visualDocument ? (
-        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} images={noteImages} onOpenFullEditor={advanced} fontFamily={noteFontFamily} compact toolbarCollapsed={toolsCollapsed}
+        <RichTextEditor cardId={card.id} document={visualDocument} codec={richTextCodec} onChange={changeVisualDocument} images={noteImages} onOpenFullEditor={advanced} fontFamily={noteFontFamily} compact
           onInsertImage={(document, afterBlock) => placeVisualImage(document, { kind: 'insert', afterBlock })}
           onReplaceImage={(document, blockIndex) => placeVisualImage(document, { kind: 'replace', blockIndex })}
           onInsertImageFromAssets={placeImageFromAssets}
@@ -260,12 +237,9 @@ const styles = StyleSheet.create({
   bar: { height: 44, borderBottomWidth: 2, paddingLeft: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
   eyebrow: { flex: 1, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   modeHint: { fontSize: 11, lineHeight: 16 },
-  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
   htmlEditor: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 6, gap: 6 },
   iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
   toolbarToggleText: { fontSize: 22, lineHeight: 24, fontWeight: '900' },
-  toolsToggle: { minHeight: 44, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
-  toolsToggleText: { fontSize: 12, fontWeight: '800' },
   plainText: { flex: 1, minHeight: 100, paddingHorizontal: 10, paddingVertical: 10, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
   unsupportedContent: { flex: 1, minHeight: 72, paddingHorizontal: 10, paddingVertical: 8 },
   footer: { minHeight: 38, paddingHorizontal: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 8 },

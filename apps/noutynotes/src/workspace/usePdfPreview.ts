@@ -27,7 +27,7 @@ export function usePdfPreview(assets: WorkspaceAssets | null, workspaceId: Works
     return () => URL.revokeObjectURL(url);
   }, [preview]);
 
-  const open = async (entry: { readonly ref: string; readonly name: string }) => {
+  const open = async (entry: { readonly ref: string; readonly name: string }, page?: number) => {
     if (!assets || !workspaceId) return;
     const requestId = ++requestRef.current;
     const openedWorkspaceId = workspaceId;
@@ -42,8 +42,12 @@ export function usePdfPreview(assets: WorkspaceAssets | null, workspaceId: Works
       setRaw({ workspaceId: openedWorkspaceId, state: { status: 'error', name: entry.name, message: t('assets.pdf.error.invalid', locale) } });
       return;
     }
-    const url = URL.createObjectURL(new Blob([read.value as BlobPart], { type: 'application/pdf' }));
-    setRaw({ workspaceId: openedWorkspaceId, state: { status: 'ready', name: entry.name, url } });
+    const blobUrl = URL.createObjectURL(new Blob([read.value as BlobPart], { type: 'application/pdf' }));
+    // B9-R4-11: «página» de Open Parameters (no inventado — ya lo honran los visores nativos de
+    // Chromium/Firefox embebidos vía iframe); el visor que no lo admita simplemente la ignora, sin
+    // error ni promesa de navegación exacta.
+    const url = page !== undefined && page >= 1 ? `${blobUrl}#page=${Math.trunc(page)}` : blobUrl;
+    setRaw({ workspaceId: openedWorkspaceId, state: { status: 'ready', name: entry.name, url, ref: entry.ref } });
   };
   const close = () => {
     requestRef.current += 1;

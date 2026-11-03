@@ -122,16 +122,22 @@ interface TextFieldProps {
    * evento sintético completo sin recortarlo, así que están presentes en tiempo de ejecución.
    */
   readonly onKeyPress?: (event: NativeSyntheticEvent<TextInputKeyPressEventData & { readonly ctrlKey?: boolean; readonly metaKey?: boolean }>) => void;
+  /**
+   * B9-R4-FINAL: la etiqueta sigue siendo el nombre accesible (`accessibilityLabel`); solo se omite su
+   * texto visible, para una barra de herramientas compacta (p. ej. «Buscar» en Assets) sin perder
+   * accesibilidad ni foco visible. El llamador debe seguir pasando un `placeholder` descriptivo.
+   */
+  readonly hideLabel?: boolean;
 }
 
 /** Campo con etiqueta visible, nombre accesible y foco visible. */
-export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true, selection, onSelectionChange, fontFamily, onKeyPress }: TextFieldProps) {
+export function TextField({ label, value, onChangeText, placeholder, multiline = false, testID, onSubmitEditing, editable = true, selection, onSelectionChange, fontFamily, onKeyPress, hideLabel = false }: TextFieldProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [focused, setFocused] = useState(false);
   return (
     <View style={styles.field}>
-      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>{label}</Text>
+      {hideLabel ? null : <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>{label}</Text>}
       <TextInput
         accessibilityLabel={label}
         value={value}

@@ -1,6 +1,7 @@
 import { useLocale, useTheme } from '@noutynotes/ui';
 import { Text } from 'react-native';
 
+import { ActionButton } from '../components/controls';
 import { Dialog } from '../components/Dialog';
 import { t } from '../i18n';
 import { BasicRichTextPreview } from './BasicRichTextPreview';
@@ -11,11 +12,13 @@ import type { TextAssetPreviewState } from './useTextAssetPreview';
  * mismo analizador/visor seguro que ya usan las Notas (B9-R2-12): `.md` con formato real, cualquier
  * otra cosa (incluido `.txt`) como texto literal. Nunca ejecuta HTML ni carga nada por su cuenta.
  */
-export function TextAssetPreviewDialog({ preview, problem, compact, onClose, testID }: {
+export function TextAssetPreviewDialog({ preview, problem, compact, onClose, onAnnotate, testID }: {
   readonly preview: TextAssetPreviewState | null;
   readonly problem?: string | null;
   readonly compact: boolean;
   readonly onClose: () => void;
+  /** B9-R4-11: «Anotar en Diario» — ausente, el botón no aparece. */
+  readonly onAnnotate?: (ref: string, name: string) => void;
   readonly testID: string;
 }) {
   const { locale } = useLocale();
@@ -24,6 +27,10 @@ export function TextAssetPreviewDialog({ preview, problem, compact, onClose, tes
   return (
     <Dialog visible={preview !== null || !!problem} title={preview?.name ?? ''} compact={compact} presentation="centered" onClose={onClose} testID={testID}>
       {problem ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{problem}</Text> : null}
+      {preview && onAnnotate ? (
+        <ActionButton testID={`${testID}-annotate`} label={t('diary.annotate.button', locale)}
+          accessibilityLabel={t('diary.annotate.fromDocument', locale)} onPress={() => onAnnotate(preview.ref, preview.name)} />
+      ) : null}
       {/* B9-R4-04: aviso, no bloqueo — el texto parcial ya se muestra debajo, siempre cortado en una
           frontera UTF-8 válida; el original completo sigue disponible por descarga, fuera de esta vista. */}
       {preview?.truncated ? <Text testID={`${testID}-truncated`} style={{ color: colors.textSecondary, fontSize: 13 }}>{t('textPreview.truncated', locale)}</Text> : null}

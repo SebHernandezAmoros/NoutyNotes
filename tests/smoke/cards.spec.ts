@@ -545,10 +545,10 @@ test('UX7 consolidación: la pestaña rosa conserva un nombre largo sin converti
   await page.screenshot({ path: testInfo.outputPath('long-note-name.png'), fullPage: true });
 });
 
-test('UX7 consolidación: pliega solo la toolbar de edición rápida y conserva el documento', async ({ page }, testInfo) => {
+test('B9-R4-FINAL: la edición rápida mantiene una sola toolbar fija (párrafo y negrita) y conserva el documento', async ({ page }, testInfo) => {
   test.skip((page.viewportSize()?.width ?? 0) < 800, 'La edición rápida solo existe en escritorio.');
   await page.goto('./');
-  await createWorkspace(page, 'Toolbar plegable');
+  await createWorkspace(page, 'Toolbar fija');
   await insertFromMenu(page, 'Insertar nota');
   await openCardActions(page, card(page, 1), 'Nueva nota');
   await button(page, 'Editar Nueva nota dentro de la ficha').click();
@@ -556,22 +556,15 @@ test('UX7 consolidación: pliega solo la toolbar de edición rápida y conserva 
   const inline = page.getByTestId('inline-card-editor');
   const content = page.getByLabel('Contenido visual');
   const toolbar = page.getByTestId('editor-toolbar');
-  const toggle = page.getByTestId('inline-toolbar-toggle');
   await content.fill('Documento que no debe desmontarse');
+  // B9-R4-FINAL: ya no hay un alternador que oculte la toolbar ni una segunda fila detrás de un «⋯» —
+  // la edición rápida siempre muestra únicamente párrafo y negrita, sin saltos visuales.
   await expect(toolbar).toBeVisible();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('inline-toolbar-toggle')).toHaveCount(0);
+  await expect(page.getByTestId('inline-body-mode-switch')).toHaveCount(0);
+  await expect(page.getByTestId('editor-more-format-toggle')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('inline-toolbar-fixed.png') });
 
-  await toggle.click();
-  await expect(toolbar).toBeHidden();
-  await expect(page.getByTestId('inline-body-mode-switch')).toBeVisible();
-  await expect(inline).toBeVisible();
-  await expect(content).toContainText('Documento que no debe desmontarse');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await page.screenshot({ path: testInfo.outputPath('inline-toolbar-collapsed.png') });
-
-  await toggle.click();
-  await expect(toolbar).toBeVisible();
-  await expect(content).toContainText('Documento que no debe desmontarse');
   await content.focus();
   await page.keyboard.press('End');
   await page.keyboard.type(' y continúa');
@@ -1013,9 +1006,7 @@ test('UX7 Hito 9: flujo editorial integrado conserva nombre, cuerpo, tabla, cont
   await button(page, 'Editar Mapa narrativo dentro de la ficha').click();
   const quickBody = page.getByLabel('Contenido visual');
   await quickBody.fill('Idea inicial ampliada');
-  await page.getByTestId('inline-toolbar-toggle').click();
-  await expect(page.getByTestId('editor-toolbar')).toBeHidden();
-  await page.getByTestId('inline-toolbar-toggle').click();
+  await expect(page.getByTestId('editor-toolbar')).toBeVisible();
   await expect(quickBody).toContainText('Idea inicial ampliada');
   await button(page, 'Guardar y cerrar la edición rápida').click();
 
@@ -1092,12 +1083,9 @@ test('UX7: alineación durable, toolbar plegable y apariencias diferenciadas', a
   await page.screenshot({ path: testInfo.outputPath('inline-header-actions.png'), fullPage: true });
   const quickBody = page.getByLabel('Contenido visual');
   await expect(quickBody).toContainText('Contenido centrado');
-  await page.getByTestId('inline-toolbar-toggle').click();
-  await expect(page.getByTestId('editor-toolbar')).toBeHidden();
-  await expect(page.getByTestId('inline-card-editor')).toContainText('HERRAMIENTAS PLEGADAS');
-  await expect(quickBody).toBeVisible();
-  await page.getByTestId('inline-toolbar-toggle').click();
+  // B9-R4-FINAL: la toolbar de edición rápida ya no se puede ocultar — siempre párrafo y negrita.
   await expect(page.getByTestId('editor-toolbar')).toBeVisible();
+  await expect(page.getByTestId('inline-toolbar-toggle')).toHaveCount(0);
   await button(page, 'Guardar y cerrar la edición rápida').click();
 
   await openCardActions(page, card(page, 1), 'Nota alineada');

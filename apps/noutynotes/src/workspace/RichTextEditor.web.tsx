@@ -190,7 +190,7 @@ function TableContextMenu({ anchor, actions, colors, groupLabels, onClose }: {
   );
 }
 
-function EditorToolbar({ cardId, onInsertImage, onInsertImageFromAssets, titleOnly = false, compact = false, collapsed = false }: Pick<RichTextEditorProps, 'cardId' | 'onInsertImage' | 'onInsertImageFromAssets' | 'titleOnly'> & { readonly compact?: boolean; readonly collapsed?: boolean }) {
+function EditorToolbar({ cardId, onInsertImage, onInsertImageFromAssets, titleOnly = false, compact = false }: Pick<RichTextEditorProps, 'cardId' | 'onInsertImage' | 'onInsertImageFromAssets' | 'titleOnly'> & { readonly compact?: boolean }) {
   const [editor] = useLexicalComposerContext();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -219,22 +219,9 @@ function EditorToolbar({ cardId, onInsertImage, onInsertImageFromAssets, titleOn
   const [tableColumns, setTableColumns] = useState('3');
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  // UX7-VISUAL-FINALIZATION: la edición rápida conserva una sola fila estable. El bloque, negrita y
-  // cursiva quedan directos; listas, enlace, imagen, tabla e historial permanecen en «Más formato».
-  // El Inspector completo (`compact=false`) conserva todas sus acciones visibles.
-  const [moreOpen, setMoreOpen] = useState(false);
-
-  useEffect(() => {
-    if (!collapsed) return;
-    const frame = requestAnimationFrame(() => {
-      setMoreOpen(false);
-      setLinkOpen(false);
-      setTableOpen(false);
-      setTableMenuOpen(false);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [collapsed]);
-
+  // B9-R4-FINAL: la edición rápida muestra únicamente tipo de párrafo y negrita, sin una segunda fila
+  // ni una acción para revelarla — listas, alineación, enlace, imagen, tabla e historial solo viven en
+  // el Inspector completo (`compact=false`), que conserva todas sus acciones visibles como antes.
   const readSelection = useCallback(() => {
     const selection = $getSelection();
     setBold($isRangeSelection(selection) && selection.hasFormat('bold'));
@@ -565,9 +552,11 @@ function EditorToolbar({ cardId, onInsertImage, onInsertImageFromAssets, titleOn
           <option value="paragraph">{t('editor.visual.paragraph', locale)}</option>
           {([1, 2, 3, 4, 5, 6] as const).map((level) => <option key={level} value={`heading-${level}`}>{`${t('editor.visual.heading', locale)} ${level}`}</option>)}
         </select>}
-        {tableMenuControl}
+        {compactFormat ? null : tableMenuControl}
         {button('B', t('editor.visual.bold', locale), bold, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold'); })}
-        {button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
+        {/* B9-R4-FINAL: la edición rápida (`compactFormat`) ya no ofrece cursiva ni ningún otro
+            control — solo tipo de párrafo y negrita, sin una segunda fila que revelar. */}
+        {compactFormat ? null : button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
         {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
         {compactFormat ? null : button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
         {compactFormat ? null : button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
@@ -577,35 +566,7 @@ function EditorToolbar({ cardId, onInsertImage, onInsertImageFromAssets, titleOn
         {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
         {compactFormat ? null : button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
         {compactFormat ? null : button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
-        {compactFormat ? (
-          <Pressable
-            testID="editor-more-format-toggle"
-            accessibilityRole="button"
-            accessibilityLabel={moreOpen ? t('editor.visual.more.hide', locale) : t('editor.visual.more.show', locale)}
-            accessibilityState={{ selected: moreOpen }}
-            onPress={() => setMoreOpen((open) => !open)}
-            style={({ pressed }) => [styles.toolButton, {
-              borderColor: moreOpen ? colors.selection : colors.border,
-              backgroundColor: moreOpen ? colors.accent : colors.surface,
-              opacity: pressed ? 0.7 : 1,
-            }]}
-          >
-            <Text style={[styles.toolText, { color: colors.textPrimary }]}>⋯</Text>
-          </Pressable>
-        ) : null}
       </View>
-      {compactFormat && moreOpen ? (
-        <View testID="editor-more-format-row" accessibilityRole="toolbar" accessibilityLabel={t('editor.visual.more.show', locale)} style={[styles.toolbar, styles.compactMoreToolbar]}>
-          {button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
-          {button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}
-          {button('☐', t('editor.visual.checklist', locale), block === 'checklist', inTable, () => chooseBlock('checklist'))}
-          {alignmentControls}
-          {linkImageTableControls}
-          <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />
-          {button('↶', t('editor.visual.undo', locale), false, !canUndo, () => { editor.dispatchCommand(UNDO_COMMAND, undefined); })}
-          {button('↷', t('editor.visual.redo', locale), false, !canRedo, () => { editor.dispatchCommand(REDO_COMMAND, undefined); })}
-        </View>
-      ) : null}
       {linkOpen ? (
         <View style={[styles.linkEditor, { borderColor: linkProblem ? colors.danger : colors.gridLine, backgroundColor: colors.surface }]}>
           <TextInput
@@ -796,7 +757,7 @@ const editorTheme = {
   tableCellHeader: 'nouty-table-cell-header',
 };
 
-export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, onInsertImageFromAssets, onPasteImage, onPasteImageRejected, onOpenFullEditor, compact = false, toolbarCollapsed = false, titleOnly = false }: RichTextEditorProps) {
+export function RichTextEditor({ cardId, document, onChange, images = new Map(), captionPosition = 'bottom', fontFamily, onInsertImage, onReplaceImage, onInsertImageFromAssets, onPasteImage, onPasteImageRejected, onOpenFullEditor, compact = false, titleOnly = false }: RichTextEditorProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -828,13 +789,8 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
       `}</style>
       <LexicalComposer initialConfig={initialConfig}>
         <ImageEditorBridge images={images} captionPosition={captionPosition} onReplaceImage={onReplaceImage} onOpenFullEditor={onOpenFullEditor}>
-        <View
-          testID="editor-toolbar"
-          accessibilityElementsHidden={toolbarCollapsed}
-          importantForAccessibility={toolbarCollapsed ? 'no-hide-descendants' : 'auto'}
-          style={toolbarCollapsed ? styles.toolbarCollapsed : null}
-        >
-          <EditorToolbar cardId={cardId} onInsertImage={onInsertImage} onInsertImageFromAssets={onInsertImageFromAssets} titleOnly={titleOnly} compact={compact} collapsed={toolbarCollapsed} />
+        <View testID="editor-toolbar">
+          <EditorToolbar cardId={cardId} onInsertImage={onInsertImage} onInsertImageFromAssets={onInsertImageFromAssets} titleOnly={titleOnly} compact={compact} />
         </View>
         <View testID="web-rich-text-scroll" style={[styles.editArea, compact ? styles.editAreaCompact : null]}>
           <RichTextPlugin
@@ -884,8 +840,6 @@ const styles = StyleSheet.create({
   // Lexical agrande este contenedor y desplace su principio fuera del marco; sólo `editArea` desplaza.
   shellCompact: { flex: 1, flexBasis: 0, minHeight: 0, overflow: 'hidden' },
   toolbar: { minHeight: 52, padding: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
-  compactMoreToolbar: { minHeight: 48, padding: 4, gap: 4 },
-  toolbarCollapsed: { display: 'none' },
   tableMenuButton: { height: 44, paddingHorizontal: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   toolButton: { width: 44, height: 44, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   alignmentGroup: { flexDirection: 'row', gap: 4, paddingLeft: 6, borderLeftWidth: 1 },

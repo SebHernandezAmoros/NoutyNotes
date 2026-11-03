@@ -9,13 +9,15 @@ import { t } from '../i18n';
 
 export type PdfPreviewState =
   | { readonly status: 'loading'; readonly name: string }
-  | { readonly status: 'ready'; readonly name: string; readonly url: string }
+  | { readonly status: 'ready'; readonly name: string; readonly url: string; readonly ref: string }
   | { readonly status: 'error'; readonly name: string; readonly message: string };
 
 interface PdfPreviewProps {
   readonly state: PdfPreviewState | null;
   readonly locale: Locale;
   readonly onClose: () => void;
+  /** B9-R4-11: «Anotar en Diario» — ausente, el botón no aparece (p. ej. un visor de solo lectura). */
+  readonly onAnnotate?: (ref: string, name: string) => void;
 }
 
 /**
@@ -31,7 +33,7 @@ interface PdfPreviewProps {
  * de proyecto) vive en `AssetsView.tsx`, que es quien conoce cuándo cambia el workspace o el asset
  * seleccionado — este componente solo presenta el estado que recibe.
  */
-export function PdfPreview({ state, locale, onClose }: PdfPreviewProps) {
+export function PdfPreview({ state, locale, onClose, onAnnotate }: PdfPreviewProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const visible = state !== null;
@@ -69,6 +71,13 @@ export function PdfPreview({ state, locale, onClose }: PdfPreviewProps) {
                 <AppIcon name="download" size={20} />
               </a>
             </> : null}
+            {state.status === 'ready' && onAnnotate ? (
+              <Pressable testID="asset-pdf-annotate" accessibilityLabel={t('diary.annotate.fromDocument', locale)} onPress={() => onAnnotate(state.ref, state.name)}
+                style={{ height: 44, paddingHorizontal: 10, boxSizing: 'border-box', flexShrink: 0, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', border: `2px solid ${colors.border}`, background: colors.surface }}>
+                <AppIcon name="diary" size={18} />
+                <Text style={{ marginLeft: 6, color: colors.textPrimary, fontWeight: '800', fontSize: 13 }}>{t('diary.annotate.button', locale)}</Text>
+              </Pressable>
+            ) : null}
             {Platform.OS === 'web' ? <span title={t('dialog.close', locale)} style={{ display: 'flex', flexShrink: 0 }}><DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} /></span>
               : <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />}
             </View>

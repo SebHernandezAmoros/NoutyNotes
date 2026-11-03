@@ -82,12 +82,12 @@ export type { LibraryFileInput } from './asset-import';
 
 export { MAX_FONT_BYTES, importLibraryFont, inspectFont } from './font-import';
 export type { FontKind, ImportedFont, LibraryFontInput } from './font-import';
-export { DIARY_CARD_TYPE, activeDays, dailyLog, dailyLogRange, isDay, isDiaryEntry, localDay, localTime, shiftDay } from './daily-log';
+export { DIARY_CARD_TYPE, activeDays, dailyLog, dailyLogRange, diaryDocumentAnnotation, isDay, isDiaryEntry, localDay, localTime, shiftDay } from './daily-log';
 export type { DailyLog, DailyLogRangeResult, RangeLogItem, TimedCard } from './daily-log';
 export { diaryExportText } from './diary-export';
 export type { DiaryExportResult } from './diary-export';
-export { openDiaryEntry } from './diary';
-export type { DiaryEntryInput } from './diary';
+export { annotateDocumentInDiary, openDiaryEntry } from './diary';
+export type { DiaryEntryInput, DocumentAnnotationInput } from './diary';
 export type { DeleteAssetsResult, ImportImageAtInput } from './assets-library';
 export type { RichTextCodec, RichTextCodecResult } from './rich-text-codec';
 

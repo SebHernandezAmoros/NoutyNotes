@@ -6,11 +6,41 @@ import type { BoardId, Card, CardTypeDefinition, CardTypeId, FieldKey, Workspace
 
 import { fold } from './search';
 
-/** Tipo de las entradas del diario: nota con un campo de fecha AAAA-MM-DD. */
+/**
+ * Tipo de las entradas del diario: nota con un campo de fecha AAAA-MM-DD.
+ *
+ * B9-R4-11 (Diario documental, MVP Nivel 2): `documentoRef` reutiliza el mismo mecanismo genérico de
+ * campo `kind:'asset'` que ya usan otros tipos de tarjeta — `cardAssetRefs`/`buildAssetCatalog`
+ * (`assets-catalog.ts`) ya escanean cualquier campo así, de modo que una anotación documental obtiene
+ * seguimiento de referencia/integridad sin un sistema nuevo. La ubicación es manual y por tipo de
+ * documento (sección 0 del encargo): página (PDF) o línea (TXT) como número, encabezado/sección
+ * (Markdown) como texto — como máximo una de las tres tiene valor en una entrada dada.
+ */
 export const DIARY_CARD_TYPE: CardTypeDefinition = {
   id: 'diario' as CardTypeId, label: 'Entrada del diario', base: 'note',
-  fields: [{ key: 'fecha' as FieldKey, kind: 'date', label: 'Fecha', required: true }],
+  fields: [
+    { key: 'fecha' as FieldKey, kind: 'date', label: 'Fecha', required: true },
+    { key: 'documento-ref' as FieldKey, kind: 'asset', label: 'Documento', required: false },
+    { key: 'documento-pagina' as FieldKey, kind: 'number', label: 'Página', required: false },
+    { key: 'documento-linea' as FieldKey, kind: 'number', label: 'Línea', required: false },
+    { key: 'documento-seccion' as FieldKey, kind: 'text', label: 'Sección', required: false },
+  ],
 };
+
+/** Una entrada anota un documento cuando tiene `documento-ref` (B9-R4-11). */
+export function diaryDocumentAnnotation(card: Card): { readonly ref: string; readonly page?: number; readonly line?: number; readonly section?: string } | null {
+  const ref = card.fields['documento-ref'];
+  if (typeof ref !== 'string') return null;
+  const page = card.fields['documento-pagina'];
+  const line = card.fields['documento-linea'];
+  const section = card.fields['documento-seccion'];
+  return {
+    ref,
+    ...(typeof page === 'number' ? { page } : {}),
+    ...(typeof line === 'number' ? { line } : {}),
+    ...(typeof section === 'string' && section !== '' ? { section } : {}),
+  };
+}
 
 const pad = (value: number) => String(value).padStart(2, '0');
 const DAY_MS = 86_400_000;

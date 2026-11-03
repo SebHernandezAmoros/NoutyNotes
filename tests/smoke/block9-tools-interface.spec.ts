@@ -5,6 +5,7 @@ import { serializeWorkspace } from '../../packages/storage/src/workspace-codec';
 import { writeWorkspaceArchive } from '../../packages/storage/src/workspace-archive';
 import { canvasCardsWorkspace } from '../fixtures/canvas-cards';
 import { block8Document, block8PdfBytes, pdfRef } from '../fixtures/block8-content';
+import { openCardActions, openFullCardEditor } from './support';
 
 function value<T>(r: { ok: true; value: T } | { ok: false; issues: readonly unknown[] }): T { if (!r.ok) throw new Error(JSON.stringify(r.issues)); return r.value; }
 async function lab(page: Page) {
@@ -267,7 +268,7 @@ test('B9-OBS: presentación conserva progreso principal al visitar y regresar de
   await page.screenshot({ path: `artifacts/block9-${info.project.name}-present-order.png` });
 });
 
-test('B9-R3-02: Lista escribe el orden principal del tablero, reutilizado por defecto en Presentar; el zoom bajo conserva el lienzo', async ({ page }, info) => {
+test('B9-R3-02/B9-R4-FINAL: Lista escribe y MUESTRA el orden principal del tablero, reutilizado por defecto en Presentar; el zoom bajo conserva el lienzo', async ({ page }, info) => {
   await lab(page);
   await page.getByRole('button', { name: 'Vista de lista' }).click();
   const list = page.getByTestId('board-list');
@@ -277,12 +278,20 @@ test('B9-R3-02: Lista escribe el orden principal del tablero, reutilizado por de
   // B9-R3-01: identificar una fila por algo más que su título genérico.
   expect((await rows.nth(0).innerText()).split('\n').length).toBeGreaterThan(1);
   const secondTitle = await rows.nth(1).getByRole('button').first().getAttribute('aria-label');
+  // B9-R4-FINAL: el id real de la tarjeta (del asa de arrastre) para comprobar el DOM de Lista, no
+  // solo el diálogo — el defecto reportado es que Lista revertía el orden al cerrar.
+  const secondHandle = await rows.nth(1).locator('[data-testid*="-handle-"]').getAttribute('data-testid');
+  const secondId = secondHandle!.replace(/^.*-handle-/, '');
   await rows.nth(1).getByRole('button', { name: /^Subir/ }).click();
   await expect(rows.nth(0).getByRole('button').first()).toHaveAttribute('aria-label', `1. ${secondTitle!.replace(/^\d+\.\s*/, '')}`);
   await page.screenshot({ path: `artifacts/block9-${info.project.name}-list-order.png` });
   // Cerrar confirma el nuevo orden principal (una sola escritura durable), no uno efímero por herramienta.
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('list-reading-order-dialog')).not.toBeVisible();
+  // B9-R4-FINAL: Lista en sí (no solo el diálogo reabierto) debe mostrar inmediatamente la tarjeta
+  // movida en primer lugar — antes, `geometry` volvía a la proyección geométrica cruda al vaciarse
+  // `manualOrder`, por lo que la vista visible nunca llegaba a reflejar `board.cardIds`.
+  await expect(list.locator('[data-testid^="card-"]').first()).toHaveAttribute('data-testid', `card-${secondId}`);
   // Reabrir el propio diálogo confirma que sobrevivió al cierre, no solo a la sesión de arrastre.
   await page.getByTestId('list-organize').click();
   await expect(rows.nth(0).getByRole('button').first()).toHaveAttribute('aria-label', `1. ${secondTitle!.replace(/^\d+\.\s*/, '')}`);
@@ -332,6 +341,10 @@ test('B9-R2-09/10: Assets ordena por nombre o tipo sin inventar fechas, con la b
   await expect(page.getByTestId('assets-toolbar-explore')).toBeVisible();
   await expect(page.getByTestId('assets-toolbar-filter')).toBeVisible();
   await expect(page.getByTestId('assets-toolbar-explore').getByTestId('assets-search')).toBeVisible();
+  // B9-R4-FINAL: el rótulo visible «Buscar por nombre» se retira de Explorar (queda compacto), pero el
+  // campo sigue teniendo nombre accesible y placeholder descriptivo.
+  await expect(page.getByText('Buscar por nombre', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('assets-search')).toHaveAccessibleName('Buscar por nombre');
   // B9-R2-09: no hay un criterio «Fecha de importación» — no existe un campo de fecha real y fiable.
   await expect(page.getByRole('button', { name: /fecha|date/i })).toHaveCount(0);
   const names = () => page.getByTestId('assets-list').locator('> div').allTextContents();
@@ -353,6 +366,20 @@ test('B9-R2-09/10: Assets ordena por nombre o tipo sin inventar fechas, con la b
   const byTypeReversed = await names();
   expect(byTypeReversed).toEqual([...byType].reverse());
   expect(byName.length).toBeGreaterThan(0);
+  // B9-R4-FINAL: Tipo → Tamaño, con el tamaño real en bytes (no inventado) — invertir la dirección
+  // reordena la lista según ese tamaño, igual que ya se comprueba para Nombre/Tipo.
+  await page.getByTestId('assets-sort-direction').click();
+  await page.getByTestId('assets-sort-criterion').click();
+  await expect(page.getByTestId('assets-sort-criterion')).toHaveText(/Tamaño/);
+  const bySize = await names();
+  expect(bySize.length).toBe(byType.length);
+  await page.getByTestId('assets-sort-direction').click();
+  const bySizeReversed = await names();
+  expect(bySizeReversed).toEqual([...bySize].reverse());
+  expect(bySizeReversed).not.toEqual(bySize);
+  // Tamaño → Nombre: el ciclo se cierra en tres estados, no un cuarto botón.
+  await page.getByTestId('assets-sort-criterion').click();
+  await expect(page.getByTestId('assets-sort-criterion')).toHaveText(/Nombre/);
 });
 
 test('B9-R3-05/B9-R4-06: el panel de detalles de Assets usa position sticky y agrupa tipo/peso/ruta/uso bajo «Detalles»', async ({ page }, info) => {
@@ -434,4 +461,105 @@ test('B9-R2-11: Importar fuente abre primero una ayuda explicativa, no el select
   await help.getByTestId('assets-font-help-continue').click();
   await expect(help).not.toBeVisible();
   await chooser;
+});
+
+test('B9-R4-FINAL: la edición rápida muestra únicamente párrafo y negrita, sin fila oculta; lo avanzado sigue en el Inspector', async ({ page }, info) => {
+  test.skip(info.project.name === 'mobile', 'La edición rápida sobre la ficha solo existe en escritorio.');
+  await lab(page);
+  const card = page.getByTestId('card-idea-b');
+  await openCardActions(page, card, 'Nota con imagen');
+  await page.getByRole('button', { name: 'Editar Nota con imagen dentro de la ficha', exact: true }).click();
+  const inline = page.getByTestId('inline-card-editor');
+  await expect(inline).toBeVisible();
+  const toolbar = page.getByTestId('editor-toolbar');
+  await expect(toolbar).toBeVisible();
+  // Únicamente selector de párrafo y negrita — antes había varias filas y un botón «⋯» que las
+  // revelaba; ahora no existe ni el botón ni la fila que ocultaba.
+  await expect(toolbar.locator('select')).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: 'Negrita', exact: true })).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: 'Cursiva', exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Insertar una tabla', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('editor-more-format-toggle')).toHaveCount(0);
+  await expect(page.getByTestId('editor-more-format-row')).toHaveCount(0);
+  await expect(page.getByTestId('inline-toolbar-toggle')).toHaveCount(0);
+  await expect(page.getByTestId('inline-body-mode-switch')).toHaveCount(0);
+  await page.screenshot({ path: `artifacts/block9-${info.project.name}-quick-edit.png` });
+  // Edición de texto con formato preexistente (la Nota ya trae HTML con una imagen) + Undo/Redo
+  // nativos, pese a no tener botones de lista para ellos (atajos preservados).
+  const content = page.getByLabel('Contenido visual');
+  await expect(content).toContainText('Antes de la imagen');
+  await content.getByText('Antes de la imagen', { exact: true }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' y más texto');
+  await expect(content).toContainText('y más texto');
+  await page.keyboard.press('Control+z');
+  await expect(content).not.toContainText('y más texto');
+  await page.keyboard.press('Control+y');
+  await expect(content).toContainText('y más texto');
+  // El único botón visible (Negrita) sigue aplicando formato real al contenido.
+  await page.keyboard.press('Shift+Home');
+  await toolbar.getByRole('button', { name: 'Negrita', exact: true }).click();
+  await expect(content.locator('strong, b')).toContainText('y más texto');
+  // Cambiar a edición completa (Inspector) conserva todas las herramientas avanzadas — nada se quitó
+  // ahí, solo de la edición rápida.
+  await openFullCardEditor(page, card);
+  const fullToolbar = page.getByTestId('editor-toolbar');
+  await expect(fullToolbar.getByRole('button', { name: 'Cursiva', exact: true })).toBeVisible();
+  await expect(fullToolbar.getByRole('button', { name: 'Insertar una tabla', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+});
+
+test('B9-R4-11: Diario documental — anotar un PDF desde Assets, consultarlo en el Diario y reabrir el documento', async ({ page }) => {
+  await lab(page);
+  await nav(page, 'Abrir los assets');
+  await page.getByTestId('asset-manual.pdf').getByRole('button', { name: 'Ver manual.pdf' }).click();
+  await page.getByRole('button', { name: 'Previsualizar manual.pdf', exact: true }).click();
+  await expect(page.getByTestId('asset-pdf-preview')).toBeVisible();
+  await page.getByTestId('asset-pdf-annotate').click();
+  // Documento → Anotar en Diario: el visor se cierra, no queda apilado bajo el formulario.
+  await expect(page.getByTestId('asset-pdf-preview')).not.toBeVisible();
+  const dialog = page.getByTestId('diary-annotate-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('manual.pdf');
+  await dialog.getByTestId('diary-annotate-reflection').fill('Releer la sección 3 con calma.');
+  await dialog.getByTestId('diary-annotate-location').fill('12');
+  await dialog.getByTestId('diary-annotate-save').click();
+  await expect(dialog).not.toBeVisible();
+  // Confirmación con acceso directo (B3), además del aviso general ya existente.
+  const confirmation = page.getByTestId('assets-annotate-confirmation');
+  await expect(confirmation).toContainText('Anotación guardada en el Diario.');
+  await confirmation.getByRole('button', { name: 'Ver en el Diario', exact: true }).click();
+  await expect(page.getByTestId('diary-view')).toBeVisible();
+  const entry = page.locator('[data-testid^="log-entry-"]').filter({ hasText: 'Releer la sección 3 con calma.' });
+  await expect(entry).toHaveCount(1);
+  const documentBox = entry.getByTestId(/^diary-document-box-/);
+  await expect(documentBox).toContainText('DOCUMENTO');
+  await expect(documentBox).toContainText('PDF');
+  await expect(documentBox).toContainText('manual.pdf');
+  await expect(documentBox).toContainText('Página 12');
+  await documentBox.getByRole('button', { name: 'Abrir manual.pdf', exact: true }).click();
+  await expect(page.getByTestId('asset-pdf-preview')).toBeVisible();
+  await expect(page.getByTestId('asset-pdf-preview-frame')).toBeVisible();
+});
+
+test('B9-R4-11: Diario documental — anotar un Markdown pide sección (texto libre), no página/línea', async ({ page }) => {
+  await lab(page);
+  await nav(page, 'Abrir los assets');
+  await page.getByTestId('asset-Guia.md').getByRole('button', { name: 'Ver Guia.md' }).click();
+  await page.getByRole('button', { name: 'Vista previa de Guia.md' }).click();
+  await page.getByTestId('asset-text-preview-annotate').click();
+  await expect(page.getByTestId('asset-text-preview')).not.toBeVisible();
+  const dialog = page.getByTestId('diary-annotate-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Guia.md');
+  await expect(page.getByLabel('Encabezado o sección (opcional)')).toBeVisible();
+  await expect(page.getByLabel('Página (opcional)')).toHaveCount(0);
+  await dialog.getByTestId('diary-annotate-reflection').fill('Repasar antes de aplicar.');
+  await dialog.getByTestId('diary-annotate-location').fill('Resumen');
+  await dialog.getByTestId('diary-annotate-save').click();
+  await expect(dialog).not.toBeVisible();
+  await page.getByTestId('assets-annotate-confirmation').getByRole('button', { name: 'Ver en el Diario', exact: true }).click();
+  const documentBox = page.getByTestId('diary-view').getByTestId(/^diary-document-box-/);
+  await expect(documentBox).toContainText('Markdown');
+  await expect(documentBox).toContainText('Sección: Resumen');
 });

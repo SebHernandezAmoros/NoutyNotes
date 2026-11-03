@@ -23,10 +23,12 @@ import { fetchGoogleFont, supportsGoogleFonts } from '../session/googleFonts';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { openAssetFile, supportsOpenAsset } from '../session/openAsset';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
+import { AnnotateInDiaryDialog } from './AnnotateInDiaryDialog';
 import type { ViewPreferences } from './canvas/preferences';
 import { dataUri } from './dataUri';
 import { PdfPreview } from './PdfPreview';
 import { TextAssetPreviewDialog } from './TextAssetPreviewDialog';
+import { useAnnotateInDiary } from './useAnnotateInDiary';
 import { useEscapeBack } from './useEscapeBack';
 import { usePdfPreview } from './usePdfPreview';
 import { useTextAssetPreview } from './useTextAssetPreview';
@@ -46,6 +48,8 @@ interface AssetsViewProps {
   readonly onAdded: (cardId: CardId) => void;
   readonly onGo: (cardId: CardId) => void;
   readonly onBack: () => void;
+  /** B9-R4-11: tras guardar una anotación («Anotar en Diario»), acceso directo a esa sección. */
+  readonly onOpenDiary: () => void;
   /** Tipografía de las notas (ADR 0041): «Usar en las notas» activa la fuente y guarda la preferencia. */
   readonly preferences: ViewPreferences;
   readonly onPreferencesChange: (next: ViewPreferences) => void;
@@ -68,7 +72,7 @@ const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round
  * Importar, añadir al tablero sin copiar, reemplazar en todas las referencias y eliminar solo lo que
  * nada usa.
  */
-export function AssetsView({ active, compact, workspace, run, placement, onAdded, onGo, onBack, preferences, onPreferencesChange }: AssetsViewProps) {
+export function AssetsView({ active, compact, workspace, run, placement, onAdded, onGo, onBack, onOpenDiary, preferences, onPreferencesChange }: AssetsViewProps) {
   const contentResources = useContentResources();
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -85,10 +89,10 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const [tab, setTab] = useState<Tab>('all');
   const [unusedOnly, setUnusedOnly] = useState(false);
   const [query, setQuery] = useState('');
-  // B9-R2-09: orden a nivel de vista, nunca reescribe el proyecto. Solo Nombre y Tipo: no hay ningún
-  // campo de fecha de importación real y fiable que ofrecer (ver `AssetEntry`/`listAssets`, sin
-  // marca de tiempo) — inventar una a partir del ID o del orden de lectura queda explícitamente fuera.
-  const [sortBy, setSortBy] = useState<'name' | 'type'>('name');
+  // B9-R2-09, ampliado en B9-R4-FINAL con Tamaño: orden a nivel de vista, nunca reescribe el proyecto.
+  // No hay fecha de importación real y fiable que ofrecer (ver `AssetEntry`/`listAssets`, sin marca de
+  // tiempo) — inventar una a partir del ID o del orden de lectura sigue explícitamente fuera.
+  const [sortBy, setSortBy] = useState<'name' | 'type' | 'size'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   // Cuadrícula en escritorio y lista en móvil, salvo que la persona elija otra vista.
   const [gridChoice, setGridChoice] = useState<boolean | null>(null);
@@ -123,11 +127,14 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
       setListed(result.value);
       const nextThumbs = new Map<string, string>();
       const nextBytes = new Map<string, number>();
+      // B9-R4-FINAL: el tamaño real en bytes ahora se lee de todo Asset, no solo imágenes, para poder
+      // ordenar por Tamaño — reutiliza exactamente la misma lectura que ya existía para miniaturas,
+      // sin un segundo mecanismo ni un método de metadatos nuevo en el puerto de almacenamiento.
       for (const ref of result.value) {
-        if (assetKind(ref) !== 'image') continue;
         const read = await assets.readAsset(workspace.id, ref as AssetRef);
         if (!read.ok) continue;
         nextBytes.set(ref, read.value.length);
+        if (assetKind(ref) !== 'image') continue;
         const kind = inspectImage(read.value);
         if (kind.ok) nextThumbs.set(ref, dataUri(kind.value.mimeType, read.value));
       }
@@ -158,8 +165,12 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const text = fold(query.trim());
   const filtered = catalog.filter((entry) => (tab === 'all' || entry.kind === tab) && (!unusedOnly || entry.unused) && (text === '' || fold(entry.name).includes(text)));
   const sortKey = (entry: AssetEntry) => (sortBy === 'type' ? `${kindLabel[entry.kind]}\u0000${entry.name}` : entry.name);
+  // B9-R4-FINAL: empate determinista por nombre (mismo criterio estable que ya usan Nombre/Tipo) —
+  // dos Assets del mismo tamaño en bytes no cambian de posición entre renders.
   const shown = [...filtered].sort((a, b) => {
-    const order = fold(sortKey(a)) < fold(sortKey(b)) ? -1 : fold(sortKey(a)) > fold(sortKey(b)) ? 1 : 0;
+    const order = sortBy === 'size'
+      ? (bytes.get(a.ref) ?? 0) - (bytes.get(b.ref) ?? 0) || (fold(a.name) < fold(b.name) ? -1 : fold(a.name) > fold(b.name) ? 1 : 0)
+      : fold(sortKey(a)) < fold(sortKey(b)) ? -1 : fold(sortKey(a)) > fold(sortKey(b)) ? 1 : 0;
     return sortDir === 'asc' ? order : -order;
   });
   const current = catalog.find((entry) => entry.ref === selected) ?? null;
@@ -303,6 +314,10 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assets, workspace.id);
   // B9-R3-06: mismo criterio, ahora también para `.md`/`.txt` compartidos con una tarjeta de documento.
   const textPreview = useTextAssetPreview(assets, workspace.id);
+  // B9-R4-11: «Anotar en Diario» cierra el visor del documento y abre el formulario en su lugar (un
+  // único diálogo visible a la vez, nunca anidado); extraído a `useAnnotateInDiary` para que lo
+  // comparta la tarjeta de documento del Canvas, sin dos copias de la misma lógica.
+  const annotate = useAnnotateInDiary(run, () => { closePdfPreview(); textPreview.close(); });
   const download = async (entry: AssetEntry) => {
     if (!assets) return;
     const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
@@ -471,6 +486,12 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         <>
           {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
           <Text style={{ color: colors.textSecondary }}>{t('content.libraryLimit', locale)}</Text>
+          {annotate.justSaved ? (
+            <View testID="assets-annotate-confirmation" style={[styles.detailsSection, { borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+              <Text style={{ color: colors.textPrimary, flex: 1 }}>{t('diary.annotate.saved', locale)}</Text>
+              <ActionButton label={t('diary.annotate.goToEntry', locale)} onPress={() => { annotate.dismissJustSaved(); onOpenDiary(); }} />
+            </View>
+          ) : null}
           {/* B9-R2-10: antes, una sola fila con todos los botones; ahora tres grupos visuales/funcionales
               (Importar, Explorar, Filtrar), sin quitar ni duplicar ninguna capacidad existente. */}
           <View testID="assets-toolbar" style={[styles.toolbarGroups, compact ? styles.toolbarGroupsCompact : null, { borderColor: colors.gridLine }]}>
@@ -493,14 +514,16 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
                   el resto de grupos cuando no cabe, sin otro sistema de layout. */}
               <View style={styles.toolbarExploreRow}>
                 <View style={styles.toolbarSearchRow}>
-                  <TextField label={t('assets.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('assets.search.placeholder', locale)} testID="assets-search" />
+                  {/* B9-R4-FINAL: sin el rótulo visible «Buscar por nombre» (Explorar queda compacto);
+                      el nombre accesible y el placeholder descriptivo se conservan igual. */}
+                  <TextField label={t('assets.search.label', locale)} value={query} onChangeText={setQuery} placeholder={t('assets.search.placeholder', locale)} testID="assets-search" hideLabel />
                 </View>
                 <View style={styles.row}>
-                  {/* B9-R3-04: un único selector de criterio en vez de dos botones Nombre/Tipo lado a
-                      lado — el estado activo ya se lee en la propia etiqueta. */}
-                  <ActionButton testID="assets-sort-criterion" label={`${t('assets.sort.criterion', locale)}: ${t(sortBy === 'name' ? 'assets.sort.name' : 'assets.sort.type', locale)}`}
-                    accessibilityLabel={t(sortBy === 'name' ? 'assets.sort.toType' : 'assets.sort.toName', locale)}
-                    onPress={() => setSortBy((value) => (value === 'name' ? 'type' : 'name'))} />
+                  {/* B9-R3-04, ampliado en B9-R4-FINAL: un único selector cicla Nombre → Tipo → Tamaño —
+                      el estado activo ya se lee en la propia etiqueta, sin un tercer botón. */}
+                  <ActionButton testID="assets-sort-criterion" label={`${t('assets.sort.criterion', locale)}: ${t(sortBy === 'name' ? 'assets.sort.name' : sortBy === 'type' ? 'assets.sort.type' : 'assets.sort.size', locale)}`}
+                    accessibilityLabel={t(sortBy === 'name' ? 'assets.sort.toType' : sortBy === 'type' ? 'assets.sort.toSize' : 'assets.sort.toName', locale)}
+                    onPress={() => setSortBy((value) => (value === 'name' ? 'type' : value === 'type' ? 'size' : 'name'))} />
                   <ActionButton testID="assets-sort-direction" label={sortDir === 'asc' ? '↑' : '↓'}
                     accessibilityLabel={t(sortDir === 'asc' ? 'assets.sort.toAscending' : 'assets.sort.toDescending', locale)}
                     onPress={() => setSortDir((value) => (value === 'asc' ? 'desc' : 'asc'))} />
@@ -576,8 +599,9 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
           </ScrollView>
         </>
       )}
-      <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} />
-      <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} onClose={textPreview.close} testID="asset-text-preview" />
+      <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} onAnnotate={annotate.start} />
+      <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} onClose={textPreview.close} onAnnotate={annotate.start} testID="asset-text-preview" />
+      <AnnotateInDiaryDialog target={annotate.target} compact={compact} onClose={annotate.close} onSave={annotate.save} />
       {/* B9-R2-11: explica antes de elegir el archivo — nunca sustituye al selector real ni descarga
           nada por su cuenta; «Buscar en Google Fonts» sigue siendo el único camino de red, con su
           propio consentimiento de licencia ya existente. */}

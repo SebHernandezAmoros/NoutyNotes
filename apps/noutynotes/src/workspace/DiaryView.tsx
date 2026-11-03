@@ -1,4 +1,4 @@
-import { activeDays, dailyLog, dailyLogRange, diaryExportText, editCardContent, fold, isDay, localDay, moveCardToTrash, openDiaryEntry, shiftDay } from '@noutynotes/application';
+import { activeDays, dailyLog, dailyLogRange, diaryDocumentAnnotation, diaryExportText, editCardContent, fold, isDay, localDay, moveCardToTrash, openDiaryEntry, shiftDay } from '@noutynotes/application';
 import type { RangeLogItem, TimedCard, WorkspaceStorageResult } from '@noutynotes/application';
 import { cardTitleText, createEmptyRichTextDocument, richTextDocumentText } from '@noutynotes/domain';
 import type { BoardId, Card, CardId, CardTypeId, RichTextDocument, Workspace } from '@noutynotes/domain';
@@ -27,6 +27,9 @@ interface DiaryViewProps {
   readonly run: Run;
   readonly onGo: (cardId: CardId) => void;
   readonly onBack: () => void;
+  /** B9-R4-11: abre el documento anotado (PDF/TXT/Markdown) en su visor ya existente — un error de
+   * lectura (p. ej. el Asset ya no está) lo muestra el propio visor, sin un segundo mecanismo aquí. */
+  readonly onOpenDocument: (ref: string, name: string) => void;
 }
 
 const monthsByLocale: Readonly<Record<Locale, readonly string[]>> = {
@@ -62,7 +65,7 @@ const bodyText = (card: Card) => card.contentDocument
  * Entradas del día y cronología con fechas reales (tarjetas creadas desde esta versión y archivadas).
  * Nada se simula: un día sin datos lo dice.
  */
-export function DiaryView({ active, compact, workspace, run, onGo, onBack }: DiaryViewProps) {
+export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpenDocument }: DiaryViewProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -188,6 +191,25 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [editing]);
+  // B9-R4-11: documento anotado (PDF/TXT/Markdown), si lo tiene — reflexión, nombre, tipo, ubicación
+  // y «Abrir documento»; el campo `documento-ref` lo marca, sin un segundo tipo de tarjeta.
+  const documentBox = (entry: Card) => {
+    const doc = diaryDocumentAnnotation(entry);
+    if (!doc) return null;
+    const name = doc.ref.split('/').pop() ?? doc.ref;
+    const kind = /\.pdf$/i.test(doc.ref) ? 'pdf' : /\.(?:md|markdown)$/i.test(doc.ref) ? 'markdown' : 'txt';
+    return (
+      <View testID={`diary-document-box-${entry.id}`} style={[styles.documentBox, { borderColor: colors.border }]}>
+        <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${t('diary.document.heading', locale)} · ${t(`diary.document.kind.${kind}`, locale)}`}</Text>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>{name}</Text>
+        {doc.page !== undefined ? <Text style={{ color: colors.textSecondary }}>{t('diary.document.page', locale, { page: String(doc.page) })}</Text> : null}
+        {doc.line !== undefined ? <Text style={{ color: colors.textSecondary }}>{t('diary.document.line', locale, { line: String(doc.line) })}</Text> : null}
+        {doc.section !== undefined ? <Text style={{ color: colors.textSecondary }}>{t('diary.document.section', locale, { section: doc.section })}</Text> : null}
+        <ActionButton testID={`diary-document-${entry.id}-open`} label={t('diary.document.open', locale)}
+          accessibilityLabel={t('diary.document.open.accessibilityLabel', locale, { name })} onPress={() => onOpenDocument(doc.ref, name)} />
+      </View>
+    );
+  };
   const timeline = (items: readonly TimedCard[], verb: string, testID: string) => items.map(({ card, time }) => (
     <View key={`${testID}-${card.id}`} testID={`${testID}-${card.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${time} · ${verb} · ${typeLabel(card).toUpperCase()}`}</Text>
@@ -290,6 +312,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack }: Dia
           <Text style={[styles.section, { color: colors.textSecondary }]}>{t('diary.section.entries', locale)}</Text>
           {log.entries.length === 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entries.empty', locale)}</Text> : log.entries.map((entry) => (
             <View key={entry.id} testID={`log-entry-${entry.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              {documentBox(entry)}
               {editing?.id === entry.id ? (
                 <>
                   <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => setEdit({ ...editing, title })} />
@@ -401,6 +424,7 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, lineHeight: 18 },
   meta: { fontFamily: mono, fontSize: 11, fontWeight: '700' },
   item: { borderWidth: 2, padding: 10, gap: 6 },
+  documentBox: { borderWidth: 1, borderRadius: 4, padding: 8, gap: 4, marginBottom: 6 },
   title: { fontSize: 16, fontWeight: '800' },
   body: { fontSize: 14, lineHeight: 20 },
   calendar: { flexDirection: 'row', flexWrap: 'wrap' },

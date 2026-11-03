@@ -8,6 +8,7 @@ import { decodeTextAssetPreview } from '../session/textAssetPreview';
 
 export interface TextAssetPreviewState {
   readonly name: string;
+  readonly ref: string;
   readonly text: string;
   /** B9-R2-12: solo para `.md`/`.markdown` analizado con éxito; `null` deja el texto literal como está
    * (`.txt`, u otra construcción que `parseRichTextMarkdown` no modela a nivel de bloque). */
@@ -47,7 +48,7 @@ export function useTextAssetPreview(assets: WorkspaceAssets | null, workspaceId:
       return;
     }
     const markdown = /\.(?:md|markdown)$/i.test(entry.name) ? parseRichTextMarkdown(decoded.text) : null;
-    setRaw({ workspaceId: openedWorkspaceId, state: { name: entry.name, text: decoded.text, markdownDocument: markdown?.ok ? markdown.value : null, truncated: decoded.truncated ?? false } });
+    setRaw({ workspaceId: openedWorkspaceId, state: { name: entry.name, ref: entry.ref, text: decoded.text, markdownDocument: markdown?.ok ? markdown.value : null, truncated: decoded.truncated ?? false } });
   };
   const close = () => { requestRef.current += 1; setRaw(null); setProblem(null); };
 
