@@ -73,7 +73,7 @@ export function PdfPreview({ state, locale, onClose, onAnnotate }: PdfPreviewPro
             </> : null}
             {state.status === 'ready' && onAnnotate ? (
               <Pressable testID="asset-pdf-annotate" accessibilityLabel={t('diary.annotate.fromDocument', locale)} onPress={() => onAnnotate(state.ref, state.name)}
-                style={{ height: 44, paddingHorizontal: 10, boxSizing: 'border-box', flexShrink: 0, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', border: `2px solid ${colors.border}`, background: colors.surface }}>
+                style={{ height: 44, paddingHorizontal: 10, flexShrink: 0, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface }}>
                 <AppIcon name="diary" size={18} />
                 <Text style={{ marginLeft: 6, color: colors.textPrimary, fontWeight: '800', fontSize: 13 }}>{t('diary.annotate.button', locale)}</Text>
               </Pressable>
