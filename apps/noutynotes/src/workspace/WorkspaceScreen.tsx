@@ -25,7 +25,6 @@ import { ActionButton, ToolButton } from '../components/controls';
 import { useKeyboardInset, useRevealFocusedInput } from '../components/useKeyboardInset';
 import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
-import { AnnotateInDiaryDialog } from './AnnotateInDiaryDialog';
 import { noteFontFamily } from './fonts';
 import { PresentView } from './PresentView';
 import { buildPrintHtml } from './printHtml';
@@ -63,7 +62,6 @@ import { CardInspector } from './CardInspector';
 import type { CardInspectorSection } from './CardInspector';
 import { PdfPreview } from './PdfPreview';
 import { TextAssetPreviewDialog } from './TextAssetPreviewDialog';
-import { useAnnotateInDiary } from './useAnnotateInDiary';
 import { usePdfPreview } from './usePdfPreview';
 import { useTextAssetPreview } from './useTextAssetPreview';
 import { FrameInspector } from './FrameInspector';
@@ -257,8 +255,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assetsOf(session.storage), workspace?.id);
   // B9-R3-06: mismo criterio para Markdown/texto plano, compartido con Assets.
   const textPreview = useTextAssetPreview(assetsOf(session.storage), workspace?.id);
-  // B9-R4-11: «Anotar en Diario» desde una tarjeta de documento del Canvas — mismo hook que Assets.
-  const docAnnotate = useAnnotateInDiary(run, () => { closePdfPreview(); textPreview.close(); });
   const boardActions = workspace?.boards.find((candidate) => candidate.id === boardActionsId) ?? null;
   const archiveCount = workspace?.archive?.length ?? 0;
   const summaries = useSessionSummaries(workspace);
@@ -2023,14 +2019,6 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
           {/* Aviso de guardado: una sola instancia, transversal a cualquier vista, no solo al lienzo
               (ADR 0036) — antes vivía dentro de la barra del lienzo, que ahora puede estar oculta. */}
           {workspace ? feedbackLine : null}
-          {/* B9-R4-11: mismo criterio de confirmación con acceso directo que ya usa Assets, aquí para la
-              anotación creada desde una tarjeta de documento del Canvas. */}
-          {docAnnotate.justSaved ? (
-            <View testID="workspace-annotate-confirmation" style={[styles.annotateConfirmation, { borderColor: colors.border }]}>
-              <Text style={{ color: colors.textPrimary, flex: 1 }}>{t('diary.annotate.saved', locale)}</Text>
-              <ActionButton label={t('diary.annotate.goToEntry', locale)} onPress={() => { docAnnotate.dismissJustSaved(); openView('diary'); }} />
-            </View>
-          ) : null}
           {workspace && visitedViews.has('diary') ? (
             <View style={[styles.workArea, compact ? styles.workCompact : styles.workWide, mainView !== 'diary' ? styles.hidden : null]}>
               <DiaryView
@@ -2326,9 +2314,8 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
             onClose={() => setRecoveryOpen(false)}
           />
           <LinkDialog visible={linkOpen} compact={compact} onCreate={addLink} onClose={() => setLinkOpen(false)} />
-          <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} onAnnotate={docAnnotate.start} />
-          <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} onClose={textPreview.close} onAnnotate={docAnnotate.start} testID="card-text-preview" />
-          <AnnotateInDiaryDialog target={docAnnotate.target} compact={compact} onClose={docAnnotate.close} onSave={docAnnotate.save} />
+          {workspace ? <PdfPreview state={pdfPreview} locale={locale} compact={compact} workspace={workspace} run={run} onClose={closePdfPreview} onOpenDiary={() => openView('diary')} /> : null}
+          {workspace ? <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} workspace={workspace} run={run} onClose={textPreview.close} onOpenDiary={() => openView('diary')} testID="card-text-preview" /> : null}
           {saveFolderOpen && workspace ? <SaveProjectToFolder visible id={workspace.id}
             beforeCopy={async () => await flushPendingText() && await flushWorkspace()}
             onClose={() => setSaveFolderOpen(false)}
@@ -2913,8 +2900,6 @@ const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  // B9-R4-11: confirmación de «Anotar en Diario» con acceso directo, transversal a cualquier vista.
-  annotateConfirmation: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderWidth: 2 },
   frame: { flex: 1 },
   frameRow: { flexDirection: 'row' },
   resizeHandle: { width: 10, flexGrow: 0, alignItems: 'center', justifyContent: 'center' },

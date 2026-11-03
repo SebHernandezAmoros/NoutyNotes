@@ -554,9 +554,11 @@ function EditorToolbar({ cardId, onInsertImage, onInsertImageFromAssets, titleOn
         </select>}
         {compactFormat ? null : tableMenuControl}
         {button('B', t('editor.visual.bold', locale), bold, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold'); })}
-        {/* B9-R4-FINAL: la edición rápida (`compactFormat`) ya no ofrece cursiva ni ningún otro
-            control — solo tipo de párrafo y negrita, sin una segunda fila que revelar. */}
-        {compactFormat ? null : button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
+        {/* B9-R5-03: la edición rápida (`compactFormat`) ahora ofrece Cursiva junto a Negrita, misma
+            fila, mismo botón y comando ya usados en el Inspector completo — ningún control nuevo. El
+            resto (listas, alineación, enlace/imagen/tabla, deshacer/rehacer) sigue oculto en una sola
+            fila, sin una segunda fila que revelar. */}
+        {button('I', t('editor.visual.italic', locale), italic, false, () => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic'); })}
         {compactFormat ? null : <View style={[styles.separator, { backgroundColor: colors.gridLine }]} />}
         {compactFormat ? null : button('•', t('editor.visual.bullet', locale), block === 'bullet', inTable, () => chooseBlock('bullet'))}
         {compactFormat ? null : button('1.', t('editor.visual.ordered', locale), block === 'ordered', inTable, () => chooseBlock('ordered'))}

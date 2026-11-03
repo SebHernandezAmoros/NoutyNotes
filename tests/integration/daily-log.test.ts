@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addCardToBoard, annotateDocumentInDiary, cardAssetRefs, createEmptyWorkspaceNamed, dailyLog, editCardContent, importImageCard, modifyWorkspace, moveCardToArchive, moveCardToTrash,
+  addCardToBoard, annotateDocumentInDiary, cardAssetRefs, createEmptyWorkspaceNamed, dailyLog, documentDiaryAnnotations, editCardContent, importImageCard, modifyWorkspace, moveCardToArchive, moveCardToTrash,
   nextSequentialId, openDiaryEntry, restoreCardFromTrash, searchWorkspace,
 } from '../../packages/application/src/index';
 import type { WorkspaceStorageResult } from '../../packages/application/src/index';
@@ -153,6 +153,35 @@ describe('Diario documental (B9-R4-11, MVP Nivel 2)', () => {
     );
     expect(workspace.cards.find((card) => card.id === legacyEntryId)).toMatchObject({ title: 'Diario 2026-01-01', content: 'Entrada antigua' });
     expect(workspace.cards.find((card) => card.id === annotated)).toMatchObject({ fields: { 'documento-ref': PDF_REF, 'documento-pagina': 1 } });
+  });
+
+  it('documentDiaryAnnotations lista solo las anotaciones activas del Asset, en orden determinista, nunca las de otro documento', async () => {
+    const storage = new ArchiveStorage();
+    const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Panel contextual'));
+    const second = ok(await annotateDocumentInDiary(storage, id, {
+      day: '2026-11-03', createdAt: '2026-11-03T10:00:00.000Z', documentRef: PDF_REF, documentName: 'Manual.pdf', reflection: 'Segunda.', page: 20,
+    }));
+    const first = ok(await annotateDocumentInDiary(storage, id, {
+      day: '2026-11-03', createdAt: '2026-11-03T09:00:00.000Z', documentRef: PDF_REF, documentName: 'Manual.pdf', reflection: 'Primera.', page: 5,
+    }));
+    const toArchive = ok(await annotateDocumentInDiary(storage, id, {
+      day: '2026-11-03', createdAt: '2026-11-03T11:00:00.000Z', documentRef: PDF_REF, documentName: 'Manual.pdf', reflection: 'Se archivará.', page: 30,
+    }));
+    const toTrash = ok(await annotateDocumentInDiary(storage, id, {
+      day: '2026-11-03', createdAt: '2026-11-03T12:00:00.000Z', documentRef: PDF_REF, documentName: 'Manual.pdf', reflection: 'Se enviará a la Papelera.', page: 40,
+    }));
+    ok(await annotateDocumentInDiary(storage, id, {
+      day: '2026-11-03', createdAt: '2026-11-03T13:00:00.000Z', documentRef: TXT_REF, documentName: 'notas.txt', reflection: 'De otro documento.', line: 2,
+    }));
+    ok(await moveCardToArchive(storage, id, toArchive, '2026-11-03T14:00:00.000Z'));
+    ok(await moveCardToTrash(storage, id, toTrash));
+
+    const workspace = ok(await storage.open(id));
+    // Orden por `createdAt`, no por el orden en que se crearon (`second` se guardó antes que `first`);
+    // archivada y Papelera quedan fuera; otro documento (TXT) nunca se mezcla; un ref sin anotaciones da [].
+    expect(documentDiaryAnnotations(workspace, PDF_REF).map((card) => card.id)).toEqual([first, second]);
+    expect(documentDiaryAnnotations(workspace, TXT_REF)).toHaveLength(1);
+    expect(documentDiaryAnnotations(workspace, 'assets/documents/inexistente.pdf')).toEqual([]);
   });
 });
 

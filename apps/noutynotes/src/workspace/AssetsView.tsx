@@ -23,12 +23,10 @@ import { fetchGoogleFont, supportsGoogleFonts } from '../session/googleFonts';
 import { pickImageFile, supportsImageImport } from '../session/imageFiles';
 import { openAssetFile, supportsOpenAsset } from '../session/openAsset';
 import { useWorkspaceSession } from '../session/WorkspaceSession';
-import { AnnotateInDiaryDialog } from './AnnotateInDiaryDialog';
 import type { ViewPreferences } from './canvas/preferences';
 import { dataUri } from './dataUri';
 import { PdfPreview } from './PdfPreview';
 import { TextAssetPreviewDialog } from './TextAssetPreviewDialog';
-import { useAnnotateInDiary } from './useAnnotateInDiary';
 import { useEscapeBack } from './useEscapeBack';
 import { usePdfPreview } from './usePdfPreview';
 import { useTextAssetPreview } from './useTextAssetPreview';
@@ -314,10 +312,6 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
   const { preview: pdfPreview, open: openPdfPreview, close: closePdfPreview } = usePdfPreview(assets, workspace.id);
   // B9-R3-06: mismo criterio, ahora también para `.md`/`.txt` compartidos con una tarjeta de documento.
   const textPreview = useTextAssetPreview(assets, workspace.id);
-  // B9-R4-11: «Anotar en Diario» cierra el visor del documento y abre el formulario en su lugar (un
-  // único diálogo visible a la vez, nunca anidado); extraído a `useAnnotateInDiary` para que lo
-  // comparta la tarjeta de documento del Canvas, sin dos copias de la misma lógica.
-  const annotate = useAnnotateInDiary(run, () => { closePdfPreview(); textPreview.close(); });
   const download = async (entry: AssetEntry) => {
     if (!assets) return;
     const read = await assets.readAsset(workspace.id, entry.ref as AssetRef);
@@ -486,12 +480,6 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
         <>
           {/* Barra contextual: propia de esta vista, no la del lienzo (ADR 0036). */}
           <Text style={{ color: colors.textSecondary }}>{t('content.libraryLimit', locale)}</Text>
-          {annotate.justSaved ? (
-            <View testID="assets-annotate-confirmation" style={[styles.detailsSection, { borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
-              <Text style={{ color: colors.textPrimary, flex: 1 }}>{t('diary.annotate.saved', locale)}</Text>
-              <ActionButton label={t('diary.annotate.goToEntry', locale)} onPress={() => { annotate.dismissJustSaved(); onOpenDiary(); }} />
-            </View>
-          ) : null}
           {/* B9-R2-10: antes, una sola fila con todos los botones; ahora tres grupos visuales/funcionales
               (Importar, Explorar, Filtrar), sin quitar ni duplicar ninguna capacidad existente. */}
           <View testID="assets-toolbar" style={[styles.toolbarGroups, compact ? styles.toolbarGroupsCompact : null, { borderColor: colors.gridLine }]}>
@@ -599,9 +587,8 @@ export function AssetsView({ active, compact, workspace, run, placement, onAdded
           </ScrollView>
         </>
       )}
-      <PdfPreview state={pdfPreview} locale={locale} onClose={closePdfPreview} onAnnotate={annotate.start} />
-      <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} onClose={textPreview.close} onAnnotate={annotate.start} testID="asset-text-preview" />
-      <AnnotateInDiaryDialog target={annotate.target} compact={compact} onClose={annotate.close} onSave={annotate.save} />
+      <PdfPreview state={pdfPreview} locale={locale} compact={compact} workspace={workspace} run={run} onClose={closePdfPreview} onOpenDiary={onOpenDiary} />
+      <TextAssetPreviewDialog preview={textPreview.preview} problem={textPreview.problem} compact={compact} workspace={workspace} run={run} onClose={textPreview.close} onOpenDiary={onOpenDiary} testID="asset-text-preview" />
       {/* B9-R2-11: explica antes de elegir el archivo — nunca sustituye al selector real ni descarga
           nada por su cuenta; «Buscar en Google Fonts» sigue siendo el único camino de red, con su
           propio consentimiento de licencia ya existente. */}

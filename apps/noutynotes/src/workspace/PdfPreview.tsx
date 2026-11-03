@@ -1,11 +1,18 @@
+import type { WorkspaceStorageResult } from '@noutynotes/application';
+import type { Workspace } from '@noutynotes/domain';
 import type { Locale } from '@noutynotes/ui';
 import { useTheme } from '@noutynotes/ui';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ActionButton } from '../components/controls';
 import { DialogCloseButton } from '../components/Dialog';
 import { AppIcon } from '../components/AppIcon';
 import { t } from '../i18n';
+import { DocumentDiaryPanel } from './DocumentDiaryPanel';
+import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
+
+type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
 export type PdfPreviewState =
   | { readonly status: 'loading'; readonly name: string }
@@ -15,9 +22,11 @@ export type PdfPreviewState =
 interface PdfPreviewProps {
   readonly state: PdfPreviewState | null;
   readonly locale: Locale;
+  readonly compact: boolean;
+  readonly workspace: Workspace;
+  readonly run: Run;
   readonly onClose: () => void;
-  /** B9-R4-11: «Anotar en Diario» — ausente, el botón no aparece (p. ej. un visor de solo lectura). */
-  readonly onAnnotate?: (ref: string, name: string) => void;
+  readonly onOpenDiary: () => void;
 }
 
 /**
@@ -32,26 +41,42 @@ interface PdfPreviewProps {
  * El ciclo de vida del Blob URL (crear/revocar, evitar carreras entre documentos, cerrar al cambiar
  * de proyecto) vive en `AssetsView.tsx`, que es quien conoce cuándo cambia el workspace o el asset
  * seleccionado — este componente solo presenta el estado que recibe.
+ *
+ * B9-R5: el Diario lateral contextual (`DocumentDiaryPanel`) vive dentro de este mismo `panel`/`body`,
+ * hermano del `<iframe>` — nunca cambia `state.url` ni lo desmonta, así que expandir/contraer el Diario
+ * jamás recarga el PDF ni pierde su posición/zoom. `requestClose` respeta la jerarquía de controles
+ * activos (sección A6 del encargo): primero el panel expandido, luego un borrador sin guardar, y solo
+ * al final el cierre real del visor — un solo punto de entrada para Escape, fondo, X y atrás (Android).
  */
-export function PdfPreview({ state, locale, onClose, onAnnotate }: PdfPreviewProps) {
+export function PdfPreview({ state, locale, compact, workspace, run, onClose, onOpenDiary }: PdfPreviewProps) {
   const { theme } = useTheme();
   const colors = theme.colors;
   const visible = state !== null;
+  const [panelExpanded, setPanelExpanded] = useState(false);
+  const [panelDirty, setPanelDirty] = useState(false);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+
+  const requestClose = useCallback(() => {
+    if (confirmingClose) { setConfirmingClose(false); return; }
+    if (panelExpanded) { setPanelExpanded(false); return; }
+    if (panelDirty) { setConfirmingClose(true); return; }
+    onClose();
+  }, [confirmingClose, panelExpanded, panelDirty, onClose]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !visible) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') requestClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [visible, onClose]);
+  }, [visible, requestClose]);
 
   if (!state) return null;
   const title = t('assets.pdf.preview.title', locale, { name: state.name });
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible transparent animationType="none" onRequestClose={requestClose}>
       <View style={styles.backdrop}>
-        <Pressable accessibilityLabel={`${t('dialog.close', locale)} ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable accessibilityLabel={`${t('dialog.close', locale)} ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={requestClose} />
         <View
           testID="asset-pdf-preview"
           accessibilityViewIsModal
@@ -71,15 +96,8 @@ export function PdfPreview({ state, locale, onClose, onAnnotate }: PdfPreviewPro
                 <AppIcon name="download" size={20} />
               </a>
             </> : null}
-            {state.status === 'ready' && onAnnotate ? (
-              <Pressable testID="asset-pdf-annotate" accessibilityLabel={t('diary.annotate.fromDocument', locale)} onPress={() => onAnnotate(state.ref, state.name)}
-                style={{ height: 44, paddingHorizontal: 10, flexShrink: 0, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface }}>
-                <AppIcon name="diary" size={18} />
-                <Text style={{ marginLeft: 6, color: colors.textPrimary, fontWeight: '800', fontSize: 13 }}>{t('diary.annotate.button', locale)}</Text>
-              </Pressable>
-            ) : null}
-            {Platform.OS === 'web' ? <span title={t('dialog.close', locale)} style={{ display: 'flex', flexShrink: 0 }}><DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} /></span>
-              : <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={onClose} />}
+            {Platform.OS === 'web' ? <span title={t('dialog.close', locale)} style={{ display: 'flex', flexShrink: 0 }}><DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={requestClose} /></span>
+              : <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={requestClose} />}
             </View>
           </View>
           <View style={styles.body}>
@@ -94,6 +112,25 @@ export function PdfPreview({ state, locale, onClose, onAnnotate }: PdfPreviewPro
             ) : (
               <Text style={[styles.message, { color: colors.textSecondary }]}>{t('assets.pdf.preview.unsupported', locale)}</Text>
             )}
+            {state.status === 'ready' ? (
+              <DocumentDiaryPanel key={state.ref} documentRef={state.ref} documentName={state.name} kind="pdf" compact={compact} workspace={workspace} run={run}
+                expanded={panelExpanded} onExpandedChange={setPanelExpanded} onDirtyChange={setPanelDirty}
+                // «Ver en el Diario» navega a otra pantalla por completo: cierra este visor primero —
+                // de lo contrario el `Modal` (un portal propio, fuera de la jerarquía de pantallas)
+                // seguiría interceptando toques sobre el Diario aunque ya no sea la vista activa.
+                onOpenDiary={() => { onClose(); onOpenDiary(); }} testID="asset-pdf-diary" />
+            ) : null}
+            {confirmingClose ? (
+              <View style={styles.confirmBackdrop}>
+                <View testID="asset-pdf-discard-confirmation" style={[styles.confirmBox, { backgroundColor: colors.background, borderColor: colors.danger }]}>
+                  <Text accessibilityRole="alert" style={[styles.confirmText, { color: colors.textPrimary }]}>{t('diary.entry.discard.confirm', locale)}</Text>
+                  <View style={styles.row}>
+                    <ActionButton label={t('diary.entry.keepEditing', locale)} tone="primary" onPress={() => setConfirmingClose(false)} />
+                    <ActionButton testID="asset-pdf-discard-confirm" label={t('diary.entry.discard.confirmLabel', locale)} onPress={onClose} />
+                  </View>
+                </View>
+              </View>
+            ) : null}
           </View>
         </View>
       </View>
@@ -109,4 +146,8 @@ const styles = StyleSheet.create({
   title: { flex: 1, minWidth: 0, fontSize: 18, fontWeight: '900' },
   body: { flex: 1 },
   message: { flex: 1, padding: 16, fontSize: 14, lineHeight: 20, textAlign: 'center', textAlignVertical: 'center' },
+  confirmBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20, 22, 18, 0.45)', padding: 16, zIndex: 3 },
+  confirmBox: { width: '100%', maxWidth: 420, borderWidth: 2, padding: 16, gap: 12 },
+  confirmText: { fontSize: 15, lineHeight: 21, fontWeight: '700' },
+  row: { flexDirection: 'row', gap: 6 },
 });

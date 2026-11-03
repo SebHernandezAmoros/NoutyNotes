@@ -17,6 +17,11 @@ interface DialogProps {
   readonly onClose: () => void;
   readonly testID: string;
   readonly children: ReactNode;
+  /** B9-R5: franja/panel contextual (p. ej. el Diario sobre un documento), superpuesto dentro del
+   * mismo panel ya recortado (`overflow:'hidden'`), hermano del encabezado/`ScrollView`, nunca dentro
+   * de ellos — así el documento conserva su propio scroll sin que el panel lo desplace ni lo recorte.
+   * `undefined` (el caso de siempre): ningún cambio de layout para el resto de usos de `Dialog`. */
+  readonly sidePanel?: ReactNode;
 }
 
 /**
@@ -24,7 +29,7 @@ interface DialogProps {
  * `onRequestClose`) y con toque en el fondo. En móvil ocupa como mucho el 62 % inferior; con el teclado
  * abierto (nativo) se apoya sobre él y puede ocupar todo el alto restante, para que se vea lo que se escribe.
  */
-export function Dialog({ visible, title, compact, presentation = 'adaptive', onClose, testID, children }: DialogProps) {
+export function Dialog({ visible, title, compact, presentation = 'adaptive', onClose, testID, children, sidePanel }: DialogProps) {
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -118,6 +123,7 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
             <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={closeDialog} />
           </View>
           <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={[styles.scroll, centered ? styles.centeredScroll : null]} contentContainerStyle={[styles.content, centered ? styles.centeredContent : null]} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          {sidePanel}
         </View>
       </View>
     </Modal>

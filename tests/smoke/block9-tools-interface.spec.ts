@@ -310,6 +310,30 @@ test('B9-R3-02/B9-R4-FINAL: Lista escribe y MUESTRA el orden principal del table
   await page.screenshot({ path: `artifacts/block9-${info.project.name}-overview.png` });
 });
 
+test('B9-R5-01: «Deshacer cambios de orden» está deshabilitado sin cambios, se activa al reordenar y revierte al orden de esta sesión', async ({ page }) => {
+  await lab(page);
+  await page.getByRole('button', { name: 'Vista de lista' }).click();
+  const list = page.getByTestId('board-list');
+  await page.getByTestId('list-organize').click();
+  const dialog = page.getByTestId('list-reading-order-dialog');
+  const undo = page.getByTestId('list-reading-order-undo');
+  // Sin cambios todavía: deshabilitado, visible en vez de «no hacer nada» en silencio.
+  await expect(undo).toBeDisabled();
+  const rows = page.getByTestId('list-reading-order').locator('[draggable="true"]');
+  const firstHandle = await rows.nth(0).locator('[data-testid*="-handle-"]').getAttribute('data-testid');
+  const firstId = firstHandle!.replace(/^.*-handle-/, '');
+  await rows.nth(1).getByRole('button', { name: /^Subir/ }).click();
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  // Revierte exactamente al orden con el que se abrió esta sesión (el ya guardado), no a uno inventado.
+  await expect(undo).toBeDisabled();
+  await expect(rows.nth(0).locator('[data-testid*="-handle-"]')).toHaveAttribute('data-testid', firstHandle!);
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  // Cerrar sin cambios pendientes no reescribe el orden: Lista sigue con la tarjeta original en primer lugar.
+  await expect(list.locator('[data-testid^="card-"]').first()).toHaveAttribute('data-testid', `card-${firstId}`);
+});
+
 test('B9-OBS: Assets muestra texto literal sin ejecutar HTML ni alterar el archivo', async ({ page }, info) => {
   await lab(page);
   await nav(page, 'Abrir los assets');
@@ -463,7 +487,7 @@ test('B9-R2-11: Importar fuente abre primero una ayuda explicativa, no el select
   await chooser;
 });
 
-test('B9-R4-FINAL: la edición rápida muestra únicamente párrafo y negrita, sin fila oculta; lo avanzado sigue en el Inspector', async ({ page }, info) => {
+test('B9-R4-FINAL/B9-R5-03: la edición rápida muestra párrafo, negrita y cursiva en una sola fila, sin fila oculta; lo avanzado sigue en el Inspector', async ({ page }, info) => {
   test.skip(info.project.name === 'mobile', 'La edición rápida sobre la ficha solo existe en escritorio.');
   await lab(page);
   const card = page.getByTestId('card-idea-b');
@@ -473,11 +497,11 @@ test('B9-R4-FINAL: la edición rápida muestra únicamente párrafo y negrita, s
   await expect(inline).toBeVisible();
   const toolbar = page.getByTestId('editor-toolbar');
   await expect(toolbar).toBeVisible();
-  // Únicamente selector de párrafo y negrita — antes había varias filas y un botón «⋯» que las
-  // revelaba; ahora no existe ni el botón ni la fila que ocultaba.
+  // Párrafo, Negrita y (desde B9-R5-03) Cursiva, misma fila — antes había varias filas y un botón
+  // «⋯» que las revelaba; ahora no existe ni el botón ni la fila que ocultaba.
   await expect(toolbar.locator('select')).toBeVisible();
   await expect(toolbar.getByRole('button', { name: 'Negrita', exact: true })).toBeVisible();
-  await expect(toolbar.getByRole('button', { name: 'Cursiva', exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole('button', { name: 'Cursiva', exact: true })).toBeVisible();
   await expect(toolbar.getByRole('button', { name: 'Insertar una tabla', exact: true })).toHaveCount(0);
   await expect(page.getByTestId('editor-more-format-toggle')).toHaveCount(0);
   await expect(page.getByTestId('editor-more-format-row')).toHaveCount(0);
@@ -496,7 +520,17 @@ test('B9-R4-FINAL: la edición rápida muestra únicamente párrafo y negrita, s
   await expect(content).not.toContainText('y más texto');
   await page.keyboard.press('Control+y');
   await expect(content).toContainText('y más texto');
-  // El único botón visible (Negrita) sigue aplicando formato real al contenido.
+  // (B9-R5-03) Cursiva, nueva en esta fila, aplica y quita formato real por su cuenta — mismo
+  // comando ya usado en el Inspector completo, sin segunda fila ni atajo propio distinto.
+  await page.keyboard.press('Shift+Home');
+  await toolbar.getByRole('button', { name: 'Cursiva', exact: true }).click();
+  await expect(content.locator('em, i')).toContainText('y más texto');
+  await content.focus();
+  await page.keyboard.press('Shift+Home');
+  await toolbar.getByRole('button', { name: 'Cursiva', exact: true }).click();
+  await expect(content.locator('em, i')).toHaveCount(0);
+  // El único botón visible antes (Negrita) sigue aplicando formato real.
+  await content.focus();
   await page.keyboard.press('Shift+Home');
   await toolbar.getByRole('button', { name: 'Negrita', exact: true }).click();
   await expect(content.locator('strong, b')).toContainText('y más texto');
@@ -509,31 +543,47 @@ test('B9-R4-FINAL: la edición rápida muestra únicamente párrafo y negrita, s
   await page.keyboard.press('Escape');
 });
 
-test('B9-R4-11: Diario documental — anotar un PDF desde Assets, consultarlo en el Diario y reabrir el documento', async ({ page }) => {
+test('B9-R5: Diario lateral — anotar un PDF sin cerrar el visor, consultarlo en el panel (sin recargar el PDF) y reabrir el documento desde el Diario', async ({ page }) => {
   await lab(page);
   await nav(page, 'Abrir los assets');
   await page.getByTestId('asset-manual.pdf').getByRole('button', { name: 'Ver manual.pdf' }).click();
   await page.getByRole('button', { name: 'Previsualizar manual.pdf', exact: true }).click();
-  await expect(page.getByTestId('asset-pdf-preview')).toBeVisible();
-  await page.getByTestId('asset-pdf-annotate').click();
-  // Documento → Anotar en Diario: el visor se cierra, no queda apilado bajo el formulario.
-  await expect(page.getByTestId('asset-pdf-preview')).not.toBeVisible();
-  const dialog = page.getByTestId('diary-annotate-dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText('manual.pdf');
-  await dialog.getByTestId('diary-annotate-reflection').fill('Releer la sección 3 con calma.');
-  await dialog.getByTestId('diary-annotate-location').fill('12');
-  await dialog.getByTestId('diary-annotate-save').click();
-  await expect(dialog).not.toBeVisible();
-  // Confirmación con acceso directo (B3), además del aviso general ya existente.
-  const confirmation = page.getByTestId('assets-annotate-confirmation');
-  await expect(confirmation).toContainText('Anotación guardada en el Diario.');
-  await confirmation.getByRole('button', { name: 'Ver en el Diario', exact: true }).click();
+  const viewer = page.getByTestId('asset-pdf-preview');
+  const frame = page.getByTestId('asset-pdf-preview-frame');
+  await expect(viewer).toBeVisible();
+  await expect(frame).toBeVisible();
+  // Franja contraída, discreta, sin anotaciones todavía (sin insignia de cantidad).
+  const tab = page.getByTestId('asset-pdf-diary-tab');
+  await expect(tab).toBeVisible();
+  await expect(page.getByTestId('asset-pdf-diary-count')).toHaveCount(0);
+  await tab.click();
+  // Expandir el panel NUNCA toca el documento: mismo visor montado, mismo `src` del iframe.
+  await expect(viewer).toBeVisible();
+  const srcBefore = await frame.getAttribute('src');
+  const panel = page.getByTestId('asset-pdf-diary');
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText('Todavía no hay ninguna anotación de este documento.');
+  await panel.getByTestId('asset-pdf-diary-add').click();
+  await panel.getByTestId('asset-pdf-diary-reflection').fill('Releer la sección 3 con calma.');
+  await panel.getByTestId('asset-pdf-diary-location').fill('12');
+  await panel.getByTestId('asset-pdf-diary-save').click();
+  await expect(panel.getByTestId('asset-pdf-diary-saved')).toBeVisible();
+  // Guardar tampoco recarga el PDF — la anotación aparece de inmediato en la misma lista.
+  expect(await frame.getAttribute('src')).toBe(srcBefore);
+  await expect(panel).toContainText('Releer la sección 3 con calma.');
+  await expect(panel).toContainText('Página 12');
+  // Contraer conserva el visor y la anotación ya guardada; la insignia cuenta 1.
+  await page.getByTestId('asset-pdf-diary-collapse').click();
+  await expect(panel).not.toBeVisible();
+  await expect(viewer).toBeVisible();
+  await expect(page.getByTestId('asset-pdf-diary-count')).toContainText('1');
+  await tab.click();
+  await expect(panel).toContainText('Releer la sección 3 con calma.');
+  await panel.getByRole('button', { name: 'Ver en el Diario', exact: true }).click();
   await expect(page.getByTestId('diary-view')).toBeVisible();
   const entry = page.locator('[data-testid^="log-entry-"]').filter({ hasText: 'Releer la sección 3 con calma.' });
   await expect(entry).toHaveCount(1);
   const documentBox = entry.getByTestId(/^diary-document-box-/);
-  await expect(documentBox).toContainText('DOCUMENTO');
   await expect(documentBox).toContainText('PDF');
   await expect(documentBox).toContainText('manual.pdf');
   await expect(documentBox).toContainText('Página 12');
@@ -542,24 +592,66 @@ test('B9-R4-11: Diario documental — anotar un PDF desde Assets, consultarlo en
   await expect(page.getByTestId('asset-pdf-preview-frame')).toBeVisible();
 });
 
-test('B9-R4-11: Diario documental — anotar un Markdown pide sección (texto libre), no página/línea', async ({ page }) => {
+test('B9-R5: Diario lateral — un Markdown pide Sección (texto libre); dos anotaciones del mismo documento conviven en la lista sin fusionarse', async ({ page }) => {
   await lab(page);
   await nav(page, 'Abrir los assets');
   await page.getByTestId('asset-Guia.md').getByRole('button', { name: 'Ver Guia.md' }).click();
   await page.getByRole('button', { name: 'Vista previa de Guia.md' }).click();
-  await page.getByTestId('asset-text-preview-annotate').click();
-  await expect(page.getByTestId('asset-text-preview')).not.toBeVisible();
-  const dialog = page.getByTestId('diary-annotate-dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText('Guia.md');
+  await expect(page.getByTestId('asset-text-preview')).toBeVisible();
+  const panel = page.getByTestId('asset-text-preview-diary');
+  await page.getByTestId('asset-text-preview-diary-tab').click();
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId('asset-text-preview')).toBeVisible(); // sigue montado, no se apiló un segundo diálogo
+  await panel.getByTestId('asset-text-preview-diary-add').click();
   await expect(page.getByLabel('Encabezado o sección (opcional)')).toBeVisible();
   await expect(page.getByLabel('Página (opcional)')).toHaveCount(0);
-  await dialog.getByTestId('diary-annotate-reflection').fill('Repasar antes de aplicar.');
-  await dialog.getByTestId('diary-annotate-location').fill('Resumen');
-  await dialog.getByTestId('diary-annotate-save').click();
-  await expect(dialog).not.toBeVisible();
-  await page.getByTestId('assets-annotate-confirmation').getByRole('button', { name: 'Ver en el Diario', exact: true }).click();
-  const documentBox = page.getByTestId('diary-view').getByTestId(/^diary-document-box-/);
-  await expect(documentBox).toContainText('Markdown');
-  await expect(documentBox).toContainText('Sección: Resumen');
+  await panel.getByTestId('asset-text-preview-diary-reflection').fill('Repasar antes de aplicar.');
+  await panel.getByTestId('asset-text-preview-diary-location').fill('Resumen');
+  await panel.getByTestId('asset-text-preview-diary-save').click();
+  await expect(panel).toContainText('Repasar antes de aplicar.');
+  // Segunda anotación del mismo documento: ambas coexisten, nunca se fusionan.
+  await panel.getByTestId('asset-text-preview-diary-add').click();
+  await panel.getByTestId('asset-text-preview-diary-reflection').fill('Segunda relectura, otra sección.');
+  await panel.getByTestId('asset-text-preview-diary-location').fill('Conclusión');
+  await panel.getByTestId('asset-text-preview-diary-save').click();
+  await expect(panel).toContainText('Repasar antes de aplicar.');
+  await expect(panel).toContainText('Segunda relectura, otra sección.');
+  await page.getByTestId('asset-text-preview-diary-collapse').click();
+  await expect(page.getByTestId('asset-text-preview-diary-tab')).toContainText('2');
+});
+
+test('B9-R5: un borrador sin guardar se conserva al contraer el panel; Escape respeta la jerarquía (panel antes que el visor) y pide confirmación antes de descartar', async ({ page }) => {
+  await lab(page);
+  await nav(page, 'Abrir los assets');
+  await page.getByTestId('asset-manual.pdf').getByRole('button', { name: 'Ver manual.pdf' }).click();
+  await page.getByRole('button', { name: 'Previsualizar manual.pdf', exact: true }).click();
+  const viewer = page.getByTestId('asset-pdf-preview');
+  const panel = page.getByTestId('asset-pdf-diary');
+  await page.getByTestId('asset-pdf-diary-tab').click();
+  await panel.getByTestId('asset-pdf-diary-add').click();
+  await panel.getByTestId('asset-pdf-diary-reflection').fill('Borrador sin guardar.');
+  // Primer Escape: contrae el panel (nivel más interno), nunca cierra el visor de un salto; el borrador se conserva.
+  await page.keyboard.press('Escape');
+  await expect(panel).not.toBeVisible();
+  await expect(viewer).toBeVisible();
+  await page.getByTestId('asset-pdf-diary-tab').click();
+  await expect(panel.getByTestId('asset-pdf-diary-reflection')).toHaveValue('Borrador sin guardar.');
+  // Ya contraído de nuevo y con el borrador pendiente, un segundo Escape pide confirmar antes de cerrar el visor.
+  await page.getByTestId('asset-pdf-diary-collapse').click();
+  await page.keyboard.press('Escape');
+  const confirmation = page.getByTestId('asset-pdf-discard-confirmation');
+  await expect(confirmation).toBeVisible();
+  await expect(viewer).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Seguir editando', exact: true }).click();
+  await expect(confirmation).not.toBeVisible();
+  await page.getByTestId('asset-pdf-diary-tab').click();
+  await expect(panel.getByTestId('asset-pdf-diary-reflection')).toHaveValue('Borrador sin guardar.');
+  // Cancelar dentro del formulario sí tiene semántica explícita: descarta el borrador y vuelve a la lista vacía.
+  await panel.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(panel).toContainText('Todavía no hay ninguna anotación de este documento.');
+  // Sin borrador, Escape ya no pide confirmación: contrae y, al siguiente, cierra el visor.
+  await page.keyboard.press('Escape');
+  await expect(panel).not.toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(viewer).not.toBeVisible();
 });

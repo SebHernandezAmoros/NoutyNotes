@@ -35,6 +35,13 @@ export function ReadingOrderControl({ items, order, onChange, excluded, onExclud
   const defaults = items.map((item) => item.id);
   const ids = reconcileReadingOrder(order, defaults);
   const itemById = new Map(items.map((item) => [item.id, item]));
+  // B9-R5-01: «predeterminado» no es un orden de creación (no existe tal cosa — `board.cardIds` es la
+  // única fuente y se sobrescribe en cada guardado); `defaults` es exactamente el orden ya vigente al
+  // abrir este control (`items`, tal como lo pasa cada llamador). Por eso, sin cambios todavía, pulsar
+  // el botón no tenía ningún efecto visible. Semántica corregida: «deshacer cambios de esta sesión»,
+  // deshabilitado mientras `ids` ya coincida con `defaults` — su estado sin efecto queda visible en vez
+  // de silencioso, sin tocar la lógica de reconciliación ni el resto del contrato.
+  const unchanged = ids.every((id, index) => id === defaults[index]);
   const reset = () => { onChange(defaults); onExcludedChange?.(new Set()); };
   const drop = (target: string) => {
     if (!dragging || dragging === target) return;
@@ -47,7 +54,9 @@ export function ReadingOrderControl({ items, order, onChange, excluded, onExclud
   };
   return <View testID={testID} style={{ gap: 8 }}>
     <Text accessibilityRole="header" style={{ color: theme.colors.textPrimary, fontWeight: '700' }}>{locale === 'es' ? 'Orden de lectura' : 'Reading order'}</Text>
-    <ActionButton label={locale === 'es' ? 'Restaurar orden predeterminado' : 'Restore default order'} onPress={reset} />
+    <ActionButton testID={`${testID}-undo`} label={locale === 'es' ? 'Deshacer cambios de orden' : 'Undo order changes'}
+      accessibilityLabel={locale === 'es' ? 'Deshacer cambios de orden de esta sesión' : 'Undo this session’s order changes'}
+      disabled={unchanged} onPress={reset} />
     <ScrollView style={{ maxHeight: 240 }} nestedScrollEnabled>
       {ids.map((id, index) => {
         const item = itemById.get(id);

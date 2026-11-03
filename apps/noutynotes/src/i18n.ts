@@ -895,9 +895,6 @@ export const TRANSLATIONS = {
   'diary.entry.fallback': { es: 'la entrada', en: 'the entry' },
   // B9-R4-11 (Diario documental, MVP Nivel 2): anotar un PDF/TXT/Markdown ya catalogado desde su
   // propio visor, y mostrar la anotación resultante en el Diario sin modificar el documento original.
-  'diary.annotate.button': { es: 'Anotar en Diario', en: 'Annotate in Diary' },
-  'diary.annotate.fromDocument': { es: 'Anotar este documento en el Diario', en: 'Annotate this document in the Diary' },
-  'diary.annotate.dialog.title': { es: 'Anotar «{name}» en el Diario', en: 'Annotate “{name}” in the Diary' },
   'diary.annotate.reflection.label': { es: 'Reflexión', en: 'Reflection' },
   'diary.annotate.reflection.placeholder': { es: '¿Qué piensas sobre esto?', en: 'What do you think about this?' },
   'diary.annotate.page.label': { es: 'Página (opcional)', en: 'Page (optional)' },
@@ -912,6 +909,14 @@ export const TRANSLATIONS = {
   'diary.annotate.failed': { es: 'No se pudo guardar la anotación. Sigue abierta para reintentar.', en: 'Could not save the annotation. It stays open to retry.' },
   'diary.annotate.saved': { es: 'Anotación guardada en el Diario.', en: 'Annotation saved to the Diary.' },
   'diary.annotate.goToEntry': { es: 'Ver en el Diario', en: 'View in Diary' },
+  // B9-R5: Diario lateral contextual — franja de 44×44 sobre el documento, se expande sin cerrar el
+  // visor ni cambiar su contenido; sustituye el flujo anterior (cerraba el visor y abría un diálogo).
+  'diary.panel.tab': { es: 'Anotaciones del Diario', en: 'Diary annotations' },
+  'diary.panel.tab.accessibilityLabel': { es: 'Anotaciones del Diario, {count}', en: 'Diary annotations, {count}' },
+  'diary.panel.collapse': { es: 'Contraer el Diario', en: 'Collapse the Diary' },
+  'diary.panel.heading': { es: 'Diario', en: 'Diary' },
+  'diary.panel.add': { es: 'Nueva anotación', en: 'New annotation' },
+  'diary.panel.empty': { es: 'Todavía no hay ninguna anotación de este documento.', en: 'No annotations for this document yet.' },
   'diary.document.heading': { es: 'DOCUMENTO', en: 'DOCUMENT' },
   'diary.document.open': { es: 'Abrir documento', en: 'Open document' },
   'diary.document.open.accessibilityLabel': { es: 'Abrir {name}', en: 'Open {name}' },

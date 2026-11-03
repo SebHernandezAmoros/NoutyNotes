@@ -42,6 +42,20 @@ export function diaryDocumentAnnotation(card: Card): { readonly ref: string; rea
   };
 }
 
+/**
+ * Anotaciones de Diario sobre un Asset (B9-R5, Diario lateral contextual): puro, deriva de la única
+ * fuente durable (`workspace.cards`) con el mismo criterio de agregación por `ref` que ya usa
+ * `buildAssetCatalog` (`assets-catalog.ts`) — ningún repositorio nuevo. Solo entradas activas: una
+ * archivada o en la Papelera deja de listarse aquí (sigue intacta y legible desde Archivo/Papelera,
+ * igual que cualquier otra tarjeta), para no sugerir que el panel contextual puede abrirlas directamente.
+ * Orden determinista por fecha de creación, igual que `openDiaryEntry` ya usa para «la entrada del día».
+ */
+export function documentDiaryAnnotations(workspace: Workspace, ref: string): Card[] {
+  return workspace.cards
+    .filter((card) => isDiaryEntry(card) && diaryDocumentAnnotation(card)?.ref === ref)
+    .sort((a, b) => ((a.createdAt ?? '') < (b.createdAt ?? '') ? -1 : (a.createdAt ?? '') > (b.createdAt ?? '') ? 1 : (a.id < b.id ? -1 : 1)));
+}
+
 const pad = (value: number) => String(value).padStart(2, '0');
 const DAY_MS = 86_400_000;
 
