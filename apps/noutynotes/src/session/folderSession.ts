@@ -56,7 +56,8 @@ export async function chooseFolderInto<F>(
       : selectedDiagnostic ? folderDiagnostic(selectedDiagnostic, 'validation', cause) : undefined;
     if (diagnostic) {
       const issue = cause instanceof FolderPickerError ? cause.issue : null;
-      return { state, result: { ok: false, diagnostic, issue, message: describeFolderOpenFailure({ message: '', diagnostic, issue }, 'es') } };
+      const recover = cause instanceof FolderPickerError ? cause.recover : null;
+      return { state, result: { ok: false, diagnostic, issue, recover, message: describeFolderOpenFailure({ message: '', diagnostic, issue }, 'es') } };
     }
     if ((cause as { name?: string }).name === 'AbortError') return { state, result: { ok: false, message: 'No se seleccionó ninguna carpeta.' } };
     return { state, result: { ok: false, message: 'No se pudo abrir la carpeta. Revisa los permisos y vuelve a intentarlo.' } };

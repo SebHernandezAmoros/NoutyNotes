@@ -1,5 +1,5 @@
-import { FolderStorage } from '@noutynotes/storage';
-import type { FolderPort, WorkspaceDirectory } from '@noutynotes/storage';
+import { FolderStorage, planWorkspaceRecovery } from '@noutynotes/storage';
+import type { BinaryAssets, FolderPort, TextFiles, WorkspaceDirectory } from '@noutynotes/storage';
 import { Platform } from 'react-native';
 import { captureFolderContext, folderDiagnostic, FolderPickerError } from './folderOpenDiagnostics';
 import type { FolderOpenDiagnostic } from './folderOpenDiagnostics';
@@ -25,6 +25,23 @@ export interface BrowserDirectory {
 }
 
 const parts = (path: string): string[] => path.split('/');
+
+/** Relectura no destructiva de una carpeta (Bloque 16, Paquete 2): separa documentos de texto
+ * gestionados de los binarios bajo `assets/` — nunca decodifica estos últimos, nunca escribe nada.
+ * Un documento que no es UTF-8 válido se omite (quedará, igual que hoy, como una incidencia propia). */
+async function readFolderForRecovery(directory: WorkspaceDirectory): Promise<{ readonly files: TextFiles; readonly assets: BinaryAssets }> {
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const files: Record<string, string> = {};
+  const assets: Record<string, Uint8Array> = {};
+  for (const path of await directory.listPaths()) {
+    if (path === '.nouty-transaction.json' || path === '.nouty-deleted') continue;
+    const bytes = await directory.read(path);
+    if (bytes === undefined) continue;
+    if (path.startsWith('assets/')) { assets[path] = bytes; continue; }
+    try { files[path] = decoder.decode(bytes); } catch { /* no es texto: se omite, como cualquier documento ilegible */ }
+  }
+  return { files, assets };
+}
 
 class BrowserWorkspaceDirectory implements WorkspaceDirectory {
   constructor(readonly handle: BrowserDirectory, readonly readOnly = false) {}
@@ -127,7 +144,16 @@ export async function chooseFolder(authorize?: FolderAuthorization): Promise<{ r
   const inspected = await inspection.list();
   // Un journal pendiente solo se recuperará mediante el flujo existente DESPUÉS de autorizar escritura.
   if (!inspected.ok && !inspection.recoveryRequired) {
-    throw new FolderPickerError(folderDiagnostic(context, 'read', null, inspected.issues[0]?.code), inspected.issues[0] ?? null);
+    const issue = inspected.issues[0] ?? null;
+    // Bloque 16, Paquete 2: solo «paquete inválido» (tarjeta/tablero individual) admite recuperación —
+    // nunca recuperación pendiente, ID duplicado, permisos ni un fallo no clasificado (§3 del encargo).
+    const recover = issue?.code === 'invalid-stored-data' && issue.path === 'workspace'
+      ? async () => {
+          const { files, assets } = await readFolderForRecovery(new BrowserWorkspaceDirectory(root, true));
+          return { plan: planWorkspaceRecovery(files), assets };
+        }
+      : null;
+    throw new FolderPickerError(folderDiagnostic(context, 'read', null, issue?.code), issue, recover);
   }
   try {
     if (await root.queryPermission({ mode: 'readwrite' }) !== 'granted') {

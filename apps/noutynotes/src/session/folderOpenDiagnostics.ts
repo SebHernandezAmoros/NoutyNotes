@@ -1,7 +1,14 @@
 import type { WorkspaceStorageIssue } from '@noutynotes/application';
+import type { BinaryAssets, WorkspaceRecoveryPlan } from '@noutynotes/storage';
 import type { Locale } from '@noutynotes/ui';
 import { t } from '../i18n';
 import { describeFailure } from './messages';
+
+/** Bloque 16, Paquete 2: disponible solo cuando la incidencia es candidata (tarjeta/tablero
+ * individual) — nunca para recuperación pendiente, ID duplicado, permisos o un fallo no clasificado.
+ * Una sola relectura (sin escribir) de la carpeta produce el plan y los Assets, listos para comprimir
+ * en un ZIP si el usuario confirma — sin una segunda vuelta a disco. */
+export type RecoverFolder = () => Promise<{ readonly plan: WorkspaceRecoveryPlan; readonly assets: BinaryAssets }>;
 
 export interface FolderOpenDiagnostic {
   readonly version: 1;
@@ -25,6 +32,9 @@ export type FolderOpenFailure = {
    * mensaje y `details`), cuando la causa viene de leer/validar el paquete. `describeFolderOpenFailure`
    * la usa para mostrar el detalle real en vez del texto genérico; nunca lleva bytes ni contenido. */
   readonly issue?: WorkspaceStorageIssue | null;
+  /** Bloque 16, Paquete 2: presente solo cuando esta incidencia concreta admite una recuperación no
+   * destructiva candidata. Llamarlo relee la carpeta (de nuevo, sin escribir) y construye el plan. */
+  readonly recover?: RecoverFolder | null;
 };
 
 /** No nombres/rutas, mensajes nativos, stack, contenido ni handles en el diagnóstico. */
@@ -49,7 +59,7 @@ export class FolderPickerError extends Error {
   /** ADR 0010, Paquete 1: `issue`, cuando se conoce, es la incidencia real ya clasificada por
    * `WorkspaceStorage` (nunca contenido de Notas ni bytes) — `describeFolderOpenFailure` la usa para
    * mostrar el detalle real en vez del texto genérico asociado a `outcome`. */
-  constructor(readonly diagnostic: FolderOpenDiagnostic, readonly issue: WorkspaceStorageIssue | null = null) {
+  constructor(readonly diagnostic: FolderOpenDiagnostic, readonly issue: WorkspaceStorageIssue | null = null, readonly recover: RecoverFolder | null = null) {
     super(issue?.message ?? 'Folder picker did not complete.');
     this.name = 'FolderPickerError';
   }

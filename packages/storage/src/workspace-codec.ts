@@ -461,6 +461,131 @@ export function parseWorkspace(files: TextFiles): StorageResult<Workspace> {
   return read.ok ? succeed(read.value.workspace) : read;
 }
 
+/** Una tarjeta o tablero apartado de forma reversible al planear una recuperación (ADR 0010, Bloque 16 Paquete 2). */
+export interface QuarantinedEntity {
+  readonly path: string;
+  readonly kind: 'card' | 'board';
+  readonly code: string;
+  readonly reason: string;
+  /** Texto original exacto; `null` solo cuando el documento ya faltaba en disco (nada que conservar). */
+  readonly text: string | null;
+}
+
+export interface WorkspaceRecovery {
+  readonly workspace: Workspace;
+  /** Paquete v1 reconstruido, ya validado — listo para volver a `parseWorkspace`/comprimir en ZIP. */
+  readonly files: TextFiles;
+  readonly quarantined: readonly QuarantinedEntity[];
+}
+
+export type WorkspaceRecoveryPlan = StorageResult<WorkspaceRecovery>;
+
+const CARD_ISSUE_PATH = /^cards\/([a-z0-9_-]+)\.md/;
+const BOARD_ISSUE_PATH = /^boards\/([a-z0-9_-]+)\.md/;
+
+/**
+ * Plan de recuperación no destructivo (ADR 0010, Bloque 16 Paquete 2): reintenta `parseWorkspace`
+ * quitando, en cada vuelta, solo las tarjetas/tableros individuales que la propia incidencia señala —
+ * nunca el manifiesto, la Papelera, el Archivo, las relaciones ni la capa como bloque. Cada vuelta
+ * también limpia las referencias que quedarían colgando (`board.cardIds`, relaciones) para que la
+ * siguiente comprobación sea real, no una copia a medias. Si cualquier incidencia restante no es de
+ * una tarjeta/tablero concreto, o si tras 50 vueltas el paquete sigue sin validar, no se ofrece una
+ * recuperación falsa: se informa como no recuperable con las incidencias reales. `parseWorkspace` es
+ * el único árbitro de validez en todo momento — nunca se relajan sus reglas ni las del dominio.
+ */
+export function planWorkspaceRecovery(files: TextFiles): WorkspaceRecoveryPlan {
+  let current: Record<string, string> = { ...files };
+  const quarantined: QuarantinedEntity[] = [];
+  const removedCards = new Set<string>();
+  const removedBoards = new Set<string>();
+
+  for (let iteration = 0; iteration < 50; iteration += 1) {
+    const attempt = parseWorkspace(current);
+    if (attempt.ok) return succeed({ workspace: attempt.value, files: current, quarantined });
+
+    const newCardIds = new Set<string>();
+    const newBoardIds = new Set<string>();
+    for (const issue of attempt.issues) {
+      const cardMatch = CARD_ISSUE_PATH.exec(issue.path);
+      const boardMatch = cardMatch ? null : BOARD_ISSUE_PATH.exec(issue.path);
+      if (!cardMatch && !boardMatch) return fail(attempt.issues); // incidencia estructural: no se aísla, no se ofrece una recuperación falsa
+      const id = (cardMatch ?? boardMatch)![1]!;
+      const kind: 'card' | 'board' = cardMatch ? 'card' : 'board';
+      const already = kind === 'card' ? removedCards.has(id) : removedBoards.has(id);
+      if (already) continue; // ya se registró en una vuelta anterior
+      const path = kind === 'card' ? cardPath(id) : boardPath(id);
+      quarantined.push({ path, kind, code: issue.code, reason: issue.message, text: current[path] ?? null });
+      if (kind === 'card') { removedCards.add(id); newCardIds.add(id); } else { removedBoards.add(id); newBoardIds.add(id); }
+    }
+    if (newCardIds.size === 0 && newBoardIds.size === 0) return fail(attempt.issues); // sin progreso posible: no insistir en vano
+    current = reconcileWithoutEntities(current, newCardIds, newBoardIds);
+  }
+  return fail([storageIssue('invalid-document', 'workspace', 'Demasiadas incidencias para ofrecer una recuperación segura. No se modificó nada.')]);
+}
+
+/** Quita del paquete las tarjetas/tableros indicados y las referencias que quedarían colgando:
+ * `cardIds` de los tableros restantes y relaciones que mencionaran una tarjeta eliminada. */
+function reconcileWithoutEntities(files: Record<string, string>, removedCardIds: ReadonlySet<string>, removedBoardIds: ReadonlySet<string>): Record<string, string> {
+  const next: Record<string, string> = { ...files };
+  const manifestText = next[WORKSPACE_FILE];
+  if (manifestText !== undefined) {
+    const parsedManifest = parseYaml(manifestText, WORKSPACE_FILE);
+    if (parsedManifest.ok && isObject(parsedManifest.value)) {
+      const manifestData = parsedManifest.value as Record<string, unknown>;
+      const withoutRemoved = (value: unknown, removed: ReadonlySet<string>) =>
+        Array.isArray(value) ? value.filter((entry) => typeof entry !== 'string' || !removed.has(entry)) : value;
+      next[WORKSPACE_FILE] = stringifyYaml({ ...manifestData, cards: withoutRemoved(manifestData.cards, removedCardIds), boards: withoutRemoved(manifestData.boards, removedBoardIds) });
+    }
+  }
+  for (const id of removedCardIds) delete next[cardPath(id)];
+  for (const id of removedBoardIds) delete next[boardPath(id)];
+  if (removedCardIds.size > 0) {
+    for (const [path, text] of Object.entries(next)) {
+      if (!path.startsWith('boards/') || !path.endsWith('.md')) continue;
+      const split = splitFrontmatter(text, path);
+      if (!split.ok) continue;
+      const parsedFront = parseYaml(split.value.frontmatter, path);
+      if (!parsedFront.ok || !isObject(parsedFront.value) || !Array.isArray(parsedFront.value.cardIds)) continue;
+      const filtered = parsedFront.value.cardIds.filter((cardId) => typeof cardId !== 'string' || !removedCardIds.has(cardId));
+      if (filtered.length === parsedFront.value.cardIds.length) continue;
+      next[path] = joinFrontmatter(stringifyYaml({ ...parsedFront.value, cardIds: filtered }), split.value.body);
+    }
+    const relationsText = next[RELATIONS_FILE];
+    if (relationsText !== undefined) {
+      const parsedRelations = parseYaml(relationsText, RELATIONS_FILE);
+      if (parsedRelations.ok && isObject(parsedRelations.value) && Array.isArray(parsedRelations.value.relations)) {
+        const filtered = parsedRelations.value.relations.filter((relation) =>
+          !(isObject(relation) && (removedCardIds.has(relation.from as string) || removedCardIds.has(relation.to as string))));
+        if (filtered.length !== parsedRelations.value.relations.length) {
+          next[RELATIONS_FILE] = stringifyYaml({ ...parsedRelations.value, relations: filtered });
+        }
+      }
+    }
+  }
+  // La capa (layout.yaml) coloca tarjetas dentro de un tablero: una tarjeta aislada deja su propia
+  // colocación colgando, y un tablero aislado deja todo su bloque de capa colgando.
+  if (removedCardIds.size > 0 || removedBoardIds.size > 0) {
+    const layoutText = next[LAYOUT_FILE];
+    if (layoutText !== undefined) {
+      const parsedLayout = parseYaml(layoutText, LAYOUT_FILE);
+      if (parsedLayout.ok && isObject(parsedLayout.value) && Array.isArray(parsedLayout.value.layouts)) {
+        let changed = false;
+        const nextLayouts = parsedLayout.value.layouts.flatMap((layout) => {
+          if (!isObject(layout)) return [layout];
+          if (typeof layout.boardId === 'string' && removedBoardIds.has(layout.boardId)) { changed = true; return []; }
+          if (!Array.isArray(layout.placements)) return [layout];
+          const placements = layout.placements.filter((placement) => !(isObject(placement) && typeof placement.cardId === 'string' && removedCardIds.has(placement.cardId)));
+          if (placements.length === layout.placements.length) return [layout];
+          changed = true;
+          return [{ ...layout, placements }];
+        });
+        if (changed) next[LAYOUT_FILE] = stringifyYaml({ ...parsedLayout.value, layouts: nextLayouts });
+      }
+    }
+  }
+  return next;
+}
+
 /** Datos de entrada escribibles sin pérdida: inertes, forma cerrada, dominio y rutas portables. */
 function checkWorkspaceInput(workspace: unknown): StorageIssue[] {
   if (!isObject(workspace)) return [storageIssue('invalid-value', 'workspace', 'Debe ser un objeto Workspace.')];

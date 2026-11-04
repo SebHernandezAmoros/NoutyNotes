@@ -1,4 +1,6 @@
 import type { WorkspaceSummary } from '@noutynotes/application';
+import type { BinaryAssets, WorkspaceRecoveryPlan } from '@noutynotes/storage';
+import { serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import type { ThemePreference } from '@noutynotes/ui';
 import { router, useFocusEffect } from 'expo-router';
@@ -10,9 +12,10 @@ import { BrandMark } from '../components/BrandMark';
 import { useHydrated } from '../components/useHydrated';
 import { t } from '../i18n';
 import { describeFolderOpenFailure, FolderPickerError } from '../session/folderOpenDiagnostics';
-import type { FolderOpenDiagnostic } from '../session/folderOpenDiagnostics';
+import type { FolderOpenDiagnostic, RecoverFolder } from '../session/folderOpenDiagnostics';
 import type { RecentFolderEntry, RecentProjectEntry } from '../session/recentItems';
 import { describeFailure } from '../session/messages';
+import { downloadTextFile, supportsTextDownload } from '../session/textDownload';
 import { useRecentConnections } from '../session/useRecentConnections';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions } from './actions';
@@ -20,6 +23,7 @@ import { CreateProjectDialog } from './CreateProjectDialog';
 import { mergeHomeProjects } from './homeProjects';
 import { createProjectAtTarget } from './projectCreation';
 import type { ProjectCreationTarget } from './projectCreation';
+import { RecoveryDialog } from './RecoveryDialog';
 import { TemplatePicker } from './TemplatePicker';
 
 const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' | 'settings.theme.dark' | 'settings.theme.system'; accessibilityLabelKey: 'home.theme.light.label' | 'home.theme.dark.label' | 'home.theme.system.label' }[] = [
@@ -67,6 +71,14 @@ export function HomeScreen() {
   const hydrated = useHydrated();
   const [createError, setCreateError] = useState<string | null>(null);
   const [folderDiagnostic, setFolderDiagnostic] = useState<{ readonly diagnostic: FolderOpenDiagnostic; readonly message: string } | null>(null);
+  // Bloque 16, Paquete 2 (ADR 0010): disponible solo cuando la última apertura fallida es candidata a
+  // recuperación no destructiva; nunca para recuperación pendiente, ID duplicado o permisos.
+  const [recoverFolder, setRecoverFolder] = useState<RecoverFolder | null>(null);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryResult, setRecoveryResult] = useState<{ readonly plan: WorkspaceRecoveryPlan; readonly assets: BinaryAssets } | null>(null);
+  const [recoveryConfirming, setRecoveryConfirming] = useState(false);
+  const [recoveryConfirmError, setRecoveryConfirmError] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [focusedAction, setFocusedAction] = useState<string | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -188,6 +200,7 @@ export function HomeScreen() {
    * identidad/reconexión real vive en `useRecentConnections` (UX7-E2A/B), compartida con `ProjectSheet`. */
   const openFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
     setFolderDiagnostic(null);
+    setRecoverFolder(null);
     const pending = session.unexported.length;
     if (pending > 0 && Platform.OS === 'web') {
       const pendingText = t(pending === 1 ? 'home.openFolder.pending.one' : 'home.openFolder.pending.many', locale, { count: String(pending) });
@@ -202,7 +215,59 @@ export function HomeScreen() {
     const message = result.ok ? null : describeFolderOpenFailure(result, locale);
     setFolderDiagnostic(!result.ok && result.diagnostic && message ? { diagnostic: result.diagnostic, message } : null);
     setCreateError(message);
+    if (!result.ok && result.recover) setRecoverFolder(() => result.recover!);
     return result;
+  };
+
+  /** Bloque 16, Paquete 2: relee la carpeta (sin escribir) y construye el plan; nunca se ofrece sin
+   * que el usuario lo pida explícitamente. */
+  const prepareRecovery = async () => {
+    if (!recoverFolder) return;
+    setRecoveryOpen(true);
+    setRecoveryLoading(true);
+    setRecoveryResult(null);
+    setRecoveryConfirmError(null);
+    const outcome = await recoverFolder();
+    setRecoveryResult(outcome);
+    setRecoveryLoading(false);
+  };
+
+  const closeRecovery = () => {
+    if (recoveryConfirming) return;
+    setRecoveryOpen(false);
+    setRecoveryResult(null);
+    setRecoveryConfirmError(null);
+  };
+
+  /** La copia nunca sustituye al original: nombre distinguible, workspace nuevo en memoria, el
+   * usuario decide después dónde guardarla (ZIP o «Guardar proyecto en carpeta», ya existentes). */
+  const confirmRecovery = async () => {
+    if (!recoveryResult?.plan.ok || recoveryConfirming) return;
+    setRecoveryConfirming(true);
+    setRecoveryConfirmError(null);
+    const { workspace, files } = recoveryResult.plan.value;
+    const renamed = { ...workspace, metadata: { ...workspace.metadata, name: t('recovery.name', locale, { name: workspace.metadata.name }) } };
+    const reserialized = serializeWorkspace(renamed, files);
+    const zipped = reserialized.ok ? writeWorkspaceArchive(reserialized.value, recoveryResult.assets) : reserialized;
+    if (!zipped.ok) {
+      setRecoveryConfirmError(t('recovery.dialog.importFailed', locale));
+      setRecoveryConfirming(false);
+      return;
+    }
+    const imported = await session.importRecoveredArchive(zipped.value);
+    setRecoveryConfirming(false);
+    if (!imported.ok) { setRecoveryConfirmError(t('recovery.dialog.importFailed', locale)); return; }
+    setRecoveryOpen(false);
+    setRecoveryResult(null);
+    recent.recordProjectUse({ workspaceId: imported.value.summary.id, name: imported.value.summary.name, backend: 'memory', folderId: null });
+    openWorkspace(imported.value.summary.id);
+  };
+
+  const downloadQuarantined = (path: string) => {
+    if (!supportsTextDownload() || !recoveryResult?.plan.ok) return;
+    const entity = recoveryResult.plan.value.quarantined.find((candidate) => candidate.path === path);
+    if (!entity || entity.text === null) return;
+    downloadTextFile(entity.path.replace(/\//g, '_'), entity.text);
   };
 
   const reopenFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
@@ -403,6 +468,14 @@ export function HomeScreen() {
                 <summary style={{ minHeight: 44, alignContent: 'center', cursor: 'pointer' }}>{t('folder.open.diagnostic', locale)}</summary>
                 <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 12 }}>{JSON.stringify(folderDiagnostic.diagnostic, null, 2)}</pre>
               </details> : null}
+              {/* Bloque 16, Paquete 2: solo cuando la última apertura fallida es candidata (§3 del
+                  encargo) — nunca para recuperación pendiente, ID duplicado ni permisos. */}
+              {recoverFolder ? (
+                <Pressable testID="folder-prepare-recovery" accessibilityRole="button" accessibilityLabel={t('folder.open.prepareRecovery', locale)}
+                  onPress={() => void prepareRecovery()} style={[styles.error, { borderColor: colors.border, minHeight: 44, justifyContent: 'center', marginTop: 8 }]}>
+                  <Text style={{ color: colors.textPrimary, fontWeight: '700', textAlign: 'center' }}>{t('folder.open.prepareRecovery', locale)}</Text>
+                </Pressable>
+              ) : null}
               <View style={styles.actions}>
                 <Text style={[styles.actionGroupLabel, { color: colors.textSecondary }]}>{t('home.actions.primary', locale)}</Text>
                 <Pressable
@@ -546,6 +619,17 @@ export function HomeScreen() {
         onChooseFolder={() => void chooseCreationFolder()}
         onCancel={closeCreateDialog}
         onCreate={() => void createProject()}
+      />
+      <RecoveryDialog
+        visible={recoveryOpen}
+        compact={compact}
+        loading={recoveryLoading}
+        plan={recoveryResult?.plan ?? null}
+        confirming={recoveryConfirming}
+        confirmError={recoveryConfirmError}
+        onClose={closeRecovery}
+        onConfirm={() => void confirmRecovery()}
+        onDownload={downloadQuarantined}
       />
     </SafeAreaView>
   );

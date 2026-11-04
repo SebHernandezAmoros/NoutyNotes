@@ -142,6 +142,49 @@ test('folder-open: una recuperación pendiente ya «limpia» se resuelve en sile
   })).toBe(false);
 });
 
+// Bloque 16, Paquete 2 (ADR 0010): recuperación no destructiva de una tarjeta individual inválida —
+// el original en disco nunca se toca; la copia recuperada es un proyecto nuevo e independiente.
+test('folder-open: «Preparar recuperación» aísla una tarjeta inválida, abre una copia nueva distinguible y nunca toca el original', async ({ page }) => {
+  await page.goto('./', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Abrir proyecto', exact: true })).toBeEnabled();
+  const workspace = { ...validWorkspace(), metadata: { name: 'Con una tarjeta rota' } };
+  const serialized = serializeWorkspace(workspace);
+  if (!serialized.ok) throw new Error(JSON.stringify(serialized.issues));
+  await page.evaluate(async (files) => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('folder-open-recovery-e2e', { create: true });
+    const write = async (path: string, text: string) => {
+      const segments = path.split('/'); const name = segments.pop()!; let directory = root;
+      for (const segment of segments) directory = await directory.getDirectoryHandle(segment, { create: true });
+      const writer = await (await directory.getFileHandle(name, { create: true })).createWritable();
+      await writer.write(text); await writer.close();
+    };
+    for (const [path, value] of Object.entries(files)) await write(path, value);
+    // Rompe deliberadamente idea-b; idea-a y ambos tableros siguen siendo válidos.
+    const ideaBText = (files as Record<string, string>)['cards/idea-b.md'];
+    if (!ideaBText) throw new Error('Falta cards/idea-b.md en el fixture.');
+    await write('cards/idea-b.md', ideaBText.replace('schemaVersion: 1', 'schemaVersion: 1\nassetRefs: "no-es-una-lista"'));
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: async () => root });
+  }, serialized.value);
+  await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  const prepare = page.getByRole('button', { name: 'Preparar recuperación', exact: true });
+  await expect(prepare).toBeVisible();
+  await prepare.click();
+  const dialog = page.getByTestId('recovery-dialog');
+  await expect(page.getByTestId('recovery-summary')).toContainText('2 tableros');
+  await expect(page.getByTestId('recovery-summary')).toContainText('1 tarjetas');
+  await expect(dialog).toContainText('cards/idea-b.md');
+  await page.getByTestId('recovery-confirm').click();
+  // Nombre distinguible: nunca se abre como si fuera el proyecto original (§7.1 del encargo).
+  await expect(page.getByRole('heading', { name: 'Con una tarjeta rota — Recuperado', exact: true })).toBeVisible();
+  // El original en disco queda exactamente como estaba: nada se escribió durante el diagnóstico ni la recuperación.
+  const stillBroken = await page.evaluate(async () => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('folder-open-recovery-e2e');
+    return (await (await (await root.getDirectoryHandle('cards')).getFileHandle('idea-b.md')).getFile()).text();
+  });
+  expect(stillBroken).toContain('no-es-una-lista');
+});
+
 test('folder-open: un ID de workspace repetido entre dos subcarpetas se distingue como estructural, sin escribir nada', async ({ page }) => {
   await page.goto('./', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('button', { name: 'Abrir proyecto', exact: true })).toBeEnabled();

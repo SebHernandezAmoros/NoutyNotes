@@ -68,6 +68,10 @@ interface Session {
   reconnectFolder(): Promise<{ ok: true; folder: { key: string; name: string } } | { ok: false; message: string }>;
   /** `null` si el usuario cancela el selector. */
   importArchive(): Promise<Outcome<ArchiveImport> | null>;
+  /** Bloque 16, Paquete 2: incorpora una copia recuperada ya construida (bytes ya en memoria, nunca un
+   * selector) como un espacio del navegador nuevo — mismo criterio de ID ya existente de `importArchive`
+   * (si colisiona, se renombra como copia). Nunca toca ni sustituye la carpeta original. */
+  importRecoveredArchive(bytes: Uint8Array): Promise<Outcome<ArchiveImport>>;
   /** Inicia la descarga. No da por conservado nada: devuelve la revisión que el usuario podrá confirmar. */
   exportArchive(id: WorkspaceId): Outcome<{ readonly fileName: string; readonly revision: number }>;
   /** El usuario confirma que guardó el ZIP de esa revisión. */
@@ -220,6 +224,19 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
       : { ok: false, message: describeImportFailure(imported.issues) };
   };
 
+  /** Bloque 16, Paquete 2: mismo cuerpo que `importArchive`, sin el selector de archivo — los bytes
+   * ya vienen de una recuperación construida y validada en memoria (`planWorkspaceRecovery`). */
+  const importRecoveredArchive = async (bytes: Uint8Array): Promise<Outcome<ArchiveImport>> => {
+    const imported = await archive.importArchive(bytes);
+    if (!imported.ok) return { ok: false, message: describeImportFailure(imported.issues) };
+    resume.cancel();
+    setStorage(archive);
+    setMode('memory');
+    setActiveFolderId(null);
+    setActiveFolderKey(null);
+    return { ok: true, value: imported.value, message: describeImport(imported.value) };
+  };
+
   const exportArchive = (id: WorkspaceId): Outcome<{ readonly fileName: string; readonly revision: number }> => {
     const exported = archive.exportArchive(id);
     if (!exported.ok) return { ok: false, message: `No se pudo exportar el ZIP: ${exported.issues[0]?.details?.[0]?.message ?? exported.issues[0]?.message ?? 'error desconocido'}` };
@@ -255,7 +272,7 @@ export function WorkspaceSessionProvider({ children }: { readonly children: Reac
       storage, folderPermissionDialog: folderChoice.permissionDialog, temporaryStorage: archive, useTemporaryStorage: () => { resume.cancel(); setStorage(archive); setMode('memory'); setActiveFolderId(null); setActiveFolderKey(null); }, chooseWebFolder: folderChoice.choose, drafts, editorialSessions, mode, folderSupported: hydrated && (supportsFolderAccess() || supportsAndroidFolders()), archiveSupported,
       savedFolder: mode === 'memory' ? savedFolder : null, activeFolderKey: mode === 'folder' ? activeFolderKey : null, reconnectFolder,
       activeFolderId: mode === 'folder' ? activeFolderId : null, boardResume, acknowledgeBoardResume, identifyWebFolder, beginResume, reconnectResume, cancelResume, leaveProject,
-      unexported: mode === 'memory' ? unexported : [], connectFolder, connectFolderWithHandle, importArchive, exportArchive, confirmExported,
+      unexported: mode === 'memory' ? unexported : [], connectFolder, connectFolderWithHandle, importArchive, importRecoveredArchive, exportArchive, confirmExported,
     }}
     >
       {children}

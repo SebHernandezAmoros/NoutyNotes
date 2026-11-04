@@ -296,6 +296,24 @@ export const TRANSLATIONS = {
   'folder.open.technical': { es: 'No se pudo leer la carpeta por un fallo técnico. La sesión anterior se conserva. Reintenta y, si persiste, consulta Detalles de apertura.', en: 'The folder could not be read due to a technical failure. The previous session is preserved. Retry and, if it persists, check Opening details.' },
   'folder.open.empty': { es: 'No se encontraron proyectos. Elige una carpeta con .nouty/workspace.yaml, boards y cards, o su contenedora directa. No necesitas borrar ni recrear tus proyectos.', en: 'No projects were found. Choose a folder with .nouty/workspace.yaml, boards and cards, or its direct parent. You do not need to delete or recreate projects.' },
   'folder.open.diagnostic': { es: 'Detalles de apertura', en: 'Opening details' },
+  // Bloque 16, Paquete 2 (ADR 0010): recuperación no destructiva de un proyecto con un elemento
+  // individual inválido — nunca sustituye al proyecto original, nunca repara/purga automáticamente.
+  'folder.open.prepareRecovery': { es: 'Preparar recuperación', en: 'Prepare recovery' },
+  'recovery.dialog.title': { es: 'Preparar recuperación', en: 'Prepare recovery' },
+  'recovery.dialog.loading': { es: 'Leyendo la carpeta de nuevo, sin modificar nada…', en: 'Reading the folder again, without changing anything…' },
+  'recovery.dialog.notRecoverable': { es: 'No se puede ofrecer una recuperación segura. No se modificó nada.', en: 'A safe recovery cannot be offered. Nothing was changed.' },
+  'recovery.dialog.summary': { es: '{boards} tableros y {cards} tarjetas se recuperarían en una copia nueva.', en: '{boards} boards and {cards} cards would be recovered into a new copy.' },
+  'recovery.dialog.independent': { es: 'Esta copia es independiente del proyecto original. Tus archivos originales no se han modificado.', en: 'This copy is independent from the original project. Your original files have not been modified.' },
+  'recovery.dialog.nothingQuarantined': { es: 'No fue necesario aislar ningún elemento.', en: 'No element needed to be isolated.' },
+  'recovery.dialog.quarantine.heading': { es: '{count} elementos aislados (en cuarentena)', en: '{count} isolated elements (quarantine)' },
+  'recovery.dialog.quarantine.download': { es: 'Descargar original', en: 'Download original' },
+  'recovery.dialog.quarantine.nothingToDownload': { es: 'El archivo ya faltaba en la carpeta original; no hay nada que descargar.', en: 'The file was already missing from the original folder; there is nothing to download.' },
+  'recovery.dialog.confirm': { es: 'Abrir la copia recuperada', en: 'Open the recovered copy' },
+  'recovery.dialog.opening': { es: 'Abriendo…', en: 'Opening…' },
+  'recovery.dialog.importFailed': { es: 'No se pudo abrir la copia recuperada. Vuelve a intentarlo; el proyecto original sigue intacto.', en: 'Could not open the recovered copy. Try again; the original project remains intact.' },
+  /** Nombre de la copia recuperada (§7.1 del encargo): nunca igual al original, para no confundir
+   * identidades. */
+  'recovery.name': { es: '{name} — Recuperado', en: '{name} — Recovered' },
   'content.pdfHelp': { es: 'Ayuda del visor', en: 'Viewer help' },
   'assets.image.enlarge': { es: 'Ampliar', en: 'Enlarge' },
   'assets.image.enlargeLabel': { es: 'Ampliar {name}', en: 'Enlarge {name}' },
