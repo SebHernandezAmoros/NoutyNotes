@@ -124,7 +124,7 @@ export function HomeScreen() {
       }
       setCreationTarget({ kind: 'selected-web-folder', storage: selected.storage, handle: selected.handle, folderName: selected.name });
     } catch (error) {
-      if (error instanceof FolderPickerError) setDialogError(describeFolderOpenFailure({ message: '', diagnostic: error.diagnostic }, locale));
+      if (error instanceof FolderPickerError) setDialogError(describeFolderOpenFailure({ message: error.message, diagnostic: error.diagnostic, issue: error.issue }, locale));
       else if (!(error instanceof DOMException && error.name === 'AbortError')) setDialogError('No se pudo comprobar la carpeta elegida.');
     } finally {
       setSelectingFolder(false);

@@ -163,3 +163,86 @@ describe('FolderStorage: paquetes v1 y cambios externos', () => {
     expect(folder.files.has('.nouty-transaction.json')).toBe(true);
   });
 });
+
+describe('FolderStorage: diagnóstico de apertura fallida (ADR 0010, incidente de integridad, Paquete 1)', () => {
+  it('recuperación pendiente se distingue de datos inválidos', async () => {
+    const port = new FakePort();
+    expect((await new FolderStorage(port).create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    folder.files.set('.nouty-transaction.json', encode(JSON.stringify({ version: 1, committed: true, old: {} })));
+    const inspection = new FolderStorage(port, { readRecovery: 'defer' });
+    expect(code(await inspection.list())).toBe('recovery-pending');
+    expect(code(await inspection.open(id('demo')))).toBe('recovery-pending');
+  });
+
+  it('un marcador de recuperación truncado se distingue como tal, sin filtrar su contenido', async () => {
+    const port = new FakePort();
+    expect((await new FolderStorage(port).create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo') as FakeDirectory;
+    // JSON a medio escribir: el escenario real de una sincronización interrumpida entre computadoras.
+    folder.files.set('.nouty-transaction.json', encode('{"version":1,"committed":fal'));
+    const result = await new FolderStorage(port).open(id('demo'));
+    expect(code(result)).toBe('invalid-stored-data');
+    const message = !result.ok ? result.issues[0]?.message ?? '' : '';
+    expect(message).toContain('marcador de recuperación');
+    expect(message).not.toContain('committed');
+    expect(message).not.toContain('version');
+  });
+
+  it('un archivo que desaparece durante la lectura se identifica por su ruta, no por un fallo genérico', async () => {
+    class VanishingDirectory extends FakeDirectory {
+      vanish: string | null = null;
+      override async read(path: string): Promise<Uint8Array | undefined> {
+        if (path === this.vanish) return undefined;
+        return super.read(path);
+      }
+    }
+    const port = new FakePort();
+    expect((await new FolderStorage(port).create(workspace())).ok).toBe(true);
+    const plain = port.directories.get('demo') as FakeDirectory;
+    const vanishing = new VanishingDirectory();
+    for (const [path, bytes] of plain.files) vanishing.files.set(path, bytes);
+    port.directories.set('demo', vanishing);
+    vanishing.vanish = 'cards/idea-a.md';
+    const result = await new FolderStorage(port).open(id('demo'));
+    expect(code(result)).toBe('invalid-stored-data');
+    expect(!result.ok ? result.issues[0]?.path : null).toBe('cards/idea-a.md');
+  });
+
+  it('una incidencia de validación conserva el archivo y la ubicación exactos (p. ej. una versión de esquema no reconocida)', async () => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    const source = imagePolicyWorkspace();
+    expect((await storage.create(source)).ok).toBe(true);
+    expect((await storage.save(source)).ok).toBe(true);
+    const folder = port.directories.get('demo') as FakeDirectory;
+    const body = new TextDecoder().decode(folder.files.get('cards/idea-a.md'));
+    folder.files.set('cards/idea-a.md', encode(body.replace('contentVersion: 2', 'contentVersion: 3')));
+    const result = await new FolderStorage(port).open(id('demo'));
+    expect(code(result)).toBe('invalid-stored-data');
+    const details = !result.ok ? result.issues[0]?.details ?? [] : [];
+    expect(details.some((found) => found.path.startsWith('cards/idea-a.md'))).toBe(true);
+  });
+
+  it('un ID de workspace repetido entre dos carpetas se distingue como estructural', async () => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    expect((await storage.create(workspace())).ok).toBe(true);
+    const original = port.directories.get('demo') as FakeDirectory;
+    const copy = await port.createFolder('demo-copia') as FakeDirectory;
+    for (const [path, bytes] of original.files) copy.files.set(path, bytes);
+    expect(code(await new FolderStorage(port).list())).toBe('duplicate-workspace-id');
+    expect(code(await new FolderStorage(port).open(id('demo')))).toBe('duplicate-workspace-id');
+  });
+
+  it('un error inesperado del puerto se informa como fallo de lectura, nunca como datos inválidos sin demostrarlo', async () => {
+    class ThrowingPort extends FakePort {
+      override async folders(): Promise<readonly { key: string; folder: WorkspaceDirectory }[]> {
+        throw new Error('Fallo de red simulado, ajeno a los datos del proyecto.');
+      }
+    }
+    const port = new ThrowingPort();
+    expect(code(await new FolderStorage(port).list())).toBe('io-failure');
+    expect(code(await new FolderStorage(port).open(id('demo')))).toBe('io-failure');
+  });
+});

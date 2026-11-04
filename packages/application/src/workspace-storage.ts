@@ -11,6 +11,12 @@ export type WorkspaceStorageErrorCode =
   | 'permission-denied'
   | 'external-change'
   | 'io-failure'
+  /** Carpeta (ADR 0010, Paquete 1): hay una recuperación explícita pendiente (marcador de
+   * transacción presente). No implica datos inválidos — la recuperación automática suele resolverla. */
+  | 'recovery-pending'
+  /** Carpeta (ADR 0010, Paquete 1): dos subcarpetas de la misma selección declaran el mismo ID de
+   * workspace. Estructural, no un problema de una tarjeta o tablero concretos. */
+  | 'duplicate-workspace-id'
   /** Assets (ADR 0015): ya existe un archivo en esa ruta; nunca se sobrescribe. */
   | 'asset-conflict'
   /** Assets (ADR 0015): formato no admitido, vacío o demasiado grande. */

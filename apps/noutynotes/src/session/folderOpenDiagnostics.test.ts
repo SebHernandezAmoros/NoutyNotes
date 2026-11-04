@@ -33,15 +33,34 @@ it.each([['SecurityError', 'security'], ['NotAllowedError', 'denied'], ['TypeErr
   expect(result.state).toBe(state);
 });
 
-it.each(['invalid-stored-data', 'permission-denied', 'io-failure'] as const)('handle elegido y validación %s conserva sesión y diferencia la fase', async (code) => {
+it.each(['permission-denied', 'io-failure'] as const)('handle elegido y validación %s conserva sesión, diferencia la fase y no filtra el mensaje del puerto', async (code) => {
   const diagnostic = folderDiagnostic(captureFolderContext(), 'validation', null);
   const state = { storage: new ArchiveStorage(), mode: 'memory' as const, saved: null };
   const save = vi.fn(); const memory = { remember: vi.fn(), forget: vi.fn() };
   const storage = { list: async () => ({ ok: false, issues: [{ code, path: 'private/path', message: 'private detail' }] }), save } as unknown as WorkspaceStorage;
   const result = await chooseFolderInto(state, async () => ({ storage, folder: null, diagnostic }), memory);
-  expect(result.result).toMatchObject({ ok: false, diagnostic: { stage: 'validation', handleObtained: true, outcome: code === 'permission-denied' ? 'denied' : code === 'invalid-stored-data' ? 'invalid' : 'technical' } });
+  expect(result.result).toMatchObject({ ok: false, diagnostic: { stage: 'validation', handleObtained: true, outcome: code === 'permission-denied' ? 'denied' : 'technical' } });
   expect(result.state).toBe(state); expect(save).not.toHaveBeenCalled(); expect(memory.remember).not.toHaveBeenCalled();
   if (!result.result.ok) expect(describeFolderOpenFailure(result.result, 'en')).not.toContain('private');
+});
+
+// ADR 0010, Paquete 1 (incidente de integridad): a diferencia de permission-denied/io-failure,
+// invalid-stored-data y recovery-pending SÍ muestran el mensaje real del puerto — es precisamente el
+// defecto que antes colapsaba las cinco causas distinguibles en un único texto genérico.
+// `WorkspaceStorage` (FolderStorage/MemoryStorage) garantiza que ese mensaje nunca lleva contenido de
+// archivos ni de Notas, solo código/ruta/explicación ya seguros (ver `folder-storage.ts`).
+it.each([
+  ['invalid-stored-data', 'invalid', 'Esta versión de NoutyNotes no reconoce el formato de cards/idea-a.md; puede venir de una versión más reciente. Actualiza la app para abrirlo; no se modificó ningún archivo.', 'cards/idea-a.md'],
+  ['recovery-pending', 'recovery', 'Hay una recuperación pendiente: la carpeta tiene cambios de una sesión anterior sin confirmar.', 'recuperación pendiente'],
+  ['duplicate-workspace-id', 'invalid', 'Hay más de una carpeta con el mismo proyecto («demo»). No se modificó nada.', 'demo'],
+] as const)('handle elegido y validación %s muestra el mensaje real del puerto, no el genérico', async (code, outcome, message, expected) => {
+  const diagnostic = folderDiagnostic(captureFolderContext(), 'validation', null);
+  const state = { storage: new ArchiveStorage(), mode: 'memory' as const, saved: null };
+  const memory = { remember: vi.fn(), forget: vi.fn() };
+  const storage = { list: async () => ({ ok: false, issues: [{ code, path: 'workspace', message }] }) } as unknown as WorkspaceStorage;
+  const result = await chooseFolderInto(state, async () => ({ storage, folder: null, diagnostic }), memory);
+  expect(result.result).toMatchObject({ ok: false, diagnostic: { outcome } });
+  if (!result.result.ok) expect(describeFolderOpenFailure(result.result, 'en')).toContain(expected);
 });
 
 it('AbortError después de obtener handle es fallo de lectura, no cancelación del selector', async () => {

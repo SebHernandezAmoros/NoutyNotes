@@ -126,7 +126,9 @@ export async function chooseFolder(authorize?: FolderAuthorization): Promise<{ r
   const inspection = new FolderStorage(new BrowserFolderPort(root, true), { readRecovery: 'defer' });
   const inspected = await inspection.list();
   // Un journal pendiente solo se recuperará mediante el flujo existente DESPUÉS de autorizar escritura.
-  if (!inspected.ok && !inspection.recoveryRequired) throw new FolderPickerError(folderDiagnostic(context, 'read', null, inspected.issues[0]?.code));
+  if (!inspected.ok && !inspection.recoveryRequired) {
+    throw new FolderPickerError(folderDiagnostic(context, 'read', null, inspected.issues[0]?.code), inspected.issues[0] ?? null);
+  }
   try {
     if (await root.queryPermission({ mode: 'readwrite' }) !== 'granted') {
       if (authorize && !await authorize(root)) {

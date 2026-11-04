@@ -106,3 +106,67 @@ test('folder-open: handle obtenido pero proyecto inválido explica estructura si
     return (await (await (await root.getDirectoryHandle('.nouty')).getFileHandle('workspace.yaml')).getFile()).text();
   })).toBe('invalid laboratory manifest');
 });
+
+// ADR 0010, Paquete 1 (incidente de integridad): reconfirmado — `chooseFolder()` ya resuelve una
+// recuperación pendiente «limpia» en silencio (recupera y abre, sin mostrar ningún error); el código
+// `recovery-pending` solo llega a ser visible por la vía de reconexión/recarga (`WorkspaceSession`),
+// ya cubierta a nivel de `folderOpenDiagnostics.test.ts`/`folder-storage.test.ts` — reproducir esa
+// recarga completa en Playwright no aportaría una prueba distinta de las ya existentes ahí.
+test('folder-open: una recuperación pendiente ya «limpia» se resuelve en silencio al elegir la carpeta, sin error ni escrituras perdidas', async ({ page }) => {
+  await page.goto('./', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Abrir proyecto', exact: true })).toBeEnabled();
+  const workspace = { ...validWorkspace(), metadata: { name: 'Recuperación pendiente' } };
+  const serialized = serializeWorkspace(workspace);
+  if (!serialized.ok) throw new Error(JSON.stringify(serialized.issues));
+  await page.evaluate(async (files) => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('folder-open-recovery', { create: true });
+    for (const [path, value] of Object.entries(files)) {
+      const segments = path.split('/'); const name = segments.pop()!; let directory = root;
+      for (const segment of segments) directory = await directory.getDirectoryHandle(segment, { create: true });
+      const writer = await (await directory.getFileHandle(name, { create: true })).createWritable();
+      await writer.write(value); await writer.close();
+    }
+    const marker = await (await root.getFileHandle('.nouty-transaction.json', { create: true })).createWritable();
+    await marker.write(JSON.stringify({ version: 1, committed: true, old: {} })); await marker.close();
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: async () => root });
+  }, serialized.value);
+  await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
+  const project = page.getByRole('button', { name: 'Abrir el proyecto Recuperación pendiente', exact: true });
+  await expect(project).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await project.click();
+  await expect(page.getByRole('heading', { name: 'Recuperación pendiente', exact: true })).toBeVisible();
+  expect(await page.evaluate(async () => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('folder-open-recovery');
+    try { await root.getFileHandle('.nouty-transaction.json'); return true; } catch { return false; }
+  })).toBe(false);
+});
+
+test('folder-open: un ID de workspace repetido entre dos subcarpetas se distingue como estructural, sin escribir nada', async ({ page }) => {
+  await page.goto('./', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'Abrir proyecto', exact: true })).toBeEnabled();
+  const workspace = { ...validWorkspace(), metadata: { name: 'Duplicado' } };
+  const serialized = serializeWorkspace(workspace);
+  if (!serialized.ok) throw new Error(JSON.stringify(serialized.issues));
+  await page.evaluate(async (files) => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('folder-open-duplicate', { create: true });
+    for (const key of ['copia-1', 'copia-2']) {
+      const project = await root.getDirectoryHandle(key, { create: true });
+      for (const [path, value] of Object.entries(files)) {
+        const segments = path.split('/'); const name = segments.pop()!; let directory = project;
+        for (const segment of segments) directory = await directory.getDirectoryHandle(segment, { create: true });
+        const writer = await (await directory.getFileHandle(name, { create: true })).createWritable();
+        await writer.write(value); await writer.close();
+      }
+    }
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: async () => root });
+  }, serialized.value);
+  await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('más de una carpeta');
+  expect(await page.evaluate(async () => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('folder-open-duplicate');
+    const names: string[] = [];
+    for await (const [name] of (root as unknown as AsyncIterable<[string, unknown]>)) names.push(name);
+    return names.sort();
+  })).toEqual(['copia-1', 'copia-2']);
+});

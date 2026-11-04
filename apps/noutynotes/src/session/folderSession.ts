@@ -36,14 +36,28 @@ export async function chooseFolderInto<F>(
     if (!chosen) return { state, result: { ok: false, message: 'Este navegador no admite el acceso a carpetas.' } };
     selectedDiagnostic = chosen.diagnostic;
     const listed = await chosen.storage.list();
-    if (!listed.ok) return { state, result: { ok: false, message: listed.issues[0]?.message ?? 'No se pudo leer la carpeta.',
-      ...(selectedDiagnostic ? { diagnostic: folderDiagnostic(selectedDiagnostic, 'validation', null, listed.issues[0]?.code) } : {}) } };
+    if (!listed.ok) {
+      const diagnostic = selectedDiagnostic ? folderDiagnostic(selectedDiagnostic, 'validation', null, listed.issues[0]?.code) : undefined;
+      const issue = listed.issues[0] ?? null;
+      return {
+        state,
+        result: {
+          ok: false,
+          message: diagnostic ? describeFolderOpenFailure({ message: issue?.message ?? 'No se pudo leer la carpeta.', diagnostic, issue }, 'es') : issue?.message ?? 'No se pudo leer la carpeta.',
+          ...(diagnostic ? { diagnostic } : {}),
+          issue,
+        },
+      };
+    }
     if (chosen.folder) memory.remember(chosen.folder);
     return { state: { storage: chosen.storage, mode: 'folder', saved: chosen.folder ?? state.saved }, result: { ok: true } };
   } catch (cause) {
     const diagnostic = cause instanceof FolderPickerError ? cause.diagnostic
       : selectedDiagnostic ? folderDiagnostic(selectedDiagnostic, 'validation', cause) : undefined;
-    if (diagnostic) return { state, result: { ok: false, diagnostic, message: describeFolderOpenFailure({ message: '', diagnostic }, 'es') } };
+    if (diagnostic) {
+      const issue = cause instanceof FolderPickerError ? cause.issue : null;
+      return { state, result: { ok: false, diagnostic, issue, message: describeFolderOpenFailure({ message: '', diagnostic, issue }, 'es') } };
+    }
     if ((cause as { name?: string }).name === 'AbortError') return { state, result: { ok: false, message: 'No se seleccionó ninguna carpeta.' } };
     return { state, result: { ok: false, message: 'No se pudo abrir la carpeta. Revisa los permisos y vuelve a intentarlo.' } };
   }

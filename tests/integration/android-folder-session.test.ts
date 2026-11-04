@@ -67,7 +67,9 @@ describe('sesión de carpetas Android: elegir y reabrir (cierre de fase 10)', ()
     const chosen = await chooseFolderInto(state, async () => ({ storage: storageOf(invalidTree()), folder: B }), memory);
 
     expect(chosen.result.ok).toBe(false);
-    expect(chosen.result).toMatchObject({ message: expect.stringMatching(/inválid/) });
+    // ADR 0010, Paquete 1 (incidente de integridad): el mensaje ya es el real del puerto (antes se
+    // sustituía por un texto genérico de "datos inválidos o recuperación pendiente").
+    expect(chosen.result).toMatchObject({ message: expect.stringMatching(/no es un workspace v1 válido/) });
     expect(chosen.state.storage).toBe(aStorage);
     expect(chosen.state).toMatchObject({ mode: 'folder', saved: A });
     // Tras reiniciar la app se ofrece A, no B.
@@ -105,7 +107,7 @@ describe('sesión de carpetas Android: elegir y reabrir (cierre de fase 10)', ()
     const state: FolderState<Folder> = { storage: {} as WorkspaceStorage, mode: 'memory', saved: B };
     const reopened = await reopenRememberedInto(state, () => storageOf(invalidTree()), memory);
     expect(reopened.result.ok).toBe(false);
-    expect(reopened.result).toMatchObject({ message: expect.stringMatching(/inválid/) });
+    expect(reopened.result).toMatchObject({ message: expect.stringMatching(/no es un workspace v1 válido/) });
     expect(reopened.result).not.toMatchObject({ message: expect.stringMatching(/Ya no hay acceso|permiso/) });
     expect(reopened.state).toBe(state);
     expect(memory.value).toEqual(B);

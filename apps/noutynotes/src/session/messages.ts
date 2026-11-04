@@ -19,6 +19,11 @@ const byCode: Readonly<Record<string, string>> = {
   'external-change': 'Los archivos cambiaron fuera de NoutyNotes. No se guardó nada. Vuelve a seleccionar la carpeta para cargar los cambios.',
   'io-failure': 'No se pudieron guardar los archivos. Vuelve a seleccionar la carpeta para intentar la recuperación.',
   'invalid-stored-data': 'La carpeta contiene datos inválidos o una recuperación pendiente. No se sobrescribió nada.',
+  // ADR 0010, Paquete 1 (incidente de integridad): antes, ambos casos quedaban bajo el mismo texto
+  // genérico de arriba. Ahora cada uno tiene su propia explicación, sin implicar corrupción cuando no
+  // se ha demostrado.
+  'recovery-pending': 'Esta carpeta tiene una recuperación pendiente de una sesión anterior. Vuelve a seleccionarla para completarla automáticamente; no se modificó nada todavía.',
+  'duplicate-workspace-id': 'Hay más de una carpeta con el mismo proyecto dentro de la selección. Quita o renombra la copia repetida y vuelve a intentarlo; no se modificó nada.',
 };
 
 /** Texto de un código del motor de grilla o de relaciones, para avisos previos al guardado. */
@@ -38,12 +43,19 @@ export function describeFailure(issues: readonly WorkspaceStorageIssue[], mode: 
     const file = cause.path.split('#')[0] ?? cause.path;
     return `Esta versión de NoutyNotes no reconoce el formato de ${file}; puede venir de una versión más reciente. Actualiza la app para abrirlo; no se modificó ningún archivo.`;
   }
+  // ADR 0010, Paquete 1: una estructura inválida (p. ej. el manifiesto no es un objeto YAML) ya
+  // identifica el archivo exacto en `cause.path` — mostrarlo evita volver a un mensaje sin ubicación.
+  if (mode === 'folder' && cause.code === 'invalid-document' && cause.path) return `${cause.message} (${cause.path})`;
   if (mode === 'folder' && (cause.code === 'workspace-not-found' || cause.code === 'invalid-workspace-id')) {
     return 'Este espacio no está disponible en la carpeta seleccionada. Si recargaste, vuelve al inicio y selecciona la carpeta.';
   }
   // El adaptador distingue rutas ausentes de otros fallos de E/S. Conservar ese texto seguro evita
   // ocultar el diagnóstico bajo la frase genérica asociada al código `io-failure`.
   if (cause.code === 'io-failure') return cause.message;
+  // ADR 0010, Paquete 1: `folder-storage.ts` ya redacta un mensaje específico y seguro para cada causa
+  // (marcador de recuperación, archivo desaparecido, paquete inválido, ID repetido) — mostrarlo
+  // siempre evita que la frase genérica de `byCode` vuelva a ocultar esa clasificación.
+  if (cause.code === 'invalid-stored-data' || cause.code === 'recovery-pending' || cause.code === 'duplicate-workspace-id') return cause.message;
   return byCode[cause.code] ?? cause.message;
 }
 

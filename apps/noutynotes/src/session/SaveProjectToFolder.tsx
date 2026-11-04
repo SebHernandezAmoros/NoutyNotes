@@ -53,7 +53,7 @@ export function SaveProjectToFolder({ visible, id, beforeCopy, onActivate, onClo
       if (await onActivate(verified.handle, verified.name, verified.summary)) onClose();
       else setMessage(t('folder.copy.saved', locale));
     } catch (error) {
-      setMessage(error instanceof FolderPickerError ? describeFolderOpenFailure({ message: '', diagnostic: error.diagnostic }, locale) : t('folder.copy.failed', locale));
+      setMessage(error instanceof FolderPickerError ? describeFolderOpenFailure({ message: error.message, diagnostic: error.diagnostic, issue: error.issue }, locale) : t('folder.copy.failed', locale));
     } finally { setPhase('idle'); guard.current = false; }
   };
   return <Dialog visible={visible} compact={compact} title={t('folder.copy.action', locale)} onClose={() => { if (!guard.current) onClose(); }} testID="save-project-folder">

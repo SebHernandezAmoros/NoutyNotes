@@ -30,8 +30,25 @@ describe('mensajes visibles de error (fase 7)', () => {
   it('pide un nombre cuando falta y conserva el mensaje original si no hay traducción', () => {
     expect(describeFailure(transform('invalid-value', 'metadata.name'))).toBe('Escribe un nombre para el espacio.');
     expect(describeFailure(transform('unknown-property', 'changes.x'))).toBe('original');
-    expect(describeFailure([{ code: 'invalid-stored-data', path: 'id', message: 'sin detalle' }])).toContain('recuperación pendiente');
     expect(describeFailure([])).toBe('No se pudo completar la acción.');
+  });
+
+  // ADR 0010, Paquete 1 (incidente de integridad): antes, cualquier `invalid-stored-data` mostraba
+  // siempre el mismo texto genérico («...recuperación pendiente»), sin importar su propio mensaje —
+  // exactamente el defecto que colapsaba cinco causas distintas en un solo mensaje. Ahora se muestra
+  // el mensaje específico ya redactado por el adaptador, nunca el genérico de `byCode`.
+  it('muestra el mensaje específico de invalid-stored-data en vez de sustituirlo por el genérico', () => {
+    expect(describeFailure([{ code: 'invalid-stored-data', path: 'recovery-marker', message: 'El marcador de recuperación no se puede interpretar. No se modificó nada.' }]))
+      .toBe('El marcador de recuperación no se puede interpretar. No se modificó nada.');
+    expect(describeFailure([{ code: 'invalid-stored-data', path: 'cards/idea-a.md', message: 'Desapareció «cards/idea-a.md» durante la lectura. No se modificó nada.' }]))
+      .toBe('Desapareció «cards/idea-a.md» durante la lectura. No se modificó nada.');
+  });
+
+  it('distingue recuperación pendiente y ID de workspace duplicado, mostrando siempre el mensaje real del puerto', () => {
+    expect(describeFailure([{ code: 'recovery-pending', path: 'folder', message: 'Hay una recuperación pendiente: la carpeta tiene cambios de una sesión anterior sin confirmar.' }]))
+      .toContain('recuperación pendiente');
+    expect(describeFailure([{ code: 'duplicate-workspace-id', path: 'folder', message: 'Hay más de una carpeta con el mismo proyecto («demo»). No se modificó nada.' }]))
+      .toContain('demo');
   });
 });
 

@@ -1,5 +1,5 @@
 import { invalidWorkspaceIdFailure, storageFailure } from '@noutynotes/application';
-import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageResult, WorkspaceSummary } from '@noutynotes/application';
+import type { WorkspaceAssets, WorkspaceStorage, WorkspaceStorageIssue, WorkspaceStorageResult, WorkspaceSummary } from '@noutynotes/application';
 import { isValidAssetRef, isValidId } from '@noutynotes/domain';
 import type { AssetRef, Workspace, WorkspaceId } from '@noutynotes/domain';
 
@@ -37,6 +37,17 @@ interface Transaction {
 
 type Package = { readonly folder: WorkspaceDirectory; readonly files: TextFiles; readonly workspace: Workspace; readonly fingerprint: string };
 
+/**
+ * Incidencia de lectura ya clasificada (ADR 0010, Paquete 1 del incidente de integridad): se lanza
+ * en vez de un `Error` plano para que `list()`/`open()` puedan devolverla tal cual en vez de
+ * colapsarla en el único código genérico `invalid-stored-data` que tenían antes. Nunca lleva bytes
+ * ni contenido de archivos — solo el código/ruta/mensaje ya seguros que ya produce `parseWorkspace`
+ * u otras comprobaciones de esta misma clase.
+ */
+class FolderReadFailure extends Error {
+  constructor(readonly issue: WorkspaceStorageIssue) { super(issue.message); this.name = 'FolderReadFailure'; }
+}
+
 function success<T>(value: T): WorkspaceStorageResult<T> { return { ok: true, value }; }
 function error<T>(code: 'invalid-stored-data' | 'permission-denied' | 'external-change' | 'io-failure', path: string, message: string): WorkspaceStorageResult<T> {
   return storageFailure(code, path, message);
@@ -55,6 +66,17 @@ function fingerprint(files: TextFiles): string { return JSON.stringify(Object.en
 function summary(workspace: Workspace): WorkspaceSummary { return { id: workspace.id, name: workspace.metadata.name }; }
 
 /**
+ * Convierte el fallo de `#packages()`/`#read()` en el resultado real (ADR 0010, Paquete 1): una
+ * `FolderReadFailure` ya viene clasificada y se devuelve tal cual. Cualquier otra excepción es una
+ * causa todavía no identificada — se informa como fallo de lectura (`io-failure`), nunca como «datos
+ * inválidos», para no afirmar corrupción sin haberla demostrado.
+ */
+function readFailure<T>(cause: unknown): WorkspaceStorageResult<T> {
+  if (cause instanceof FolderReadFailure) return { ok: false, issues: [cause.issue] };
+  return error('io-failure', 'folder', 'No se pudo comprobar la carpeta por un motivo no identificado. No se modificó nada.');
+}
+
+/**
  * Puerto de workspaces sobre una carpeta elegida por el usuario. Solo reescribe documentos de texto
  * gestionados; los bytes bajo assets/ nunca se leen ni modifican. La transacción guarda una copia
  * recuperable de los documentos que cambiarán antes de tocarlos.
@@ -69,7 +91,8 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
   async #requireCleanRead(folder: WorkspaceDirectory): Promise<void> {
     if (await folder.read(TRANSACTION) !== undefined) {
       this.#recoveryRequired = true;
-      throw new Error('La carpeta requiere una recuperación explícita.');
+      throw new FolderReadFailure({ code: 'recovery-pending', path: 'folder',
+        message: 'Hay una recuperación pendiente: la carpeta tiene cambios de una sesión anterior sin confirmar.' });
     }
   }
 
@@ -81,15 +104,20 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
   async #recover(folder: WorkspaceDirectory): Promise<void> {
     const bytes = await folder.read(TRANSACTION);
     if (!bytes) return;
-    const marker: unknown = JSON.parse(decoder.decode(bytes));
-    if (typeof marker !== 'object' || marker === null || Array.isArray(marker)) throw new Error('Marcador de recuperación inválido.');
+    // Nunca se incluye el propio marcador (lleva el texto previo de archivos) en el mensaje: solo se
+    // informa de que no se pudo interpretar, nunca su contenido.
+    const invalidMarker = () => new FolderReadFailure({ code: 'invalid-stored-data', path: 'recovery-marker',
+      message: 'El marcador de recuperación no se puede interpretar. No se modificó nada.' });
+    let marker: unknown;
+    try { marker = JSON.parse(decoder.decode(bytes)); } catch { throw invalidMarker(); } // decode y JSON.parse: ambos fallan igual ante un marcador truncado
+    if (typeof marker !== 'object' || marker === null || Array.isArray(marker)) throw invalidMarker();
     const transaction = marker as Transaction;
     if (transaction.version !== 1 || typeof transaction.committed !== 'boolean' || typeof transaction.old !== 'object' || transaction.old === null || Array.isArray(transaction.old)) {
-      throw new Error('Marcador de recuperación inválido.');
+      throw invalidMarker();
     }
     if (!transaction.committed) {
       for (const [path, old] of Object.entries(transaction.old)) {
-        if (!managedPath(path) || (typeof old !== 'string' && old !== null)) throw new Error('Marcador de recuperación inválido.');
+        if (!managedPath(path) || (typeof old !== 'string' && old !== null)) throw invalidMarker();
         if (old === null) await folder.remove(path);
         else await folder.write(path, encoder.encode(old));
       }
@@ -106,12 +134,16 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     for (const path of paths) {
       if (path === TRANSACTION || path === DELETED || path.startsWith('assets/')) continue;
       const bytes = await folder.read(path);
-      if (bytes === undefined) throw new Error(`Desapareció el archivo ${path}.`);
+      if (bytes === undefined) {
+        throw new FolderReadFailure({ code: 'invalid-stored-data', path, message: `Desapareció «${path}» durante la lectura. No se modificó nada.` });
+      }
       entries.push([path, decoder.decode(bytes)]);
     }
     const files = Object.fromEntries(entries);
     const parsed = parseWorkspace(files);
-    if (!parsed.ok) throw new Error(`Paquete v1 inválido: ${parsed.issues.map((issue) => `${issue.code}@${issue.path}`).join(', ')}`);
+    if (!parsed.ok) {
+      throw new FolderReadFailure({ code: 'invalid-stored-data', path: 'workspace', message: 'El paquete no es un workspace v1 válido.', details: parsed.issues });
+    }
     if (this.options.readRecovery === 'defer') await this.#requireCleanRead(folder);
     return { folder, files, workspace: parsed.value, fingerprint: fingerprint(files) };
   }
@@ -125,7 +157,10 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     }
     const ids = new Set<string>();
     for (const item of found) {
-      if (ids.has(item.workspace.id)) throw new Error(`ID repetido entre carpetas: ${item.workspace.id}.`);
+      if (ids.has(item.workspace.id)) {
+        throw new FolderReadFailure({ code: 'duplicate-workspace-id', path: 'folder',
+          message: `Hay más de una carpeta con el mismo proyecto («${item.workspace.id}»). No se modificó nada.` });
+      }
       ids.add(item.workspace.id);
     }
     return found;
@@ -157,7 +192,7 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     const denied = await this.#allowed<readonly WorkspaceSummary[]>();
     if (denied) return denied;
     try { return success((await this.#packages()).map((item) => summary(item.workspace)).sort((a, b) => a.id.localeCompare(b.id))); }
-    catch { return error('invalid-stored-data', 'folder', 'La carpeta contiene datos inválidos o una recuperación pendiente.'); }
+    catch (cause) { return readFailure<readonly WorkspaceSummary[]>(cause); }
   }
 
   async open(id: WorkspaceId): Promise<WorkspaceStorageResult<Workspace>> {
@@ -171,7 +206,7 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
       if (baseline !== undefined && baseline !== found.fingerprint) return error('external-change', 'id', 'La carpeta cambió fuera de NoutyNotes. Reconecta para cargar la versión actual.');
       this.#baseline.set(id, found.fingerprint);
       return success(found.workspace);
-    } catch { return error('invalid-stored-data', 'id', 'No se pudo leer o recuperar el workspace.'); }
+    } catch (cause) { return readFailure<Workspace>(cause); }
   }
 
   /** Carpeta de un workspace para operar con sus assets (ADR 0015). */
