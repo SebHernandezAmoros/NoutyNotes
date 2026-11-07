@@ -29,10 +29,73 @@ const managedPath = (path: string): boolean => path === MANIFEST || path === '.n
   || path === '.nouty/relations.yaml' || path === '.nouty/trash.yaml' || path === '.nouty/archive.yaml' || /^cards\/[a-z0-9_-]+\.md$/.test(path)
   || /^boards\/[a-z0-9_-]+\.md$/.test(path);
 
-interface Transaction {
+export interface Transaction {
   readonly version: 1;
   readonly committed: boolean;
   readonly old: Readonly<Record<string, string | null>>;
+}
+
+export type TransactionMarkerInspection =
+  | { readonly kind: 'valid'; readonly transaction: Transaction }
+  | { readonly kind: 'invalid' | 'incompatible-version'; readonly reason: 'encoding' | 'json' | 'shape' | 'version' | 'entries' | 'duplicate-keys' };
+
+/** JSON.parse conserva solo la última clave repetida. Recorremos el JSON ya validado para rechazar
+ * duplicados antes de aplicar el rollback, sin prohibir marcadores v1 con espacios legítimos. */
+function hasDuplicateJsonKeys(text: string): boolean {
+  let index = 0;
+  let duplicate = false;
+  const skipSpace = () => { while (/\s/.test(text[index] ?? '') && index < text.length) index += 1; };
+  const readString = (): string => {
+    const start = index++;
+    while (index < text.length) {
+      if (text[index] === '\\') index += 2;
+      else if (text[index++] === '"') break;
+    }
+    return JSON.parse(text.slice(start, index)) as string;
+  };
+  const readValue = (): void => {
+    skipSpace();
+    if (text[index] === '{') {
+      index += 1;
+      const keys = new Set<string>();
+      skipSpace();
+      while (text[index] !== '}') {
+        const key = readString();
+        if (keys.has(key)) duplicate = true;
+        keys.add(key);
+        skipSpace(); index += 1; // dos puntos
+        readValue(); skipSpace();
+        if (text[index] === ',') { index += 1; skipSpace(); }
+      }
+      index += 1;
+    } else if (text[index] === '[') {
+      index += 1; skipSpace();
+      while (text[index] !== ']') {
+        readValue(); skipSpace();
+        if (text[index] === ',') { index += 1; skipSpace(); }
+      }
+      index += 1;
+    } else if (text[index] === '"') readString();
+    else while (index < text.length && !/[\s,}\]]/.test(text[index] ?? '')) index += 1;
+  };
+  readValue();
+  return duplicate;
+}
+
+/** Diagnóstico puro del marcador, sin acceder al Workspace ni escribir archivos. */
+export function inspectTransactionMarker(bytes: Uint8Array): TransactionMarkerInspection {
+  let text: string;
+  try { text = decoder.decode(bytes); } catch { return { kind: 'invalid', reason: 'encoding' }; }
+  let marker: unknown;
+  try { marker = JSON.parse(text); } catch { return { kind: 'invalid', reason: 'json' }; }
+  if (typeof marker !== 'object' || marker === null || Array.isArray(marker)) return { kind: 'invalid', reason: 'shape' };
+  const transaction = marker as Transaction;
+  if (transaction.version !== 1) return { kind: typeof transaction.version === 'number' && transaction.version > 1 ? 'incompatible-version' : 'invalid', reason: 'version' };
+  if (typeof transaction.committed !== 'boolean' || typeof transaction.old !== 'object' || transaction.old === null || Array.isArray(transaction.old)) return { kind: 'invalid', reason: 'shape' };
+  if (Object.keys(transaction).some((key) => !['version', 'committed', 'old'].includes(key))) return { kind: 'invalid', reason: 'shape' };
+  if (Object.entries(transaction.old).some(([path, old]) => !managedPath(path) || (typeof old !== 'string' && old !== null))) return { kind: 'invalid', reason: 'entries' };
+  if (hasDuplicateJsonKeys(text)) return { kind: 'invalid', reason: 'duplicate-keys' };
+  return { kind: 'valid', transaction };
 }
 
 type Package = { readonly folder: WorkspaceDirectory; readonly files: TextFiles; readonly workspace: Workspace; readonly fingerprint: string };
@@ -73,7 +136,7 @@ function summary(workspace: Workspace): WorkspaceSummary { return { id: workspac
  */
 function readFailure<T>(cause: unknown): WorkspaceStorageResult<T> {
   if (cause instanceof FolderReadFailure) return { ok: false, issues: [cause.issue] };
-  return error('io-failure', 'folder', 'No se pudo comprobar la carpeta por un motivo no identificado. No se modificó nada.');
+  return error('io-failure', 'folder', 'No se pudo comprobar la carpeta. Si había una recuperación pendiente, conserva el marcador y revisa los archivos antes de volver a guardar.');
 }
 
 /**
@@ -108,16 +171,14 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     // informa de que no se pudo interpretar, nunca su contenido.
     const invalidMarker = () => new FolderReadFailure({ code: 'invalid-stored-data', path: 'recovery-marker',
       message: 'El marcador de recuperación no se puede interpretar. No se modificó nada.' });
-    let marker: unknown;
-    try { marker = JSON.parse(decoder.decode(bytes)); } catch { throw invalidMarker(); } // decode y JSON.parse: ambos fallan igual ante un marcador truncado
-    if (typeof marker !== 'object' || marker === null || Array.isArray(marker)) throw invalidMarker();
-    const transaction = marker as Transaction;
-    if (transaction.version !== 1 || typeof transaction.committed !== 'boolean' || typeof transaction.old !== 'object' || transaction.old === null || Array.isArray(transaction.old)) {
-      throw invalidMarker();
-    }
+    const inspected = inspectTransactionMarker(bytes);
+    if (inspected.kind !== 'valid') throw invalidMarker();
+    const { transaction } = inspected;
+    // Un marcador no confiable se valida entero antes de tocar un solo archivo. Esto protege también
+    // el caso committed: no se descarta un marcador mal formado que aún puede contener evidencia.
+    const previous = Object.entries(transaction.old);
     if (!transaction.committed) {
-      for (const [path, old] of Object.entries(transaction.old)) {
-        if (!managedPath(path) || (typeof old !== 'string' && old !== null)) throw invalidMarker();
+      for (const [path, old] of previous) {
         if (old === null) await folder.remove(path);
         else await folder.write(path, encoder.encode(old));
       }

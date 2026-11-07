@@ -1,6 +1,6 @@
 import type { WorkspaceSummary } from '@noutynotes/application';
-import type { BinaryAssets, WorkspaceRecoveryPlan } from '@noutynotes/storage';
-import { serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
+import type { BinaryAssets, MarkerCopyResult, WorkspaceRecoveryPlan } from '@noutynotes/storage';
+import { equalBytes, serializeWorkspace, writeWorkspaceArchive } from '@noutynotes/storage';
 import { resolveLayoutMode, useLocale, useTheme, useWindowWidth } from '@noutynotes/ui';
 import type { ThemePreference } from '@noutynotes/ui';
 import { router, useFocusEffect } from 'expo-router';
@@ -12,10 +12,11 @@ import { BrandMark } from '../components/BrandMark';
 import { useHydrated } from '../components/useHydrated';
 import { t } from '../i18n';
 import { describeFolderOpenFailure, FolderPickerError } from '../session/folderOpenDiagnostics';
-import type { FolderOpenDiagnostic, RecoverFolder } from '../session/folderOpenDiagnostics';
+import type { FolderOpenDiagnostic, PrepareMarkerCopy, RecoverFolder } from '../session/folderOpenDiagnostics';
 import type { RecentFolderEntry, RecentProjectEntry } from '../session/recentItems';
 import { describeFailure } from '../session/messages';
 import { downloadTextFile, supportsTextDownload } from '../session/textDownload';
+import { downloadFile, pickZipFile } from '../session/archiveFiles';
 import { useRecentConnections } from '../session/useRecentConnections';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions } from './actions';
@@ -24,6 +25,7 @@ import { mergeHomeProjects } from './homeProjects';
 import { createProjectAtTarget } from './projectCreation';
 import type { ProjectCreationTarget } from './projectCreation';
 import { RecoveryDialog } from './RecoveryDialog';
+import { MarkerRecoveryDialog } from './MarkerRecoveryDialog';
 import { TemplatePicker } from './TemplatePicker';
 
 const themeOptions: { value: ThemePreference; labelKey: 'settings.theme.light' | 'settings.theme.dark' | 'settings.theme.system'; accessibilityLabelKey: 'home.theme.light.label' | 'home.theme.dark.label' | 'home.theme.system.label' }[] = [
@@ -74,6 +76,15 @@ export function HomeScreen() {
   // Bloque 16, Paquete 2 (ADR 0010): disponible solo cuando la última apertura fallida es candidata a
   // recuperación no destructiva; nunca para recuperación pendiente, ID duplicado o permisos.
   const [recoverFolder, setRecoverFolder] = useState<RecoverFolder | null>(null);
+  const [recoverMarker, setRecoverMarker] = useState<PrepareMarkerCopy | null>(null);
+  const [markerOpen, setMarkerOpen] = useState(false);
+  const [markerLoading, setMarkerLoading] = useState(false);
+  const [markerResult, setMarkerResult] = useState<MarkerCopyResult | null>(null);
+  const [markerEvidenceDownloaded, setMarkerEvidenceDownloaded] = useState(false);
+  const [markerEvidenceVerified, setMarkerEvidenceVerified] = useState(false);
+  const [markerAcknowledged, setMarkerAcknowledged] = useState(false);
+  const [markerConfirming, setMarkerConfirming] = useState(false);
+  const [markerError, setMarkerError] = useState<string | null>(null);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryResult, setRecoveryResult] = useState<{ readonly plan: WorkspaceRecoveryPlan; readonly assets: BinaryAssets } | null>(null);
@@ -201,6 +212,7 @@ export function HomeScreen() {
   const openFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
     setFolderDiagnostic(null);
     setRecoverFolder(null);
+    setRecoverMarker(null);
     const pending = session.unexported.length;
     if (pending > 0 && Platform.OS === 'web') {
       const pendingText = t(pending === 1 ? 'home.openFolder.pending.one' : 'home.openFolder.pending.many', locale, { count: String(pending) });
@@ -216,7 +228,59 @@ export function HomeScreen() {
     setFolderDiagnostic(!result.ok && result.diagnostic && message ? { diagnostic: result.diagnostic, message } : null);
     setCreateError(message);
     if (!result.ok && result.recover) setRecoverFolder(() => result.recover!);
+    if (!result.ok && result.recoverMarker) setRecoverMarker(() => result.recoverMarker!);
     return result;
+  };
+
+  const prepareMarkerRecovery = async () => {
+    if (!recoverMarker) return;
+    setMarkerOpen(true); setMarkerLoading(true); setMarkerResult(null); setMarkerError(null);
+    setMarkerEvidenceDownloaded(false); setMarkerEvidenceVerified(false); setMarkerAcknowledged(false);
+    try { setMarkerResult(await recoverMarker()); }
+    catch { setMarkerError(t('marker.copy.readFailure', locale)); }
+    finally { setMarkerLoading(false); }
+  };
+
+  const closeMarkerRecovery = () => {
+    if (markerConfirming) return;
+    setMarkerOpen(false); setMarkerResult(null); setMarkerError(null);
+    setMarkerEvidenceDownloaded(false); setMarkerEvidenceVerified(false); setMarkerAcknowledged(false);
+  };
+
+  const exportMarkerEvidence = () => {
+    if (!markerResult?.evidence || Platform.OS !== 'web') return;
+    try {
+      downloadFile('nouty-recovery-evidence.zip', markerResult.evidence);
+      setMarkerEvidenceDownloaded(true); setMarkerEvidenceVerified(false); setMarkerError(null);
+    } catch { setMarkerError(t('marker.copy.exportFailed', locale)); }
+  };
+
+  const verifyMarkerEvidence = async () => {
+    if (!markerResult?.evidence || !markerEvidenceDownloaded) return;
+    try {
+      const selected = await pickZipFile();
+      if (!selected) return;
+      if (!equalBytes(selected, markerResult.evidence)) { setMarkerEvidenceVerified(false); setMarkerError(t('marker.copy.verifyFailed', locale)); return; }
+      setMarkerEvidenceVerified(true); setMarkerError(null);
+    } catch { setMarkerEvidenceVerified(false); setMarkerError(t('marker.copy.verifyFailed', locale)); }
+  };
+
+  const confirmMarkerRecovery = async () => {
+    if (markerResult?.status !== 'candidate' || !markerEvidenceVerified || !markerAcknowledged || markerConfirming) return;
+    setMarkerConfirming(true); setMarkerError(null);
+    try {
+      const renamed = { ...markerResult.workspace, metadata: { ...markerResult.workspace.metadata,
+        name: t('recovery.name', locale, { name: markerResult.workspace.metadata.name }) } };
+      const files = serializeWorkspace(renamed, markerResult.files);
+      const zipped = files.ok ? writeWorkspaceArchive(files.value, markerResult.assets) : files;
+      if (!zipped.ok) { setMarkerError(t('recovery.dialog.importFailed', locale)); return; }
+      const imported = await session.importRecoveredArchive(zipped.value);
+      if (!imported.ok) { setMarkerError(t('recovery.dialog.importFailed', locale)); return; }
+      setMarkerOpen(false); setMarkerResult(null);
+      recent.recordProjectUse({ workspaceId: imported.value.summary.id, name: imported.value.summary.name, backend: 'memory', folderId: null });
+      openWorkspace(imported.value.summary.id);
+    } catch { setMarkerError(t('recovery.dialog.importFailed', locale)); }
+    finally { setMarkerConfirming(false); }
   };
 
   /** Bloque 16, Paquete 2: relee la carpeta (sin escribir) y construye el plan; nunca se ofrece sin
@@ -476,6 +540,12 @@ export function HomeScreen() {
                   <Text style={{ color: colors.textPrimary, fontWeight: '700', textAlign: 'center' }}>{t('folder.open.prepareRecovery', locale)}</Text>
                 </Pressable>
               ) : null}
+              {recoverMarker ? (
+                <Pressable testID="folder-prepare-marker-copy" accessibilityRole="button" accessibilityLabel={t('marker.copy.prepare', locale)}
+                  onPress={() => void prepareMarkerRecovery()} style={[styles.error, { borderColor: colors.border, minHeight: 44, justifyContent: 'center', marginTop: 8 }]}>
+                  <Text style={{ color: colors.textPrimary, fontWeight: '700', textAlign: 'center' }}>{t('marker.copy.prepare', locale)}</Text>
+                </Pressable>
+              ) : null}
               <View style={styles.actions}>
                 <Text style={[styles.actionGroupLabel, { color: colors.textSecondary }]}>{t('home.actions.primary', locale)}</Text>
                 <Pressable
@@ -631,6 +701,11 @@ export function HomeScreen() {
         onConfirm={() => void confirmRecovery()}
         onDownload={downloadQuarantined}
       />
+      <MarkerRecoveryDialog visible={markerOpen} compact={compact} loading={markerLoading} result={markerResult}
+        evidenceDownloaded={markerEvidenceDownloaded} evidenceVerified={markerEvidenceVerified} acknowledged={markerAcknowledged}
+        confirming={markerConfirming} error={markerError} onClose={closeMarkerRecovery}
+        onDownloadEvidence={exportMarkerEvidence} onVerifyEvidence={() => void verifyMarkerEvidence()}
+        onAcknowledge={() => setMarkerAcknowledged((value) => !value)} onConfirm={() => void confirmMarkerRecovery()} />
     </SafeAreaView>
   );
 }

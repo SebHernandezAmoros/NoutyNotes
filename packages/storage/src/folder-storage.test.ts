@@ -162,6 +162,67 @@ describe('FolderStorage: paquetes v1 y cambios externos', () => {
     expect(folder.files.has('../secreto')).toBe(false);
     expect(folder.files.has('.nouty-transaction.json')).toBe(true);
   });
+
+  it('valida todas las entradas del marcador antes de restaurar el primer archivo', async () => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    expect((await storage.create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    const original = folder.files.get('.nouty/workspace.yaml')!.slice();
+    folder.files.set('.nouty-transaction.json', encode(JSON.stringify({
+      version: 1, committed: false, old: { '.nouty/workspace.yaml': 'texto anterior', '../secreto': 'no autorizado' },
+    })));
+    const marker = folder.files.get('.nouty-transaction.json')!.slice();
+    const write = vi.spyOn(folder, 'write');
+    const remove = vi.spyOn(folder, 'remove');
+    expect(code(await new FolderStorage(port).open(id('demo')))).toBe('invalid-stored-data');
+    expect(write).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(folder.files.get('.nouty/workspace.yaml')).toEqual(original);
+    expect(folder.files.get('.nouty-transaction.json')).toEqual(marker);
+  });
+
+  it('conserva un marcador con rutas duplicadas o contenido inválido aunque figure como confirmado', async () => {
+    const port = new FakePort();
+    expect((await new FolderStorage(port).create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    for (const marker of [
+      '{"version":1,"committed":false,"old":{".nouty/workspace.yaml":null,".nouty/workspace.yaml":"duplicada"}}',
+      JSON.stringify({ version: 1, committed: true, old: { '../fuera': 'contenido' } }),
+    ]) {
+      folder.files.set('.nouty-transaction.json', encode(marker));
+      const write = vi.spyOn(folder, 'write');
+      const remove = vi.spyOn(folder, 'remove');
+      expect(code(await new FolderStorage(port).open(id('demo')))).toBe('invalid-stored-data');
+      expect(write).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+      expect(folder.files.get('.nouty-transaction.json')).toEqual(encode(marker));
+      write.mockRestore(); remove.mockRestore();
+    }
+  });
+
+  it('acepta un marcador v1 válido con espacios sin confundir formato con rutas duplicadas', async () => {
+    const port = new FakePort();
+    expect((await new FolderStorage(port).create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    folder.files.set('.nouty-transaction.json', encode(JSON.stringify({ version: 1, committed: true, old: {} }, null, 2)));
+    expect((await new FolderStorage(port).open(id('demo'))).ok).toBe(true);
+    expect(folder.files.has('.nouty-transaction.json')).toBe(false);
+  });
+
+  it('si falla la E/S durante el rollback conserva el marcador y no afirma que nada cambió', async () => {
+    const port = new FakePort();
+    expect((await new FolderStorage(port).create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    folder.files.set('.nouty-transaction.json', encode(JSON.stringify({ version: 1, committed: false,
+      old: { '.nouty/layout.yaml': 'anterior', '.nouty/workspace.yaml': 'no se alcanzará' } })));
+    folder.failOnWrite = '.nouty/workspace.yaml';
+    const result = await new FolderStorage(port).open(id('demo'));
+    expect(code(result)).toBe('io-failure');
+    expect(result.ok === false && result.issues[0]?.message).not.toContain('No se modificó nada');
+    expect(new TextDecoder().decode(folder.files.get('.nouty/layout.yaml'))).toBe('anterior');
+    expect(folder.files.has('.nouty-transaction.json')).toBe(true);
+  });
 });
 
 describe('FolderStorage: diagnóstico de apertura fallida (ADR 0010, incidente de integridad, Paquete 1)', () => {

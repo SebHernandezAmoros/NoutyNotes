@@ -1,5 +1,5 @@
 import type { WorkspaceStorageIssue } from '@noutynotes/application';
-import type { BinaryAssets, WorkspaceRecoveryPlan } from '@noutynotes/storage';
+import type { BinaryAssets, MarkerCopyResult, WorkspaceRecoveryPlan } from '@noutynotes/storage';
 import type { Locale } from '@noutynotes/ui';
 import { t } from '../i18n';
 import { describeFailure } from './messages';
@@ -9,6 +9,7 @@ import { describeFailure } from './messages';
  * Una sola relectura (sin escribir) de la carpeta produce el plan y los Assets, listos para comprimir
  * en un ZIP si el usuario confirma — sin una segunda vuelta a disco. */
 export type RecoverFolder = () => Promise<{ readonly plan: WorkspaceRecoveryPlan; readonly assets: BinaryAssets }>;
+export type PrepareMarkerCopy = () => Promise<MarkerCopyResult>;
 
 export interface FolderOpenDiagnostic {
   readonly version: 1;
@@ -35,6 +36,8 @@ export type FolderOpenFailure = {
   /** Bloque 16, Paquete 2: presente solo cuando esta incidencia concreta admite una recuperación no
    * destructiva candidata. Llamarlo relee la carpeta (de nuevo, sin escribir) y construye el plan. */
   readonly recover?: RecoverFolder | null;
+  /** Bloque 16: solo para un marcador inválido, siempre sobre un puerto web de solo lectura. */
+  readonly recoverMarker?: PrepareMarkerCopy | null;
 };
 
 /** No nombres/rutas, mensajes nativos, stack, contenido ni handles en el diagnóstico. */
@@ -59,7 +62,8 @@ export class FolderPickerError extends Error {
   /** ADR 0010, Paquete 1: `issue`, cuando se conoce, es la incidencia real ya clasificada por
    * `WorkspaceStorage` (nunca contenido de Notas ni bytes) — `describeFolderOpenFailure` la usa para
    * mostrar el detalle real en vez del texto genérico asociado a `outcome`. */
-  constructor(readonly diagnostic: FolderOpenDiagnostic, readonly issue: WorkspaceStorageIssue | null = null, readonly recover: RecoverFolder | null = null) {
+  constructor(readonly diagnostic: FolderOpenDiagnostic, readonly issue: WorkspaceStorageIssue | null = null,
+    readonly recover: RecoverFolder | null = null, readonly recoverMarker: PrepareMarkerCopy | null = null) {
     super(issue?.message ?? 'Folder picker did not complete.');
     this.name = 'FolderPickerError';
   }

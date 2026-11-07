@@ -1,4 +1,4 @@
-import { FolderStorage, planWorkspaceRecovery } from '@noutynotes/storage';
+import { FolderStorage, inspectTransactionMarker, planWorkspaceRecovery, prepareInvalidMarkerCopy } from '@noutynotes/storage';
 import type { BinaryAssets, FolderPort, TextFiles, WorkspaceDirectory } from '@noutynotes/storage';
 import { Platform } from 'react-native';
 import { captureFolderContext, folderDiagnostic, FolderPickerError } from './folderOpenDiagnostics';
@@ -140,8 +140,29 @@ export async function chooseFolder(authorize?: FolderAuthorization): Promise<{ r
   let root: BrowserDirectory;
   try { root = await picker({ mode: 'read' }); }
   catch (cause) { throw new FolderPickerError(folderDiagnostic(context, 'picker', cause)); }
-  const inspection = new FolderStorage(new BrowserFolderPort(root, true), { readRecovery: 'defer' });
+  const readOnlyPort = new BrowserFolderPort(root, true);
+  const inspection = new FolderStorage(readOnlyPort, { readRecovery: 'defer' });
   const inspected = await inspection.list();
+  if (inspection.recoveryRequired) {
+    // Detectar un marcador inválido ANTES de solicitar escritura o entregar un FolderStorage automático.
+    // Una contenedora con varios proyectos necesita elegir la carpeta exacta: no se adivina cuál copiar.
+    const folders = await readOnlyPort.folders();
+    if (folders.length === 1) {
+      const folder = folders[0]!.folder;
+      const bytes = await folder.read('.nouty-transaction.json');
+      if (bytes) {
+        const marker = inspectTransactionMarker(bytes);
+        if (marker.kind !== 'valid') {
+          const issue = { code: 'invalid-stored-data' as const, path: 'recovery-marker',
+            message: marker.kind === 'incompatible-version'
+              ? 'El marcador de recuperación requiere una versión más reciente de la aplicación. No se modificó nada.'
+              : 'El marcador de recuperación no se puede interpretar. No se modificó nada.' };
+          throw new FolderPickerError(folderDiagnostic(context, 'read', null, issue.code), issue, null,
+            () => prepareInvalidMarkerCopy(folder));
+        }
+      }
+    }
+  }
   // Un journal pendiente solo se recuperará mediante el flujo existente DESPUÉS de autorizar escritura.
   if (!inspected.ok && !inspection.recoveryRequired) {
     const issue = inspected.issues[0] ?? null;

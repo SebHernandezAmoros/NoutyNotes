@@ -7,7 +7,10 @@ export { WORKSPACE_FILE, parseWorkspace, planWorkspaceRecovery, serializeWorkspa
 export type { QuarantinedEntity, WorkspaceRecovery, WorkspaceRecoveryPlan } from './workspace-codec';
 export { TEMPLATE_FILE, TEMPLATE_README, parseTemplate, serializeTemplate } from './template-codec';
 export { MemoryStorage } from './memory-storage';
-export { FolderStorage } from './folder-storage';
+export { FolderStorage, inspectTransactionMarker } from './folder-storage';
+export type { TransactionMarkerInspection } from './folder-storage';
+export { prepareInvalidMarkerCopy, equalBytes } from './invalid-marker-recovery';
+export type { MarkerCopyBlock, MarkerCopyResult } from './invalid-marker-recovery';
 export type { FolderPort, WorkspaceDirectory } from './folder-storage';
 export { markdownRichTextCodec, parseRichTextMarkdown, serializeRichTextMarkdown } from './rich-text-codec';
 export {
