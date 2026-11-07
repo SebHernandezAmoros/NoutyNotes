@@ -17,6 +17,8 @@ import type { RecentFolderEntry, RecentProjectEntry } from '../session/recentIte
 import { describeFailure } from '../session/messages';
 import { downloadTextFile, supportsTextDownload } from '../session/textDownload';
 import { downloadFile, pickZipFile } from '../session/archiveFiles';
+import { repairMarkerSource, saveVerifiedMarkerEvidence } from '../session/folderAccess';
+import type { BrowserDirectory, VerifiedMarkerBackup } from '../session/folderAccess';
 import { useRecentConnections } from '../session/useRecentConnections';
 import { useWorkspaceSession, useWorkspaceStorage } from '../session/WorkspaceSession';
 import { numberActions } from './actions';
@@ -77,6 +79,9 @@ export function HomeScreen() {
   // recuperación no destructiva; nunca para recuperación pendiente, ID duplicado o permisos.
   const [recoverFolder, setRecoverFolder] = useState<RecoverFolder | null>(null);
   const [recoverMarker, setRecoverMarker] = useState<PrepareMarkerCopy | null>(null);
+  const [markerSource, setMarkerSource] = useState<BrowserDirectory | null>(null);
+  const [markerBackup, setMarkerBackup] = useState<VerifiedMarkerBackup | null>(null);
+  const [repairAcknowledged, setRepairAcknowledged] = useState(false);
   const [markerOpen, setMarkerOpen] = useState(false);
   const [markerLoading, setMarkerLoading] = useState(false);
   const [markerResult, setMarkerResult] = useState<MarkerCopyResult | null>(null);
@@ -212,7 +217,7 @@ export function HomeScreen() {
   const openFolder = async (): Promise<{ ok: true; folderId: string } | { ok: false; message: string }> => {
     setFolderDiagnostic(null);
     setRecoverFolder(null);
-    setRecoverMarker(null);
+    setRecoverMarker(null); setMarkerSource(null);
     const pending = session.unexported.length;
     if (pending > 0 && Platform.OS === 'web') {
       const pendingText = t(pending === 1 ? 'home.openFolder.pending.one' : 'home.openFolder.pending.many', locale, { count: String(pending) });
@@ -229,6 +234,7 @@ export function HomeScreen() {
     setCreateError(message);
     if (!result.ok && result.recover) setRecoverFolder(() => result.recover!);
     if (!result.ok && result.recoverMarker) setRecoverMarker(() => result.recoverMarker!);
+    if (!result.ok && result.repairMarkerSource) setMarkerSource(result.repairMarkerSource);
     return result;
   };
 
@@ -236,6 +242,7 @@ export function HomeScreen() {
     if (!recoverMarker) return;
     setMarkerOpen(true); setMarkerLoading(true); setMarkerResult(null); setMarkerError(null);
     setMarkerEvidenceDownloaded(false); setMarkerEvidenceVerified(false); setMarkerAcknowledged(false);
+    setMarkerBackup(null); setRepairAcknowledged(false);
     try { setMarkerResult(await recoverMarker()); }
     catch { setMarkerError(t('marker.copy.readFailure', locale)); }
     finally { setMarkerLoading(false); }
@@ -245,6 +252,32 @@ export function HomeScreen() {
     if (markerConfirming) return;
     setMarkerOpen(false); setMarkerResult(null); setMarkerError(null);
     setMarkerEvidenceDownloaded(false); setMarkerEvidenceVerified(false); setMarkerAcknowledged(false);
+    setMarkerBackup(null); setRepairAcknowledged(false);
+  };
+
+  const saveMarkerBackup = async () => {
+    if (markerResult?.status !== 'candidate' || !markerSource || markerConfirming) return;
+    setMarkerError(null); setMarkerBackup(null);
+    try { setMarkerBackup(await saveVerifiedMarkerEvidence(markerSource, markerResult.evidence)); }
+    catch (cause) {
+      if ((cause as { name?: string }).name !== 'AbortError') setMarkerError(cause instanceof Error ? cause.message : t('marker.repair.backupFailed', locale));
+    }
+  };
+
+  const confirmMarkerRepair = async () => {
+    if (markerResult?.status !== 'candidate' || !markerSource || !markerBackup || !repairAcknowledged || markerConfirming) return;
+    setMarkerConfirming(true); setMarkerError(null);
+    try {
+      const repaired = await repairMarkerSource(markerSource, markerResult, markerBackup);
+      if (repaired.status === 'blocked') { setMarkerError(t('marker.repair.blocked', locale)); return; }
+      const connected = await recent.connectSelectedWebFolder(markerSource, markerSource.name);
+      if (!connected.ok) { setMarkerError(connected.message); return; }
+      recent.recordProjectUse({ workspaceId: markerResult.workspace.id, name: markerResult.workspace.metadata.name,
+        backend: 'web', folderId: connected.folderId });
+      setMarkerOpen(false); setMarkerResult(null);
+      openWorkspace(markerResult.workspace.id);
+    } catch { setMarkerError(t('marker.repair.blocked', locale)); }
+    finally { setMarkerConfirming(false); }
   };
 
   const exportMarkerEvidence = () => {
@@ -703,8 +736,13 @@ export function HomeScreen() {
       />
       <MarkerRecoveryDialog visible={markerOpen} compact={compact} loading={markerLoading} result={markerResult}
         evidenceDownloaded={markerEvidenceDownloaded} evidenceVerified={markerEvidenceVerified} acknowledged={markerAcknowledged}
+        repairAvailable={!!markerSource?.resolve && Platform.OS === 'web' && typeof navigator !== 'undefined' && !!navigator.locks
+          && typeof (globalThis as { showSaveFilePicker?: unknown }).showSaveFilePicker === 'function'}
+        backupVerified={!!markerBackup} repairAcknowledged={repairAcknowledged}
         confirming={markerConfirming} error={markerError} onClose={closeMarkerRecovery}
         onDownloadEvidence={exportMarkerEvidence} onVerifyEvidence={() => void verifyMarkerEvidence()}
+        onSaveBackup={() => void saveMarkerBackup()} onRepairAcknowledge={() => setRepairAcknowledged((value) => !value)}
+        onRepair={() => void confirmMarkerRepair()}
         onAcknowledge={() => setMarkerAcknowledged((value) => !value)} onConfirm={() => void confirmMarkerRecovery()} />
     </SafeAreaView>
   );

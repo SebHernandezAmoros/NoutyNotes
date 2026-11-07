@@ -12,6 +12,8 @@ export interface WorkspaceDirectory {
   read(path: string): Promise<Uint8Array | undefined>;
   write(path: string, bytes: Uint8Array): Promise<void>;
   remove(path: string): Promise<void>;
+  /** El adaptador web coordina operaciones conocidas de la misma carpeta entre pestañas del origen. */
+  withExclusive?<T>(action: () => Promise<T>, ifAvailable?: boolean): Promise<T>;
 }
 
 export interface FolderPort {
@@ -116,6 +118,8 @@ function error<T>(code: 'invalid-stored-data' | 'permission-denied' | 'external-
   return storageFailure(code, path, message);
 }
 function saveError<T>(cause: unknown): WorkspaceStorageResult<T> {
+  if (cause instanceof MarkerVerificationFailure) return error('io-failure', 'recovery-marker',
+    'No se pudo verificar el marcador de recuperación. No se modificaron documentos; conserva la carpeta y revisa el marcador antes de reintentar.');
   const name = typeof cause === 'object' && cause !== null && 'name' in cause && typeof cause.name === 'string' ? cause.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return error('permission-denied', 'folder', 'La carpeta retiró el permiso de escritura. Vuelve a seleccionarla.');
@@ -125,6 +129,7 @@ function saveError<T>(cause: unknown): WorkspaceStorageResult<T> {
   }
   return error('io-failure', 'workspace', 'No se pudo guardar el workspace; comprueba la recuperación de la carpeta.');
 }
+class MarkerVerificationFailure extends Error {}
 function fingerprint(files: TextFiles): string { return JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))); }
 function summary(workspace: Workspace): WorkspaceSummary { return { id: workspace.id, name: workspace.metadata.name }; }
 
@@ -228,13 +233,29 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
   }
 
   async #commit(folder: WorkspaceDirectory, previous: TextFiles, next: TextFiles): Promise<void> {
+    if (folder.withExclusive) return folder.withExclusive(() => this.#commitUnlocked(folder, previous, next));
+    return this.#commitUnlocked(folder, previous, next);
+  }
+
+  async #commitUnlocked(folder: WorkspaceDirectory, previous: TextFiles, next: TextFiles): Promise<void> {
     const changed = [...new Set([...Object.keys(previous), ...Object.keys(next)])]
       .filter((path) => previous[path] !== next[path])
       .sort((a, b) => (a === MANIFEST ? 1 : b === MANIFEST ? -1 : a.localeCompare(b)));
     if (changed.length === 0) return;
     const old = Object.fromEntries(changed.map((path) => [path, previous[path] ?? null]));
     const marker: Transaction = { version: 1, committed: false, old };
-    await folder.write(TRANSACTION, encoder.encode(JSON.stringify(marker)));
+    const markerBytes = encoder.encode(JSON.stringify(marker));
+    if (inspectTransactionMarker(markerBytes).kind !== 'valid') throw new MarkerVerificationFailure();
+    try { await folder.write(TRANSACTION, markerBytes); }
+    catch (cause) {
+      const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : null;
+      if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'NotFoundError') throw cause;
+      throw new MarkerVerificationFailure();
+    }
+    let stored: Uint8Array | undefined;
+    try { stored = await folder.read(TRANSACTION); } catch { throw new MarkerVerificationFailure(); }
+    if (!stored || stored.length !== markerBytes.length || stored.some((byte, index) => byte !== markerBytes[index])
+      || inspectTransactionMarker(stored).kind !== 'valid') throw new MarkerVerificationFailure();
     try {
       for (const path of changed) {
         const text = next[path];
@@ -289,9 +310,12 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     if (!folder.ok) return { ok: false, issues: folder.issues };
     const directory = folder.value;
     try {
-      if (await directory.read(ref) !== undefined) return storageFailure('asset-conflict', 'ref', `Ya existe ${ref}.`);
-      await directory.write(ref, bytes.slice());
-      return { ok: true, value: null };
+      const write = async (): Promise<WorkspaceStorageResult<null>> => {
+        if (await directory.read(ref) !== undefined) return storageFailure('asset-conflict', 'ref', `Ya existe ${ref}.`);
+        await directory.write(ref, bytes.slice());
+        return { ok: true, value: null };
+      };
+      return directory.withExclusive ? await directory.withExclusive(write) : await write();
     } catch { return error('io-failure', 'ref', 'No se pudo copiar la imagen a la carpeta.'); }
   }
 
@@ -322,7 +346,9 @@ export class FolderStorage implements WorkspaceStorage, WorkspaceAssets {
     const folder = await this.#assetFolder(id, ref);
     if (!folder.ok) return { ok: false, issues: folder.issues };
     try {
-      await folder.value.remove(ref);
+      const remove = () => folder.value.remove(ref);
+      if (folder.value.withExclusive) await folder.value.withExclusive(remove);
+      else await remove();
       return { ok: true, value: null };
     } catch { return error('io-failure', 'ref', 'No se pudo borrar la imagen.'); }
   }

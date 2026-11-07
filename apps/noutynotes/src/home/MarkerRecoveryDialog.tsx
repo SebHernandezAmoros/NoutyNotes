@@ -22,13 +22,16 @@ const markerReasonKey = {
 
 /** Flujo distinto de la cuarentena de tarjetas: el marcador transaccional nunca se descarta. */
 export function MarkerRecoveryDialog({ visible, compact, loading, result, evidenceDownloaded, evidenceVerified,
-  acknowledged, confirming, error, onClose, onDownloadEvidence, onVerifyEvidence, onAcknowledge, onConfirm }: {
+  acknowledged, repairAvailable, backupVerified, repairAcknowledged, confirming, error, onClose,
+  onDownloadEvidence, onVerifyEvidence, onAcknowledge, onConfirm, onSaveBackup, onRepairAcknowledge, onRepair }: {
   readonly visible: boolean; readonly compact: boolean; readonly loading: boolean;
   readonly result: MarkerCopyResult | null;
   readonly evidenceDownloaded: boolean; readonly evidenceVerified: boolean; readonly acknowledged: boolean;
+  readonly repairAvailable: boolean; readonly backupVerified: boolean; readonly repairAcknowledged: boolean;
   readonly confirming: boolean; readonly error: string | null;
   readonly onClose: () => void; readonly onDownloadEvidence: () => void;
   readonly onVerifyEvidence: () => void; readonly onAcknowledge: () => void; readonly onConfirm: () => void;
+  readonly onSaveBackup: () => void; readonly onRepairAcknowledge: () => void; readonly onRepair: () => void;
 }) {
   const { locale } = useLocale();
   const { theme } = useTheme();
@@ -44,7 +47,8 @@ export function MarkerRecoveryDialog({ visible, compact, loading, result, eviden
             <Text style={{ color: colors.textSecondary }}>{t('marker.copy.sourceSafe', locale)}</Text>
             {result.status === 'candidate' ? (
               <Text testID="marker-copy-summary" style={{ color: colors.textPrimary }}>
-                {t('recovery.dialog.summary', locale, { boards: String(result.workspace.boards.length), cards: String(result.workspace.cards.length) })}
+                {t(repairAvailable ? 'marker.repair.summary' : 'recovery.dialog.summary', locale,
+                  { boards: String(result.workspace.boards.length), cards: String(result.workspace.cards.length) })}
               </Text>
             ) : (
               <Text testID="marker-copy-blocked" accessibilityRole="alert" style={{ color: colors.danger }}>
@@ -55,6 +59,28 @@ export function MarkerRecoveryDialog({ visible, compact, loading, result, eviden
               {t('marker.copy.diagnostic', locale, { reason: result.markerReason && result.markerReason in markerReasonKey
                 ? t(markerReasonKey[result.markerReason as keyof typeof markerReasonKey], locale)
                 : result.status === 'blocked' ? t(reasonKey[result.reason], locale) : t('marker.copy.reason.unknown', locale) })}
+            </Text>
+            {result.status === 'candidate' && repairAvailable ? (
+              <View style={{ gap: 8, borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }}>
+                <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>{t('marker.repair.title', locale)}</Text>
+                <Text style={{ color: colors.textSecondary }}>{t('marker.repair.explanation', locale)}</Text>
+                <ActionButton testID="marker-repair-backup" label={t('marker.repair.saveBackup', locale)}
+                  disabled={confirming} onPress={onSaveBackup} />
+                {backupVerified ? <Text testID="marker-repair-backup-verified" accessibilityRole="alert" style={{ color: colors.textPrimary }}>
+                  {t('marker.repair.backupVerified', locale)}
+                </Text> : null}
+                <Pressable testID="marker-repair-acknowledge" accessibilityRole="checkbox"
+                  accessibilityState={{ checked: repairAcknowledged }} onPress={onRepairAcknowledge}
+                  style={{ minHeight: 44, justifyContent: 'center', flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <Text style={{ color: colors.textPrimary }}>{repairAcknowledged ? '☑' : '☐'}</Text>
+                  <Text style={{ color: colors.textPrimary, flex: 1 }}>{t('marker.repair.acknowledge', locale)}</Text>
+                </Pressable>
+                <ActionButton testID="marker-repair-confirm" tone="primary" label={t('marker.repair.confirm', locale)}
+                  disabled={!backupVerified || !repairAcknowledged || confirming} onPress={onRepair} />
+              </View>
+            ) : null}
+            <Text style={{ color: colors.textPrimary, fontWeight: '700', borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }}>
+              {t('marker.copy.alternative', locale)}
             </Text>
             {result.evidence ? (
               <View style={{ gap: 8 }}>

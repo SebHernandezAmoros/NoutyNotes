@@ -1,5 +1,5 @@
-import { FolderStorage, inspectTransactionMarker, planWorkspaceRecovery, prepareInvalidMarkerCopy } from '@noutynotes/storage';
-import type { BinaryAssets, FolderPort, TextFiles, WorkspaceDirectory } from '@noutynotes/storage';
+import { FolderStorage, equalBytes, inspectTransactionMarker, planWorkspaceRecovery, prepareInvalidMarkerCopy, repairInvalidMarkerInPlace } from '@noutynotes/storage';
+import type { BinaryAssets, FolderPort, MarkerCopyResult, MarkerRepairResult, TextFiles, WorkspaceDirectory } from '@noutynotes/storage';
 import { Platform } from 'react-native';
 import { captureFolderContext, folderDiagnostic, FolderPickerError } from './folderOpenDiagnostics';
 import type { FolderOpenDiagnostic } from './folderOpenDiagnostics';
@@ -22,6 +22,7 @@ export interface BrowserDirectory {
   requestPermission(options: { mode: 'read' | 'readwrite' }): Promise<Permission>;
   /** Única prueba real de identidad física entre dos handles — nunca el nombre (UX7-E2A/D73). */
   isSameEntry(other: BrowserDirectory): Promise<boolean>;
+  resolve?(entry: unknown): Promise<readonly string[] | null>;
 }
 
 const parts = (path: string): string[] => path.split('/');
@@ -45,6 +46,17 @@ async function readFolderForRecovery(directory: WorkspaceDirectory): Promise<{ r
 
 class BrowserWorkspaceDirectory implements WorkspaceDirectory {
   constructor(readonly handle: BrowserDirectory, readonly readOnly = false) {}
+
+  async withExclusive<T>(action: () => Promise<T>, ifAvailable = false): Promise<T> {
+    if (typeof navigator === 'undefined' || !navigator.locks) {
+      if (ifAvailable) throw new Error('Web Locks unavailable');
+      return action();
+    }
+    return navigator.locks.request(`nouty-folder:${this.handle.name}`, { mode: 'exclusive', ifAvailable }, async (lock) => {
+      if (!lock) throw new Error('Another NoutyNotes operation is active');
+      return action();
+    });
+  }
 
   async listPaths(): Promise<readonly string[]> {
     const paths: string[] = [];
@@ -158,7 +170,7 @@ export async function chooseFolder(authorize?: FolderAuthorization): Promise<{ r
               ? 'El marcador de recuperación requiere una versión más reciente de la aplicación. No se modificó nada.'
               : 'El marcador de recuperación no se puede interpretar. No se modificó nada.' };
           throw new FolderPickerError(folderDiagnostic(context, 'read', null, issue.code), issue, null,
-            () => prepareInvalidMarkerCopy(folder));
+            () => prepareInvalidMarkerCopy(folder), (folder as BrowserWorkspaceDirectory).handle);
         }
       }
     }
@@ -202,6 +214,36 @@ export async function isEmptyFolder(handle: BrowserDirectory): Promise<boolean> 
  * recién verificado) sin volver a abrir el selector nativo. */
 export function storageForHandle(handle: BrowserDirectory, options: { readonly readRecovery?: 'automatic' | 'defer' } = {}): FolderStorage {
   return new FolderStorage(new BrowserFolderPort(handle), options);
+}
+
+export interface VerifiedMarkerBackup { read(): Promise<Uint8Array>; }
+
+/** El selector se abre directamente desde el gesto. Una descarga no demuestra que exista un respaldo. */
+export async function saveVerifiedMarkerEvidence(source: BrowserDirectory, expected: Uint8Array): Promise<VerifiedMarkerBackup> {
+  const picker = (globalThis as { showSaveFilePicker?: (options: { suggestedName: string }) => Promise<BrowserFile> }).showSaveFilePicker;
+  if (!picker || !source.resolve) throw new Error('No se puede verificar un respaldo externo en este navegador.');
+  const file = await picker({ suggestedName: `nouty-recovery-evidence-${crypto.randomUUID()}.zip` });
+  const relative = await source.resolve(file);
+  if (relative !== null) throw new Error('El respaldo debe guardarse fuera del proyecto.');
+  const existing = await file.getFile();
+  if (existing.size !== 0) throw new Error('El archivo de respaldo ya contiene datos; elige un archivo nuevo.');
+  const writable = await file.createWritable();
+  await writable.write(Uint8Array.from(expected));
+  await writable.close();
+  const read = async () => new Uint8Array(await (await file.getFile()).arrayBuffer());
+  if (!equalBytes(await read(), expected)) throw new Error('El respaldo no coincide con la evidencia original.');
+  return { read };
+}
+
+/** Misma carpeta y handle del selector original; el lock cubre toda la revalidación y retirada. */
+export async function repairMarkerSource(source: BrowserDirectory,
+  candidate: Extract<MarkerCopyResult, { readonly status: 'candidate' }>, backup: VerifiedMarkerBackup): Promise<MarkerRepairResult> {
+  const directory = new BrowserWorkspaceDirectory(source);
+  if (!source.resolve || typeof navigator === 'undefined' || !navigator.locks) return { status: 'blocked', reason: 'source-changed' };
+  if (await source.queryPermission({ mode: 'readwrite' }) !== 'granted'
+    && await source.requestPermission({ mode: 'readwrite' }) !== 'granted') return { status: 'blocked', reason: 'source-changed' };
+  try { return await directory.withExclusive(() => repairInvalidMarkerInPlace(directory, candidate, backup.read), true); }
+  catch { return { status: 'blocked', reason: 'source-changed' }; }
 }
 
 /**

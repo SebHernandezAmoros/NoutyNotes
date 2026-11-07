@@ -9,8 +9,8 @@ export { TEMPLATE_FILE, TEMPLATE_README, parseTemplate, serializeTemplate } from
 export { MemoryStorage } from './memory-storage';
 export { FolderStorage, inspectTransactionMarker } from './folder-storage';
 export type { TransactionMarkerInspection } from './folder-storage';
-export { prepareInvalidMarkerCopy, equalBytes } from './invalid-marker-recovery';
-export type { MarkerCopyBlock, MarkerCopyResult } from './invalid-marker-recovery';
+export { prepareInvalidMarkerCopy, repairInvalidMarkerInPlace, equalBytes } from './invalid-marker-recovery';
+export type { MarkerCopyBlock, MarkerCopyResult, MarkerRepairResult } from './invalid-marker-recovery';
 export type { FolderPort, WorkspaceDirectory } from './folder-storage';
 export { markdownRichTextCodec, parseRichTextMarkdown, serializeRichTextMarkdown } from './rich-text-codec';
 export {

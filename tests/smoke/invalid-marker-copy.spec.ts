@@ -28,7 +28,7 @@ test('marcador truncado: evidencia verificada antes de abrir una copia; fuente i
   await page.getByTestId('folder-prepare-marker-copy').click();
   await expect(page.getByTestId('marker-copy-summary')).toContainText('2 tableros');
   await expect(page.getByTestId('marker-copy-open')).toBeDisabled();
-  await expect(page.getByTestId('marker-recovery-dialog').getByRole('button', { name: /Reparar original|Eliminar marcador|Purgar/ })).toHaveCount(0);
+  await expect(page.getByTestId('marker-repair-confirm')).toBeDisabled();
   await page.screenshot({ path: test.info().outputPath('marker-copy-review.png') });
   await page.getByTestId('marker-recovery-dialog').getByRole('button', { name: 'Cancelar' }).click();
   await expect(page.getByTestId('marker-recovery-dialog')).not.toBeVisible();
@@ -62,4 +62,70 @@ test('marcador truncado: evidencia verificada antes de abrir una copia; fuente i
   expect(original.marker).toBe(marker);
   expect(original.manifest).toBe(serialized.value['.nouty/workspace.yaml']);
   expect(original.asset).toEqual([0, 255, 8]);
+});
+
+test('marcador inválido: respaldo externo verificado y acceso a la carpeta original', async ({ page }) => {
+  await page.goto('./', { waitUntil: 'domcontentloaded' });
+  const workspace = { ...validWorkspace(), metadata: { name: 'Laboratorio reparado' } };
+  const serialized = serializeWorkspace(workspace);
+  if (!serialized.ok) throw new Error('Fixture inválido');
+  await page.evaluate(async ({ files }) => {
+    const opfs = await navigator.storage.getDirectory();
+    const source = await opfs.getDirectoryHandle('marker-repair-lab', { create: true });
+    const backupDir = await opfs.getDirectoryHandle('external-backups', { create: true });
+    const occupied = await (await backupDir.getFileHandle('evidence.zip', { create: true })).createWritable();
+    await occupied.write(Uint8Array.from([42])); await occupied.close();
+    for (const [path, text] of Object.entries(files)) {
+      const segments = path.split('/'); const name = segments.pop()!; let parent = source;
+      for (const segment of segments) parent = await parent.getDirectoryHandle(segment, { create: true });
+      const writer = await (await parent.getFileHandle(name, { create: true })).createWritable();
+      await writer.write(text); await writer.close();
+    }
+    const assetDir = await source.getDirectoryHandle('assets', { create: true });
+    const imageDir = await assetDir.getDirectoryHandle('images', { create: true });
+    const assetWriter = await (await imageDir.getFileHandle('a.png', { create: true })).createWritable();
+    await assetWriter.write(Uint8Array.from([0, 255, 8])); await assetWriter.close();
+    const markerWriter = await (await source.getFileHandle('.nouty-transaction.json', { create: true })).createWritable();
+    await markerWriter.write('{"version":1,"committed":fal'); await markerWriter.close();
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: async () => source });
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true,
+      value: async () => backupDir.getFileHandle('evidence.zip', { create: true }) });
+  }, { files: serialized.value });
+  await page.getByRole('button', { name: 'Abrir proyecto', exact: true }).click();
+  await page.getByTestId('folder-prepare-marker-copy').click();
+  await expect(page.getByTestId('marker-repair-confirm')).toBeDisabled();
+  await page.getByTestId('marker-repair-backup').click();
+  await expect(page.getByTestId('marker-copy-error')).toContainText('ya contiene datos');
+  expect(await page.evaluate(async () => {
+    const backupDir = await (await navigator.storage.getDirectory()).getDirectoryHandle('external-backups');
+    return [...new Uint8Array(await (await (await backupDir.getFileHandle('evidence.zip')).getFile()).arrayBuffer())];
+  })).toEqual([42]);
+  await page.evaluate(async () => {
+    const backupDir = await (await navigator.storage.getDirectory()).getDirectoryHandle('external-backups');
+    await backupDir.removeEntry('evidence.zip');
+  });
+  await page.getByTestId('marker-repair-backup').click();
+  await expect(page.getByTestId('marker-repair-backup-verified')).toBeVisible();
+  expect(await page.evaluate(async () => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('marker-repair-lab');
+    return (await (await root.getFileHandle('.nouty-transaction.json')).getFile()).size > 0;
+  })).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('marker-repair-ready.png') });
+  await page.getByTestId('marker-repair-acknowledge').click();
+  await page.getByTestId('marker-repair-confirm').click();
+  await expect(page.getByRole('heading', { name: 'Laboratorio reparado' })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('marker-repair-opened.png') });
+  const actual = await page.evaluate(async () => {
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('marker-repair-lab');
+    let markerPresent = true;
+    try { await root.getFileHandle('.nouty-transaction.json'); } catch { markerPresent = false; }
+    const manifest = await (await (await root.getDirectoryHandle('.nouty')).getFileHandle('workspace.yaml')).getFile();
+    const image = await (await (await root.getDirectoryHandle('assets')).getDirectoryHandle('images')).getFileHandle('a.png');
+    const backup = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('external-backups')).getFileHandle('evidence.zip');
+    return { markerPresent, manifest: await manifest.text(), asset: [...new Uint8Array(await (await image.getFile()).arrayBuffer())], backupSize: (await backup.getFile()).size };
+  });
+  expect(actual.markerPresent).toBe(false);
+  expect(actual.manifest).toBe(serialized.value['.nouty/workspace.yaml']);
+  expect(actual.asset).toEqual([0, 255, 8]);
+  expect(actual.backupSize).toBeGreaterThan(0);
 });

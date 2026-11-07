@@ -41,6 +41,52 @@ const code = (result: { ok: boolean; issues?: readonly { code: string }[] }): st
   result.ok ? undefined : result.issues?.[0]?.code;
 
 describe('FolderStorage: paquetes v1 y cambios externos', () => {
+  it('no modifica documentos si el marcador escrito queda truncado', async () => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    expect((await storage.create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    const before = folder.files.get('.nouty/workspace.yaml')!.slice();
+    const originalWrite = folder.write.bind(folder);
+    vi.spyOn(folder, 'write').mockImplementation(async (path, bytes) => {
+      await originalWrite(path, path === '.nouty-transaction.json' ? bytes.slice(0, 8) : bytes);
+    });
+    const changed = { ...workspace(), metadata: { name: 'No debe guardarse' } };
+    expect((await storage.save(changed)).ok).toBe(false);
+    expect(folder.files.get('.nouty/workspace.yaml')).toEqual(before);
+    expect(folder.files.has('.nouty-transaction.json')).toBe(true);
+  });
+
+  it('no modifica documentos si falla la relectura del marcador', async () => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    expect((await storage.create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    const before = folder.files.get('.nouty/workspace.yaml')!.slice();
+    const originalRead = folder.read.bind(folder);
+    vi.spyOn(folder, 'read').mockImplementation(async (path) => {
+      if (path === '.nouty-transaction.json' && folder.files.has(path)) throw new Error('lectura fallida');
+      return originalRead(path);
+    });
+    const result = await storage.save({ ...workspace(), metadata: { name: 'No debe guardarse' } });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues[0]?.path).toBe('recovery-marker');
+    expect(folder.files.get('.nouty/workspace.yaml')).toEqual(before);
+    expect(folder.files.has('.nouty-transaction.json')).toBe(true);
+  });
+
+  it('informa el fallo de escritura del marcador antes de modificar documentos', async () => {
+    const port = new FakePort();
+    const storage = new FolderStorage(port);
+    expect((await storage.create(workspace())).ok).toBe(true);
+    const folder = port.directories.get('demo')!;
+    const before = folder.files.get('.nouty/workspace.yaml')!.slice();
+    folder.failOnWrite = '.nouty-transaction.json';
+    const result = await storage.save({ ...workspace(), metadata: { name: 'No debe guardarse' } });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues[0]?.path).toBe('recovery-marker');
+    expect(folder.files.get('.nouty/workspace.yaml')).toEqual(before);
+  });
   it('F5: diferir recuperación en list/open no escribe ni retira un journal; la apertura explícita conserva recuperación', async () => {
     const port = new FakePort();
     const source = workspace();

@@ -58,7 +58,8 @@ export async function chooseFolderInto<F>(
       const issue = cause instanceof FolderPickerError ? cause.issue : null;
       const recover = cause instanceof FolderPickerError ? cause.recover : null;
       const recoverMarker = cause instanceof FolderPickerError ? cause.recoverMarker : null;
-      return { state, result: { ok: false, diagnostic, issue, recover, recoverMarker,
+      const repairMarkerSource = cause instanceof FolderPickerError ? cause.repairMarkerSource : null;
+      return { state, result: { ok: false, diagnostic, issue, recover, recoverMarker, repairMarkerSource,
         message: describeFolderOpenFailure({ message: '', diagnostic, issue }, 'es') } };
     }
     if ((cause as { name?: string }).name === 'AbortError') return { state, result: { ok: false, message: 'No se seleccionó ninguna carpeta.' } };

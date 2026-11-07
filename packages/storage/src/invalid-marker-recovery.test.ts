@@ -1,11 +1,71 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { validWorkspace } from '../../domain/src/__fixtures__/workspace';
-import { prepareInvalidMarkerCopy } from './invalid-marker-recovery';
+import { prepareInvalidMarkerCopy, repairInvalidMarkerInPlace } from './invalid-marker-recovery';
 import { serializeWorkspace } from './workspace-codec';
 import type { WorkspaceDirectory } from './folder-storage';
+import { FolderStorage } from './folder-storage';
 import { readZip } from './zip';
 import { ARCHIVE_LIMITS } from './workspace-archive';
+
+describe('reparación protegida del marcador', () => {
+  it('solo retira el marcador tras verificar evidencia externa y conserva los demás bytes', async () => {
+    const directory = fixture();
+    const candidate = await prepareInvalidMarkerCopy(directory);
+    expect(candidate.status).toBe('candidate');
+    if (candidate.status !== 'candidate') return;
+    const before = new Map([...directory.files].map(([path, value]) => [path, value.slice()]));
+    directory.remove.mockImplementation(async (path) => { directory.files.delete(path); });
+    const repaired = await repairInvalidMarkerInPlace(directory, candidate, async () => candidate.evidence.slice());
+    expect(repaired.status).toBe('repaired');
+    expect(directory.remove).toHaveBeenCalledExactlyOnceWith('.nouty-transaction.json');
+    before.delete('.nouty-transaction.json');
+    expect(directory.files).toEqual(before);
+  });
+
+  it('bloquea evidencia diferente y cambio de fuente sin retirar el marcador', async () => {
+    const directory = fixture();
+    const candidate = await prepareInvalidMarkerCopy(directory);
+    if (candidate.status !== 'candidate') throw new Error('Fixture inválido');
+    expect((await repairInvalidMarkerInPlace(directory, candidate, async () => new Uint8Array([0, 255]))).status).toBe('blocked');
+    directory.files.set('assets/images/a.png', new Uint8Array([0, 1, 8]));
+    expect((await repairInvalidMarkerInPlace(directory, candidate, async () => candidate.evidence.slice())).status).toBe('blocked');
+    expect(directory.remove).not.toHaveBeenCalled();
+  });
+
+  it('permite reintentar tras una retirada interrumpida y bloquea si el proyecto cambió después', async () => {
+    const directory = fixture();
+    const candidate = await prepareInvalidMarkerCopy(directory);
+    if (candidate.status !== 'candidate') throw new Error('Fixture inválido');
+    directory.remove.mockImplementationOnce(async (path) => {
+      directory.files.delete(path);
+      throw new Error('interrupción tras retirar marcador');
+    });
+    const first = await repairInvalidMarkerInPlace(directory, candidate, async () => candidate.evidence.slice());
+    expect(first).toEqual({ status: 'blocked', reason: 'remove-failed' });
+    expect((await repairInvalidMarkerInPlace(directory, candidate, async () => candidate.evidence.slice())).status).toBe('already-repaired');
+    directory.files.set('assets/images/a.png', new Uint8Array([1, 255, 8]));
+    expect((await repairInvalidMarkerInPlace(directory, candidate, async () => candidate.evidence.slice())).status).toBe('blocked');
+    expect(directory.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('reabre la identidad original y permite un guardado posterior normal', async () => {
+    const directory = fixture();
+    const candidate = await prepareInvalidMarkerCopy(directory);
+    if (candidate.status !== 'candidate') throw new Error('Fixture inválido');
+    directory.remove.mockImplementation(async (path) => { directory.files.delete(path); });
+    directory.write.mockImplementation(async (path, value) => { directory.files.set(path, value.slice()); });
+    expect((await repairInvalidMarkerInPlace(directory, candidate, async () => candidate.evidence.slice())).status).toBe('repaired');
+    const storage = new FolderStorage({ permission: async () => true,
+      folders: async () => [{ key: 'original', folder: directory }], createFolder: async () => directory });
+    const opened = await storage.open(candidate.workspace.id);
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    expect(opened.value.id).toBe(candidate.workspace.id);
+    expect((await storage.save({ ...opened.value, metadata: { ...opened.value.metadata, name: 'Guardado posterior' } })).ok).toBe(true);
+    expect(directory.files.has('.nouty-transaction.json')).toBe(false);
+  });
+});
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 
@@ -13,8 +73,8 @@ class Directory implements WorkspaceDirectory {
   readonly files = new Map<string, Uint8Array>();
   async listPaths() { return [...this.files.keys()]; }
   async read(path: string) { return this.files.get(path)?.slice(); }
-  write = vi.fn(async () => { throw new Error('No debe escribir'); });
-  remove = vi.fn(async () => { throw new Error('No debe borrar'); });
+  write = vi.fn(async (_path: string, _bytes: Uint8Array): Promise<void> => { throw new Error('No debe escribir'); });
+  remove = vi.fn(async (_path: string): Promise<void> => { throw new Error('No debe borrar'); });
 }
 
 function fixture(marker = '{"version":1,"committed":fal'): Directory {

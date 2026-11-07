@@ -3,6 +3,7 @@ import type { BinaryAssets, MarkerCopyResult, WorkspaceRecoveryPlan } from '@nou
 import type { Locale } from '@noutynotes/ui';
 import { t } from '../i18n';
 import { describeFailure } from './messages';
+import type { BrowserDirectory } from './folderAccess';
 
 /** Bloque 16, Paquete 2: disponible solo cuando la incidencia es candidata (tarjeta/tablero
  * individual) — nunca para recuperación pendiente, ID duplicado, permisos o un fallo no clasificado.
@@ -38,6 +39,8 @@ export type FolderOpenFailure = {
   readonly recover?: RecoverFolder | null;
   /** Bloque 16: solo para un marcador inválido, siempre sobre un puerto web de solo lectura. */
   readonly recoverMarker?: PrepareMarkerCopy | null;
+  /** Handle de la carpeta exacta, solo en memoria para una reparación protegida. */
+  readonly repairMarkerSource?: BrowserDirectory | null;
 };
 
 /** No nombres/rutas, mensajes nativos, stack, contenido ni handles en el diagnóstico. */
@@ -63,7 +66,8 @@ export class FolderPickerError extends Error {
    * `WorkspaceStorage` (nunca contenido de Notas ni bytes) — `describeFolderOpenFailure` la usa para
    * mostrar el detalle real en vez del texto genérico asociado a `outcome`. */
   constructor(readonly diagnostic: FolderOpenDiagnostic, readonly issue: WorkspaceStorageIssue | null = null,
-    readonly recover: RecoverFolder | null = null, readonly recoverMarker: PrepareMarkerCopy | null = null) {
+    readonly recover: RecoverFolder | null = null, readonly recoverMarker: PrepareMarkerCopy | null = null,
+    readonly repairMarkerSource: BrowserDirectory | null = null) {
     super(issue?.message ?? 'Folder picker did not complete.');
     this.name = 'FolderPickerError';
   }

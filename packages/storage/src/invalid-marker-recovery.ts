@@ -146,3 +146,39 @@ export async function prepareInvalidMarkerCopy(directory: WorkspaceDirectory): P
   return { status: 'candidate', markerReason: marker.reason, workspace: parsed.value,
     files, assets, archive: zipped.value, evidence, fileCount: first.files.size };
 }
+
+export type MarkerRepairResult = { readonly status: 'repaired' | 'already-repaired' }
+  | { readonly status: 'blocked'; readonly reason: 'evidence-unverified' | 'source-changed' | 'postcheck-failed' | 'remove-failed' };
+
+/** La fuente solo se modifica al final de todos los gates; nunca se reescriben documentos o Assets. */
+export async function repairInvalidMarkerInPlace(
+  directory: WorkspaceDirectory,
+  candidate: Extract<MarkerCopyResult, { readonly status: 'candidate' }>,
+  readVerifiedEvidence: () => Promise<Uint8Array | null>,
+): Promise<MarkerRepairResult> {
+  let backup: Uint8Array | null;
+  try { backup = await readVerifiedEvidence(); } catch { return { status: 'blocked', reason: 'evidence-unverified' }; }
+  if (!backup || !equalBytes(backup, candidate.evidence)) return { status: 'blocked', reason: 'evidence-unverified' };
+  const evidence = readZip(candidate.evidence, ARCHIVE_LIMITS);
+  if (!evidence.ok) return { status: 'blocked', reason: 'evidence-unverified' };
+  const expected = new Map(evidence.value.filter((entry) => !entry.directory && entry.name.startsWith('source/'))
+    .map((entry) => [entry.name.slice('source/'.length), entry.bytes] as const));
+  if (!expected.has(MARKER) || expected.size !== candidate.fileCount) return { status: 'blocked', reason: 'evidence-unverified' };
+  const matchesAfter = async (): Promise<boolean> => {
+    const actual = await readSnapshot(directory);
+    if (actual.unreadable.length || actual.listed.length !== expected.size - 1) return false;
+    return actual.listed.every((path) => path !== MARKER && expected.has(path)
+      && equalBytes(actual.files.get(path) ?? new Uint8Array(), expected.get(path)!));
+  };
+  try {
+    const marker = await directory.read(MARKER);
+    if (!marker) return await matchesAfter() ? { status: 'already-repaired' } : { status: 'blocked', reason: 'source-changed' };
+    const fresh = await prepareInvalidMarkerCopy(directory);
+    if (fresh.status !== 'candidate' || !equalBytes(fresh.evidence, candidate.evidence)) return { status: 'blocked', reason: 'source-changed' };
+    // Reduce la ventana frente a escritores externos; no sustituye un compare-and-swap del sistema.
+    const finalMarker = await directory.read(MARKER);
+    if (!finalMarker || !equalBytes(finalMarker, expected.get(MARKER)!)) return { status: 'blocked', reason: 'source-changed' };
+    try { await directory.remove(MARKER); } catch { return { status: 'blocked', reason: 'remove-failed' }; }
+    return await matchesAfter() ? { status: 'repaired' } : { status: 'blocked', reason: 'postcheck-failed' };
+  } catch { return { status: 'blocked', reason: 'source-changed' }; }
+}
