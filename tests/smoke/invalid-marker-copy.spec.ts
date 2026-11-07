@@ -15,7 +15,7 @@ test('marcador truncado: evidencia verificada antes de abrir una copia; fuente i
       const parts = path.split('/'); const name = parts.pop()!; let directory = root;
       for (const part of parts) directory = await directory.getDirectoryHandle(part, { create: true });
       const writable = await (await directory.getFileHandle(name, { create: true })).createWritable();
-      await writable.write(content); await writable.close();
+      await writable.write(typeof content === 'string' ? content : Uint8Array.from(content)); await writable.close();
     };
     for (const [path, text] of Object.entries(files)) await write(path, text);
     await write('assets/images/a.png', new Uint8Array([0, 255, 8]));

@@ -32,7 +32,7 @@ describe('copia ante marcador inválido', () => {
     const directory = fixture();
     const before = new Map([...directory.files].map(([path, value]) => [path, value.slice()]));
     const result = await prepareInvalidMarkerCopy(directory);
-    expect(result.status === 'candidate' ? result.status : result.reason).toBe('candidate');
+    expect(result.status).toBe('candidate');
     if (result.status !== 'candidate') return;
     const evidence = readZip(result.evidence, ARCHIVE_LIMITS);
     expect(evidence.ok).toBe(true);
@@ -50,6 +50,7 @@ describe('copia ante marcador inválido', () => {
     directory.files.set('cards/idea-a.md.crswap', bytes('posible escritura'));
     const result = await prepareInvalidMarkerCopy(directory);
     expect(result.status).toBe('blocked');
+    if (result.status !== 'blocked') throw new Error('Se esperaba un plan bloqueado');
     expect(result.reason).toBe('ambiguous-artifact');
     expect(result.evidence).toBeInstanceOf(Uint8Array);
     expect(directory.write).not.toHaveBeenCalled();
