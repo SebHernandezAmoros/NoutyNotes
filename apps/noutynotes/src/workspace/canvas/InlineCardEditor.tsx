@@ -157,6 +157,14 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
     const timer = setTimeout(() => { void persist(); }, 700);
     return () => clearTimeout(timer);
   }, [title, content, persist]);
+  const latestPersist = useRef(persist);
+  useEffect(() => { latestPersist.current = persist; }, [persist]);
+  useEffect(() => {
+    const checkpoint = setInterval(() => {
+      if (current.current.title !== saved.current.title || current.current.content !== saved.current.content) void latestPersist.current();
+    }, 5000);
+    return () => clearInterval(checkpoint);
+  }, []);
   useEffect(() => {
     if (Platform.OS !== 'web') return undefined;
     const warn = (event: BeforeUnloadEvent) => {

@@ -24,7 +24,7 @@ export type { FrameTarget } from './frames';
 export { EMPTY_HISTORY, HISTORY_LIMIT, recordStep, redoStep, sameWorkspace, undoStep } from './history';
 export type { HistoryStep, UndoHistory } from './history';
 export { revertWorkspace } from './revert';
-export { ReactiveWorkspaceEditor } from './reactive-workspace';
+export { ReactiveWorkspaceEditor, WORKSPACE_AUTOSAVE } from './reactive-workspace';
 export {
   EditorialSessionCoordinator,
   MemoryDraftPersistence,

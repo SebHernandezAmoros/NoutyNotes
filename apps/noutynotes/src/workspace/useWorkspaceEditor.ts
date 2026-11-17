@@ -1,4 +1,4 @@
-import { EMPTY_HISTORY, ReactiveWorkspaceEditor, recordStep } from '@noutynotes/application';
+import { EMPTY_HISTORY, ReactiveWorkspaceEditor, recordStep, WORKSPACE_AUTOSAVE } from '@noutynotes/application';
 import type { ReactiveSaveStatus, ReactiveWorkspaceSnapshot, UndoHistory, WorkspaceStorage, WorkspaceStorageIssue, WorkspaceStorageResult } from '@noutynotes/application';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
 import { useLocale } from '@noutynotes/ui';
@@ -35,6 +35,7 @@ export interface RunOptions {
   readonly mergeKey?: string;
   /** Publica la transformación antes de persistirla mediante la cola P18-E1. */
   readonly reactive?: boolean;
+  readonly immediate?: boolean;
 }
 
 /**
@@ -83,7 +84,7 @@ export function useWorkspaceEditor(id: string | undefined) {
 
   const installReactive = useCallback((workspace: Workspace) => {
     unsubscribe.current?.();
-    const next = new ReactiveWorkspaceEditor(storage, workspaceId, workspace);
+    const next = new ReactiveWorkspaceEditor(storage, workspaceId, workspace, WORKSPACE_AUTOSAVE);
     reactive.current = next;
     unsubscribe.current = next.subscribe(reflectReactive);
   }, [reflectReactive, storage, workspaceId]);
@@ -111,26 +112,29 @@ export function useWorkspaceEditor(id: string | undefined) {
 
   const run = useCallback(<T>(action: WorkspaceAction<T>, success: ActionSuccess, options: RunOptions = {}): Promise<WorkspaceStorageResult<T>> => {
     const { label, text } = resolveAction(success, mode, locale);
-    const active = reactive.current;
-    if (options.reactive && active) {
-      const request = active.dispatch(action, {
+    if (options.reactive) {
+      let complete!: (result: WorkspaceStorageResult<T>) => void;
+      const persisted = new Promise<WorkspaceStorageResult<T>>(resolve => { complete = resolve; });
+      const task = queue.current.then(async () => {
+        const active = reactive.current;
+        if (!active) { complete({ ok: false, issues: [{ code: 'workspace-not-found', path: 'id', message: 'El proyecto no está abierto.' }] }); return; }
+        const request = active.dispatch(action, {
         label,
         ...(options.mergeKey ? { mergeKey: options.mergeKey } : {}),
         ...(options.history ? { history: options.history } : {}),
+        ...(options.immediate ? { immediate: true } : {}),
       });
-      void request.applied.then((result) => {
-        if (!result.ok && mounted.current) {
-          setFeedback({ tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
-        }
+        void request.persisted.then(complete);
+        await request.applied; // release the existing command queue; persistence stays in the coordinator
       });
-      return request.persisted.then((result) => {
+      queue.current = task.catch(() => { complete({ ok: false, issues: [{ code: 'io-failure', path: 'action', message: 'No se pudo aplicar el cambio.' }] }); });
+      return persisted.then((result) => {
         if (mounted.current) setFeedback(result.ok
           ? { tone: 'success', text }
           : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
         return result;
       });
     }
-    setSaving(true);
     const task = queue.current.then(async () => {
       const flushed = await reactive.current?.flush();
       if (flushed && !flushed.ok) {
@@ -141,6 +145,7 @@ export function useWorkspaceEditor(id: string | undefined) {
         }
         return blocked as WorkspaceStorageResult<T>;
       }
+      if (mounted.current) setSaving(true);
       const before = current.current;
       const result = await action(storage, workspaceId);
       if (mounted.current) {
@@ -172,11 +177,14 @@ export function useWorkspaceEditor(id: string | undefined) {
 
   // Deshacer o rehacer también publica primero y respeta el orden de la cola reactiva.
   const travel = useCallback((direction: 'undo' | 'redo'): Promise<boolean> => {
+    let complete!: (ok: boolean) => void;
+    const completion = new Promise<boolean>(resolve => { complete = resolve; });
+    const task = queue.current.then(async () => {
     const editor = reactive.current;
     const step = direction === 'undo' ? history.current.past.at(-1) : history.current.future.at(-1);
     const request = editor ? (direction === 'undo' ? editor.undo() : editor.redo()) : null;
-    if (!request || !step) return Promise.resolve(false);
-    const task = request.persisted.then(async (result) => {
+    if (!request || !step) { complete(false); return; }
+    void request.persisted.then((result) => {
       if (result.ok) {
         if (mounted.current) {
           const prefix = t(direction === 'undo' ? 'workview.undone' : 'workview.redone', locale);
@@ -187,9 +195,12 @@ export function useWorkspaceEditor(id: string | undefined) {
           setFeedback({ tone: 'error', text: describeFailure(result.issues, mode), saveFailed: isSaveFailure(result.issues) });
         }
       }
-      return result.ok;
+      complete(result.ok);
     });
-    return task;
+    await request.applied;
+    });
+    queue.current = task.catch(() => complete(false));
+    return completion;
   }, [mode, locale]);
   const undo = useCallback(() => travel('undo'), [travel]);
   const redo = useCallback(() => travel('redo'), [travel]);
@@ -208,7 +219,14 @@ export function useWorkspaceEditor(id: string | undefined) {
       : { tone: 'error', text: describeFailure(result.issues, mode), saveFailed: true });
     return result?.ok ?? false;
   }, [locale, mode]);
-  const flush = useCallback(async () => (await reactive.current?.flush())?.ok ?? true, []);
+  const flush = useCallback(async () => {
+    while (true) {
+      const tail = queue.current;
+      await tail;
+      if (!(await reactive.current?.flush())?.ok) return reactive.current === null;
+      if (tail === queue.current) return true;
+    }
+  }, []);
   // Lectura para continuaciones de acciones: React puede no haber confirmado todavía su render.
   const currentWorkspace = useCallback(() => mounted.current ? current.current : null, []);
 

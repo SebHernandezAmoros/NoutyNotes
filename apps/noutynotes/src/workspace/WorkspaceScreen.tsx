@@ -170,8 +170,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   // primera visita, para no pagar su coste si nunca se abre.
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<MainView>>(new Set());
   const openView = (next: MainView) => {
-    setMainView(next);
-    setVisitedViews((current) => (current.has(next) ? current : new Set(current).add(next)));
+    void flushBeforeTransition().then(ok => {
+      if (!ok) return;
+      setMainView(next);
+      setVisitedViews((current) => (current.has(next) ? current : new Set(current).add(next)));
+    });
   };
   const [presentOpen, setPresentOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
@@ -194,7 +197,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     notice !== '' ? { tone: 'success', text: notice } : null,
   );
   const {
-    view, feedback, saving, saveState, saveIssues, run, setFeedback, undo, redo, retry, recoverExternal,
+    view, feedback, saving, saveState, saveIssues, pendingCount, run, setFeedback, undo, redo, retry, recoverExternal,
     flush: flushWorkspace, currentWorkspace, revision, undoLabel, redoLabel,
   } = useWorkspaceEditor(id);
   const [selectedId, setSelectedId] = useState<CardId | null>(null);
@@ -318,7 +321,26 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const {
     flushPendingText, setPendingText, activateSurface, transferBodyMode, authority, recoverableDrafts, recoverDraft, discardDrafts, draftProblem, recoveredText, hasPendingEdit,
-  } = usePendingText(run, workspace, session);
+  } = usePendingText(run, workspace, session, flushWorkspace);
+  const flushBeforeTransition = useCallback(async () => await flushPendingText(undefined, true) && await flushWorkspace(), [flushPendingText, flushWorkspace]);
+  const flushLifecycle = useRef(flushBeforeTransition);
+  useLayoutEffect(() => { flushLifecycle.current = flushBeforeTransition; }, [flushBeforeTransition]);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const hidden = () => { if (document.hidden) void flushLifecycle.current(); };
+    const pagehide = () => { void flushLifecycle.current(); };
+    const warn = (event: BeforeUnloadEvent) => {
+      if (hasPendingEdit || pendingCount > 0 || saving) { event.preventDefault(); event.returnValue = ''; }
+    };
+    document.addEventListener('visibilitychange', hidden);
+    window.addEventListener('pagehide', pagehide);
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      document.removeEventListener('visibilitychange', hidden);
+      window.removeEventListener('pagehide', pagehide);
+      window.removeEventListener('beforeunload', warn);
+    };
+  }, [hasPendingEdit, pendingCount, saving]);
   // UX7-SAVE: el banner grande sobre el lienzo se retiró. Un borrador recuperable ya no interrumpe la
   // edición — solo añade una insignia discreta junto al estado de guardado (§6/§12); el detalle,
   // las acciones y cualquier aviso real viven en el Centro de recuperación (`RecoveryCenter.tsx`),
@@ -373,7 +395,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     returningToBoardRef.current = true;
     setReturningToBoard(true);
     try {
-      await flushPendingText();
+      if (!await flushBeforeTransition()) return;
       setMainView('board');
       setSettingsOpen(false);
       setTrashOpen(false);
@@ -429,7 +451,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
     if (savingNow) return;
     setSavingNow(true);
     try {
-      if (!await flushPendingText()) {
+      if (!await flushPendingText(undefined, true)) {
         setFeedback({ tone: 'error', text: t('workspace.saveDraftFailed', locale) });
         return;
       }
@@ -731,7 +753,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const chooseBoard = async (next: BoardId) => {
     const request = ++boardNavigation.current;
-    if (!await flushPendingText() || request !== boardNavigation.current) return;
+    if (!await flushBeforeTransition() || request !== boardNavigation.current) return;
     openBoard(next);
     setEditingId(null);
     setInlineEditing(false);
@@ -744,8 +766,9 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   // Cerrar una pestaña no borra el tablero (ADR 0035): no se permite cerrar la última abierta, y si
   // se cierra la activa, se activa la vecina inmediata a su izquierda (o la primera restante).
-  const closeBoardTab = (target: BoardId) => {
+  const closeBoardTab = async (target: BoardId) => {
     if (openBoards.length <= 1) return;
+    if (board?.id === target && !await flushBeforeTransition()) return;
     const index = openBoards.indexOf(target);
     const remaining = openBoards.filter((id) => id !== target);
     setOpenBoardIds(remaining);
@@ -1469,7 +1492,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
 
   const { text: status, tone: statusTone } = saveStatus({
     mode: storageMode, saving, failed: feedback?.saveFailed === true, native: Platform.OS !== 'web',
-    conflict: saveState === 'conflict', pending: hasPendingEdit,
+    conflict: saveState === 'conflict', pending: hasPendingEdit || saveState === 'pending',
   });
   // Un error/conflicto nunca usa el color de «guardado»; guardando/pendiente son neutros y la memoria volátil, aviso.
   const statusColor = statusTone === 'saved' ? colors.selection : statusTone === 'saving' || statusTone === 'pending' ? colors.textSecondary : colors.danger;
@@ -1518,7 +1541,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
       run={run}
       onDraftChange={(draft) => { setPendingText(draft, authority); }}
       onBodyModeChange={transferBodyMode}
-      flushPendingText={() => flushPendingText(authority ?? undefined)}
+      flushPendingText={(mode) => flushPendingText(authority ?? undefined, mode !== 'autosave', mode !== 'autosave')}
       onClose={() => { setEditingId(null); setInlineEditing(false); setSelectedId(null); }}
       onDisplay={(display) => changeDisplay(selected.id, display)}
       onTrash={() => void sendToTrash(selected.id)}
@@ -1544,7 +1567,7 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setInlineEditing(false); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
   const saveInlineCard = useCallback(async (draft: EditableCardDraft) => {
     if (!setPendingText(draft, authority)) return true;
-    return flushPendingText(authority ?? undefined);
+    return flushPendingText(authority ?? undefined, false, false);
   }, [authority, flushPendingText, setPendingText]);
   // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor y el mismo caso de
   // uso de guardado; no abre el editor ni cambia la selección. Un cuerpo HTML seguro (ADR 0066) marca la
@@ -2436,6 +2459,7 @@ function usePendingText(
   run: ReturnType<typeof useWorkspaceEditor>['run'],
   workspace: Workspace | null,
   session: ReturnType<typeof useWorkspaceSession>,
+  flushWorkspace: ReturnType<typeof useWorkspaceEditor>['flush'],
 ) {
   const pendingText = useRef<PendingEditorialText | null>(null);
   const pendingSave = useRef<Promise<boolean> | null>(null);
@@ -2613,12 +2637,15 @@ function usePendingText(
     await privateTail.current;
   }, [persistPrivate]);
 
-  const flushPendingText = useCallback(async (requestedAuthority?: EditorialAuthority): Promise<boolean> => {
+  const flushPendingText = useCallback(async (requestedAuthority?: EditorialAuthority, immediate = true, drain = true): Promise<boolean> => {
     if (requestedAuthority && !ownsAuthority(requestedAuthority)) return true;
     while (true) {
       if (requestedAuthority && !ownsAuthority(requestedAuthority)) return true;
       if (pendingSave.current) {
-        if (!await pendingSave.current) return false;
+        const inFlight = pendingSave.current;
+        if (immediate && !await flushWorkspace()) return false;
+        if (!await inFlight) return false;
+        if (!drain) return true;
         continue;
       }
       const draft = pendingText.current;
@@ -2646,7 +2673,7 @@ function usePendingText(
         ...(draft.bodySource?.format === 'html' && draft.bodyDocument
           ? { contentDocument: draft.bodyDocument }
           : { content: draft.content }),
-      }), 'action.textSaved', { mergeKey: `text:${draft.cardId}`, reactive: true }).then(async (result) => {
+      }), 'action.textSaved', { mergeKey: `text:${draft.cardId}`, reactive: true, immediate }).then(async (result) => {
         if (result.ok && workspace) {
           session.editorialSessions.update(draft.authority.title, { persistence: 'saved' });
           session.editorialSessions.update(draft.authority.body, { persistence: 'saved' });
@@ -2667,8 +2694,10 @@ function usePendingText(
       }).finally(() => { if (pendingSave.current === task) pendingSave.current = null; });
       pendingSave.current = task;
       if (!await task) return false;
+      // Autosave confirms one snapshot; a later tick handles newer typing. Transitions drain all.
+      if (!drain) return true;
     }
-  }, [durableZoneRevision, flushPrivate, ownsAuthority, refreshDrafts, run, session.drafts, session.editorialSessions, setPendingRef, workspace]);
+  }, [durableZoneRevision, flushPrivate, flushWorkspace, ownsAuthority, refreshDrafts, run, session.drafts, session.editorialSessions, setPendingRef, workspace]);
 
   const setPendingText = useCallback((draft: EditableCardDraft, requestedAuthority: EditorialAuthority | null = authorityRef.current) => {
     if (!requestedAuthority || requestedAuthority.cardId !== draft.cardId || !ownsAuthority(requestedAuthority)) return false;

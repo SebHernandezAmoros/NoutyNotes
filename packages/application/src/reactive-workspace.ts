@@ -16,9 +16,12 @@ export interface ReactiveRunOptions {
   readonly mergeKey?: string;
   readonly history?: 'record' | 'clear' | 'skip';
   readonly refreshEditors?: boolean;
+  /** A boundary that must be confirmed immediately, without merging across it. */
+  readonly immediate?: boolean;
 }
 
-export type ReactiveSaveStatus = 'saved' | 'saving' | 'error' | 'conflict';
+export type ReactiveSaveStatus = 'saved' | 'pending' | 'saving' | 'error' | 'conflict';
+export const WORKSPACE_AUTOSAVE = { idleMs: 250, maxWaitMs: 2000 } as const;
 
 export interface ReactiveWorkspaceSnapshot {
   readonly workspace: Workspace;
@@ -142,11 +145,17 @@ export class ReactiveWorkspaceEditor {
   private listeners = new Set<Listener>();
   private applyTail: Promise<void> = Promise.resolve();
   private processing: Promise<WorkspaceStorageResult<void>> | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private maxTimer: ReturnType<typeof setTimeout> | null = null;
+  private ready = false;
+  private writing = false;
+  private flushes = 0;
 
   constructor(
     private readonly storage: WorkspaceStorage,
     private readonly id: WorkspaceId,
     initial: Workspace,
+    private readonly timing: { readonly idleMs: number; readonly maxWaitMs: number } = { idleMs: 0, maxWaitMs: 0 },
   ) {
     this.visible = initial;
     this.confirmed = initial;
@@ -157,8 +166,8 @@ export class ReactiveWorkspaceEditor {
       ? 'conflict'
       : this.blockedIssues.length > 0
         ? 'error'
-        : this.pending.length > 0
-          ? 'saving'
+        : this.writing ? 'saving' : this.pending.length > 0
+          ? 'pending'
           : 'saved';
     return {
       workspace: this.visible,
@@ -206,7 +215,9 @@ export class ReactiveWorkspaceEditor {
 
     const apply = async () => {
       const before = this.visible;
-      const captured = await this.capture(action, before);
+      let captured: Capture<T>;
+      try { captured = await this.capture(action, before); }
+      catch { const result = storageFailure<T>('io-failure', 'action', 'No se pudo aplicar el cambio.'); finishApplied(result); settle(result); return; }
       if (!captured.result.ok || !captured.candidate) {
         finishApplied(captured.result);
         settle(captured.result);
@@ -236,7 +247,7 @@ export class ReactiveWorkspaceEditor {
       finishApplied(captured.result);
       this.emit();
       if (this.blockedIssues.length > 0) this.settle(operation, failure(this.blockedIssues));
-      else void this.ensureProcessing();
+      else this.schedule();
     };
     this.applyTail = this.applyTail.then(apply, apply);
     return { applied, persisted };
@@ -261,6 +272,7 @@ export class ReactiveWorkspaceEditor {
     if (this.pending.length === 0) return { ok: true, value: undefined };
     if (this.blockedIssues[0]?.code === 'external-change') return failure(this.blockedIssues);
     this.blockedIssues = [];
+    this.ready = true;
     this.emit();
     return this.ensureProcessing();
   }
@@ -321,19 +333,25 @@ export class ReactiveWorkspaceEditor {
     this.history = rebuilt;
     this.blockedIssues = [];
     this.revision += 1;
+    this.ready = true;
     this.emit();
     return this.ensureProcessing();
   }
 
   /** Espera transformaciones y escrituras; devuelve error si queda trabajo recuperable. */
   async flush(): Promise<WorkspaceStorageResult<void>> {
-    await this.applyTail;
-    if (this.processing) await this.processing;
-    return this.pending.length === 0
-      ? { ok: true, value: undefined }
-      : failure(this.blockedIssues.length > 0
-        ? this.blockedIssues
-        : [{ code: 'io-failure', path: 'workspace', message: 'Quedan cambios pendientes de guardar.' }]);
+    this.flushes++;
+    this.cancelTimers();
+    try {
+      while (true) {
+        const tail = this.applyTail;
+        await tail;
+        if (this.blockedIssues.length > 0) return failure(this.blockedIssues);
+        if (this.pending.length > 0 || this.processing) await this.ensureProcessing();
+        if (this.blockedIssues.length > 0) return failure(this.blockedIssues);
+        if (tail === this.applyTail && this.pending.length === 0) return { ok: true, value: undefined };
+      }
+    } finally { this.flushes--; }
   }
 
   private replace(target: Workspace, label: string): ReactiveDispatch<WorkspaceSummary> {
@@ -367,28 +385,60 @@ export class ReactiveWorkspaceEditor {
     if (this.processing) return this.processing;
     this.processing = this.processPending().finally(() => {
       this.processing = null;
-      if (this.pending.length > 0 && this.blockedIssues.length === 0) void this.ensureProcessing();
+      this.emit();
+      if (this.pending.length > 0 && this.blockedIssues.length === 0) this.schedule();
     });
     return this.processing;
   }
 
   private async processPending(): Promise<WorkspaceStorageResult<void>> {
     while (this.pending.length > 0 && this.blockedIssues.length === 0) {
-      const operation = this.pending[0] as PendingOperation;
-      const saved = await this.storage.save(operation.candidate);
+      const urgent = this.pending.some(operation => operation.options.immediate);
+      if (this.timing.idleMs > 0 && !this.flushes && !this.ready && !urgent) break;
+      this.ready = false;
+      this.cancelTimers();
+      const boundary = this.pending.findIndex(operation => operation.options.immediate);
+      const count = this.timing.idleMs === 0 || boundary === 0 ? 1 : boundary > 0 ? boundary : this.pending.length;
+      const batch = this.pending.slice(0, count);
+      const target = batch[batch.length - 1]!.candidate;
+      let saved: WorkspaceStorageResult<WorkspaceSummary>;
+      const unchanged = JSON.stringify(target) === JSON.stringify(this.confirmed);
+      this.writing = !unchanged;
+      this.emit();
+      try { saved = unchanged ? { ok: true, value: { id: target.id, name: target.metadata.name } } : await this.storage.save(target); }
+      catch { saved = storageFailure('io-failure', 'workspace', 'No se pudo completar el guardado. Los cambios continúan pendientes.'); }
+      this.writing = false;
       if (!saved.ok) {
+        this.cancelTimers();
         this.blockedIssues = saved.issues;
         for (const queued of this.pending) this.settle(queued, failure(saved.issues));
         this.emit();
         return failure(saved.issues);
       }
-      this.confirmed = operation.candidate;
-      this.pending.shift();
-      this.persistedRevision += 1;
-      this.settle(operation, operation.result);
+      this.confirmed = target;
+      this.pending.splice(0, batch.length);
+      if (!unchanged) this.persistedRevision += 1;
+      for (const operation of batch) this.settle(operation, operation.result);
       this.emit();
     }
     return { ok: true, value: undefined };
+  }
+
+  private cancelTimers() {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    if (this.maxTimer !== null) clearTimeout(this.maxTimer);
+    this.idleTimer = null; this.maxTimer = null;
+  }
+
+  private schedule() {
+    if (!this.pending.length || this.blockedIssues.length) return;
+    if (this.timing.idleMs === 0 || this.flushes || this.ready || this.pending.some(operation => operation.options.immediate)) {
+      this.ready = true; void this.ensureProcessing(); return;
+    }
+    const fire = () => { this.cancelTimers(); this.ready = true; void this.ensureProcessing(); };
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(fire, this.timing.idleMs);
+    if (this.maxTimer === null) this.maxTimer = setTimeout(fire, this.timing.maxWaitMs);
   }
 
   private settle<T>(operation: PendingOperation<T>, result: WorkspaceStorageResult<T>) {

@@ -43,7 +43,7 @@ interface CardInspectorProps {
   readonly run: Run;
   readonly onDraftChange: (draft: EditableCardDraft) => void;
   readonly onBodyModeChange: (mode: 'visual' | 'html') => boolean;
-  readonly flushPendingText: () => Promise<boolean>;
+  readonly flushPendingText: (mode?: 'autosave') => Promise<boolean>;
   readonly initialDraft?: EditableCardDraft | undefined;
   /** Contexto activo. Vive en la pantalla para sobrevivir a las revisiones reactivas del workspace. */
   readonly section: CardInspectorSection;
@@ -466,9 +466,17 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   };
   useEffect(() => {
     if (!dirty) return;
-    const timer = setTimeout(() => { void flushPendingText(); }, 700);
+    const timer = setTimeout(() => { void flushPendingText('autosave'); }, 700);
     return () => clearTimeout(timer);
   }, [dirty, card.id, title, content, titleDocument, flushPendingText]);
+  const latestAutosave = useRef({ dirty, flushPendingText });
+  useEffect(() => { latestAutosave.current = { dirty, flushPendingText }; }, [dirty, flushPendingText]);
+  useEffect(() => {
+    const checkpoint = setInterval(() => {
+      if (latestAutosave.current.dirty) void latestAutosave.current.flushPendingText('autosave');
+    }, 5000);
+    return () => clearInterval(checkpoint);
+  }, []);
   useEffect(() => {
     if (Platform.OS !== 'web' || (mode !== 'folder' && !visualEditing) || !dirty) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };

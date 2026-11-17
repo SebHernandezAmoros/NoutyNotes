@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ideaA, validWorkspace } from '../../domain/src/__fixtures__/workspace';
 import type { Workspace, WorkspaceId } from '@noutynotes/domain';
@@ -258,5 +258,72 @@ describe('ReactiveWorkspaceEditor (UX7 P18-E1)', () => {
     expect(editor.snapshot()).toMatchObject({ status: 'conflict', pendingCount: 1 });
     expect(contentOf(editor.snapshot().workspace)).toBe('Texto que no debe perderse');
     expect(storage.workspace.cards.some((card) => card.id === ideaA.id)).toBe(false);
+  });
+});
+
+describe('B9-R6-B autosave agrupado', () => {
+  afterEach(() => vi.useRealTimers());
+  const timing = { idleMs: 250, maxWaitMs: 2000 };
+  it('persiste por inactividad y no pospone indefinidamente la actividad continua', async () => {
+    vi.useFakeTimers();
+    const storage = new ControlledStorage();
+    const editor = new ReactiveWorkspaceEditor(storage, storage.workspace.id, storage.workspace, timing);
+    const jobs = [];
+    for (let n=0;n<10;n++) {
+      const job = editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:`Title ${n}`}),{label:'Title'});
+      jobs.push(job.persisted); await job.applied;
+      await vi.advanceTimersByTimeAsync(200);
+    }
+    expect(storage.saves).toHaveLength(1);
+    expect(titleOf(storage.workspace)).toBe('Title 9');
+    expect(editor.snapshot().status).toBe('saved');
+    expect((await Promise.all(jobs)).every(r=>r.ok)).toBe(true);
+    const final = editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'Idle'}),{label:'Idle'});
+    await final.applied; await vi.advanceTimersByTimeAsync(249);expect(storage.saves).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);expect((await final.persisted).ok).toBe(true);expect(storage.saves).toHaveLength(2);
+  });
+  it('mantiene una escritura en vuelo, consolida solo las posteriores y admite flush concurrente', async()=>{
+    vi.useFakeTimers();
+    const storage=new ControlledStorage();const gate=deferred<WorkspaceStorageResult<WorkspaceSummary>>();storage.nextSave=gate.promise;
+    const editor=new ReactiveWorkspaceEditor(storage,storage.workspace.id,storage.workspace,timing);
+    const a=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'A'}),{label:'A'});await a.applied;
+    await vi.advanceTimersByTimeAsync(250);expect(editor.snapshot().status).toBe('saving');
+    const b=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'B'}),{label:'B'});await b.applied;
+    const c=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{content:'C'}),{label:'C'});await c.applied;
+    const f1=editor.flush(), f2=editor.flush();
+    expect(storage.saves).toHaveLength(1);expect(editor.snapshot().status).not.toBe('saved');
+    gate.resolve({ok:true,value:{id:storage.workspace.id,name:'Demo'}});
+    expect((await Promise.all([f1,f2])).every(r=>r.ok)).toBe(true);
+    expect((await Promise.all([a.persisted,b.persisted,c.persisted])).every(r=>r.ok)).toBe(true);
+    expect(storage.saves.map(titleOf)).toEqual(['A','B']);expect(contentOf(storage.workspace)).toBe('C');
+    expect(editor.snapshot().status).toBe('saved');
+  });
+  it('no agrupa a través de una barrera inmediata ni escribe duplicados sin cambios',async()=>{
+    vi.useFakeTimers();const storage=new ControlledStorage();const editor=new ReactiveWorkspaceEditor(storage,storage.workspace.id,storage.workspace,timing);
+    const a=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'A'}),{label:'A'});await a.applied;
+    const b=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'B'}),{label:'B',immediate:true});
+    expect((await b.persisted).ok).toBe(true);await a.persisted;
+    expect(storage.saves.map(titleOf)).toEqual(['A','B']);
+    const unchanged=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'B'}),{label:'same'});await unchanged.applied;
+    await editor.flush();await unchanged.persisted;expect(storage.saves).toHaveLength(2);
+  });
+  it('convierte rechazo en error recuperable, retiene todas las mutaciones y reintenta una vez',async()=>{
+    vi.useFakeTimers();const storage=new ControlledStorage();
+    const original=storage.save.bind(storage);let reject=true;
+    storage.save=async w=>{if(reject)throw new Error('synthetic disk rejection');return original(w);};
+    const editor=new ReactiveWorkspaceEditor(storage,storage.workspace.id,storage.workspace,timing);
+    const a=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'A'}),{label:'A'});await a.applied;
+    const b=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{content:'B'}),{label:'B'});await b.applied;
+    expect((await editor.flush()).ok).toBe(false);expect((await a.persisted).ok || (await b.persisted).ok).toBe(false);
+    expect(editor.snapshot()).toMatchObject({status:'error',pendingCount:2});
+    reject=false;expect((await editor.retry()).ok).toBe(true);
+    expect(storage.saves).toHaveLength(1);expect(titleOf(storage.workspace)).toBe('A');expect(contentOf(storage.workspace)).toBe('B');
+  });
+  it('un caso de uso rechazado termina ambas promesas y no bloquea los cambios siguientes',async()=>{
+    const storage=new ControlledStorage();const editor=new ReactiveWorkspaceEditor(storage,storage.workspace.id,storage.workspace,timing);
+    const broken=editor.dispatch(async()=>{throw new Error('broken action');},{label:'broken'});
+    expect((await broken.applied).ok).toBe(false);expect((await broken.persisted).ok).toBe(false);
+    const next=editor.dispatch((s,id)=>editCardContent(s,id,ideaA.id,{title:'next'}),{label:'next'});await next.applied;
+    await editor.flush();expect((await next.persisted).ok).toBe(true);
   });
 });
