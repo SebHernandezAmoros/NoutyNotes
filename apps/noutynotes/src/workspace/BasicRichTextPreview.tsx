@@ -27,6 +27,7 @@ interface BasicRichTextPreviewProps {
   readonly width?: number | undefined;
   /** Intrinsic block height for the Banner budget; other previews retain their clamp. */
   readonly unclamped?: boolean | undefined;
+  readonly selectable?: boolean | undefined;
 }
 
 function inlineView(inline: RichTextInline, blockIndex: number, inlineIndex: number, testID: string): ReactNode {
@@ -85,7 +86,7 @@ function previewLines(document: RichTextDocument): readonly PreviewLine[] {
 }
 
 /** Vista semántica P07; Markdown sigue siendo únicamente la persistencia durable. */
-export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID, width, unclamped }: BasicRichTextPreviewProps) {
+export function BasicRichTextPreview({ document, numberOfLines, color, fontSize, lineHeight, fontFamily, testID, width, unclamped, selectable }: BasicRichTextPreviewProps) {
   const { theme } = useTheme();
   const projectedDocument = unclamped ? document : projectRichTextPreview(document, numberOfLines, width ?? UNBOUNDED_WIDTH, fontSize).document;
   if (projectedDocument.blocks.some((block) => block.type === 'table' || block.type === 'pdf' || block.type === 'retired-image')) {
@@ -96,7 +97,7 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
           if (block.type === 'retired-image') return <RetiredImageBlock key={blockIndex} block={block} testID={`${testID}-retired-${blockIndex}`} />;
           if (block.type !== 'table') {
             return <BasicRichTextPreview key={blockIndex} document={{ schemaVersion: document.schemaVersion, blocks: [block] }} numberOfLines={numberOfLines}
-              color={color} fontSize={fontSize} lineHeight={lineHeight} fontFamily={fontFamily} testID={`${testID}-block-${blockIndex}`} width={width} unclamped={unclamped} />;
+              color={color} fontSize={fontSize} lineHeight={lineHeight} fontFamily={fontFamily} testID={`${testID}-block-${blockIndex}`} width={width} unclamped={unclamped} selectable={selectable} />;
           }
           const rows: readonly { readonly row: RichTextTableRow; readonly header: boolean }[] = [
             ...(block.header ? [{ row: block.header, header: true }] : []),
@@ -107,7 +108,7 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
               {rows.map(({ row, header }, rowIndex) => (
                 <View key={rowIndex} style={styles.tableRow}>
                   {row.cells.map((cell, cellIndex) => (
-                    <Text key={cellIndex} testID={`${testID}-table-${blockIndex}-${header ? 'header' : `row-${rowIndex}`}-${cellIndex}`} numberOfLines={unclamped ? undefined : 2} style={[
+                    <Text selectable={selectable} key={cellIndex} testID={`${testID}-table-${blockIndex}-${header ? 'header' : `row-${rowIndex}`}-${cellIndex}`} numberOfLines={unclamped ? undefined : 2} style={[
                       styles.tableCell, header ? styles.tableHeader : null,
                       { color, borderColor: color, fontSize, lineHeight },
                       header ? { backgroundColor: theme.colors.surfaceRaised, color: theme.colors.textPrimary } : null,
@@ -128,7 +129,7 @@ export function BasicRichTextPreview({ document, numberOfLines, color, fontSize,
   return (
     <View testID={testID} style={styles.content}>
       {(unclamped ? lines : lines.slice(0, numberOfLines)).map((line, lineIndex) => (
-        <Text key={line.key} numberOfLines={unclamped ? undefined : Math.max(1, numberOfLines - lineIndex)} style={[
+        <Text selectable={selectable} key={line.key} numberOfLines={unclamped ? undefined : Math.max(1, numberOfLines - lineIndex)} style={[
           { color, fontSize, lineHeight, textAlign: line.alignment },
           line.headingLevel === null ? null : [styles.heading, {
             fontSize: fontSize * headingScale[line.headingLevel],

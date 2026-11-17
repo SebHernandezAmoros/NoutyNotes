@@ -16,6 +16,41 @@ function ok<T>(result: WorkspaceStorageResult<T>): T {
 }
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 
+it('B9-R6-A: conserva cita independiente en carpeta, Archivo/Papelera y ZIP sin modificar el Asset', async () => {
+  const tree = new MemoryDocumentTree();
+  const storage = new FolderStorage(new DocumentTreeFolderPort(tree));
+  const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Citas'));
+  const ref = 'assets/documents/cita.txt' as import('../../packages/domain/src/index').AssetRef;
+  const bytes = new TextEncoder().encode('Antes\nLa cita\nDespués');
+  ok(await storage.writeAsset(id, ref, bytes));
+  const quote = { version: 1 as const, text: 'La cita', prefix: 'Antes\n', suffix: '\nDespués', fingerprint: 'sha256:' + 'a'.repeat(64), kind: 'txt' as const, line: 2 };
+  const input = { day: '2026-11-16', createdAt: '2026-11-16T10:00:00.000Z', documentRef: ref, documentName: 'cita.txt', reflection: 'Mi reflexión', quote };
+  const entry = ok(await annotateDocumentInDiary(storage, id, input));
+  const reopened = new FolderStorage(new DocumentTreeFolderPort(tree));
+  const card = ok(await reopened.open(id)).cards.find(c => c.id === entry)!;
+  expect(JSON.parse(String(card.fields['documento-cita']))).toEqual(quote);
+  expect(card.content).toBe('Mi reflexión');
+  ok(await moveCardToArchive(reopened, id, entry, '2026-11-16T11:00:00.000Z'));
+  expect(ok(await reopened.open(id)).archive?.[0]?.card.fields['documento-cita']).toBe(JSON.stringify(quote));
+  const { restoreCardFromArchive } = await import('../../packages/application/src/index');
+  const fallbackBoardId = 'principal' as BoardId;
+  ok(await restoreCardFromArchive(reopened, id, { cardId: entry, fallbackBoardId }));
+  ok(await moveCardToTrash(reopened, id, entry));
+  ok(await restoreCardFromTrash(reopened, id, { cardId: entry, fallbackBoardId }));
+  const { serializeWorkspace, writeWorkspaceArchive } = await import('../../packages/storage/src/index');
+  const files = serializeWorkspace(ok(await reopened.open(id)));
+  if (!files.ok) throw new Error(JSON.stringify(files.issues));
+  const archived = writeWorkspaceArchive(files.value, { [ref]: bytes });
+  if (!archived.ok) throw new Error(JSON.stringify(archived.issues));
+  const zip = archived.value;
+  const imported = new ArchiveStorage();
+  const opened = ok(await imported.importArchive(zip));
+  const restored = ok(await imported.open(opened.summary.id));
+  expect(restored.cards.find(c => c.id === entry)?.fields['documento-cita']).toBe(JSON.stringify(quote));
+  expect(ok(await imported.readAsset(opened.summary.id, ref))).toEqual(bytes);
+  expect(ok(await reopened.readAsset(id, ref))).toEqual(bytes);
+});
+
 describe('Daily Log con fechas reales (ADR 0024)', () => {
   it('las tarjetas creadas con fecha aparecen en su día; las entradas no duplican y viven fuera de los tableros', async () => {
     const storage = new ArchiveStorage();

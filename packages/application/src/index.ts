@@ -88,6 +88,8 @@ export { diaryExportText } from './diary-export';
 export type { DiaryExportResult } from './diary-export';
 export { annotateDocumentInDiary, openDiaryEntry } from './diary';
 export type { DiaryEntryInput, DocumentAnnotationInput } from './diary';
+export { captureDocumentQuote, documentQuoteVerified, readDocumentQuote, DOCUMENT_QUOTE_LIMIT } from './document-quote';
+export type { DocumentQuote } from './document-quote';
 export type { DeleteAssetsResult, ImportImageAtInput } from './assets-library';
 export type { RichTextCodec, RichTextCodecResult } from './rich-text-codec';
 

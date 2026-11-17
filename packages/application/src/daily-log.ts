@@ -24,6 +24,7 @@ export const DIARY_CARD_TYPE: CardTypeDefinition = {
     { key: 'documento-pagina' as FieldKey, kind: 'number', label: 'Página', required: false },
     { key: 'documento-linea' as FieldKey, kind: 'number', label: 'Línea', required: false },
     { key: 'documento-seccion' as FieldKey, kind: 'text', label: 'Sección', required: false },
+    { key: 'documento-cita' as FieldKey, kind: 'text', label: 'Cita documental', required: false },
   ],
 };
 

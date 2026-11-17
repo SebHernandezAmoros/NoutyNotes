@@ -1,8 +1,9 @@
-import type { WorkspaceStorageResult } from '@noutynotes/application';
+import type { DocumentQuote, WorkspaceStorageResult } from '@noutynotes/application';
 import type { Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+import type { ViewStyle } from 'react-native';
 
 import { ActionButton } from '../components/controls';
 import { Dialog } from '../components/Dialog';
@@ -11,6 +12,7 @@ import { BasicRichTextPreview } from './BasicRichTextPreview';
 import { DocumentDiaryPanel } from './DocumentDiaryPanel';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 import type { TextAssetPreviewState } from './useTextAssetPreview';
+import { quoteFromSelection } from './documentSelection';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
@@ -41,6 +43,27 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
   const [panelExpanded, setPanelExpanded] = useState(false);
   const [panelDirty, setPanelDirty] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
+  const [candidate, setCandidate] = useState<DocumentQuote | 'long' | null>(null);
+  const [selectionRequest, setSelectionRequest] = useState<{ quote: DocumentQuote; sequence: number } | null>(null);
+  const [seenPreview, setSeenPreview] = useState(preview);
+  if (seenPreview !== preview) {
+    setSeenPreview(preview); setCandidate(null); setSelectionRequest(null);
+    setPanelExpanded(false); setPanelDirty(false); setConfirmingClose(false);
+  }
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !preview?.fingerprint) return;
+    const capture = () => {
+      const root = document.querySelector<HTMLElement>(`[data-testid="${testID}-source"]`);
+      const selection = window.getSelection();
+      if (!root || !selection || selection.isCollapsed) return; // retain capture while toolbar takes focus
+      const result = quoteFromSelection(root, selection, {
+        sourceText: preview.text, fingerprint: preview.fingerprint!, kind: /\.(md|markdown)$/i.test(preview.name) ? 'markdown' : 'txt', partial: preview.truncated,
+      });
+      setCandidate(result && 'quote' in result ? result.quote : result?.error === 'long' ? 'long' : null);
+    };
+    document.addEventListener('selectionchange', capture);
+    return () => document.removeEventListener('selectionchange', capture);
+  }, [preview, testID]);
 
   const requestClose = () => {
     if (confirmingClose) { setConfirmingClose(false); return; }
@@ -51,11 +74,18 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
 
   return (
     <Dialog visible={preview !== null || !!problem} title={preview?.name ?? ''} compact={compact} presentation="centered" onClose={requestClose} testID={testID}
+      headerActions={Platform.OS === 'web' && preview?.fingerprint ? <View style={{ maxWidth: 150 }}>
+        <ActionButton testID={`${testID}-annotate-selection`} label={t('diary.quote.annotate', locale)} disabled={!candidate || candidate === 'long' || panelDirty} onPress={() => {
+          if (!candidate || candidate === 'long' || panelDirty) return;
+          setSelectionRequest({ quote: candidate, sequence: (selectionRequest?.sequence ?? 0) + 1 }); setPanelExpanded(true); setCandidate(null);
+        }} />
+      </View> : undefined}
       sidePanel={preview ? (
         <>
           <DocumentDiaryPanel key={preview.ref} documentRef={preview.ref} documentName={preview.name}
             kind={preview.markdownDocument ? 'markdown' : 'txt'} compact={compact} workspace={workspace} run={run}
             expanded={panelExpanded} onExpandedChange={setPanelExpanded} onDirtyChange={setPanelDirty}
+            sourceFingerprint={preview.fingerprint} selectionRequest={selectionRequest}
             // Mismo criterio que `PdfPreview`: navegar al Diario cierra primero este visor (su `Modal`
             // es un portal propio, fuera de la jerarquía de pantallas).
             onOpenDiary={() => { onClose(); onOpenDiary(); }} testID={`${testID}-diary`} />
@@ -74,15 +104,19 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
       ) : undefined}
     >
       {problem ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{problem}</Text> : null}
+      {candidate === 'long' ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{t('diary.quote.long', locale)}</Text> : null}
       {/* B9-R4-04: aviso, no bloqueo — el texto parcial ya se muestra debajo, siempre cortado en una
           frontera UTF-8 válida; el original completo sigue disponible por descarga, fuera de esta vista. */}
       {preview?.truncated ? <Text testID={`${testID}-truncated`} style={{ color: colors.textSecondary, fontSize: 13 }}>{t('textPreview.truncated', locale)}</Text> : null}
+      {/* Reserve reading space even for a one-line Markdown so the existing 62% sheet has a usable list. */}
+      <View testID={`${testID}-source`} style={[{ minHeight: compact ? 480 : 320 }, Platform.OS === 'web' ? { userSelect: 'text' } as ViewStyle & { userSelect: 'text' } : undefined]}>
       {preview?.markdownDocument ? (
-        <BasicRichTextPreview testID={`${testID}-markdown`} document={preview.markdownDocument} numberOfLines={0} unclamped
+        <BasicRichTextPreview testID={`${testID}-markdown`} document={preview.markdownDocument} numberOfLines={0} unclamped selectable
           color={colors.textPrimary} fontSize={15} lineHeight={22} />
       ) : preview ? (
         <Text selectable style={{ fontFamily: 'monospace', color: colors.textPrimary, fontSize: 14, lineHeight: 21 }}>{preview.text}</Text>
       ) : null}
+      </View>
     </Dialog>
   );
 }

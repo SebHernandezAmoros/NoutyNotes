@@ -8,10 +8,10 @@ import { block8Document, block8PdfBytes, pdfRef } from '../fixtures/block8-conte
 import { openCardActions, openFullCardEditor } from './support';
 
 function value<T>(r: { ok: true; value: T } | { ok: false; issues: readonly unknown[] }): T { if (!r.ok) throw new Error(JSON.stringify(r.issues)); return r.value; }
-async function lab(page: Page) {
+async function lab(page: Page, withQuoteText = false) {
   const base = canvasCardsWorkspace();
   const workspace = { ...base, metadata: { name: 'Herramientas B9' }, cards: base.cards.map((card, i) => i === 0 ? { ...card, contentDocument: block8Document } : card) };
-  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { [pdfRef]: block8PdfBytes(), 'assets/notes/Guia.md': new TextEncoder().encode('# Guía B9\n<script>window.__unsafe = true</script>') }));
+  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { [pdfRef]: block8PdfBytes(), 'assets/notes/Guia.md': new TextEncoder().encode('# Guía B9\n<script>window.__unsafe = true</script>'), ...(withQuoteText ? { 'assets/notes/Cita.txt': new TextEncoder().encode('Inicio\nFrase única para citar\n' + 'Contenido de laboratorio.\n'.repeat(200)) } : {}) }));
   await page.addInitScript(() => Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true }));
   await page.goto('./', { waitUntil: 'domcontentloaded' });
   const chooser = page.waitForEvent('filechooser');
@@ -27,6 +27,77 @@ async function nav(page: Page, name: string) {
 async function openHelp(page: Page, locale: 'es' | 'en' = 'es') {
   await nav(page, locale === 'es' ? 'Abrir la configuración' : 'Open settings');
   await page.getByTestId('settings-panel').getByRole('button', { name: locale === 'es' ? 'Abrir ayuda de atajos' : 'Open keyboard shortcuts help' }).click();
+}
+
+for (const name of ['Cita.txt', 'Guia.md']) {
+  test(`B9-R6-A: selección ${name}, cita separada, detalle, borrador, scroll y reapertura`, async ({ page }, info) => {
+    await lab(page, true);
+    await nav(page, 'Abrir los assets');
+    await page.getByTestId(`asset-${name}`).getByRole('button', {name: `Ver ${name}`, exact:true}).click();
+    const previewButton = page.getByRole('button', {name: `Vista previa de ${name}`, exact:true});
+    await previewButton.click();
+    const viewer = page.getByTestId('asset-text-preview');
+    const source = page.getByTestId('asset-text-preview-source');
+    const quote = name === 'Cita.txt' ? 'Frase única para citar' : 'Guía B9';
+    // Real DOM Range over the rendered reader; no mock capture/persistence pathway.
+    await source.evaluate((root, text) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const start = (node.textContent ?? '').indexOf(text);
+        if (start < 0) continue;
+        const range = document.createRange(); range.setStart(node, start); range.setEnd(node, start + text.length);
+        const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range); return;
+      }
+      throw new Error('Text not rendered');
+    }, quote);
+    if (info.project.name === 'desktop' && name === 'Guia.md') {
+      const rect = await source.evaluate(root => {
+        const node = document.createTreeWalker(root, NodeFilter.SHOW_TEXT).nextNode()!;
+        const range = document.createRange(); range.selectNodeContents(node);
+        window.getSelection()?.removeAllRanges();
+        const r = range.getBoundingClientRect(); return {x:r.x, y:r.y, width:r.width, height:r.height};
+      });
+      await page.mouse.move(rect.x, rect.y + rect.height / 2);
+      await page.mouse.down(); await page.mouse.move(rect.x + rect.width + 2, rect.y + rect.height / 2, {steps:10}); await page.mouse.up();
+    }
+    const sourceNode = await source.elementHandle();
+    const scrollNode = await source.evaluateHandle(root => {
+      let node = root.parentElement!;
+      while (node.parentElement && !['auto', 'scroll'].includes(getComputedStyle(node).overflowY)) node = node.parentElement;
+      node.scrollTop = 120; return node;
+    });
+    const scrollBefore = await scrollNode.evaluate(node => node.scrollTop);
+    await page.getByTestId('asset-text-preview-annotate-selection').click();
+    const panel = page.getByTestId('asset-text-preview-diary');
+    await expect(panel.getByTestId('asset-text-preview-diary-quote')).toContainText(quote);
+    const reflection = Array.from({length: 60}, (_, i) => `Reflexión independiente ${i}`).join('\n\n') + '\n\nfinal visible.';
+    await panel.getByTestId('asset-text-preview-diary-reflection').fill(reflection);
+    await panel.getByRole('button', {name:'Volver', exact:true}).click();
+    await panel.getByTestId('asset-text-preview-diary-add').click();
+    await expect(panel.getByTestId('asset-text-preview-diary-reflection')).toHaveValue(reflection);
+    await panel.getByTestId('asset-text-preview-diary-save').click();
+    await panel.getByRole('button', {name:'Leer anotación', exact:true}).click();
+    const body = panel.getByTestId('asset-text-preview-diary-body');
+    await body.focus(); await page.keyboard.press('End');
+    await expect(body).toContainText('final visible.');
+    await expect(panel.getByTestId('asset-text-preview-diary-quote')).toContainText(quote);
+    await expect(panel).toContainText(name === 'Cita.txt' ? 'Verificada al capturar' : 'Ubicación no verificada');
+    expect(await sourceNode!.evaluate(node => node.isConnected)).toBe(true);
+    expect(await scrollNode.evaluate(node => node.scrollTop)).toBe(scrollBefore);
+    await page.screenshot({path: info.outputPath('annotation-detail.png')});
+    await page.keyboard.press('Escape'); // detail -> list
+    await expect(panel.getByRole('button', {name:'Leer anotación', exact:true})).toBeVisible();
+    await page.keyboard.press('Escape'); // collapse
+    await page.keyboard.press('Escape'); // close
+    await expect(viewer).not.toBeVisible();
+    await nav(page, 'Abrir los assets');
+    await page.getByTestId(`asset-${name}`).getByRole('button', {name: `Ver ${name}`, exact:true}).click();
+    await previewButton.click();
+    await page.getByTestId('asset-text-preview-diary-tab').click();
+    await panel.getByRole('button', {name:'Leer anotación', exact:true}).click();
+    await expect(panel.getByTestId('asset-text-preview-diary-quote')).toContainText(quote);
+  });
 }
 
 test('B9: presentación salto, progreso, teclado editable y visor PDF superpuesto', async ({ page }, info) => {
@@ -572,6 +643,10 @@ test('B9-R5: Diario lateral — anotar un PDF sin cerrar el visor, consultarlo e
   expect(await frame.getAttribute('src')).toBe(srcBefore);
   await expect(panel).toContainText('Releer la sección 3 con calma.');
   await expect(panel).toContainText('Página 12');
+  await panel.getByRole('button', { name: 'Leer anotación', exact: true }).click();
+  await expect(panel.getByTestId('asset-pdf-diary-detail')).toContainText('Releer la sección 3 con calma.');
+  expect(await frame.getAttribute('src')).toBe(srcBefore);
+  await panel.getByRole('button', { name: 'Volver', exact: true }).click();
   // Contraer conserva el visor y la anotación ya guardada; la insignia cuenta 1.
   await page.getByTestId('asset-pdf-diary-collapse').click();
   await expect(panel).not.toBeVisible();
@@ -579,7 +654,8 @@ test('B9-R5: Diario lateral — anotar un PDF sin cerrar el visor, consultarlo e
   await expect(page.getByTestId('asset-pdf-diary-count')).toContainText('1');
   await tab.click();
   await expect(panel).toContainText('Releer la sección 3 con calma.');
-  await panel.getByRole('button', { name: 'Ver en el Diario', exact: true }).click();
+  await panel.getByRole('button', { name: 'Leer anotación', exact: true }).click();
+  await panel.getByRole('button', { name: 'Abrir en el Diario', exact: true }).click();
   await expect(page.getByTestId('diary-view')).toBeVisible();
   const entry = page.locator('[data-testid^="log-entry-"]').filter({ hasText: 'Releer la sección 3 con calma.' });
   await expect(entry).toHaveCount(1);
@@ -655,3 +731,24 @@ test('B9-R5: un borrador sin guardar se conserva al contraer el panel; Escape re
   await page.keyboard.press('Escape');
   await expect(viewer).not.toBeVisible();
 });
+
+test('B9-R6-A: rechaza selección ajena, vacía y demasiado larga', async ({page}) => {
+  await lab(page, true); await nav(page, 'Abrir los assets');
+  await page.getByTestId('asset-Cita.txt').getByRole('button', {name: 'Ver Cita.txt', exact: true}).click();
+  await page.getByRole('button', {name:'Vista previa de Cita.txt', exact:true}).click();
+  const action = page.getByTestId('asset-text-preview-annotate-selection');
+  await expect(action).toBeDisabled();
+  await page.getByTestId('asset-text-preview-source').evaluate(root => {
+    const range=document.createRange(); range.selectNodeContents(root);
+    const s=window.getSelection()!; s.removeAllRanges(); s.addRange(range);
+  });
+  await expect(page.getByRole('alert')).toContainText('4000');
+  await expect(action).toBeDisabled();
+  await page.getByRole('heading', {name:'Cita.txt', exact:true}).last().evaluate(root => {
+    const range=document.createRange(); range.selectNodeContents(root);
+    const s=window.getSelection()!; s.removeAllRanges(); s.addRange(range);
+  });
+  await expect(action).toBeDisabled();
+});
+
+

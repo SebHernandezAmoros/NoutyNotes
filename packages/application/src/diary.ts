@@ -8,6 +8,8 @@ import { takenCardIds } from './workspace-editing';
 import { storageFailure } from './workspace-storage';
 import type { WorkspaceStorage, WorkspaceStorageResult } from './workspace-storage';
 import { modifyWorkspace } from './workspace-use-cases';
+import { isDocumentQuote } from './document-quote';
+import type { DocumentQuote } from './document-quote';
 
 export interface DocumentAnnotationInput {
   /** Día de la entrada (AAAA-MM-DD): el mismo contrato que `DiaryEntryInput.day`. */
@@ -26,6 +28,7 @@ export interface DocumentAnnotationInput {
   readonly line?: number;
   /** Encabezado o nombre de sección (Markdown). */
   readonly section?: string;
+  readonly quote?: DocumentQuote;
 }
 
 export interface DiaryEntryInput {
@@ -76,6 +79,7 @@ export async function openDiaryEntry(storage: WorkspaceStorage, workspaceId: Wor
  * `reuse: true`) — varias anotaciones del mismo documento, o del mismo día, nunca se fusionan.
  */
 export async function annotateDocumentInDiary(storage: WorkspaceStorage, workspaceId: WorkspaceId, input: DocumentAnnotationInput): Promise<WorkspaceStorageResult<CardId>> {
+  if (input.quote !== undefined && !isDocumentQuote(input.quote)) return storageFailure('invalid-workspace', 'quote', 'La cita documental no es válida.');
   if (!isDay(input.day)) return storageFailure('invalid-workspace', 'day', 'La fecha debe ser AAAA-MM-DD.');
   if (input.page !== undefined && (!Number.isInteger(input.page) || input.page < 1)) {
     return storageFailure('invalid-workspace', 'page', 'La página debe ser un número entero positivo.');
@@ -91,6 +95,7 @@ export async function annotateDocumentInDiary(storage: WorkspaceStorage, workspa
       id: cardId, typeId: DIARY_CARD_TYPE.id, title: input.documentName, content: input.reflection, createdAt: input.createdAt,
       fields: {
         fecha: input.day, 'documento-ref': input.documentRef,
+        ...(input.quote ? { 'documento-cita': JSON.stringify(input.quote) } : {}),
         ...(input.page !== undefined ? { 'documento-pagina': input.page } : {}),
         ...(input.line !== undefined ? { 'documento-linea': input.line } : {}),
         ...(input.section !== undefined && input.section !== '' ? { 'documento-seccion': input.section } : {}),

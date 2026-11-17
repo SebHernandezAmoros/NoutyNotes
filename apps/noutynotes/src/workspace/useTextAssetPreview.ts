@@ -16,6 +16,7 @@ export interface TextAssetPreviewState {
   /** B9-R4-04: el documento supera 1 MiB y solo se muestran sus primeros bytes (en una frontera UTF-8
    * válida) — nunca se recorta el archivo original ni su descarga. */
   readonly truncated: boolean;
+  readonly fingerprint?: string;
 }
 
 /**
@@ -48,7 +49,13 @@ export function useTextAssetPreview(assets: WorkspaceAssets | null, workspaceId:
       return;
     }
     const markdown = /\.(?:md|markdown)$/i.test(entry.name) ? parseRichTextMarkdown(decoded.text) : null;
-    setRaw({ workspaceId: openedWorkspaceId, state: { name: entry.name, ref: entry.ref, text: decoded.text, markdownDocument: markdown?.ok ? markdown.value : null, truncated: decoded.truncated ?? false } });
+    // Fingerprint the complete original bytes, including content beyond the preview limit.
+    let hash: ArrayBuffer | null = null;
+    try { if (globalThis.crypto?.subtle) hash = await globalThis.crypto.subtle.digest('SHA-256', Uint8Array.from(read.value)); }
+    catch { /* Reading remains available; selection metadata cannot claim a source identity. */ }
+    if (requestRef.current !== requestId) return;
+    const fingerprint = hash ? `sha256:${Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('')}` : undefined;
+    setRaw({ workspaceId: openedWorkspaceId, state: { name: entry.name, ref: entry.ref, text: decoded.text, markdownDocument: markdown?.ok ? markdown.value : null, truncated: decoded.truncated ?? false, ...(fingerprint ? { fingerprint } : {}) } });
   };
   const close = () => { requestRef.current += 1; setRaw(null); setProblem(null); };
 
