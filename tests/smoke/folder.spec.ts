@@ -167,10 +167,16 @@ test('UX7-CONSOLIDATION: un fallo de escritura se revisa bajo el proyecto sin pe
   await expect(issue).toContainText('Error al guardar · Revisar');
   await expect(page.getByTestId('workspace-feedback')).toHaveCount(0);
   await page.getByRole('button', { name: 'Abrir el diario', exact: true }).click();
-  await expect(page.getByTestId('diary-view')).toBeVisible();
+  // C1 / BUG-B9-SAVE-LOSS: el fallo de persistencia bloquea la salida y conserva editor y borrador.
+  await expect(page.getByTestId('diary-view')).toHaveCount(0);
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(page.getByLabel('Contenido visual')).toHaveText('BORRADOR CONSERVADO TRAS ERROR');
   await page.getByRole('button', { name: 'Ir a Inicio', exact: true }).click();
   await expect(page.getByTestId('workspace-screen')).toBeVisible();
   await expect(page.getByTestId('canvas-background')).toBeVisible();
+  await page.getByRole('button', { name: 'Volver a mis espacios', exact: true }).click();
+  await expect(page.getByTestId('card-inspector')).toBeVisible();
+  await expect(page.getByLabel('Contenido visual')).toHaveText('BORRADOR CONSERVADO TRAS ERROR');
   await expect(issue).toBeVisible();
   await issue.click();
   await expect(page.getByTestId('recovery-save-problem')).toContainText('ruta');
