@@ -1,4 +1,4 @@
-import { PDF_CHANGE_TAG, RichTextPdfNode, $createRichTextPdfNode } from './RichTextPdfNode.web';
+import { RichTextPdfNode, $createRichTextPdfNode } from './RichTextPdfNode.web';
 import { useContentResources } from './ContentResources';
 import { $isLinkNode, LinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
 import {
@@ -48,12 +48,10 @@ import {
   $isRangeSelection,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
-  BLUR_COMMAND,
   COMMAND_PRIORITY_LOW,
   COMMAND_PRIORITY_HIGH,
   FORMAT_TEXT_COMMAND,
   FORMAT_ELEMENT_COMMAND,
-  HISTORIC_TAG,
   KEY_DOWN_COMMAND,
   PASTE_COMMAND,
   REDO_COMMAND,
@@ -73,7 +71,7 @@ import { useLocale, useTheme } from '@noutynotes/ui';
 import { t } from '../i18n';
 import { $createWebRichTextNodes, $loadWebRichTextDocument, $readWebRichTextDocument } from './richTextLexical';
 import { parsePastedRichText } from './richTextPaste.web';
-import { $createRichTextImageNode, $isRichTextImageNode, RICH_TEXT_IMAGE_CHANGE_TAG, RichTextImageNode, RichTextImageProvider } from './RichTextImageNode.web';
+import { $createRichTextImageNode, $isRichTextImageNode, RichTextImageNode, RichTextImageProvider } from './RichTextImageNode.web';
 import { RichTextRetiredImageNode } from './RichTextRetiredImageNode.web';
 import type { RichTextEditorProps } from './RichTextEditor.types';
 
@@ -702,12 +700,9 @@ function SafePastePlugin({ titleOnly = false, onPasteImage, onPasteImageRejected
 }
 
 function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps, 'document' | 'onChange'> & { readonly initialDocument: RichTextEditorProps['document'] }) {
-  const [editor] = useLexicalComposerContext();
   const [initialSignature] = useState(() => JSON.stringify(initialDocument));
   const lastSignature = useRef(initialSignature);
   const changed = useRef(false);
-  const latestState = useRef<EditorState | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const publish = useCallback((editorState: EditorState) => {
     let next = null;
     editorState.read(() => { next = $readWebRichTextDocument(initialDocument.schemaVersion); });
@@ -719,29 +714,12 @@ function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps
     lastSignature.current = signature;
     onChange(next);
   }, [initialDocument.schemaVersion, initialSignature, onChange]);
-  const flush = useCallback(() => {
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = null;
-    const state = latestState.current;
-    latestState.current = null;
-    if (state) publish(state);
-  }, [publish]);
-  useEffect(() => editor.registerCommand(BLUR_COMMAND, () => {
-    flush();
-    return false;
-  }, COMMAND_PRIORITY_LOW), [editor, flush]);
-  useEffect(() => () => flush(), [flush]);
+  // Publish accepted edits immediately to the existing editorial session. Only durable writes
+  // are debounced by its owner; a local timer here hid continuous typing from flush and checkpoint.
   return (
     <OnChangePlugin
       ignoreSelectionChange
-      onChange={(editorState, _editor, tags) => {
-        latestState.current = editorState;
-        // Los controles de objetos no desenfocan necesariamente ContentEditable. Publicar antes
-        // de transferir la sesión evita perder la última acción en el debounce de escritura.
-        if (tags.has(PDF_CHANGE_TAG) || tags.has(RICH_TEXT_IMAGE_CHANGE_TAG) || tags.has(HISTORIC_TAG)) { flush(); return; }
-        if (timer.current !== null) clearTimeout(timer.current);
-        timer.current = setTimeout(flush, 150);
-      }}
+      onChange={publish}
     />
   );
 }

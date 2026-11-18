@@ -30,6 +30,7 @@ import { PLACEHOLDER_TITLES } from './titlePlaceholders';
 import type { InlineMarkKind, ListKind, TextSelection } from './markdownLists';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 import type { EditableCardDraft } from './editorialDraft';
+import { EDITOR_AUTOSAVE } from './editorialDraft';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
@@ -466,7 +467,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   };
   useEffect(() => {
     if (!dirty) return;
-    const timer = setTimeout(() => { void flushPendingText('autosave'); }, 700);
+    const timer = setTimeout(() => { void flushPendingText('autosave'); }, EDITOR_AUTOSAVE.idleMs);
     return () => clearTimeout(timer);
   }, [dirty, card.id, title, content, titleDocument, flushPendingText]);
   const latestAutosave = useRef({ dirty, flushPendingText });
@@ -474,7 +475,7 @@ export function CardInspector({ workspace, boardId, card, placement, run, onDraf
   useEffect(() => {
     const checkpoint = setInterval(() => {
       if (latestAutosave.current.dirty) void latestAutosave.current.flushPendingText('autosave');
-    }, 5000);
+    }, EDITOR_AUTOSAVE.maxWaitMs);
     return () => clearInterval(checkpoint);
   }, []);
   useEffect(() => {

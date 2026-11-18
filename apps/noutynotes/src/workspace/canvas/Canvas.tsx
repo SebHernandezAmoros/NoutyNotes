@@ -149,7 +149,7 @@ interface CanvasProps {
   readonly htmlCodec: RichTextCodec;
   readonly inlineDraft?: EditableCardDraft | undefined;
   readonly onInlineDraftChange: (draft: EditableCardDraft) => void;
-  readonly onInlineSave: (draft: EditableCardDraft) => Promise<boolean>;
+  readonly onInlineSave: (draft: EditableCardDraft, autosave?: boolean) => Promise<boolean>;
   /** UX7.1-IMAGES: mismas vías estrechas de `InlineCardEditor`, de paso hacia `WorkspaceScreen`. */
   readonly onPickAssetImageRef: InlineCardEditorProps['onPickAssetImageRef'];
   readonly onPlaceImage: InlineCardEditorProps['onPlaceImage'];

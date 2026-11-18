@@ -1565,10 +1565,11 @@ function WorkspaceView({ id, notice, initialCard }: { readonly id: string | unde
   const focusing = focus && cardInspector !== null;
   // Cerrar el editor guarda antes el borrador (mismo camino que el «Cerrar» del panel).
   const closeInspector = () => { void flushPendingText().then((saved) => { if (saved) { setEditingId(null); setInlineEditing(false); setSelectedId(null); setFrameId(null); setFocus(false); } }); };
-  const saveInlineCard = useCallback(async (draft: EditableCardDraft) => {
-    if (!setPendingText(draft, authority)) return true;
-    return flushPendingText(authority ?? undefined, false, false);
-  }, [authority, flushPendingText, setPendingText]);
+  const saveInlineCard = useCallback(async (_draft: EditableCardDraft, autosave = false) => {
+    // onDraftChange already published the current revision. A delayed callback must not republish
+    // its captured snapshot over newer typing. Explicit exits drain the authoritative draft.
+    return flushPendingText(authority ?? undefined, !autosave, !autosave);
+  }, [authority, flushPendingText]);
   // UX7-B2: marcar/desmarcar desde el lienzo reutiliza la misma regla que el editor y el mismo caso de
   // uso de guardado; no abre el editor ni cambia la selección. Un cuerpo HTML seguro (ADR 0066) marca la
   // posición entre casillas del documento (`toggleRichTextChecklistItem`), no una línea de Markdown.

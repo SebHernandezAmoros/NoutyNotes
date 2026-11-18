@@ -11,6 +11,7 @@ import { DialogCloseButton } from '../../components/Dialog';
 import { pickImageFile, supportsImageImport } from '../../session/imageFiles';
 import { isBasicRichTextDocument, isWebRichTextDocument } from '../basicRichText';
 import type { EditableCardDraft } from '../editorialDraft';
+import { EDITOR_AUTOSAVE } from '../editorialDraft';
 import type { MarkdownImagePlace, NoteImageSource, ResolvedNoteImageSource, VisualImagePlace } from '../noteImagePlacement';
 import { placedNoteImage } from '../noteImagePlacement';
 import { RichTextEditor } from '../RichTextEditor';
@@ -27,7 +28,7 @@ export interface InlineCardEditorProps {
   readonly noteImages: ReadonlyMap<string, string>;
   readonly initialDraft?: EditableCardDraft | undefined;
   readonly onDraftChange: (draft: EditableCardDraft) => void;
-  readonly onSave: (draft: EditableCardDraft) => Promise<boolean>;
+  readonly onSave: (draft: EditableCardDraft, autosave?: boolean) => Promise<boolean>;
   /** UX7.1-IMAGES (ASSET-04/06/07): edición rápida no tiene acceso a `storage`; estas tres vías
    * estrechas (en vez de un `run` genérico) le dan justo lo que necesita para insertar una imagen
    * nueva, una ya catalogada o una recién pegada — mismas operaciones que usa el Inspector completo. */
@@ -129,16 +130,16 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
   const queue = useRef<Promise<boolean>>(Promise.resolve(true));
   useEffect(() => { current.current = { title, content }; }, [title, content]);
 
-  const persist = useCallback((override?: EditableCardDraft) => {
+  const persist = useCallback((override?: EditableCardDraft, autosave = false) => {
     const draft: EditableCardDraft = override ?? { cardId: card.id, title, content, titleDocument, ...(htmlAuthored && visualDocument ? {
       bodySource: { format: 'html' as const, value: content }, bodyDocument: visualDocument, bodyValidation: { status: 'valid' as const },
     } : {}) };
-    if (draft.title === saved.current.title && draft.content === saved.current.content) return queue.current;
-    if (draft.title === queued.current?.title && draft.content === queued.current.content) return queue.current;
+    if (autosave && draft.title === saved.current.title && draft.content === saved.current.content) return queue.current;
+    if (autosave && draft.title === queued.current?.title && draft.content === queued.current.content) return queue.current;
     setSaving(true);
     setProblem(null);
     queued.current = draft;
-    const task = queue.current.then(() => onSave(draft)).then((ok) => {
+    const task = queue.current.then(() => onSave(draft, autosave)).then((ok) => {
       if (ok) saved.current = draft;
       else setProblem('No se pudo guardar. La edición sigue abierta.');
       return ok;
@@ -154,15 +155,15 @@ export function InlineCardEditor({ card, box, richTextCodec, htmlCodec, noteFont
 
   useEffect(() => {
     if (title === saved.current.title && content === saved.current.content) return undefined;
-    const timer = setTimeout(() => { void persist(); }, 700);
+    const timer = setTimeout(() => { void persist(undefined, true); }, EDITOR_AUTOSAVE.idleMs);
     return () => clearTimeout(timer);
   }, [title, content, persist]);
   const latestPersist = useRef(persist);
   useEffect(() => { latestPersist.current = persist; }, [persist]);
   useEffect(() => {
     const checkpoint = setInterval(() => {
-      if (current.current.title !== saved.current.title || current.current.content !== saved.current.content) void latestPersist.current();
-    }, 5000);
+      if (current.current.title !== saved.current.title || current.current.content !== saved.current.content) void latestPersist.current(undefined, true);
+    }, EDITOR_AUTOSAVE.maxWaitMs);
     return () => clearInterval(checkpoint);
   }, []);
   useEffect(() => {
