@@ -25,6 +25,7 @@ export interface DocumentDiaryPanelProps {
   readonly documentRef: string;
   readonly documentName: string;
   readonly sourceFingerprint?: string | undefined;
+  readonly onLocateQuote?: (quote: DocumentQuote) => boolean;
   readonly selectionRequest?: { readonly quote: DocumentQuote; readonly sequence: number } | null;
   readonly kind: Kind;
   /** Mismo criterio que `resolveLayoutMode`: escritorio = franja superpuesta a la derecha; compacto =
@@ -62,7 +63,7 @@ function parseLocation(raw: string, kind: Kind): { readonly ok: true; readonly v
  * `AnnotateInDiaryDialog`, ahora inline). El visor que lo monta decide cuándo está `expanded` y qué
  * hacer con Escape/cierre según `onDirtyChange` — este componente nunca cierra nada por su cuenta.
  */
-export function DocumentDiaryPanel({ documentRef, documentName, kind, compact, workspace, run, expanded, onExpandedChange, onDirtyChange, onOpenDiary, testID, sourceFingerprint, selectionRequest }: DocumentDiaryPanelProps) {
+export function DocumentDiaryPanel({ documentRef, documentName, kind, compact, workspace, run, expanded, onExpandedChange, onDirtyChange, onOpenDiary, testID, sourceFingerprint, selectionRequest, onLocateQuote }: DocumentDiaryPanelProps) {
   const { locale } = useLocale();
   const { theme } = useTheme();
   const colors = theme.colors;
@@ -77,6 +78,7 @@ export function DocumentDiaryPanel({ documentRef, documentName, kind, compact, w
   const [quote, setQuote] = useState<DocumentQuote | null>(null);
   const [seenRequest, setSeenRequest] = useState(selectionRequest);
   const [confirmDiary, setConfirmDiary] = useState(false);
+  const [located, setLocated] = useState<boolean | null>(null);
   const listRef = useRef<ScrollView>(null);
   const listOffset = useRef(0);
   const storage = useWorkspaceStorage();
@@ -161,7 +163,7 @@ export function DocumentDiaryPanel({ documentRef, documentName, kind, compact, w
   const parsedBody = selected?.contentDocument ? { ok: true as const, value: selected.contentDocument } : markdownRichTextCodec.parse(selected?.content ?? '');
   const showQuote = (value: DocumentQuote | null) => value ? <ScrollView testID={`${testID}-quote`} style={{maxHeight: 160, flexShrink: 0}} contentContainerStyle={[styles.quote, { borderColor: colors.border }]}>
     <Text selectable style={{ color: colors.textPrimary }}>{value.text}</Text>
-    <Text style={{ color: colors.textSecondary }}>{documentQuoteVerified(value, sourceFingerprint) ? `${t('diary.document.line', locale, { line: String(value.line) })} · ${t('diary.quote.verified', locale)}` : t('diary.quote.unverified', locale)}</Text>
+    {mode !== 'detail' ? <Text style={{ color: colors.textSecondary }}>{documentQuoteVerified(value, sourceFingerprint) ? `${t('diary.document.line', locale, { line: String(value.line) })} · ${t('diary.quote.verified', locale)}` : t('diary.quote.unverified', locale)}</Text> : null}
   </ScrollView> : null;
   return (
     <View testID={testID} style={[compact ? styles.expandedCompact : styles.expandedWide, { borderColor: colors.border, backgroundColor: colors.background }]}>
@@ -182,7 +184,11 @@ export function DocumentDiaryPanel({ documentRef, documentName, kind, compact, w
         {selected ? <>
           <Text accessibilityRole="header" style={{ color: colors.textPrimary }}>{selected.title}</Text>
           {showQuote(selectedQuote)}
-          {parsedBody.ok ? <RichNoteReader key={selected.id} document={parsedBody.value} imageResources={images.refResources} imageFit="contain" color={colors.textPrimary} testID={`${testID}-body`} /> : <ScrollView><Text selectable style={{ color: colors.textPrimary }}>{selected.content}</Text></ScrollView>}
+          {selectedQuote && onLocateQuote ? <>
+            <ActionButton label={t('diary.quote.go', locale)} onPress={() => setLocated(onLocateQuote(selectedQuote))} />
+            {located !== null ? <Text testID={`${testID}-location-status`} accessibilityLiveRegion="polite" style={{ color: colors.textSecondary, fontSize: 13 }}>{t(located ? 'diary.quote.located' : 'diary.quote.notLocated', locale)}</Text> : null}
+          </> : null}
+          {parsedBody.ok ? <RichNoteReader key={selected.id} document={parsedBody.value} bodySize="large" imageResources={images.refResources} imageFit="contain" color={colors.textPrimary} testID={`${testID}-body`} /> : <ScrollView><Text selectable style={{ color: colors.textPrimary, fontSize: 16, lineHeight: 25 }}>{selected.content}</Text></ScrollView>}
           <ActionButton label={t('diary.panel.openDiary', locale)} onPress={() => { if (dirty) setConfirmDiary(true); else onOpenDiary(); }} />
         </> : <Text style={{ color: colors.textSecondary }}>{t('diary.panel.unavailable', locale)}</Text>}
       </View> : null}
@@ -200,6 +206,7 @@ export function DocumentDiaryPanel({ documentRef, documentName, kind, compact, w
             <TextField label={t('diary.annotate.section.label', locale)} value={location} onChangeText={setLocation}
               placeholder={t('diary.annotate.section.placeholder', locale)} testID={`${testID}-location`} />
           )}
+          {kind === 'pdf' ? <Text style={{ color: colors.textSecondary, fontSize: 13 }}>{t('diary.pdf.manualPage', locale)}</Text> : null}
           {problem ? <Text testID={`${testID}-problem`} accessibilityRole="alert" style={[styles.problem, { color: colors.danger }]}>{problem}</Text> : null}
           <View style={styles.row}>
             <ActionButton testID={`${testID}-save`} label={t('diary.annotate.save', locale)} tone="primary" disabled={saving} onPress={() => void save()} />
@@ -227,6 +234,8 @@ export function DocumentDiaryPanel({ documentRef, documentName, kind, compact, w
                   {excerpt ? <Text numberOfLines={3} style={{ color: colors.textPrimary }}>{excerpt}</Text> : null}
                   <ActionButton testID={`${testID}-read-${card.id}`} label={t('diary.panel.read', locale)} onPress={() => {
                     setSelectedId(card.id); setMode('detail');
+                    const citation = readDocumentQuote(card.fields['documento-cita']);
+                    setLocated(citation && onLocateQuote ? onLocateQuote(citation) : null);
                     requestAnimationFrame(() => { if (Platform.OS === 'web') document.querySelector<HTMLElement>(`[data-testid="${testID}-detail"] [role="button"]`)?.focus(); });
                   }} />
                 </View>

@@ -1,4 +1,4 @@
-import { activeDays, dailyLog, dailyLogRange, diaryDocumentAnnotation, diaryExportText, editCardContent, fold, isDay, localDay, moveCardToTrash, openDiaryEntry, shiftDay } from '@noutynotes/application';
+import { activeDays, dailyLog, dailyLogRange, diaryDocumentAnnotation, diaryExportText, editCardContent, fold, isDay, localDay, moveCardToTrash, openDiaryEntry, readDocumentQuote, shiftDay } from '@noutynotes/application';
 import type { RangeLogItem, TimedCard, WorkspaceStorageResult } from '@noutynotes/application';
 import { cardTitleText, createEmptyRichTextDocument, richTextDocumentText } from '@noutynotes/domain';
 import type { BoardId, Card, CardId, CardTypeId, RichTextDocument, Workspace } from '@noutynotes/domain';
@@ -193,15 +193,19 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
   }, [editing]);
   // B9-R4-11: documento anotado (PDF/TXT/Markdown), si lo tiene — reflexión, nombre, tipo, ubicación
   // y «Abrir documento»; el campo `documento-ref` lo marca, sin un segundo tipo de tarjeta.
-  const documentBox = (entry: Card) => {
+  const documentBox = (entry: Card, footer = false) => {
     const doc = diaryDocumentAnnotation(entry);
     if (!doc) return null;
     const name = doc.ref.split('/').pop() ?? doc.ref;
     const kind = /\.pdf$/i.test(doc.ref) ? 'pdf' : /\.(?:md|markdown)$/i.test(doc.ref) ? 'markdown' : 'txt';
+    const quote = readDocumentQuote(entry.fields['documento-cita']);
+    if (!footer) return <View testID={`diary-document-box-${entry.id}`} style={[styles.documentBox, { borderColor: colors.border }]}>
+      <Text style={[styles.title, { color: colors.textPrimary }]}>{name}</Text>
+      {quote ? <Text testID={`diary-document-quote-${entry.id}`} numberOfLines={3} selectable style={[styles.documentQuote, { color: colors.textSecondary, borderColor: colors.border }]}>{quote.text}</Text> : null}
+    </View>;
     return (
-      <View testID={`diary-document-box-${entry.id}`} style={[styles.documentBox, { borderColor: colors.border }]}>
-        <Text style={[styles.meta, { color: colors.textSecondary }]}>{`${t('diary.document.heading', locale)} · ${t(`diary.document.kind.${kind}`, locale)}`}</Text>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>{name}</Text>
+      <View testID={`diary-document-location-${entry.id}`} style={styles.documentFooter}>
+        <Text style={[styles.meta, { color: colors.textSecondary }]}>{t(`diary.document.kind.${kind}`, locale)}</Text>
         {doc.page !== undefined ? <Text style={{ color: colors.textSecondary }}>{t('diary.document.page', locale, { page: String(doc.page) })}</Text> : null}
         {doc.line !== undefined ? <Text style={{ color: colors.textSecondary }}>{t('diary.document.line', locale, { line: String(doc.line) })}</Text> : null}
         {doc.section !== undefined ? <Text style={{ color: colors.textSecondary }}>{t('diary.document.section', locale, { section: doc.section })}</Text> : null}
@@ -316,6 +320,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
               {editing?.id === entry.id ? (
                 <>
                   <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => setEdit({ ...editing, title })} />
+                  {documentBox(entry, true)}
                   <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>{t('diary.entry.content.label', locale)}</Text>
                   <RichTextEditor
                     key={editing.id}
@@ -346,8 +351,9 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
                 </>
               ) : (
                 <>
-                  <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.title ?? t('trash.item.untitled', locale)}</Text>
-                  {bodyText(entry) ? <Text numberOfLines={4} style={[styles.body, { color: colors.textPrimary }]}>{bodyText(entry)}</Text> : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entry.empty', locale)}</Text>}
+                  {diaryDocumentAnnotation(entry) && entry.title === diaryDocumentAnnotation(entry)?.ref.split('/').pop() ? null : <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.title ?? t('trash.item.untitled', locale)}</Text>}
+                  {bodyText(entry) ? <Text testID={`diary-reflection-${entry.id}`} numberOfLines={4} style={[diaryDocumentAnnotation(entry) ? styles.documentReflection : styles.body, { color: colors.textPrimary }]}>{bodyText(entry)}</Text> : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entry.empty', locale)}</Text>}
+                  {documentBox(entry, true)}
                   <View style={styles.row}>
                     <ActionButton label={t('diary.entry.edit', locale)} accessibilityLabel={t('diary.entry.edit.accessibilityLabel', locale, { title: entry.title ?? t('diary.entry.fallback', locale) })} onPress={() => beginEditing(entry, entry.id, '')} />
                     <ActionButton label={t('diary.entry.trash', locale)} accessibilityLabel={t('diary.entry.trash.accessibilityLabel', locale, { title: entry.title ?? t('trash.item.untitled', locale) })} onPress={() => setTrashing(entry.id)} />
@@ -424,7 +430,10 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, lineHeight: 18 },
   meta: { fontFamily: mono, fontSize: 11, fontWeight: '700' },
   item: { borderWidth: 2, padding: 10, gap: 6 },
-  documentBox: { borderWidth: 1, borderRadius: 4, padding: 8, gap: 4, marginBottom: 6 },
+  documentBox: { gap: 8 },
+  documentQuote: { fontSize: 14, lineHeight: 21, borderLeftWidth: 3, paddingLeft: 10 },
+  documentReflection: { fontSize: 16, lineHeight: 25 },
+  documentFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 4 },
   title: { fontSize: 16, fontWeight: '800' },
   body: { fontSize: 14, lineHeight: 20 },
   calendar: { flexDirection: 'row', flexWrap: 'wrap' },

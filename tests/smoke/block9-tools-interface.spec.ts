@@ -31,6 +31,7 @@ async function openHelp(page: Page, locale: 'es' | 'en' = 'es') {
 
 for (const name of ['Cita.txt', 'Guia.md']) {
   test(`B9-R6-A: selección ${name}, cita separada, detalle, borrador, scroll y reapertura`, async ({ page }, info) => {
+    await page.emulateMedia({colorScheme:info.project.name==='desktop'?'dark':'light'});
     await lab(page, true);
     await nav(page, 'Abrir los assets');
     await page.getByTestId(`asset-${name}`).getByRole('button', {name: `Ver ${name}`, exact:true}).click();
@@ -69,8 +70,10 @@ for (const name of ['Cita.txt', 'Guia.md']) {
     });
     const scrollBefore = await scrollNode.evaluate(node => node.scrollTop);
     await page.getByTestId('asset-text-preview-annotate-selection').click();
+    expect(await scrollNode.evaluate(node => node.scrollTop)).toBe(scrollBefore);
     const panel = page.getByTestId('asset-text-preview-diary');
     await expect(panel.getByTestId('asset-text-preview-diary-quote')).toContainText(quote);
+    await expect(panel).toContainText(name === 'Cita.txt' ? 'Verificada al capturar' : 'Ubicación no verificada');
     const reflection = Array.from({length: 60}, (_, i) => `Reflexión independiente ${i}`).join('\n\n') + '\n\nfinal visible.';
     await panel.getByTestId('asset-text-preview-diary-reflection').fill(reflection);
     await panel.getByRole('button', {name:'Volver', exact:true}).click();
@@ -79,12 +82,30 @@ for (const name of ['Cita.txt', 'Guia.md']) {
     await panel.getByTestId('asset-text-preview-diary-save').click();
     await panel.getByRole('button', {name:'Leer anotación', exact:true}).click();
     const body = panel.getByTestId('asset-text-preview-diary-body');
+    await panel.getByRole('button',{name:'Ir al fragmento citado',exact:true}).click();
     await body.focus(); await page.keyboard.press('End');
     await expect(body).toContainText('final visible.');
     await expect(panel.getByTestId('asset-text-preview-diary-quote')).toContainText(quote);
-    await expect(panel).toContainText(name === 'Cita.txt' ? 'Verificada al capturar' : 'Ubicación no verificada');
     expect(await sourceNode!.evaluate(node => node.isConnected)).toBe(true);
-    expect(await scrollNode.evaluate(node => node.scrollTop)).toBe(scrollBefore);
+    expect(await scrollNode.evaluate(node => node.scrollTop)).toBe(0);
+    await expect(panel.getByTestId('asset-text-preview-diary-location-status')).toContainText('Fragmento localizado');
+    expect(await body.evaluate(node=>parseFloat(getComputedStyle(node).fontSize))).toBeGreaterThanOrEqual(16);
+    if(info.project.name==='desktop') {
+      const close=viewer.getByRole('button',{name:`Cerrar ${name.toLowerCase()}`,exact:true});
+      expect(await close.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
+      const sourceBox=await source.boundingBox(), panelBox=await panel.boundingBox();
+      expect(sourceBox!.width).toBeGreaterThan(600);
+      expect(sourceBox!.x+sourceBox!.width).toBeLessThanOrEqual(panelBox!.x);
+      await page.setViewportSize({width:820,height:900});
+      await expect.poll(async()=> (await panel.boundingBox())!.width).toBeGreaterThan(600);
+      await expect.poll(()=>viewer.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(1);
+      const tabletBox=(await viewer.boundingBox())!;
+      expect(tabletBox.x).toBeGreaterThanOrEqual(0);
+      expect(tabletBox.x+tabletBox.width).toBeLessThanOrEqual(820);
+      await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth)).toBeLessThanOrEqual(1);
+      await page.setViewportSize({width:1366,height:900});
+      await expect.poll(async()=> (await panel.boundingBox())!.width).toBeLessThan(400);
+    }
     await page.screenshot({path: info.outputPath('annotation-detail.png')});
     await page.keyboard.press('Escape'); // detail -> list
     await expect(panel.getByRole('button', {name:'Leer anotación', exact:true})).toBeVisible();
@@ -97,8 +118,42 @@ for (const name of ['Cita.txt', 'Guia.md']) {
     await page.getByTestId('asset-text-preview-diary-tab').click();
     await panel.getByRole('button', {name:'Leer anotación', exact:true}).click();
     await expect(panel.getByTestId('asset-text-preview-diary-quote')).toContainText(quote);
+    if(name==='Cita.txt') {
+      await panel.getByRole('button',{name:'Abrir en el Diario',exact:true}).click();
+      const entry=page.locator('[data-testid^="log-entry-"]').filter({has:page.locator('[data-testid^="diary-document-quote-"]')}).first();
+      await expect(entry).toBeVisible();
+      await expect(entry.getByText(name,{exact:true})).toHaveCount(1);
+      expect(await entry.locator('[data-testid^="diary-reflection-"]').evaluate(node=>parseFloat(getComputedStyle(node).fontSize))).toBeGreaterThanOrEqual(16);
+      await page.screenshot({path:info.outputPath('documentary-diary.png')});
+    }
   });
 }
+
+test('B9-R6-C: una cita repetida no desplaza el lector ni promete una ubicación',async({page})=>{
+  await lab(page,true);await nav(page,'Abrir los assets');
+  await page.getByTestId('asset-Cita.txt').getByRole('button',{name:'Ver Cita.txt',exact:true}).click();
+  await page.getByRole('button',{name:'Vista previa de Cita.txt',exact:true}).click();
+  const source=page.getByTestId('asset-text-preview-source');
+  await source.evaluate(root=>{
+    const node=document.createTreeWalker(root,NodeFilter.SHOW_TEXT).nextNode()!;
+    const text=node.textContent!;const start=text.indexOf('Contenido de laboratorio.');
+    const range=document.createRange();range.setStart(node,start);range.setEnd(node,start+'Contenido de laboratorio.'.length);
+    const selection=window.getSelection()!;selection.removeAllRanges();selection.addRange(range);
+  });
+  await page.getByTestId('asset-text-preview-annotate-selection').click();
+  const panel=page.getByTestId('asset-text-preview-diary');
+  await panel.getByTestId('asset-text-preview-diary-reflection').fill('Reflexión de una frase repetida');
+  await panel.getByTestId('asset-text-preview-diary-save').click();
+  const scroller=await source.evaluateHandle(root=>{
+    let node=root.parentElement!;while(node.parentElement&&!['auto','scroll'].includes(getComputedStyle(node).overflowY))node=node.parentElement;
+    node.scrollTop=150;return node;
+  });
+  const offset=await scroller.evaluate(node=>node.scrollTop);
+  await panel.getByRole('button',{name:'Leer anotación',exact:true}).click();
+  await expect(panel.getByTestId('asset-text-preview-diary-location-status')).toHaveText('No se pudo verificar la ubicación');
+  expect(await scroller.evaluate(node=>node.scrollTop)).toBe(offset);
+  await expect(source).toContainText('Frase única para citar');
+});
 
 test('B9: presentación salto, progreso, teclado editable y visor PDF superpuesto', async ({ page }, info) => {
   await lab(page);
@@ -635,6 +690,8 @@ test('B9-R5: Diario lateral — anotar un PDF sin cerrar el visor, consultarlo e
   await expect(panel).toBeVisible();
   await expect(panel).toContainText('Todavía no hay ninguna anotación de este documento.');
   await panel.getByTestId('asset-pdf-diary-add').click();
+  await expect(panel).toContainText('Introduce la página manualmente');
+  await expect(panel).toContainText('Introduce la página manualmente');
   await panel.getByTestId('asset-pdf-diary-reflection').fill('Releer la sección 3 con calma.');
   await panel.getByTestId('asset-pdf-diary-location').fill('12');
   await panel.getByTestId('asset-pdf-diary-save').click();
@@ -660,10 +717,11 @@ test('B9-R5: Diario lateral — anotar un PDF sin cerrar el visor, consultarlo e
   const entry = page.locator('[data-testid^="log-entry-"]').filter({ hasText: 'Releer la sección 3 con calma.' });
   await expect(entry).toHaveCount(1);
   const documentBox = entry.getByTestId(/^diary-document-box-/);
-  await expect(documentBox).toContainText('PDF');
+  const documentLocation=entry.getByTestId(/^diary-document-location-/);
+  await expect(documentLocation).toContainText('PDF');
   await expect(documentBox).toContainText('manual.pdf');
-  await expect(documentBox).toContainText('Página 12');
-  await documentBox.getByRole('button', { name: 'Abrir manual.pdf', exact: true }).click();
+  await expect(documentLocation).toContainText('Página 12');
+  await documentLocation.getByRole('button', { name: 'Abrir manual.pdf', exact: true }).click();
   await expect(page.getByTestId('asset-pdf-preview')).toBeVisible();
   await expect(page.getByTestId('asset-pdf-preview-frame')).toBeVisible();
 });

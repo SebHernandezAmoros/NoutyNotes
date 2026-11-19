@@ -1,8 +1,8 @@
 import type { DocumentQuote, WorkspaceStorageResult } from '@noutynotes/application';
 import type { Workspace } from '@noutynotes/domain';
 import { useLocale, useTheme } from '@noutynotes/ui';
-import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import type { ViewStyle } from 'react-native';
 
 import { ActionButton } from '../components/controls';
@@ -12,7 +12,7 @@ import { BasicRichTextPreview } from './BasicRichTextPreview';
 import { DocumentDiaryPanel } from './DocumentDiaryPanel';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 import type { TextAssetPreviewState } from './useTextAssetPreview';
-import { quoteFromSelection } from './documentSelection';
+import { documentQuoteRange, quoteFromSelection } from './documentSelection';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
 
@@ -40,6 +40,9 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
   const { locale } = useLocale();
   const { theme } = useTheme();
   const colors = theme.colors;
+  const { width } = useWindowDimensions();
+  const stackedPanel = compact || width < 1000;
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [panelExpanded, setPanelExpanded] = useState(false);
   const [panelDirty, setPanelDirty] = useState(false);
   const [confirmingClose, setConfirmingClose] = useState(false);
@@ -64,6 +67,30 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
     document.addEventListener('selectionchange', capture);
     return () => document.removeEventListener('selectionchange', capture);
   }, [preview, testID]);
+  useEffect(() => () => {
+    if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);
+    if (Platform.OS === 'web' && typeof CSS !== 'undefined') CSS.highlights?.delete('nouty-document-quote');
+  }, [preview]);
+
+  const locateQuote = (quote: DocumentQuote): boolean => {
+    if (Platform.OS !== 'web' || !preview) return false;
+    const root = document.querySelector<HTMLElement>(`[data-testid="${testID}-source"]`);
+    if (!root) return false;
+    const range = documentQuoteRange(root, quote, { fingerprint: preview.fingerprint, partial: preview.truncated,
+      kind: /\.(md|markdown)$/i.test(preview.name) ? 'markdown' : 'txt' });
+    if (!range) return false;
+    let scroller = root.parentElement;
+    while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    if (!scroller) return false;
+    const rect = range.getBoundingClientRect();
+    scroller.scrollTop += rect.top - scroller.getBoundingClientRect().top - scroller.clientHeight / 3;
+    if (typeof Highlight !== 'undefined' && CSS.highlights) {
+      CSS.highlights.set('nouty-document-quote', new Highlight(range));
+      if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);
+      highlightTimer.current = setTimeout(() => CSS.highlights.delete('nouty-document-quote'), 2500);
+    }
+    return true;
+  };
 
   const requestClose = () => {
     if (confirmingClose) { setConfirmingClose(false); return; }
@@ -74,6 +101,9 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
 
   return (
     <Dialog visible={preview !== null || !!problem} title={preview?.name ?? ''} compact={compact} presentation="centered" onClose={requestClose} testID={testID}
+      maxWidth={panelExpanded && !stackedPanel ? 1100 : 800}
+      sidePanelBelowHeader
+      contentContainerStyle={panelExpanded && !stackedPanel ? { paddingRight: 312 } : undefined}
       headerActions={Platform.OS === 'web' && preview?.fingerprint ? <View style={{ maxWidth: 150 }}>
         <ActionButton testID={`${testID}-annotate-selection`} label={t('diary.quote.annotate', locale)} disabled={!candidate || candidate === 'long' || panelDirty} onPress={() => {
           if (!candidate || candidate === 'long' || panelDirty) return;
@@ -83,9 +113,10 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
       sidePanel={preview ? (
         <>
           <DocumentDiaryPanel key={preview.ref} documentRef={preview.ref} documentName={preview.name}
-            kind={preview.markdownDocument ? 'markdown' : 'txt'} compact={compact} workspace={workspace} run={run}
+            kind={preview.markdownDocument ? 'markdown' : 'txt'} compact={stackedPanel} workspace={workspace} run={run}
             expanded={panelExpanded} onExpandedChange={setPanelExpanded} onDirtyChange={setPanelDirty}
             sourceFingerprint={preview.fingerprint} selectionRequest={selectionRequest}
+            onLocateQuote={locateQuote}
             // Mismo criterio que `PdfPreview`: navegar al Diario cierra primero este visor (su `Modal`
             // es un portal propio, fuera de la jerarquía de pantallas).
             onOpenDiary={() => { onClose(); onOpenDiary(); }} testID={`${testID}-diary`} />
@@ -109,7 +140,8 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
           frontera UTF-8 válida; el original completo sigue disponible por descarga, fuera de esta vista. */}
       {preview?.truncated ? <Text testID={`${testID}-truncated`} style={{ color: colors.textSecondary, fontSize: 13 }}>{t('textPreview.truncated', locale)}</Text> : null}
       {/* Reserve reading space even for a one-line Markdown so the existing 62% sheet has a usable list. */}
-      <View testID={`${testID}-source`} style={[{ minHeight: compact ? 480 : 320 }, Platform.OS === 'web' ? { userSelect: 'text' } as ViewStyle & { userSelect: 'text' } : undefined]}>
+      {Platform.OS === 'web' ? <style>{'::highlight(nouty-document-quote) { background: #e1ce68; color: #20231d; }'}</style> : null}
+      <View testID={`${testID}-source`} style={[{ minHeight: compact ? 480 : 320, width: '100%', maxWidth: 760 }, Platform.OS === 'web' ? { userSelect: 'text' } as ViewStyle & { userSelect: 'text' } : undefined]}>
       {preview?.markdownDocument ? (
         <BasicRichTextPreview testID={`${testID}-markdown`} document={preview.markdownDocument} numberOfLines={0} unclamped selectable
           color={colors.textPrimary} fontSize={15} lineHeight={22} />

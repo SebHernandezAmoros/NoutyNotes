@@ -23,6 +23,9 @@ interface DialogProps {
    * `undefined` (el caso de siempre): ningún cambio de layout para el resto de usos de `Dialog`. */
   readonly sidePanel?: ReactNode;
   readonly headerActions?: ReactNode;
+  readonly maxWidth?: number | undefined;
+  readonly contentContainerStyle?: import('react-native').StyleProp<import('react-native').ViewStyle>;
+  readonly sidePanelBelowHeader?: boolean;
 }
 
 /**
@@ -30,7 +33,8 @@ interface DialogProps {
  * `onRequestClose`) y con toque en el fondo. En móvil ocupa como mucho el 62 % inferior; con el teclado
  * abierto (nativo) se apoya sobre él y puede ocupar todo el alto restante, para que se vea lo que se escribe.
  */
-export function Dialog({ visible, title, compact, presentation = 'adaptive', onClose, testID, children, sidePanel, headerActions }: DialogProps) {
+export function Dialog({ visible, title, compact, presentation = 'adaptive', onClose, testID, children, sidePanel, headerActions, maxWidth, contentContainerStyle, sidePanelBelowHeader = false }: DialogProps) {
+  const [headerHeight, setHeaderHeight] = useState(0);
   const { theme } = useTheme();
   const { locale } = useLocale();
   const colors = theme.colors;
@@ -117,15 +121,15 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
           testID={testID}
           accessibilityViewIsModal
           {...(Platform.OS === 'web' ? { role: 'dialog', 'aria-modal': true, 'aria-label': title } : {})}
-          style={[centered ? styles.centeredPanel : compact ? styles.sheet : styles.panel, typing ? styles.sheetTyping : null, { backgroundColor: colors.background, borderColor: colors.border }]}
+          style={[centered ? styles.centeredPanel : compact ? styles.sheet : styles.panel, typing ? styles.sheetTyping : null, { backgroundColor: colors.background, borderColor: colors.border }, maxWidth === undefined ? null : { maxWidth }]}
         >
-          <View style={styles.header}>
+          <View style={styles.header} onLayout={sidePanelBelowHeader ? event => setHeaderHeight(event.nativeEvent.layout.height) : undefined}>
             <Text accessibilityRole="header" style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
             {headerActions}
             <DialogCloseButton label={`${t('dialog.close', locale)} ${title.toLowerCase()}`} onPress={closeDialog} />
           </View>
-          <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={[styles.scroll, centered ? styles.centeredScroll : null]} contentContainerStyle={[styles.content, centered ? styles.centeredContent : null]} keyboardShouldPersistTaps="handled">{children}</ScrollView>
-          {sidePanel}
+          <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={32} style={[styles.scroll, centered ? styles.centeredScroll : null]} contentContainerStyle={[styles.content, centered ? styles.centeredContent : null, contentContainerStyle]} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          {sidePanelBelowHeader ? <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { top: headerHeight }]}>{sidePanel}</View> : sidePanel}
         </View>
       </View>
     </Modal>
