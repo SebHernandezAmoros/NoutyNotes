@@ -3,6 +3,7 @@ import type { WorkspaceAssets } from '@noutynotes/application';
 import type { AssetRef, WorkspaceId } from '@noutynotes/domain';
 
 import { resolveImageResource, resolveImageResources } from './imageResources';
+import { dataUri } from './dataUri';
 
 const id = 'demo' as WorkspaceId;
 const asset = (value: string) => value as AssetRef;
@@ -62,6 +63,23 @@ describe('resolveImageResource (OBS-N2-IMAGE-FIT-F2)', () => {
 });
 
 describe('resolveImageResources — resolución por lote (OBS-N2-IMAGE-FIT-F2)', () => {
+  it('reutiliza previews listas sin releer bytes; comprueba retiradas y reintenta fallos', async () => {
+    const ready = asset('assets/images/a.png');
+    const retry = asset('assets/images/b.png');
+    const removed = asset('assets/images/removed.png');
+    const assets = fakeAssets({ listed: [ready, retry], bytes: { [ready]: PNG, [retry]: PNG } });
+    const read = vi.spyOn(assets, 'readAsset');
+    const previous = new Map<AssetRef, Awaited<ReturnType<typeof resolveImageResource>>>([
+      [ready, { status: 'ready', uri: dataUri('image/png', PNG) }],
+      [retry, { status: 'missing', reason: 'unreadable' }],
+      [removed, { status: 'ready', uri: dataUri('image/png', PNG) }],
+    ]);
+    const result = await resolveImageResources(assets, id, [ready, retry, removed], previous);
+    expect(result.get(ready)).toEqual(previous.get(ready));
+    expect(result.get(retry)?.status).toBe('ready');
+    expect(result.get(removed)).toEqual({ status: 'missing', reason: 'not-found' });
+    expect(read.mock.calls.map(call => call[1])).toEqual([retry]);
+  });
   it('F2-06: llama a listAssets exactamente una vez para todo el lote, no una vez por referencia', async () => {
     const refA = asset('assets/images/a.png');
     const refB = asset('assets/images/b.png');

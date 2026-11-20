@@ -2,7 +2,7 @@ import { inspectImage } from '@noutynotes/application';
 import type { WorkspaceAssets } from '@noutynotes/application';
 import type { AssetRef, WorkspaceId } from '@noutynotes/domain';
 
-import { dataUri } from './dataUri';
+import { imageResourceUri } from './imageResourceUri';
 
 /**
  * Estado de disponibilidad de una imagen (OBS-N2-IMAGE-FIT-F2). Vista, no dominio ni durable: nunca se
@@ -32,7 +32,11 @@ export async function resolveImageResource(
   if (!read.ok) return { status: 'missing', reason: 'unreadable' };
   const kind = inspectImage(read.value);
   if (!kind.ok) return { status: 'missing', reason: 'invalid-image' };
-  return { status: 'ready', uri: dataUri(kind.value.mimeType, read.value) };
+  try {
+    return { status: 'ready', uri: await imageResourceUri(kind.value.mimeType, read.value) };
+  } catch {
+    return { status: 'missing', reason: 'unreadable' };
+  }
 }
 
 /**
@@ -42,12 +46,20 @@ export async function resolveImageResource(
  */
 export async function resolveImageResources(
   assets: WorkspaceAssets, workspaceId: WorkspaceId, refs: readonly AssetRef[],
+  previous: ReadonlyMap<string, ImageResourceState> = new Map(),
 ): Promise<ReadonlyMap<AssetRef, ImageResourceState>> {
   const listed = await assets.listAssets(workspaceId);
   if (!listed.ok) {
     return new Map(refs.map((ref) => [ref, { status: 'missing', reason: 'unreadable' } as const]));
   }
   const known = new Set(listed.value);
-  const resolved = await Promise.all(refs.map(async (ref) => [ref, await resolveImageResource(assets, workspaceId, ref, known)] as const));
+  const resolved = await Promise.all(refs.map(async (ref) => {
+    const cached = previous.get(ref);
+    // Asset writes never overwrite an existing path. Recheck membership, retry failed previews,
+    // and reuse only successfully decoded immutable resources from this storage/workspace.
+    const resource = known.has(ref) && cached?.status === 'ready'
+      ? cached : await resolveImageResource(assets, workspaceId, ref, known);
+    return [ref, resource] as const;
+  }));
   return new Map(resolved);
 }

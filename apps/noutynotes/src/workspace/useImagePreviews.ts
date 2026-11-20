@@ -1,7 +1,7 @@
 import { assetsOf, noteImageRefs, richTextImageRefs } from '@noutynotes/application';
 import type { WorkspaceStorage } from '@noutynotes/application';
 import type { AssetRef, CardId, Workspace } from '@noutynotes/domain';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { resolveImageResources } from './imageResources';
 import type { ImageResourceState } from './imageResources';
@@ -31,7 +31,9 @@ const readyUri = (resource: ImageResourceState | undefined): string | undefined 
 export function useImagePreviews(storage: WorkspaceStorage, workspace: Workspace | null): ImagePreviews {
   // Solo guarda resultados ya resueltos (`ready`/`missing`); «loading» nunca se escribe en el estado,
   // se deriva en cada render para los refs que todavía no tienen resultado (ver `refResources`).
-  const [resolved, setResolved] = useState<ReadonlyMap<string, ImageResourceState>>(new Map());
+  const [batch, setBatch] = useState<{ storage: WorkspaceStorage; workspaceId: string; resources: ReadonlyMap<string, ImageResourceState> } | null>(null);
+  const previousBatch = useRef(batch);
+  const resolved = batch?.storage === storage && batch.workspaceId === workspace?.id ? batch.resources : new Map<string, ImageResourceState>();
   const types = new Map((workspace?.cardTypes ?? []).map((type) => [type.id, type.base]));
   const cardRefs = (workspace?.cards ?? []).flatMap((card) => {
     if (card.primaryResourceState) return [];
@@ -49,8 +51,14 @@ export function useImagePreviews(storage: WorkspaceStorage, workspace: Workspace
     const assets = assetsOf(storage);
     if (!assets || !workspaceId || key === '') return undefined;
     let active = true;
-    void resolveImageResources(assets, workspaceId, key.split('|') as AssetRef[]).then((next) => {
-      if (active) setResolved(next);
+    const previous = previousBatch.current;
+    const cached = previous?.storage === storage && previous.workspaceId === workspaceId ? previous.resources : undefined;
+    void resolveImageResources(assets, workspaceId, key.split('|') as AssetRef[], cached).then((next) => {
+      if (active) {
+        const batch = { storage, workspaceId, resources: next };
+        previousBatch.current = batch;
+        setBatch(batch);
+      }
     });
     return () => { active = false; };
   }, [storage, workspaceId, key]);
