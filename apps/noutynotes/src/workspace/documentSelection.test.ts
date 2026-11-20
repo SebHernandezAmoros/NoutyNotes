@@ -28,4 +28,12 @@ describe('B9-R6-C: posición verificable en el texto visible del lector', () => 
     expect(documentQuotePosition('Antes cita después', md, { ...source, fingerprint: 'changed' }, new Set([8]))).toBeNull();
     expect(documentQuotePosition('Antes cita después cita', md, source, new Set([8, 21]))).toBeNull();
   });
+  it('conserva saltos literales dentro del párrafo cuando también hay separaciones entre bloques', () => {
+    const source = { fingerprint, kind: 'markdown' as const, partial: false };
+    const md = { ...quote, kind: 'markdown' as const, text: 'Título\nPrimera\nsegunda' , prefix: '', suffix: '' };
+    expect(documentQuotePosition('TítuloPrimera\nsegunda', md, source, new Set([6]))).toEqual({ start: 0, end: 21 });
+    expect(documentQuotePosition('TítuloPrimerasegunda', md, source, new Set([6]))).toBeNull();
+    expect(documentQuotePosition('TítuloPrimera\nsegunda', { ...md, text: '\nPrimera\nsegunda' }, source, new Set([6]))).toEqual({ start: 6, end: 21 });
+    expect(documentQuotePosition('a\nZ', { ...md, text: 'a\n' }, source, new Set([1]))).toBeNull();
+  });
 });

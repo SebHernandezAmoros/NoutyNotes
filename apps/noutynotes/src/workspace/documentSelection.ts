@@ -6,27 +6,46 @@ export function documentQuotePosition(text: string, quote: DocumentQuote, source
   readonly fingerprint?: string | undefined; readonly kind: 'txt' | 'markdown'; readonly partial: boolean;
 }, blockBreaks: ReadonlySet<number> = new Set()): { start: number; end: number } | null {
   if (source.partial || source.fingerprint !== quote.fingerprint || source.kind !== quote.kind) return null;
-  const candidates = new Map<number, number>();
-  const collect = (needle: string, breaks: readonly number[]) => {
+  const candidates = new Map<string, { start: number; end: number }>();
+  const add = (start: number, end: number) => candidates.set(`${start}:${end}`, { start, end });
+  const collect = (needle: string) => {
     if (!needle) return;
     for (let start = text.indexOf(needle); start >= 0; start = text.indexOf(needle, start + 1)) {
-      if (breaks.every(offset => blockBreaks.has(start + offset))) candidates.set(start, start + needle.length);
+      add(start, start + needle.length);
     }
   };
-  collect(quote.text, []);
+  collect(quote.text);
   if (source.kind === 'markdown' && blockBreaks.size > 0 && /\r?\n/.test(quote.text)) {
     // Browser Selection adds separators between rendered blocks that Range/textContent omit.
     // Only accept them at actual DOM block boundaries; never normalize spaces or source Markdown.
-    const breaks: number[] = []; let needle = ''; let offset = 0;
-    for (const match of quote.text.matchAll(/\r?\n+/g)) {
-      needle += quote.text.slice(offset, match.index);
-      breaks.push(needle.length); offset = match.index + match[0].length;
+    const parts = quote.text.split(/(\r?\n+)/);
+    const first = parts[0]!;
+    const starts: number[] = [];
+    if (first) {
+      for (let start = text.indexOf(first); start >= 0; start = text.indexOf(first, start + 1)) starts.push(start);
+    } else {
+      // A leading separator can only begin at a literal newline or a verified DOM boundary.
+      starts.push(...blockBreaks);
+      for (const match of text.matchAll(/\r?\n/g)) starts.push(match.index);
     }
-    needle += quote.text.slice(offset);
-    collect(needle, breaks);
+    for (const start of new Set(starts)) {
+      let positions = new Set([start]);
+      for (let index = 0; index < parts.length && positions.size; index++) {
+        const part = parts[index]!;
+        const next = new Set<number>();
+        for (const position of positions) {
+          // A hard break is real text and must remain. Only a verified block boundary may
+          // account for a browser-added separator. Mixed selections need both rules.
+          if (text.startsWith(part, position)) next.add(position + part.length);
+          if (index % 2 === 1 && blockBreaks.has(position)) next.add(position);
+        }
+        positions = next;
+      }
+      for (const end of positions) add(start, end);
+    }
   }
   if (candidates.size !== 1) return null;
-  const [start, end] = [...candidates][0]!;
+  const { start, end } = [...candidates.values()][0]!;
   if (!text.slice(0, start).endsWith(quote.prefix) || !text.slice(end).startsWith(quote.suffix)) return null;
   return { start, end };
 }

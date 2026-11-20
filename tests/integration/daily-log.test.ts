@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   addCardToBoard, annotateDocumentInDiary, cardAssetRefs, createEmptyWorkspaceNamed, dailyLog, documentDiaryAnnotations, editCardContent, importImageCard, modifyWorkspace, moveCardToArchive, moveCardToTrash,
@@ -15,6 +15,21 @@ function ok<T>(result: WorkspaceStorageResult<T>): T {
   return result.value;
 }
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+
+it('B9-R7: crea una entrada nueva con título y cuerpo en un único guardado, sin residuo si falla', async () => {
+  const storage = new ArchiveStorage();
+  const { id } = ok(await createEmptyWorkspaceNamed(storage, 'Entrada bajo confirmación'));
+  const initialContent = { title: 'Título confirmado', document: { schemaVersion: 1 as const,
+    blocks: [{ type: 'paragraph' as const, content: [{ type: 'text' as const, text: 'Cuerpo confirmado', marks: ['bold' as const, 'italic' as const] }] }] } };
+  const save = vi.spyOn(storage, 'save');
+  const cardId = ok(await openDiaryEntry(storage, id, { day: '2026-11-19', createdAt: '2026-11-19T12:00:00.000Z', reuse: false, initialContent }));
+  expect(ok(await storage.open(id)).cards.find(c => c.id === cardId)).toMatchObject({ title: initialContent.title, contentDocument: initialContent.document });
+  expect(save).toHaveBeenCalledTimes(1);
+  const before = ok(await storage.open(id));
+  save.mockResolvedValueOnce({ ok: false, issues: [{ code: 'io-failure', path: 'id', message: 'Synthetic failure' }] });
+  expect((await openDiaryEntry(storage, id, { day: '2026-11-19', createdAt: '2026-11-19T13:00:00.000Z', reuse: false, initialContent })).ok).toBe(false);
+  expect(ok(await storage.open(id))).toEqual(before);
+});
 
 it('B9-R6-A: conserva cita independiente en carpeta, Archivo/Papelera y ZIP sin modificar el Asset', async () => {
   const tree = new MemoryDocumentTree();

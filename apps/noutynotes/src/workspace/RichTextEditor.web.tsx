@@ -725,6 +725,7 @@ function DocumentChanges({ initialDocument, onChange }: Pick<RichTextEditorProps
 }
 
 const editorTheme = {
+  text: { bold: 'nouty-text-bold', italic: 'nouty-text-italic' },
   heading: { h1: 'nouty-h1', h2: 'nouty-h2', h3: 'nouty-h3', h4: 'nouty-h4', h5: 'nouty-h5', h6: 'nouty-h6' },
   link: 'nouty-link',
   list: {
@@ -754,6 +755,7 @@ export function RichTextEditor({ cardId, document, onChange, images = new Map(),
   return (
     <View testID="web-rich-text-editor" style={[styles.shell, compact ? styles.shellCompact : null, { borderColor: colors.border, backgroundColor: colors.cardSurface }]}>
       <style>{`
+        .nouty-text-bold{font-weight:700}.nouty-text-italic{font-style:italic}
         .nouty-h1,.nouty-h2,.nouty-h3,.nouty-h4,.nouty-h5,.nouty-h6{font-weight:800;margin:0 0 .35em}
         .nouty-h1{font-size:2em}.nouty-h2{font-size:1.65em}.nouty-h3{font-size:1.4em}.nouty-h4{font-size:1.2em}.nouty-h5{font-size:1.05em}.nouty-h6{font-size:1em}
         .nouty-link{text-decoration:underline}.nouty-ul,.nouty-ol{margin:.35em 0;padding-left:1.6em}

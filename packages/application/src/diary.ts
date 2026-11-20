@@ -1,6 +1,6 @@
 /** Entradas del diario (ADR 0024): tarjetas del tipo `diario`, fuera de los tableros. */
 import { validateWorkspace } from '@noutynotes/domain';
-import type { Card, CardId, CardTypeDefinition, WorkspaceId } from '@noutynotes/domain';
+import type { Card, CardId, CardTypeDefinition, RichTextDocument, WorkspaceId } from '@noutynotes/domain';
 
 import { DIARY_CARD_TYPE, isDay, isDiaryEntry } from './daily-log';
 import { nextSequentialId } from './ids';
@@ -32,6 +32,8 @@ export interface DocumentAnnotationInput {
 }
 
 export interface DiaryEntryInput {
+  /** Explicit creation from a local draft: create the confirmed contents in the same save. */
+  readonly initialContent?: { readonly title: string; readonly document: RichTextDocument };
   /** Día de la entrada (AAAA-MM-DD). */
   readonly day: string;
   /** Instante de creación (ISO 8601 en UTC): lo pone la interfaz, application no usa el reloj. */
@@ -65,7 +67,8 @@ export async function openDiaryEntry(storage: WorkspaceStorage, workspaceId: Wor
   const saved = await modifyWorkspace(storage, workspaceId, (workspace) => {
     const types = withCurrentDiaryCardType(workspace.cardTypes);
     const cardId = nextSequentialId('tarjeta', takenCardIds(workspace)) as CardId;
-    const card: Card = { id: cardId, typeId: DIARY_CARD_TYPE.id, title: `Diario ${input.day}`, fields: { fecha: input.day }, content: '', createdAt: input.createdAt };
+    const card: Card = { id: cardId, typeId: DIARY_CARD_TYPE.id, title: input.initialContent?.title ?? `Diario ${input.day}`, fields: { fecha: input.day },
+      ...(input.initialContent ? { contentDocument: input.initialContent.document } : { content: '' }), createdAt: input.createdAt };
     created = cardId;
     return validateWorkspace({ ...workspace, cardTypes: types, cards: [...workspace.cards, card] });
   });

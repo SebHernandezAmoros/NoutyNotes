@@ -20,6 +20,7 @@ import { useEscapeBack } from './useEscapeBack';
 import type { ActionSuccess, RunOptions, WorkspaceAction } from './useWorkspaceEditor';
 
 type Run = <T>(action: WorkspaceAction<T>, success: ActionSuccess, options?: RunOptions) => Promise<WorkspaceStorageResult<T>>;
+type NewEntryDraft = Omit<DiaryEditing, 'id'>;
 
 interface DiaryViewProps {
   readonly active: boolean;
@@ -77,6 +78,8 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
   const persistQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const [discarding, setDiscarding] = useState(false);
   const [writingModal, setWritingModal] = useState(false);
+  const [newEntry, setNewEntry] = useState<NewEntryDraft | null>(null);
+  const newEntryRef = useRef<NewEntryDraft | null>(null);
   const [savingModal, setSavingModal] = useState(false);
   const [modalError, setModalError] = useState(false);
   const [trashing, setTrashing] = useState<CardId | null>(null);
@@ -122,10 +125,11 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
   const firstWeekday = (new Date(`${month}-01T00:00:00.000Z`).getUTCDay() + 6) % 7;
   const monthDays = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
 
+  const setNewDraft = (next: NewEntryDraft | null) => { newEntryRef.current = next; setNewEntry(next); };
   const setEdit = (next: DiaryEditing | null) => {
     editingRef.current = next;
     setEditing(next);
-    if (next === null) { setDiscarding(false); setWritingModal(false); setModalError(false); }
+    if (next === null) { setNewDraft(null); setDiscarding(false); setWritingModal(false); setModalError(false); }
   };
   const beginEditing = (card: Card | undefined, cardId: CardId, fallbackTitle: string) => {
     const title = card?.title ?? fallbackTitle;
@@ -163,6 +167,12 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
   };
   const write = async (reuse: boolean) => {
     if (!await persistEditing(true)) return;
+    if (!reuse) {
+      const title = `Diario ${day}`; const document = createEmptyRichTextDocument();
+      setNewDraft({ title, document, initialTitle: title, initialDocument: document });
+      setWritingModal(true);
+      return;
+    }
     const result = await run((storage, id) => openDiaryEntry(storage, id, { day, createdAt: new Date().toISOString(), reuse }),
       reuse ? 'action.diaryEntryReady' : 'action.diaryEntryNew');
     if (!result.ok) return;
@@ -191,45 +201,69 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
   useEscapeBack(active && !writingModal, () => { void back(); });
   useEffect(() => { editingRef.current = editing; }, [editing]);
   useEffect(() => {
-    if (Platform.OS !== 'web' || !diaryEditingDirty(editing)) return;
+    if (Platform.OS !== 'web' || !diaryEditingDirty(newEntry ?? editing)) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [editing]);
+  }, [editing, newEntry]);
   const requestWritingClose = (): boolean => {
     if (savingModal) return false;
     if (discarding) { setDiscarding(false); return false; }
-    if (diaryEditingDirty(editingRef.current)) { setDiscarding(true); return false; }
+    if (diaryEditingDirty(newEntryRef.current ?? editingRef.current)) { setDiscarding(true); return false; }
     setEdit(null); return true;
   };
   // Same editor and save operation in both presentations. Only "New entry" uses the modal.
-  const editingBody = (entry?: Card) => editing ? <>
-    <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => { const current = editingRef.current; if (current) setEdit({ ...current, title }); }}
+  const activeDraft = newEntry ?? editing;
+  const updateWriting = (change: Partial<Pick<NewEntryDraft, 'title' | 'document'>>) => {
+    const draft = newEntryRef.current;
+    if (draft) setNewDraft({ ...draft, ...change });
+    else { const current = editingRef.current; if (current) setEdit({ ...current, ...change }); }
+  };
+  const saveWriting = async () => {
+    if (savingModal) return;
+    setSavingModal(true); setModalError(false);
+    try {
+      const draft = newEntryRef.current;
+      if (!draft) { if (!await persistEditing(true)) setModalError(true); return; }
+      const result = await run((storage, id) => openDiaryEntry(storage, id, { day, createdAt: new Date().toISOString(), reuse: false,
+        initialContent: { title: draft.title, document: draft.document } }), 'action.diaryEntrySaved');
+      if (!result.ok) { setModalError(true); return; }
+      const latest = newEntryRef.current ?? draft;
+      setNewDraft(null);
+      // If typing continued during this explicit creation, keep the newer revision open on the
+      // created entry. Existing edit/save behavior handles it, without another creation or lost text.
+      if (latest.title !== draft.title || JSON.stringify(latest.document) !== JSON.stringify(draft.document)) {
+        setEdit({ ...latest, id: result.value, initialTitle: draft.title, initialDocument: draft.document });
+      } else setEdit(null);
+    } catch { setModalError(true); }
+    finally { setSavingModal(false); }
+  };
+  const editingBody = (entry?: Card) => activeDraft ? <>
+    <TextField label={t('diary.entry.title.label', locale)} value={activeDraft.title} onChangeText={(title) => updateWriting({ title })}
       {...(writingModal ? { testID: 'diary-writing-title' } : {})} />
     {entry ? documentBox(entry, true) : null}
     <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>{t('diary.entry.content.label', locale)}</Text>
     <View style={writingModal ? { minHeight: compact ? 240 : 360 } : undefined}>
-      <RichTextEditor key={editing.id} cardId={editing.id} document={editing.document} codec={markdownRichTextCodec}
-        onChange={(document) => { const current = editingRef.current; if (current) setEdit({ ...current, document }); }} />
+      <RichTextEditor key={editing?.id ?? 'new-diary-draft'} cardId={editing?.id ?? 'new-diary-draft'} document={activeDraft.document} codec={markdownRichTextCodec}
+        onChange={(document) => updateWriting({ document })} />
     </View>
     <View style={styles.row}>
       <ActionButton label={t(writingModal ? 'workspace.save' : 'diary.entry.save', locale)} tone="primary" disabled={savingModal} onPress={() => {
         if (!writingModal) { void persistEditing(true); return; }
-        setSavingModal(true); setModalError(false);
-        void persistEditing(true).then(ok => { if (!ok) setModalError(true); }).catch(() => setModalError(true)).finally(() => setSavingModal(false));
+        void saveWriting();
       }} />
-      <ActionButton label={writingModal ? t('trash.cancel', locale) : diaryEditingDirty(editing) ? t('diary.entry.discard', locale) : t('trash.cancel', locale)}
+      <ActionButton label={writingModal ? t('trash.cancel', locale) : diaryEditingDirty(activeDraft) ? t('diary.entry.discard', locale) : t('trash.cancel', locale)}
         accessibilityLabel={writingModal ? t('trash.cancel', locale) : t('diary.entry.cancel.accessibilityLabel', locale)} disabled={savingModal}
-        onPress={() => { if (diaryEditingDirty(editingRef.current)) setDiscarding(true); else setEdit(null); }} />
-      {entry && !writingModal ? <ActionButton label={t('diary.entry.trash', locale)} accessibilityLabel={t('diary.entry.trash.accessibilityLabel', locale, { title: editing.title || t('trash.item.untitled', locale) })}
+        onPress={() => { if (diaryEditingDirty(newEntryRef.current ?? editingRef.current)) setDiscarding(true); else setEdit(null); }} />
+      {entry && !writingModal ? <ActionButton label={t('diary.entry.trash', locale)} accessibilityLabel={t('diary.entry.trash.accessibilityLabel', locale, { title: activeDraft.title || t('trash.item.untitled', locale) })}
         onPress={() => setTrashing(entry.id)} /> : null}
     </View>
     {modalError ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{t('content.failed', locale)}</Text> : null}
     {discarding ? <View testID="diary-discard-confirmation" style={[styles.confirm, { borderColor: colors.danger }]}>
       <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{t('diary.entry.discard.confirm', locale)}</Text>
       <View style={styles.row}>
-        <ActionButton label={t('diary.entry.keepEditing', locale)} tone="primary" onPress={() => setDiscarding(false)} />
-        <ActionButton label={t('diary.entry.discard.confirmLabel', locale)} onPress={() => setEdit(null)} />
+        <ActionButton label={t('diary.entry.keepEditing', locale)} tone="primary" disabled={savingModal} onPress={() => setDiscarding(false)} />
+        <ActionButton label={t('diary.entry.discard.confirmLabel', locale)} disabled={savingModal} onPress={() => setEdit(null)} />
       </View>
     </View> : null}
   </> : null;
@@ -415,7 +449,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
         </View>
       </ScrollView>
       )}
-      <Dialog visible={writingModal && editing !== null} title={t('diary.write.new', locale)} compact={compact} presentation="centered"
+      <Dialog visible={writingModal && activeDraft !== null} title={t('diary.write.new', locale)} compact={compact} presentation="centered"
         testID="diary-writing-modal" maxWidth={960} blurBackdrop initialFocusTestID="diary-writing-title" onClose={requestWritingClose}>
         {writingModal ? editingBody() : null}
       </Dialog>

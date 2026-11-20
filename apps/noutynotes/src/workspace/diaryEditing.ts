@@ -11,7 +11,7 @@ export type DiaryEditing = {
 const sameContent = (left: DiaryEditing, right: DiaryEditing) => left.title === right.title
   && JSON.stringify(left.document) === JSON.stringify(right.document);
 
-export const diaryEditingDirty = (editing: DiaryEditing | null) => editing !== null
+export const diaryEditingDirty = (editing: Omit<DiaryEditing, 'id'> | null) => editing !== null
   && (editing.title !== editing.initialTitle
     || JSON.stringify(editing.document) !== JSON.stringify(editing.initialDocument));
 

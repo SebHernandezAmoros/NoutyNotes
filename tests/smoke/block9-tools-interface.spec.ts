@@ -13,10 +13,11 @@ import { openCardActions, openFullCardEditor } from './support';
 
 function value<T>(r: { ok: true; value: T } | { ok: false; issues: readonly unknown[] }): T { if (!r.ok) throw new Error(JSON.stringify(r.issues)); return r.value; }
 const markdownQuoteSource = '# Inicio\n\n' + 'Párrafo de laboratorio.\n\n'.repeat(70) + '## Destino único\n\nTexto con **negrita** y final.\n\n- Elemento uno\n- Elemento dos\n\n' + 'Repetido.\n\n'.repeat(60);
-async function lab(page: Page, withQuoteText = false, quoteFixture?: 'changed' | 'ambiguous') {
+async function lab(page: Page, withQuoteText = false, quoteFixture?: 'changed' | 'ambiguous' | 'hard-breaks') {
   const base = canvasCardsWorkspace();
   let workspace: Workspace = { ...base, metadata: { name: 'Herramientas B9' }, cards: base.cards.map((card, i) => i === 0 ? { ...card, contentDocument: block8Document } : card) };
-  if (quoteFixture) {
+  const markdown = quoteFixture === 'hard-breaks' ? markdownQuoteSource.replace('y final.\n\n', 'y final.  \nSegunda línea del mismo párrafo.\n\n') : markdownQuoteSource;
+  if (quoteFixture && quoteFixture !== 'hard-breaks') {
     const storage = new MemoryStorage(); value(await storage.create(workspace));
     value(await annotateDocumentInDiary(storage, workspace.id, { day: '2026-11-19', createdAt: '2026-11-19T12:00:00.000Z',
       documentRef: 'assets/notes/Cita.md', documentName: 'Cita.md', reflection: 'Anotación anterior conservada',
@@ -24,7 +25,7 @@ async function lab(page: Page, withQuoteText = false, quoteFixture?: 'changed' |
         fingerprint: `sha256:${createHash('sha256').update(markdownQuoteSource).digest('hex')}` } }));
     workspace = value(await storage.open(workspace.id));
   }
-  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { [pdfRef]: block8PdfBytes(), 'assets/notes/Guia.md': new TextEncoder().encode('# Guía B9\n<script>window.__unsafe = true</script>'), ...(withQuoteText ? { 'assets/notes/Cita.txt': new TextEncoder().encode('Inicio\nFrase única para citar\n' + 'Contenido de laboratorio.\n'.repeat(200)), 'assets/notes/Cita.md': new TextEncoder().encode(markdownQuoteSource + (quoteFixture === 'changed' ? '\nArchivo modificado después de anotar.\n' : '')) } : {}) }));
+  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { [pdfRef]: block8PdfBytes(), 'assets/notes/Guia.md': new TextEncoder().encode('# Guía B9\n<script>window.__unsafe = true</script>'), ...(withQuoteText ? { 'assets/notes/Cita.txt': new TextEncoder().encode('Inicio\nFrase única para citar\n' + 'Contenido de laboratorio.\n'.repeat(200)), 'assets/notes/Cita.md': new TextEncoder().encode(markdown + (quoteFixture === 'changed' ? '\nArchivo modificado después de anotar.\n' : '')) } : {}) }));
   await page.addInitScript(() => Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true }));
   await page.goto('./', { waitUntil: 'domcontentloaded' });
   const chooser = page.waitForEvent('filechooser');
@@ -168,8 +169,9 @@ test('B9-R6-C: una cita repetida no desplaza el lector ni promete una ubicación
   await expect(source).toContainText('Frase única para citar');
 });
 
-test('B9-R6-D: Markdown entre encabezado, negrita y lista vuelve a una cita real', async ({ page }, info) => {
-  await lab(page, true); await nav(page, 'Abrir los assets');
+for (const hardBreaks of [false, true]) {
+test(`${hardBreaks ? 'B9-R7' : 'B9-R6-D'}: Markdown entre encabezado, negrita y lista vuelve a una cita real${hardBreaks ? ' con saltos internos y reapertura' : ''}`, async ({ page }, info) => {
+  await lab(page, true, hardBreaks ? 'hard-breaks' : undefined); await nav(page, 'Abrir los assets');
   await page.getByTestId('asset-Cita.md').getByRole('button', { name: 'Ver Cita.md', exact: true }).click();
   await page.getByRole('button', { name: 'Vista previa de Cita.md', exact: true }).click();
   const source = page.getByTestId('asset-text-preview-source');
@@ -188,6 +190,14 @@ test('B9-R6-D: Markdown entre encabezado, negrita y lista vuelve a una cita real
   const panel = page.getByTestId('asset-text-preview-diary');
   await panel.getByTestId('asset-text-preview-diary-reflection').fill('Reflexión Markdown');
   await panel.getByTestId('asset-text-preview-diary-save').click();
+  if (hardBreaks) {
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+    await expect(page.getByTestId('asset-text-preview')).not.toBeVisible();
+    await nav(page, 'Abrir los assets');
+    await page.getByTestId('asset-Cita.md').getByRole('button', { name: 'Ver Cita.md', exact: true }).click();
+    await page.getByRole('button', { name: 'Vista previa de Cita.md', exact: true }).click();
+    await page.getByTestId('asset-text-preview-diary-tab').click();
+  }
   const scroller = await source.evaluateHandle(root => {
     let n = root.parentElement!; while (n.parentElement && !['auto', 'scroll'].includes(getComputedStyle(n).overflowY)) n = n.parentElement;
     n.scrollTop = 0; return n;
@@ -208,6 +218,26 @@ test('B9-R6-D: Markdown entre encabezado, negrita y lista vuelve a una cita real
     expect(geometry.quoteBottom).toBeLessThanOrEqual(geometry.panelTop);
   }
   await page.screenshot({ path: info.outputPath('markdown-quote.png') });
+});
+}
+
+test('B9-R7: cancelar Nueva entrada no deja tarjetas vacías', async ({ page }) => {
+  await lab(page); await nav(page, 'Abrir el diario');
+  await page.getByRole('button', { name: 'Escribir la nota de hoy', exact: true }).click();
+  await page.getByLabel('Contenido visual', { exact: true }).fill('Entrada anterior intacta');
+  await page.getByRole('button', { name: 'Guardar entrada', exact: true }).click();
+  const entries = page.locator('[data-testid^="log-entry-"]'); const before = await entries.count();
+  await page.getByRole('button', { name: 'Nueva entrada del diario', exact: true }).click();
+  await page.getByTestId('diary-writing-modal').getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(page.getByTestId('diary-writing-modal')).not.toBeVisible();
+  await expect(entries).toHaveCount(before);
+  await page.getByRole('button', { name: 'Nueva entrada del diario', exact: true }).click();
+  const modal = page.getByTestId('diary-writing-modal');
+  await modal.getByLabel('Contenido visual', { exact: true }).fill('Borrador que descarto');
+  await modal.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await modal.getByRole('button', { name: 'Descartar', exact: true }).click();
+  await expect(entries).toHaveCount(before);
+  await expect(entries).toContainText(['Entrada anterior intacta']);
 });
 
 for (const scenario of ['changed', 'ambiguous'] as const) {
@@ -785,6 +815,29 @@ test('B9-R4-FINAL/B9-R5-03: la edición rápida muestra párrafo, negrita y curs
   await expect(fullToolbar.getByRole('button', { name: 'Cursiva', exact: true })).toBeVisible();
   await expect(fullToolbar.getByRole('button', { name: 'Insertar una tabla', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
+});
+
+test('B9-R7: Negrita+Cursiva se combinan en rápida y se conservan en Inspector', async ({ page }, info) => {
+  test.skip(info.project.name === 'mobile', 'La edición rápida sobre la ficha solo existe en escritorio.');
+  await lab(page);
+  const card = page.getByTestId('card-idea-b');
+  await openCardActions(page, card, 'Nota con imagen');
+  await page.getByRole('button', { name: 'Editar Nota con imagen dentro de la ficha', exact: true }).click();
+  const content = page.getByLabel('Contenido visual', { exact: true });
+  await content.fill('Formato combinado');
+  await content.focus(); await page.keyboard.press('Home'); await page.keyboard.press('Shift+End');
+  const combinedStyle = () => page.getByLabel('Contenido visual', { exact: true }).evaluate(root => {
+    const node = document.createTreeWalker(root, NodeFilter.SHOW_TEXT).nextNode()!;
+    const style = getComputedStyle(node.parentElement!);
+    return { bold: Number(style.fontWeight) >= 600, italic: style.fontStyle === 'italic' };
+  });
+  expect(await combinedStyle()).toEqual({ bold: false, italic: false });
+  const toolbar = page.getByTestId('editor-toolbar');
+  await toolbar.getByRole('button', { name: 'Negrita', exact: true }).click();
+  await toolbar.getByRole('button', { name: 'Cursiva', exact: true }).click();
+  expect(await combinedStyle()).toEqual({ bold: true, italic: true });
+  await openFullCardEditor(page, card);
+  expect(await combinedStyle()).toEqual({ bold: true, italic: true });
 });
 
 test('B9-R5: Diario lateral — anotar un PDF sin cerrar el visor, consultarlo en el panel (sin recargar el PDF) y reabrir el documento desde el Diario', async ({ page }) => {
