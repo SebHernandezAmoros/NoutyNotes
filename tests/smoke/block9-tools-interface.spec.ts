@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
+import { annotateDocumentInDiary } from '../../packages/application/src/diary';
+import type { Workspace } from '../../packages/domain/src/index';
+import { MemoryStorage } from '../../packages/storage/src/memory-storage';
 import { serializeWorkspace } from '../../packages/storage/src/workspace-codec';
 import { writeWorkspaceArchive } from '../../packages/storage/src/workspace-archive';
 import { canvasCardsWorkspace } from '../fixtures/canvas-cards';
@@ -8,10 +12,19 @@ import { block8Document, block8PdfBytes, pdfRef } from '../fixtures/block8-conte
 import { openCardActions, openFullCardEditor } from './support';
 
 function value<T>(r: { ok: true; value: T } | { ok: false; issues: readonly unknown[] }): T { if (!r.ok) throw new Error(JSON.stringify(r.issues)); return r.value; }
-async function lab(page: Page, withQuoteText = false) {
+const markdownQuoteSource = '# Inicio\n\n' + 'Párrafo de laboratorio.\n\n'.repeat(70) + '## Destino único\n\nTexto con **negrita** y final.\n\n- Elemento uno\n- Elemento dos\n\n' + 'Repetido.\n\n'.repeat(60);
+async function lab(page: Page, withQuoteText = false, quoteFixture?: 'changed' | 'ambiguous') {
   const base = canvasCardsWorkspace();
-  const workspace = { ...base, metadata: { name: 'Herramientas B9' }, cards: base.cards.map((card, i) => i === 0 ? { ...card, contentDocument: block8Document } : card) };
-  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { [pdfRef]: block8PdfBytes(), 'assets/notes/Guia.md': new TextEncoder().encode('# Guía B9\n<script>window.__unsafe = true</script>'), ...(withQuoteText ? { 'assets/notes/Cita.txt': new TextEncoder().encode('Inicio\nFrase única para citar\n' + 'Contenido de laboratorio.\n'.repeat(200)) } : {}) }));
+  let workspace: Workspace = { ...base, metadata: { name: 'Herramientas B9' }, cards: base.cards.map((card, i) => i === 0 ? { ...card, contentDocument: block8Document } : card) };
+  if (quoteFixture) {
+    const storage = new MemoryStorage(); value(await storage.create(workspace));
+    value(await annotateDocumentInDiary(storage, workspace.id, { day: '2026-11-19', createdAt: '2026-11-19T12:00:00.000Z',
+      documentRef: 'assets/notes/Cita.md', documentName: 'Cita.md', reflection: 'Anotación anterior conservada',
+      quote: { version: 1, kind: 'markdown', text: quoteFixture === 'changed' ? 'Destino único' : 'Repetido.', prefix: '', suffix: '',
+        fingerprint: `sha256:${createHash('sha256').update(markdownQuoteSource).digest('hex')}` } }));
+    workspace = value(await storage.open(workspace.id));
+  }
+  const zip = value(writeWorkspaceArchive(value(serializeWorkspace(workspace)), { [pdfRef]: block8PdfBytes(), 'assets/notes/Guia.md': new TextEncoder().encode('# Guía B9\n<script>window.__unsafe = true</script>'), ...(withQuoteText ? { 'assets/notes/Cita.txt': new TextEncoder().encode('Inicio\nFrase única para citar\n' + 'Contenido de laboratorio.\n'.repeat(200)), 'assets/notes/Cita.md': new TextEncoder().encode(markdownQuoteSource + (quoteFixture === 'changed' ? '\nArchivo modificado después de anotar.\n' : '')) } : {}) }));
   await page.addInitScript(() => Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true }));
   await page.goto('./', { waitUntil: 'domcontentloaded' });
   const chooser = page.waitForEvent('filechooser');
@@ -153,6 +166,111 @@ test('B9-R6-C: una cita repetida no desplaza el lector ni promete una ubicación
   await expect(panel.getByTestId('asset-text-preview-diary-location-status')).toHaveText('No se pudo verificar la ubicación');
   expect(await scroller.evaluate(node=>node.scrollTop)).toBe(offset);
   await expect(source).toContainText('Frase única para citar');
+});
+
+test('B9-R6-D: Markdown entre encabezado, negrita y lista vuelve a una cita real', async ({ page }, info) => {
+  await lab(page, true); await nav(page, 'Abrir los assets');
+  await page.getByTestId('asset-Cita.md').getByRole('button', { name: 'Ver Cita.md', exact: true }).click();
+  await page.getByRole('button', { name: 'Vista previa de Cita.md', exact: true }).click();
+  const source = page.getByTestId('asset-text-preview-source');
+  const selected = await source.evaluate(root => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes: Node[] = []; let node: Node | null;
+    while ((node = walker.nextNode())) nodes.push(node);
+    const first = nodes.find(n => n.textContent?.includes('Destino único'))!;
+    const last = nodes.find(n => n.textContent?.includes('Elemento uno'))!;
+    const range = document.createRange(); range.setStart(first, 0); range.setEnd(last, last.textContent!.length);
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    return { selected: selection.toString(), range: range.toString(), flat: root.textContent };
+  });
+  await info.attach('markdown-selection.json', { body: JSON.stringify(selected), contentType: 'application/json' });
+  await page.getByTestId('asset-text-preview-annotate-selection').click();
+  const panel = page.getByTestId('asset-text-preview-diary');
+  await panel.getByTestId('asset-text-preview-diary-reflection').fill('Reflexión Markdown');
+  await panel.getByTestId('asset-text-preview-diary-save').click();
+  const scroller = await source.evaluateHandle(root => {
+    let n = root.parentElement!; while (n.parentElement && !['auto', 'scroll'].includes(getComputedStyle(n).overflowY)) n = n.parentElement;
+    n.scrollTop = 0; return n;
+  });
+  await panel.getByRole('button', { name: 'Leer anotación', exact: true }).click();
+  await panel.getByRole('button', { name: 'Ir al fragmento citado', exact: true }).click();
+  await expect(panel.getByTestId('asset-text-preview-diary-location-status')).toContainText('Fragmento localizado');
+  expect(await scroller.evaluate(n => n.scrollTop)).toBeGreaterThan(100);
+  const highlighted = await page.evaluate(() => {
+    const h = CSS.highlights.get('nouty-document-quote'); return h ? [...h].map(r => r.toString()).join('') : null;
+  });
+  expect(highlighted).toBe(selected.range);
+  if (info.project.name === 'mobile') {
+    const geometry = await panel.evaluate(n => {
+      const range = [...CSS.highlights.get('nouty-document-quote')!][0] as Range;
+      return { quoteBottom: range.getBoundingClientRect().bottom, panelTop: n.getBoundingClientRect().top };
+    });
+    expect(geometry.quoteBottom).toBeLessThanOrEqual(geometry.panelTop);
+  }
+  await page.screenshot({ path: info.outputPath('markdown-quote.png') });
+});
+
+for (const scenario of ['changed', 'ambiguous'] as const) {
+  test(`B9-R6-D: Markdown ${scenario} conserva la posición y avisa`, async ({ page }) => {
+    await lab(page, true, scenario); await nav(page, 'Abrir los assets');
+    await page.getByTestId('asset-Cita.md').getByRole('button', { name: 'Ver Cita.md', exact: true }).click();
+    await page.getByRole('button', { name: 'Vista previa de Cita.md', exact: true }).click();
+    await page.getByTestId('asset-text-preview-diary-tab').click();
+    const source = page.getByTestId('asset-text-preview-source');
+    const scroller = await source.evaluateHandle(root => {
+      let n = root.parentElement!; while (n.parentElement && !['auto', 'scroll'].includes(getComputedStyle(n).overflowY)) n = n.parentElement;
+      n.scrollTop = 200; return n;
+    });
+    const top = await scroller.evaluate(n => n.scrollTop);
+    const panel = page.getByTestId('asset-text-preview-diary');
+    await panel.getByRole('button', { name: 'Leer anotación', exact: true }).click();
+    await panel.getByRole('button', { name: 'Ir al fragmento citado', exact: true }).click();
+    await expect(panel.getByTestId('asset-text-preview-diary-location-status')).toHaveText('No se pudo verificar la ubicación');
+    expect(await scroller.evaluate(n => n.scrollTop)).toBe(top);
+  });
+}
+
+test('B9-R6-D: Nueva entrada abre escritura modal y conserva borrador al cancelar', async ({ page }, info) => {
+  await page.emulateMedia({ colorScheme: info.project.name === 'desktop' ? 'dark' : 'light' });
+  await lab(page); await nav(page, 'Abrir el diario');
+  await page.getByRole('button', { name: 'Escribir la nota de hoy', exact: true }).click();
+  await page.getByLabel('Contenido visual', { exact: true }).fill('Entrada existente');
+  await page.getByRole('button', { name: 'Guardar entrada', exact: true }).click();
+  await page.getByRole('button', { name: 'Nueva entrada del diario', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'Nueva entrada', exact: true });
+  await expect(modal).toBeVisible();
+  await expect(modal.getByLabel('Título de la entrada', { exact: true })).toBeFocused();
+  await expect(modal.getByText('Entrada existente', { exact: true })).toHaveCount(0);
+  await expect(modal.getByLabel('Calendario del mes', { exact: true })).toHaveCount(0);
+  const box = (await modal.boundingBox())!; const viewport = page.viewportSize()!;
+  expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+  expect(box.width).toBeLessThan(viewport.width);
+  expect(box.height).toBeLessThan(viewport.height);
+  expect(await modal.evaluate(n => n.scrollWidth - n.clientWidth)).toBeLessThanOrEqual(1);
+  await modal.getByLabel('Título de la entrada', { exact: true }).fill('Título concentrado');
+  await modal.getByLabel('Contenido visual', { exact: true }).fill('Cuerpo enriquecido conservado');
+  await modal.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(modal.getByTestId('diary-discard-confirmation')).toBeVisible();
+  await modal.getByRole('button', { name: 'Seguir editando', exact: true }).click();
+  // A backdrop click requests confirmation; it never discards the editor contents.
+  const bounds = (await modal.boundingBox())!;
+  await page.mouse.click(Math.max(1, bounds.x - 5), Math.max(1, bounds.y - 5));
+  await expect(modal.getByTestId('diary-discard-confirmation')).toBeVisible();
+  await modal.getByRole('button', { name: 'Seguir editando', exact: true }).click();
+  await expect(modal.getByLabel('Contenido visual', { exact: true })).toContainText('Cuerpo enriquecido conservado');
+  await page.screenshot({ path: info.outputPath('diary-writing-modal.png') });
+  await page.keyboard.press('Escape');
+  await expect(modal.getByTestId('diary-discard-confirmation')).toBeVisible();
+  await modal.getByRole('button', { name: 'Seguir editando', exact: true }).click();
+  await modal.getByRole('button', { name: 'Guardar', exact: true }).click();
+  await expect(modal).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nueva entrada del diario', exact: true })).toBeFocused();
+  const entry = page.locator('[data-testid^="log-entry-"]').filter({ hasText: 'Título concentrado' });
+  await expect(entry).toContainText('Cuerpo enriquecido conservado');
+  await entry.getByRole('button', { name: 'Editar Título concentrado', exact: true }).click();
+  await expect(page.getByLabel('Contenido visual', { exact: true })).toContainText('Cuerpo enriquecido conservado');
+  await page.screenshot({ path: info.outputPath('diary-reopened.png') });
 });
 
 test('B9: presentación salto, progreso, teclado editable y visor PDF superpuesto', async ({ page }, info) => {

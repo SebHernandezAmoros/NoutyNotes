@@ -20,4 +20,12 @@ describe('B9-R6-C: posición verificable en el texto visible del lector', () => 
     expect(documentQuotePosition('Antes cita después', markdownQuote, { fingerprint, kind: 'markdown', partial: false })).toEqual({ start: 6, end: 10 });
     expect(documentQuotePosition('Antes cita después', quote, { fingerprint, kind: 'markdown', partial: false })).toBeNull();
   });
+  it('Markdown reconoce solo saltos generados en límites de bloques DOM comprobados', () => {
+    const md = { ...quote, kind: 'markdown' as const, text: 'ci\n\nta' };
+    const source = { fingerprint, kind: 'markdown' as const, partial: false };
+    expect(documentQuotePosition('Antes cita después', md, source, new Set([8]))).toEqual({ start: 6, end: 10 });
+    expect(documentQuotePosition('Antes cita después', md, source, new Set([9]))).toBeNull();
+    expect(documentQuotePosition('Antes cita después', md, { ...source, fingerprint: 'changed' }, new Set([8]))).toBeNull();
+    expect(documentQuotePosition('Antes cita después cita', md, source, new Set([8, 21]))).toBeNull();
+  });
 });

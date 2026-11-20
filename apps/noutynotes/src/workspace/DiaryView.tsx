@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionButton, TextField } from '../components/controls';
+import { Dialog } from '../components/Dialog';
 import { t } from '../i18n';
 import { downloadTextFile, supportsTextDownload } from '../session/textDownload';
 import { diaryEditingDirty, persistLatestDiaryRevision } from './diaryEditing';
@@ -75,6 +76,9 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
   const editingRef = useRef<DiaryEditing | null>(null);
   const persistQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const [discarding, setDiscarding] = useState(false);
+  const [writingModal, setWritingModal] = useState(false);
+  const [savingModal, setSavingModal] = useState(false);
+  const [modalError, setModalError] = useState(false);
   const [trashing, setTrashing] = useState<CardId | null>(null);
   const [mode, setMode] = useState<'day' | 'search'>('day');
   const [rangeFrom, setRangeFrom] = useState(today);
@@ -121,7 +125,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
   const setEdit = (next: DiaryEditing | null) => {
     editingRef.current = next;
     setEditing(next);
-    if (next === null) setDiscarding(false);
+    if (next === null) { setDiscarding(false); setWritingModal(false); setModalError(false); }
   };
   const beginEditing = (card: Card | undefined, cardId: CardId, fallbackTitle: string) => {
     const title = card?.title ?? fallbackTitle;
@@ -163,6 +167,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
       reuse ? 'action.diaryEntryReady' : 'action.diaryEntryNew');
     if (!result.ok) return;
     const existing = workspace.cards.find((card) => card.id === result.value);
+    setWritingModal(!reuse);
     beginEditing(existing, result.value, `Diario ${day}`);
   };
   const back = async () => {
@@ -183,7 +188,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
     onBack();
     onGo(cardId);
   };
-  useEscapeBack(active, () => { void back(); });
+  useEscapeBack(active && !writingModal, () => { void back(); });
   useEffect(() => { editingRef.current = editing; }, [editing]);
   useEffect(() => {
     if (Platform.OS !== 'web' || !diaryEditingDirty(editing)) return;
@@ -191,6 +196,43 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [editing]);
+  const requestWritingClose = (): boolean => {
+    if (savingModal) return false;
+    if (discarding) { setDiscarding(false); return false; }
+    if (diaryEditingDirty(editingRef.current)) { setDiscarding(true); return false; }
+    setEdit(null); return true;
+  };
+  // Same editor and save operation in both presentations. Only "New entry" uses the modal.
+  const editingBody = (entry?: Card) => editing ? <>
+    <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => { const current = editingRef.current; if (current) setEdit({ ...current, title }); }}
+      {...(writingModal ? { testID: 'diary-writing-title' } : {})} />
+    {entry ? documentBox(entry, true) : null}
+    <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>{t('diary.entry.content.label', locale)}</Text>
+    <View style={writingModal ? { minHeight: compact ? 240 : 360 } : undefined}>
+      <RichTextEditor key={editing.id} cardId={editing.id} document={editing.document} codec={markdownRichTextCodec}
+        onChange={(document) => { const current = editingRef.current; if (current) setEdit({ ...current, document }); }} />
+    </View>
+    <View style={styles.row}>
+      <ActionButton label={t(writingModal ? 'workspace.save' : 'diary.entry.save', locale)} tone="primary" disabled={savingModal} onPress={() => {
+        if (!writingModal) { void persistEditing(true); return; }
+        setSavingModal(true); setModalError(false);
+        void persistEditing(true).then(ok => { if (!ok) setModalError(true); }).catch(() => setModalError(true)).finally(() => setSavingModal(false));
+      }} />
+      <ActionButton label={writingModal ? t('trash.cancel', locale) : diaryEditingDirty(editing) ? t('diary.entry.discard', locale) : t('trash.cancel', locale)}
+        accessibilityLabel={writingModal ? t('trash.cancel', locale) : t('diary.entry.cancel.accessibilityLabel', locale)} disabled={savingModal}
+        onPress={() => { if (diaryEditingDirty(editingRef.current)) setDiscarding(true); else setEdit(null); }} />
+      {entry && !writingModal ? <ActionButton label={t('diary.entry.trash', locale)} accessibilityLabel={t('diary.entry.trash.accessibilityLabel', locale, { title: editing.title || t('trash.item.untitled', locale) })}
+        onPress={() => setTrashing(entry.id)} /> : null}
+    </View>
+    {modalError ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{t('content.failed', locale)}</Text> : null}
+    {discarding ? <View testID="diary-discard-confirmation" style={[styles.confirm, { borderColor: colors.danger }]}>
+      <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{t('diary.entry.discard.confirm', locale)}</Text>
+      <View style={styles.row}>
+        <ActionButton label={t('diary.entry.keepEditing', locale)} tone="primary" onPress={() => setDiscarding(false)} />
+        <ActionButton label={t('diary.entry.discard.confirmLabel', locale)} onPress={() => setEdit(null)} />
+      </View>
+    </View> : null}
+  </> : null;
   // B9-R4-11: documento anotado (PDF/TXT/Markdown), si lo tiene — reflexión, nombre, tipo, ubicación
   // y «Abrir documento»; el campo `documento-ref` lo marca, sin un segundo tipo de tarjeta.
   const documentBox = (entry: Card, footer = false) => {
@@ -317,39 +359,7 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
           {log.entries.length === 0 ? <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entries.empty', locale)}</Text> : log.entries.map((entry) => (
             <View key={entry.id} testID={`log-entry-${entry.id}`} style={[styles.item, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               {documentBox(entry)}
-              {editing?.id === entry.id ? (
-                <>
-                  <TextField label={t('diary.entry.title.label', locale)} value={editing.title} onChangeText={(title) => setEdit({ ...editing, title })} />
-                  {documentBox(entry, true)}
-                  <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>{t('diary.entry.content.label', locale)}</Text>
-                  <RichTextEditor
-                    key={editing.id}
-                    cardId={editing.id}
-                    document={editing.document}
-                    codec={markdownRichTextCodec}
-                    onChange={(document) => {
-                      const current = editingRef.current;
-                      if (current) setEdit({ ...current, document });
-                    }}
-                  />
-                  <View style={styles.row}>
-                    <ActionButton label={t('diary.entry.save', locale)} tone="primary" onPress={() => { void persistEditing(true); }} />
-                    <ActionButton label={diaryEditingDirty(editing) ? t('diary.entry.discard', locale) : t('trash.cancel', locale)} accessibilityLabel={t('diary.entry.cancel.accessibilityLabel', locale)}
-                      onPress={() => { if (diaryEditingDirty(editing)) setDiscarding(true); else setEdit(null); }} />
-                    <ActionButton label={t('diary.entry.trash', locale)} accessibilityLabel={t('diary.entry.trash.accessibilityLabel', locale, { title: editing.title || t('trash.item.untitled', locale) })}
-                      onPress={() => setTrashing(entry.id)} />
-                  </View>
-                  {discarding ? (
-                    <View testID="diary-discard-confirmation" style={[styles.confirm, { borderColor: colors.danger }]}>
-                      <Text accessibilityRole="alert" style={[styles.warning, { color: colors.danger }]}>{t('diary.entry.discard.confirm', locale)}</Text>
-                      <View style={styles.row}>
-                        <ActionButton label={t('diary.entry.keepEditing', locale)} tone="primary" onPress={() => setDiscarding(false)} />
-                        <ActionButton label={t('diary.entry.discard.confirmLabel', locale)} onPress={() => setEdit(null)} />
-                      </View>
-                    </View>
-                  ) : null}
-                </>
-              ) : (
+              {editing?.id === entry.id && !writingModal ? editingBody(entry) : (
                 <>
                   {diaryDocumentAnnotation(entry) && entry.title === diaryDocumentAnnotation(entry)?.ref.split('/').pop() ? null : <Text style={[styles.title, { color: colors.textPrimary }]}>{entry.title ?? t('trash.item.untitled', locale)}</Text>}
                   {bodyText(entry) ? <Text testID={`diary-reflection-${entry.id}`} numberOfLines={4} style={[diaryDocumentAnnotation(entry) ? styles.documentReflection : styles.body, { color: colors.textPrimary }]}>{bodyText(entry)}</Text> : <Text style={[styles.hint, { color: colors.textSecondary }]}>{t('diary.entry.empty', locale)}</Text>}
@@ -405,6 +415,10 @@ export function DiaryView({ active, compact, workspace, run, onGo, onBack, onOpe
         </View>
       </ScrollView>
       )}
+      <Dialog visible={writingModal && editing !== null} title={t('diary.write.new', locale)} compact={compact} presentation="centered"
+        testID="diary-writing-modal" maxWidth={960} blurBackdrop initialFocusTestID="diary-writing-title" onClose={requestWritingClose}>
+        {writingModal ? editingBody() : null}
+      </Dialog>
     </View>
   );
 }

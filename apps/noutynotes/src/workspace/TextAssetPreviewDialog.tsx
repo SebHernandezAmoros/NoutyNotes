@@ -83,7 +83,13 @@ export function TextAssetPreviewDialog({ preview, problem, compact, workspace, r
     while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
     if (!scroller) return false;
     const rect = range.getBoundingClientRect();
-    scroller.scrollTop += rect.top - scroller.getBoundingClientRect().top - scroller.clientHeight / 3;
+    const viewport = scroller.getBoundingClientRect();
+    const panel = stackedPanel && panelExpanded ? document.querySelector<HTMLElement>(`[data-testid="${testID}-diary"]`) : null;
+    // The compact Diary overlays the bottom of this same reader. Anchor in its uncovered area,
+    // rather than centering the quote underneath the panel.
+    const visibleHeight = Math.min(viewport.bottom, panel?.getBoundingClientRect().top ?? viewport.bottom) - viewport.top;
+    if (visibleHeight <= 0) return false;
+    scroller.scrollTop += rect.top - viewport.top - visibleHeight / 3;
     if (typeof Highlight !== 'undefined' && CSS.highlights) {
       CSS.highlights.set('nouty-document-quote', new Highlight(range));
       if (highlightTimer.current !== null) clearTimeout(highlightTimer.current);

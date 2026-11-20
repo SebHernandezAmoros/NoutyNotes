@@ -14,7 +14,8 @@ interface DialogProps {
   readonly compact: boolean;
   /** Variante web centrada para lectura; no cambia las hojas existentes. */
   readonly presentation?: 'adaptive' | 'centered';
-  readonly onClose: () => void;
+  /** Return false when a dirty editor keeps the dialog open; focus then stays inside. */
+  readonly onClose: () => void | boolean;
   readonly testID: string;
   readonly children: ReactNode;
   /** B9-R5: franja/panel contextual (p. ej. el Diario sobre un documento), superpuesto dentro del
@@ -26,6 +27,8 @@ interface DialogProps {
   readonly maxWidth?: number | undefined;
   readonly contentContainerStyle?: import('react-native').StyleProp<import('react-native').ViewStyle>;
   readonly sidePanelBelowHeader?: boolean;
+  readonly blurBackdrop?: boolean;
+  readonly initialFocusTestID?: string;
 }
 
 /**
@@ -33,7 +36,7 @@ interface DialogProps {
  * `onRequestClose`) y con toque en el fondo. En móvil ocupa como mucho el 62 % inferior; con el teclado
  * abierto (nativo) se apoya sobre él y puede ocupar todo el alto restante, para que se vea lo que se escribe.
  */
-export function Dialog({ visible, title, compact, presentation = 'adaptive', onClose, testID, children, sidePanel, headerActions, maxWidth, contentContainerStyle, sidePanelBelowHeader = false }: DialogProps) {
+export function Dialog({ visible, title, compact, presentation = 'adaptive', onClose, testID, children, sidePanel, headerActions, maxWidth, contentContainerStyle, sidePanelBelowHeader = false, blurBackdrop = false, initialFocusTestID }: DialogProps) {
   const [headerHeight, setHeaderHeight] = useState(0);
   const { theme } = useTheme();
   const { locale } = useLocale();
@@ -54,10 +57,11 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
     if ((compact && !centered) || Platform.OS !== 'web' || !visible) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const first = requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(`[data-testid="${testID}"] [role="button"], [data-testid="${testID}"] button, [data-testid="${testID}"] input, [data-testid="${testID}"] textarea, [data-testid="${testID}"] [href]`)?.focus();
+      const initial = initialFocusTestID ? document.querySelector<HTMLElement>(`[data-testid="${initialFocusTestID}"]`) : null;
+      (initial ?? document.querySelector<HTMLElement>(`[data-testid="${testID}"] [role="button"], [data-testid="${testID}"] button, [data-testid="${testID}"] input, [data-testid="${testID}"] textarea, [data-testid="${testID}"] [href]`))?.focus();
     });
     return () => { cancelAnimationFrame(first); if (!centered) opener?.focus(); };
-  }, [compact, centered, visible, testID]);
+  }, [compact, centered, visible, testID, initialFocusTestID]);
 
   useLayoutEffect(() => {
     if (!centered || !visible) return;
@@ -79,8 +83,8 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
     }
   };
   const closeDialog = () => {
-    onClose();
-    if (centered) requestAnimationFrame(restoreCenteredFocus);
+    const closed = onClose();
+    if (centered && closed !== false) requestAnimationFrame(restoreCenteredFocus);
   };
 
   useEffect(() => {
@@ -115,7 +119,8 @@ export function Dialog({ visible, title, compact, presentation = 'adaptive', onC
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={closeDialog} onDismiss={centered ? restoreCenteredFocus : undefined}
       onShow={centered ? () => requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="${testID}"] [role="button"], [data-testid="${testID}"] button`)?.focus()) : undefined}>
-      <View style={[styles.backdrop, centered ? styles.backdropCentered : compact ? styles.backdropCompact : styles.backdropWide, typing ? { paddingBottom: keyboard } : null]}>
+      <View style={[styles.backdrop, centered ? styles.backdropCentered : compact ? styles.backdropCompact : styles.backdropWide, typing ? { paddingBottom: keyboard } : null,
+        blurBackdrop && Platform.OS === 'web' ? { backdropFilter: 'blur(3px)' } as import('react-native').ViewStyle & { backdropFilter: string } : null]}>
         <Pressable accessibilityLabel={`${t('dialog.close', locale)} ${title}`} accessible={false} style={StyleSheet.absoluteFill} onPress={closeDialog} />
         <View
           testID={testID}
